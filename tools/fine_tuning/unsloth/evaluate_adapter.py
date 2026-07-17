@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
+import stat
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -14,8 +16,8 @@ from typing import Any
 
 try:
     from .export_gguf import (
+        _validate_config as _validate_export_config,
         _verified_release_bake_lineage,
-        load_config as load_export_config,
     )
     from .train_sft import _require_unsloth_before_transformers, _seed_everything
 except ImportError:
@@ -23,8 +25,8 @@ except ImportError:
     if module_dir not in sys.path:
         sys.path.insert(0, module_dir)
     from export_gguf import (  # type: ignore
+        _validate_config as _validate_export_config,
         _verified_release_bake_lineage,
-        load_config as load_export_config,
     )
     from train_sft import (  # type: ignore
         _require_unsloth_before_transformers,
@@ -32,10 +34,157 @@ except ImportError:
     )
 
 
-EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.0.0"
-CANDIDATE_OUTPUT_SCHEMA_VERSION = "lumen.adapter-eval-candidate/1.0.0"
+EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.2.0"
+CANDIDATE_OUTPUT_SCHEMA_VERSION = "lumen.adapter-eval-candidate/1.1.0"
+GENERATION_ATTEMPT_SCHEMA_VERSION = "lumen.adapter-eval-generation-attempt/1.0.0"
+STRUCTURED_OUTPUT_CONTRACT_VERSION = "lumen.adapter-eval-json-object-contract/1.1.0"
+CORTEX_ROUTING_CONTEXT_VERSION = "lumen.adapter-eval-cortex-routing-context/1.0.0"
+STRICT_JSON_RETRY_CONTRACT_VERSION = "lumen.adapter-eval-strict-json-retry/1.3.0"
+STRICT_JSON_MAX_ATTEMPTS = 2
+GENERATION_REPETITION_PENALTY = 1.1
+STRUCTURED_OUTPUT_INSTRUCTION = (
+    "Response format contract: output exactly one valid JSON object. Do not include "
+    "prose, markdown, code fences, or hidden reasoning."
+)
+CORTEX_ROUTE_INSTRUCTION = (
+    "Cortex route mode: use the manifest catalog below as exact runtime truth. "
+    "The catalog is TSV: defaultIntent is the canonical intent for an ordinary "
+    "action request, allowedIntents is the comma-separated set of manifest-routed "
+    "intents, required '-' means no required arguments, and approval 1 means true "
+    "while 0 means false. "
+    "Never invent, rename, pluralize, or abbreviate a tool ID. If the user names a "
+    "catalog ID explicitly, copy it exactly. Match ordinary requests to catalog names "
+    "and descriptions. Choose selectedToolID first, then find the single TSV row whose "
+    "id cell exactly equals it and stop consulting every other row. "
+    "Every actionable or clarification route copies defaultIntent exactly; never "
+    "echo meta-language such as app "
+    "action, operation, request, or capability as intent. Only an explicit choose-only "
+    "intent-category request may use a different value, and it must occur verbatim in "
+    "that row's allowedIntents cell. Copy required and approval only from that row. If "
+    "the request explicitly says choose or select only, return routing only, or do not "
+    "begin the action, emit the five common fields and stop. Otherwise start with that "
+    "row's required names; '-' is an empty list. When required is '-', the missing "
+    "set is empty: emit actionStep and never borrow a field, status, or clarification "
+    "from another row. "
+    "Optional names mentioned in descriptions are never required. Natural wording can "
+    "supply a value without naming its field. A concrete topic after about, regarding, "
+    "or concerning supplies `query`. A complete proposition introduced by that supplies "
+    "`content`; explicit personal-preference wording supplies both that content and the "
+    "preference `kind`, even though Cortex never emits Executor arguments. A specifically "
+    "designated recipient may "
+    "be an address, person, organization, or role such as the supplier and supplies "
+    "`to`. A concrete event noun phrase supplies `title`. A precise relative delay supplies "
+    "`inMinutes` or `startsInMinutes`, while a vague daypart or scheduling adverb does not. "
+    "Operation wording supplies no required values. A standalone pronoun, deictic phrase, "
+    "unresolved relative reference, or bare object class does not supply an identifier, "
+    "path, query, title, body, content, or kind. Recognize explicit content but never "
+    "guess an absent value. Audit each required name literally before choosing a route "
+    "state. A tool display name or operation phrase never supplies a same-named "
+    "argument: asking to schedule an agent run supplies no title, prompt, or schedule; "
+    "asking to reply or reply-all supplies no body; a countdown duration plus alert "
+    "wording supplies no title. References such as that item or the selected message "
+    "supply no id or messageId. Only concrete user values remove those names from the "
+    "missing set. Remove a "
+    "required name only when this user request supplies its concrete value; do not copy "
+    "Executor arguments into the route. If names remain, emit "
+    "all of them in manifest order in missingArguments and omit actionStep; if none "
+    "remain, emit actionStep. Never infer one required value from another. Always emit "
+    "top-level keys in this visible order: selectedToolID (catalog string or null), "
+    "intent (string), reasoningSummary (one concise manifest-row grounding sentence), "
+    "then status, missingArguments, and clarification or actionStep when applicable, "
+    "then requiresApproval (boolean) and nextModel (string). The reasoningSummary is "
+    "not hidden chain-of-thought. For an actionable route, it states that the exact "
+    "selected row has no required values or names all exact required values as "
+    "supplied. For a clarification, it states the exact selected row and exact missing "
+    "subset. For a "
+    "complete actionable request, also emit actionStep exactly as "
+    '{"type":"tool_call","toolID":"<same selectedToolID>",'
+    '"mustPersistBeforeFinal":true}; set requiresApproval from the catalog and set '
+    "nextModel to approval when true, otherwise executor. When required arguments are "
+    "missing, keep the canonical selectedToolID and catalog requiresApproval, omit "
+    "actionStep, set nextModel to mouth, set status to needs_clarification, and emit "
+    "missingArguments plus one clarification. Use no_tool_route only when no catalog "
+    "tool applies, and invalid_tool only for a requested nonexistent ID. Do not emit "
+    "status on complete actionable routes."
+)
+CORTEX_ROUTE_DECISION_ENDCAP = (
+    "Final route decision: selectedToolID is an exact column-1 ID. Lock to that "
+    "one row: every action or clarification copies its defaultIntent; only a "
+    "five-field explicit choose-only selection may use another allowedIntent. Required "
+    "'-' means empty and can never produce missingArguments or clarification; required "
+    "names and approval come from that row only. "
+    "Treat concrete natural implicit values as supplied, including a specifically "
+    "designated recipient role. Operation wording, standalone pronouns, and unresolved "
+    "relative references such as that item, this one, the latest item, the selected "
+    "message, or the entry discussed earlier do not supply an identifier or other "
+    "required value by themselves. In contrast, a that-clause containing a complete "
+    "proposition supplies content, a concrete topic after about, regarding, or concerning "
+    "supplies query, personal-preference wording supplies preference kind, and a concrete "
+    "event noun phrase supplies title. Precise relative delays can supply numeric time "
+    "fields; vague dayparts cannot. If any required value is "
+    "absent, summarize that row and exact missing subset before status, "
+    "missingArguments, and clarification; omit actionStep. Otherwise summarize that "
+    "the row has no required values or that every exact required name is supplied, "
+    "then emit actionStep. Finish with requiresApproval and nextModel."
+)
+CORTEX_TOOL_CATALOG_HEADER = (
+    "Manifest tools TSV: id\tname\tdefaultIntent\tallowedIntents\trequired\tapproval\tdescription"
+)
+STRICT_JSON_RETRY_INSTRUCTION = (
+    "This is the single bounded retry after strict raw JSON or manifest-route "
+    "validation failed. Re-read the manifest catalog and the user's request. "
+    "Emit a fresh, complete JSON object now. Output JSON only: no prose, markdown, "
+    "code fences, comments, or hidden reasoning. Start with { and stop after its "
+    "matching }. Keep the object concise. Do not emit a tool catalog, a rejected-tool "
+    "list, repeated keys, or an unbounded array. Do not repeat or repair the previous "
+    "output. For Cortex, a trusted exact-row digest may follow; treat it as "
+    "authoritative manifest data."
+)
+_CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE = {
+    "invalid_json": (
+        "Retry repair: discard the malformed text and emit the complete Cortex "
+        "route object from scratch. Include selectedToolID, intent, and "
+        "reasoningSummary before the route state, then requiresApproval and "
+        "nextModel. Never emit a flat tool call or Executor arguments."
+    ),
+    "cortex_route_protocol_field_invalid": (
+        "Retry repair: emit the complete Cortex route object from scratch. "
+        "Include selectedToolID, intent, and reasoningSummary before the route "
+        "state, then requiresApproval and nextModel. Never emit a flat tool call, "
+        "an actionStep-only fragment, or Executor arguments."
+    ),
+    "cortex_route_tool_not_in_manifest": (
+        "Retry repair: reselect an exact column-1 tool ID from the catalog; "
+        "never reuse or mutate the invalid ID."
+    ),
+    "cortex_route_intent_not_in_manifest": (
+        "Retry repair: after selecting one row, copy its defaultIntent for an "
+        "ordinary request or a verbatim allowedIntents value for an explicit "
+        "choose-only request."
+    ),
+    "cortex_route_clarification_state_invalid": (
+        "Retry repair: reread the selected row's required names. If every "
+        "required value is supplied, emit an actionable route with actionStep; "
+        "otherwise emit only the exact absent names in manifest order."
+    ),
+    "cortex_route_action_state_invalid": (
+        "Retry repair: reread the selected row's required names. If any required "
+        "value is absent, omit actionStep and ask for only the exact absent names "
+        "in manifest order; never infer them. Otherwise emit actionStep with exactly "
+        "type tool_call, the matching selectedToolID as toolID, and "
+        "mustPersistBeforeFinal true; never emit false."
+    ),
+}
 SUPPORTED_AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 JSON_OUTPUT_AGENTS = frozenset({"cortex", "executor"})
+CORTEX_FORBIDDEN_ROUTE_FIELDS = frozenset({"rejectedToolID", "rejectedToolIDs"})
+_CORTEX_ROUTE_PREFIX_FIELDS = (
+    "selectedToolID",
+    "intent",
+    "reasoningSummary",
+)
+_CORTEX_ROUTE_SUFFIX_FIELDS = ("requiresApproval", "nextModel")
+_CORTEX_ACTION_STEP_FIELDS = ("type", "toolID", "mustPersistBeforeFinal")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _TOOL_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_.]*$")
 _MESSAGE_ROLES = frozenset({"system", "user", "assistant"})
@@ -76,7 +225,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-examples",
         type=int,
-        help="Deterministic prefix length for a smoke run. Omit to run the full frozen suite.",
+        help=(
+            "Deterministic semantic sample size for a smoke run. System-prompt and "
+            "evalID revisions do not reshuffle the sample. Omit to run the full "
+            "frozen suite."
+        ),
     )
     parser.add_argument(
         "--max-new-tokens",
@@ -102,6 +255,113 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _semantic_smoke_sort_key(record: Mapping[str, Any]) -> str:
+    """Return a stable scenario key that deliberately ignores system-prompt churn."""
+
+    messages = record.get("messages")
+    metadata = record.get("metadata")
+    if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
+        raise ValueError("Evaluation record lacks messages for semantic smoke selection")
+    if not isinstance(metadata, Mapping):
+        raise ValueError("Evaluation record lacks metadata for semantic smoke selection")
+    scenario_messages = [
+        {"role": message.get("role"), "content": message.get("content")}
+        for message in messages
+        if isinstance(message, Mapping) and message.get("role") != "system"
+    ]
+    if not scenario_messages:
+        raise ValueError(
+            "Evaluation record lacks non-system messages for semantic smoke selection"
+        )
+    return _canonical_sha256(
+        {
+            "agent": metadata.get("agent"),
+            "evalType": metadata.get("evalType"),
+            "name": metadata.get("name"),
+            "messages": scenario_messages,
+        }
+    )
+
+
+def select_evaluation_records(
+    records: Sequence[dict[str, Any]],
+    *,
+    max_examples: int | None,
+) -> list[dict[str, Any]]:
+    """Select a repeatable smoke cohort without coupling it to generated eval IDs."""
+
+    if max_examples is None:
+        return list(records)
+    return sorted(
+        records,
+        key=lambda record: (
+            _semantic_smoke_sort_key(record),
+            str(record.get("evalID") or ""),
+        ),
+    )[:max_examples]
+
+
+def _evaluation_outcome(
+    *,
+    complete_evaluation: bool,
+    format_failure_count: int,
+    report: Mapping[str, Any],
+) -> tuple[str, bool]:
+    all_scored_cases_passed = (
+        report.get("evidenceComplete") is True
+        and report.get("criticalFailureCount") == 0
+        and type(report.get("caseCount")) is int
+        and report["caseCount"] > 0
+        and report.get("passedCaseCount") == report["caseCount"]
+    )
+    quality_gate_passed = (
+        complete_evaluation
+        and format_failure_count == 0
+        and all_scored_cases_passed
+    )
+    if complete_evaluation:
+        status = (
+            "format_failed"
+            if format_failure_count
+            else "quality_gate_passed"
+            if quality_gate_passed
+            else "quality_gate_failed"
+        )
+    else:
+        status = (
+            "smoke_complete"
+            if format_failure_count == 0 and all_scored_cases_passed
+            else "smoke_failed"
+        )
+    return status, quality_gate_passed
+
+
+def _evaluation_exit_code(*, status: str, format_failure_count: int) -> int:
+    if format_failure_count:
+        return 2
+    if status in {"quality_gate_failed", "smoke_failed"}:
+        return 3
+    return 0
+
+
+def _evaluation_report_scope_valid(
+    report: Mapping[str, Any],
+    *,
+    selected_case_count: int,
+    frozen_case_count: int,
+) -> bool:
+    complete_evaluation = selected_case_count == frozen_case_count
+    return (
+        selected_case_count > 0
+        and frozen_case_count >= selected_case_count
+        and report.get("variantLineageBound") is True
+        and report.get("frozenCaseCount") == frozen_case_count
+        and report.get("caseCount") == selected_case_count
+        and report.get("completeEvaluation") is complete_evaluation
+        and report.get("promotionEvidenceBound") is complete_evaluation
+    )
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -110,16 +370,84 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
-    if not path.is_file():
-        raise FileNotFoundError(f"{label} not found: {path}")
+def _reject_duplicate_json_keys(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"Duplicate JSON key is not allowed: {key}")
+        value[key] = item
+    return value
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"Non-finite JSON number is not allowed: {value}")
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite_json_constant(value)
+    return parsed
+
+
+def _strict_json_loads(value: str) -> Any:
+    return json.loads(
+        value,
+        object_pairs_hook=_reject_duplicate_json_keys,
+        parse_constant=_reject_nonfinite_json_constant,
+        parse_float=_parse_finite_json_float,
+    )
+
+
+def _read_file_snapshot(path: Path, *, label: str) -> tuple[bytes, str]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+        with path.open("rb") as handle:
+            file_stat = os.fstat(handle.fileno())
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise ValueError(f"{label} must be a regular file: {path}")
+            payload = handle.read()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"{label} not found: {path}") from exc
+    except OSError as exc:
+        raise ValueError(f"{label} could not be read: {path}") from exc
+    return payload, hashlib.sha256(payload).hexdigest()
+
+
+def _load_json_object_bytes(
+    payload: bytes,
+    *,
+    path: Path,
+    label: str,
+) -> dict[str, Any]:
+    try:
+        value = _strict_json_loads(payload.decode("utf-8"))
+    except (UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{label} is not valid JSON: {path}") from exc
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be a JSON object: {path}")
     return value
+
+
+def _load_json_object(path: Path, *, label: str) -> dict[str, Any]:
+    payload, _ = _read_file_snapshot(path, label=label)
+    return _load_json_object_bytes(payload, path=path, label=label)
+
+
+def _load_evaluation_config_snapshot(path: Path) -> tuple[dict[str, Any], str]:
+    payload, file_sha256 = _read_file_snapshot(path, label="Evaluation config")
+    strict_config = _load_json_object_bytes(
+        payload,
+        path=path,
+        label="Evaluation config",
+    )
+    return _validate_export_config(strict_config, path=path), file_sha256
+
+
+def load_evaluation_config(path: Path) -> dict[str, Any]:
+    config, _ = _load_evaluation_config_snapshot(path)
+    return config
 
 
 def _load_evaluation_module() -> ModuleType:
@@ -173,8 +501,8 @@ def load_evaluation_records(
         if not raw_line.strip():
             continue
         try:
-            raw_record = json.loads(raw_line)
-        except json.JSONDecodeError as exc:
+            raw_record = _strict_json_loads(raw_line)
+        except ValueError as exc:
             raise ValueError(f"{path}:{line_number} is not valid JSON") from exc
         if not isinstance(raw_record, dict):
             raise ValueError(f"{path}:{line_number} must be a JSON object")
@@ -206,8 +534,9 @@ def load_evaluation_records(
     return records, evaluation_module.canonical_sha256(records)
 
 
-def load_behavior_contract(path: Path) -> tuple[dict[str, Any], set[str], str]:
-    manifest = _load_json_object(path, label="Behavior manifest")
+def _behavior_contract_from_manifest(
+    manifest: dict[str, Any],
+) -> tuple[dict[str, Any], set[str], str]:
     raw_tools = manifest.get("tools")
     if not isinstance(raw_tools, list) or not raw_tools:
         raise ValueError("Behavior manifest tools must be a non-empty list")
@@ -249,6 +578,78 @@ def load_behavior_contract(path: Path) -> tuple[dict[str, Any], set[str], str]:
             argument_names.add(name)
         tool_contracts[tool_id] = tool
 
+    routed_intents_by_tool: dict[str, list[str]] = {
+        tool_id: [] for tool_id in tool_contracts
+    }
+    raw_routing_matrix = manifest.get("routingMatrix", [])
+    if not isinstance(raw_routing_matrix, list):
+        raise ValueError("Behavior manifest routingMatrix must be a list")
+    for index, entry in enumerate(
+        sorted(
+            raw_routing_matrix,
+            key=lambda item: str(item.get("intent") or "")
+            if isinstance(item, Mapping)
+            else "",
+        )
+    ):
+        if not isinstance(entry, Mapping):
+            raise ValueError(
+                f"Behavior manifest routingMatrix[{index}] must be an object"
+            )
+        intent_id = entry.get("intent")
+        allowed_tools = entry.get("allowedTools")
+        if (
+            not isinstance(intent_id, str)
+            or not intent_id
+            or not isinstance(allowed_tools, list)
+            or any(not isinstance(tool_id, str) for tool_id in allowed_tools)
+        ):
+            raise ValueError(
+                f"Behavior manifest routingMatrix[{index}] is invalid"
+            )
+        for tool_id in allowed_tools:
+            if tool_id in routed_intents_by_tool:
+                routed_intents_by_tool[tool_id].append(intent_id)
+
+    raw_intents = manifest.get("intents", [])
+    if not isinstance(raw_intents, list):
+        raise ValueError("Behavior manifest intents must be a list")
+    for index, intent in enumerate(
+        sorted(
+            raw_intents,
+            key=lambda item: str(item.get("id") or "")
+            if isinstance(item, Mapping)
+            else "",
+        )
+    ):
+        if not isinstance(intent, Mapping):
+            raise ValueError(f"Behavior manifest intents[{index}] must be an object")
+        intent_id = intent.get("id")
+        allowed_tool_ids = intent.get("allowedToolIDs")
+        if (
+            not isinstance(intent_id, str)
+            or not intent_id
+            or not isinstance(allowed_tool_ids, list)
+            or any(not isinstance(tool_id, str) for tool_id in allowed_tool_ids)
+        ):
+            raise ValueError(f"Behavior manifest intents[{index}] is invalid")
+        for tool_id in allowed_tool_ids:
+            if tool_id in routed_intents_by_tool:
+                routed_intents_by_tool[tool_id].append(intent_id)
+
+    for tool_id, tool in list(tool_contracts.items()):
+        ordered_intents = list(dict.fromkeys(routed_intents_by_tool[tool_id]))
+        default_intent = ordered_intents[0] if ordered_intents else "tool"
+        allowed_intents = [
+            default_intent,
+            *sorted(set(ordered_intents) - {default_intent}),
+        ]
+        tool_contracts[tool_id] = {
+            **tool,
+            "defaultIntent": default_intent,
+            "allowedIntents": allowed_intents,
+        }
+
     fleet = manifest.get("fleet")
     raw_slots = fleet.get("slots") if isinstance(fleet, dict) else None
     if not isinstance(raw_slots, list) or not raw_slots:
@@ -264,6 +665,28 @@ def load_behavior_contract(path: Path) -> tuple[dict[str, Any], set[str], str]:
             raise ValueError(f"Behavior manifest fleet.slots[{index}] is invalid")
         allowed_slots.add(slot_id)
     return tool_contracts, allowed_slots, _canonical_sha256(manifest)
+
+
+def _load_behavior_contract_snapshot(
+    path: Path,
+) -> tuple[dict[str, Any], set[str], str, str]:
+    payload, file_sha256 = _read_file_snapshot(path, label="Behavior manifest")
+    manifest = _load_json_object_bytes(
+        payload,
+        path=path,
+        label="Behavior manifest",
+    )
+    tool_contracts, allowed_slots, canonical_sha256 = (
+        _behavior_contract_from_manifest(manifest)
+    )
+    return tool_contracts, allowed_slots, canonical_sha256, file_sha256
+
+
+def load_behavior_contract(path: Path) -> tuple[dict[str, Any], set[str], str]:
+    tool_contracts, allowed_slots, canonical_sha256, _ = (
+        _load_behavior_contract_snapshot(path)
+    )
+    return tool_contracts, allowed_slots, canonical_sha256
 
 
 def validate_scoring_contracts(
@@ -384,7 +807,7 @@ def generate_completion(
     max_seq_length: int,
     max_new_tokens: int,
     torch_module: ModuleType | Any | None = None,
-) -> tuple[str, int, int]:
+) -> tuple[str, int, int, int]:
     try:
         encoded = tokenizer.apply_chat_template(
             list(messages),
@@ -420,6 +843,7 @@ def generate_completion(
         "max_new_tokens": generation_budget,
         "do_sample": False,
         "num_beams": 1,
+        "repetition_penalty": GENERATION_REPETITION_PENALTY,
         "use_cache": True,
     }
     eos_token_id = getattr(tokenizer, "eos_token_id", None)
@@ -439,7 +863,12 @@ def generate_completion(
     output_shape = getattr(sequences, "shape", None)
     if output_shape is None or len(output_shape) != 2 or int(output_shape[0]) != 1:
         raise RuntimeError("Model generation must return one rank-two token sequence")
-    generated_token_count = max(0, int(output_shape[-1]) - input_token_count)
+    output_token_count = int(output_shape[-1])
+    if output_token_count < input_token_count:
+        raise RuntimeError("Model generation returned fewer tokens than the input prompt")
+    generated_token_count = output_token_count - input_token_count
+    if generated_token_count > generation_budget:
+        raise RuntimeError("Model generation exceeded the configured token budget")
     generated_ids = sequences[0][input_token_count:]
     completion = tokenizer.decode(
         generated_ids,
@@ -448,7 +877,12 @@ def generate_completion(
     )
     if not isinstance(completion, str):
         raise RuntimeError("Tokenizer decode did not return text")
-    return completion.strip(), input_token_count, generated_token_count
+    return (
+        completion,
+        input_token_count,
+        generated_token_count,
+        generation_budget,
+    )
 
 
 def normalize_candidate_output(
@@ -456,17 +890,498 @@ def normalize_candidate_output(
     completion: str,
     *,
     evaluation_module: ModuleType,
+    tool_contracts: Mapping[str, Any] | None = None,
 ) -> tuple[Any, str, str | None]:
     if agent not in JSON_OUTPUT_AGENTS:
-        return completion, "text" if completion else "empty_text", (
-            None if completion else "empty_candidate_output"
+        has_text = bool(completion.strip())
+        return completion, "text" if has_text else "empty_text", (
+            None if has_text else "empty_candidate_output"
         )
     parsed, json_error = evaluation_module._parse_candidate_json(completion)
     if json_error is not None:
         return completion, "invalid_json", json_error
     if not isinstance(parsed, dict):
         return completion, "invalid_json", "json_output_must_be_an_object"
+    if agent == "cortex" and _contains_forbidden_cortex_route_field(parsed):
+        return completion, "invalid_json", "forbidden_cortex_route_field"
+    if agent == "cortex" and not tool_contracts:
+        return parsed, "invalid_cortex_route", "cortex_route_manifest_contract_missing"
+    if agent == "cortex":
+        assert tool_contracts is not None
+        route_error = _cortex_manifest_route_error(parsed, tool_contracts)
+        if route_error is not None:
+            return parsed, "invalid_cortex_route", route_error
     return parsed, "json_object", None
+
+
+def _contains_forbidden_cortex_route_field(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return bool(CORTEX_FORBIDDEN_ROUTE_FIELDS.intersection(value)) or any(
+            _contains_forbidden_cortex_route_field(child)
+            for child in value.values()
+        )
+    if isinstance(value, list):
+        return any(_contains_forbidden_cortex_route_field(child) for child in value)
+    return False
+
+
+def _cortex_manifest_route_error(
+    route: Mapping[str, Any],
+    tool_contracts: Mapping[str, Any],
+) -> str | None:
+    """Validate only candidate-caused manifest and route-protocol failures."""
+
+    base_fields = set(_CORTEX_ROUTE_PREFIX_FIELDS + _CORTEX_ROUTE_SUFFIX_FIELDS)
+    if (
+        not isinstance(route.get("intent"), str)
+        or not route["intent"].strip()
+        or type(route.get("requiresApproval")) is not bool
+        or not isinstance(route.get("nextModel"), str)
+        or not route["nextModel"].strip()
+        or not isinstance(route.get("reasoningSummary"), str)
+        or not route["reasoningSummary"].strip()
+    ):
+        return "cortex_route_protocol_field_invalid"
+
+    selected_tool_id = route.get("selectedToolID")
+    if selected_tool_id is None:
+        expected_key_order = (
+            *_CORTEX_ROUTE_PREFIX_FIELDS,
+            "status",
+            *_CORTEX_ROUTE_SUFFIX_FIELDS,
+        )
+        if (
+            set(route) != base_fields | {"status"}
+            or route.get("requiresApproval") is not False
+            or route.get("nextModel") != "mouth"
+            or route.get("status") not in {"no_tool_route", "invalid_tool"}
+        ):
+            return "cortex_route_null_state_invalid"
+        if tuple(route) != expected_key_order:
+            return "cortex_route_key_order_invalid"
+        if route.get("reasoningSummary") != (
+            f"No manifest row applies to intent {route['intent']}."
+        ):
+            return "cortex_route_reasoning_summary_mismatch"
+        return None
+    if not isinstance(selected_tool_id, str) or not selected_tool_id:
+        return "cortex_route_selected_tool_invalid"
+
+    tool = tool_contracts.get(selected_tool_id)
+    if not isinstance(tool, Mapping):
+        return "cortex_route_tool_not_in_manifest"
+    expected_approval = tool.get("requiresApproval")
+    raw_arguments = tool.get("arguments")
+    default_intent = tool.get("defaultIntent")
+    allowed_intents = tool.get("allowedIntents")
+    if (
+        type(expected_approval) is not bool
+        or not isinstance(raw_arguments, list)
+        or not isinstance(default_intent, str)
+        or not default_intent
+        or not isinstance(allowed_intents, list)
+        or not allowed_intents
+        or any(not isinstance(intent, str) or not intent for intent in allowed_intents)
+        or len(set(allowed_intents)) != len(allowed_intents)
+        or allowed_intents[0] != default_intent
+    ):
+        return "cortex_route_manifest_contract_invalid"
+    if route["intent"] not in allowed_intents:
+        return "cortex_route_intent_not_in_manifest"
+    required_arguments: list[str] = []
+    for argument in raw_arguments:
+        if not isinstance(argument, Mapping):
+            return "cortex_route_manifest_contract_invalid"
+        name = argument.get("name")
+        required = argument.get("required")
+        if not isinstance(name, str) or not name or type(required) is not bool:
+            return "cortex_route_manifest_contract_invalid"
+        if required:
+            required_arguments.append(name)
+    if route.get("requiresApproval") is not expected_approval:
+        return "cortex_route_approval_mismatch"
+
+    if route.get("status") == "needs_clarification":
+        if route["intent"] != default_intent:
+            return "cortex_route_intent_not_in_manifest"
+        missing_arguments = route.get("missingArguments")
+        clarification = route.get("clarification")
+        if (
+            set(route)
+            != base_fields | {"status", "missingArguments", "clarification"}
+            or not isinstance(missing_arguments, list)
+            or not missing_arguments
+            or any(not isinstance(value, str) for value in missing_arguments)
+            or len(set(missing_arguments)) != len(missing_arguments)
+            or missing_arguments
+            != [
+                argument
+                for argument in required_arguments
+                if argument in missing_arguments
+            ]
+            or route.get("nextModel") != "mouth"
+            or not isinstance(clarification, str)
+            or not clarification.strip().endswith("?")
+        ):
+            return "cortex_route_clarification_state_invalid"
+        expected_key_order = (
+            *_CORTEX_ROUTE_PREFIX_FIELDS,
+            "status",
+            "missingArguments",
+            "clarification",
+            *_CORTEX_ROUTE_SUFFIX_FIELDS,
+        )
+        if tuple(route) != expected_key_order:
+            return "cortex_route_key_order_invalid"
+        expected_summary = (
+            f"Manifest row {selected_tool_id} is missing exactly this required subset: "
+            f"{', '.join(missing_arguments)}."
+        )
+        if route.get("reasoningSummary") != expected_summary:
+            return "cortex_route_reasoning_summary_mismatch"
+        return None
+
+    expected_next_model = "approval" if expected_approval else "executor"
+    if set(route) == base_fields:
+        if route.get("nextModel") != expected_next_model:
+            return "cortex_route_selection_state_invalid"
+        if tuple(route) != _CORTEX_ROUTE_PREFIX_FIELDS + _CORTEX_ROUTE_SUFFIX_FIELDS:
+            return "cortex_route_key_order_invalid"
+        expected_summary = (
+            f"Manifest row {selected_tool_id} is selected for intent "
+            f"{route['intent']} without actionStep."
+        )
+        if route.get("reasoningSummary") != expected_summary:
+            return "cortex_route_reasoning_summary_mismatch"
+        return None
+
+    if "actionStep" in route and route["intent"] != default_intent:
+        return "cortex_route_intent_not_in_manifest"
+    action_step = route.get("actionStep")
+    if (
+        set(route) != base_fields | {"actionStep"}
+        or route.get("nextModel") != expected_next_model
+        or not isinstance(action_step, Mapping)
+        or set(action_step) != {"type", "toolID", "mustPersistBeforeFinal"}
+        or action_step.get("type") != "tool_call"
+        or action_step.get("toolID") != selected_tool_id
+        or action_step.get("mustPersistBeforeFinal") is not True
+    ):
+        return "cortex_route_action_state_invalid"
+    expected_key_order = (
+        *_CORTEX_ROUTE_PREFIX_FIELDS,
+        "actionStep",
+        *_CORTEX_ROUTE_SUFFIX_FIELDS,
+    )
+    if (
+        tuple(route) != expected_key_order
+        or tuple(action_step) != _CORTEX_ACTION_STEP_FIELDS
+    ):
+        return "cortex_route_key_order_invalid"
+    expected_summary = (
+        f"Manifest row {selected_tool_id} has no required values."
+        if not required_arguments
+        else (
+            f"Manifest row {selected_tool_id} has all exact required names supplied: "
+            f"{', '.join(required_arguments)}."
+        )
+    )
+    if route.get("reasoningSummary") != expected_summary:
+        return "cortex_route_reasoning_summary_mismatch"
+    return None
+
+
+def _structured_output_messages(
+    agent: str,
+    messages: Sequence[Mapping[str, str]],
+    *,
+    tool_contracts: Mapping[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    copied = [
+        {"role": str(message["role"]), "content": str(message["content"])}
+        for message in messages
+    ]
+    if agent not in JSON_OUTPUT_AGENTS:
+        return copied
+    if agent == "cortex" and not tool_contracts:
+        raise ValueError("Cortex structured output requires manifest tool contracts")
+    instructions = [STRUCTURED_OUTPUT_INSTRUCTION]
+    if agent == "cortex":
+        assert tool_contracts is not None
+        instructions.extend(
+            (
+                CORTEX_ROUTE_INSTRUCTION,
+                _cortex_tool_catalog_instruction(tool_contracts),
+                CORTEX_ROUTE_DECISION_ENDCAP,
+            )
+        )
+    contract = "\n\n".join(instructions)
+    if copied and copied[0]["role"] == "system":
+        existing = copied[0]["content"].rstrip()
+        if existing == contract or existing.endswith("\n\n" + contract):
+            return copied
+        if (
+            STRUCTURED_OUTPUT_INSTRUCTION in existing
+            or CORTEX_TOOL_CATALOG_HEADER in existing
+        ):
+            raise ValueError(
+                f"{agent} evaluation prompt contains a drifted structured-output contract"
+            )
+        copied[0]["content"] = existing + "\n\n" + contract
+    else:
+        copied.insert(
+            0,
+            {"role": "system", "content": contract},
+        )
+    return copied
+
+
+def _cortex_tool_catalog_instruction(
+    tool_contracts: Mapping[str, Any],
+) -> str:
+    lines = [CORTEX_TOOL_CATALOG_HEADER]
+    for tool_id, raw_tool in sorted(tool_contracts.items()):
+        if not isinstance(tool_id, str) or not isinstance(raw_tool, Mapping):
+            raise ValueError("Cortex routing context contains an invalid tool contract")
+        display_name = raw_tool.get("displayName")
+        description = raw_tool.get("description")
+        requires_approval = raw_tool.get("requiresApproval")
+        raw_arguments = raw_tool.get("arguments")
+        default_intent = raw_tool.get("defaultIntent")
+        allowed_intents = raw_tool.get("allowedIntents")
+        if (
+            not isinstance(display_name, str)
+            or not display_name.strip()
+            or not isinstance(description, str)
+            or not description.strip()
+            or type(requires_approval) is not bool
+            or not isinstance(raw_arguments, list)
+            or not isinstance(default_intent, str)
+            or not default_intent
+            or not isinstance(allowed_intents, list)
+            or not allowed_intents
+            or any(
+                not isinstance(intent, str)
+                or not intent
+                or any(separator in intent for separator in (",", "\t", "\r", "\n"))
+                for intent in allowed_intents
+            )
+            or len(set(allowed_intents)) != len(allowed_intents)
+            or allowed_intents[0] != default_intent
+        ):
+            raise ValueError(f"Cortex routing context has an invalid contract for {tool_id}")
+        required_arguments: list[str] = []
+        for argument in raw_arguments:
+            if not isinstance(argument, Mapping):
+                raise ValueError(f"Cortex routing context has invalid arguments for {tool_id}")
+            name = argument.get("name")
+            required = argument.get("required")
+            if not isinstance(name, str) or not name or type(required) is not bool:
+                raise ValueError(f"Cortex routing context has invalid arguments for {tool_id}")
+            if required:
+                required_arguments.append(name)
+        compact_description = " ".join(description.split())
+        compact_description = re.sub(
+            r"\s+Args:\s.*$",
+            "",
+            compact_description,
+        ).strip()
+        if not compact_description:
+            raise ValueError(
+                f"Cortex routing context has an invalid description for {tool_id}"
+            )
+        lines.append(
+            f"{tool_id}\t{display_name.strip()}\t"
+            f"{default_intent}\t{','.join(allowed_intents)}\t"
+            f"{','.join(required_arguments) or '-'}\t"
+            f"{'1' if requires_approval else '0'}\t{compact_description}"
+        )
+    return "\n".join(lines)
+
+
+def _structured_output_contract_sha256(
+    agent: str,
+    *,
+    tool_contracts: Mapping[str, Any] | None = None,
+) -> str:
+    messages = _structured_output_messages(
+        agent,
+        [{"role": "user", "content": "contract hash sentinel"}],
+        tool_contracts=tool_contracts,
+    )
+    return _canonical_sha256(messages[0]["content"])
+
+
+def _trusted_cortex_retry_manifest_row(
+    failed_candidate: Any,
+    tool_contracts: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Resolve retry facts only through an exact manifest-key lookup."""
+
+    if not isinstance(failed_candidate, Mapping) or not tool_contracts:
+        return None
+    selected_tool_id = failed_candidate.get("selectedToolID")
+    if not isinstance(selected_tool_id, str) or not selected_tool_id:
+        return None
+    raw_tool = tool_contracts.get(selected_tool_id)
+    if not isinstance(raw_tool, Mapping):
+        return None
+
+    default_intent = raw_tool.get("defaultIntent")
+    allowed_intents = raw_tool.get("allowedIntents")
+    requires_approval = raw_tool.get("requiresApproval")
+    raw_arguments = raw_tool.get("arguments")
+    if (
+        not isinstance(default_intent, str)
+        or not default_intent
+        or not isinstance(allowed_intents, list)
+        or not allowed_intents
+        or allowed_intents[0] != default_intent
+        or any(not isinstance(intent, str) or not intent for intent in allowed_intents)
+        or type(requires_approval) is not bool
+        or not isinstance(raw_arguments, list)
+    ):
+        return None
+
+    required_arguments: list[str] = []
+    argument_names: set[str] = set()
+    for argument in raw_arguments:
+        if not isinstance(argument, Mapping):
+            return None
+        name = argument.get("name")
+        required = argument.get("required")
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in argument_names
+            or type(required) is not bool
+        ):
+            return None
+        argument_names.add(name)
+        if required:
+            required_arguments.append(name)
+
+    return {
+        "selectedToolID": selected_tool_id,
+        "defaultIntent": default_intent,
+        "requiredArguments": required_arguments,
+        "requiresApproval": requires_approval,
+    }
+
+
+def _trusted_cortex_retry_row_instruction(
+    failed_candidate: Any,
+    tool_contracts: Mapping[str, Any] | None,
+) -> str:
+    row = _trusted_cortex_retry_manifest_row(failed_candidate, tool_contracts)
+    if row is None:
+        return ""
+    instruction = (
+        " Trusted selected manifest row, derived only by exact selectedToolID lookup: "
+        + json.dumps(row, ensure_ascii=False, separators=(",", ":"))
+        + ". Copy defaultIntent, requiredArguments, and requiresApproval only from "
+        "this trusted row. Lock to this row and do not borrow fields from any other "
+        "catalog row or from the failed output."
+    )
+    if not row["requiredArguments"]:
+        instruction += (
+            " requiredArguments is empty: emit actionStep and do not emit status, "
+            "missingArguments, or clarification; set nextModel to approval when "
+            "requiresApproval is true, otherwise executor."
+        )
+    return instruction
+
+
+def _quoted_manifest_tool_candidate(
+    messages: Sequence[Mapping[str, str]],
+    tool_contracts: Mapping[str, Any] | None,
+) -> dict[str, str] | None:
+    """Recover one explicitly quoted manifest ID without trusting malformed JSON."""
+
+    if not messages or not tool_contracts:
+        return None
+    user_content = str(messages[-1].get("content", ""))
+    candidates = [
+        tool_id
+        for tool_id in sorted(tool_contracts)
+        if f"`{tool_id}`" in user_content
+        or json.dumps(tool_id, ensure_ascii=False) in user_content
+    ]
+    if len(candidates) != 1:
+        return None
+    return {"selectedToolID": candidates[0]}
+
+
+def _strict_json_retry_messages(
+    messages: Sequence[Mapping[str, str]],
+    *,
+    validation_error: str | None = None,
+    failed_candidate: Any = None,
+    tool_contracts: Mapping[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    copied = [
+        {"role": str(message["role"]), "content": str(message["content"])}
+        for message in messages
+    ]
+    if not copied or copied[-1]["role"] != "user":
+        raise RuntimeError("Strict JSON retry requires a prompt ending in a user message")
+    retry_instruction = STRICT_JSON_RETRY_INSTRUCTION
+    if validation_error is not None:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,127}", validation_error):
+            raise ValueError("Strict JSON retry received an invalid failure code")
+        retry_instruction += (
+            " Validation failure code: "
+            + validation_error
+            + ". Use that code only to re-check the response contract; do not "
+            "invent missing user values. "
+            + _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE.get(
+                validation_error,
+                "Retry repair: re-read the selected manifest row and emit the exact "
+                "contracted route state.",
+            )
+        )
+    trusted_candidate = failed_candidate
+    if _trusted_cortex_retry_manifest_row(trusted_candidate, tool_contracts) is None:
+        trusted_candidate = _quoted_manifest_tool_candidate(copied, tool_contracts)
+    retry_instruction += _trusted_cortex_retry_row_instruction(
+        trusted_candidate,
+        tool_contracts,
+    )
+    copied[-1]["content"] = (
+        copied[-1]["content"].rstrip()
+        + "\n\n"
+        + retry_instruction
+    )
+    return copied
+
+
+def _generation_attempt_record(
+    *,
+    attempt_index: int,
+    prompt_kind: str,
+    messages: Sequence[Mapping[str, str]],
+    completion: str,
+    output_kind: str,
+    format_error: str | None,
+    input_token_count: int,
+    generated_token_count: int,
+    generation_token_budget: int,
+) -> dict[str, Any]:
+    attempt = {
+        "schemaVersion": GENERATION_ATTEMPT_SCHEMA_VERSION,
+        "attemptIndex": attempt_index,
+        "promptKind": prompt_kind,
+        "promptSHA256": _canonical_sha256(list(messages)),
+        "rawOutput": completion,
+        "outputKind": output_kind,
+        "formatError": format_error,
+        "inputTokenCount": input_token_count,
+        "generatedTokenCount": generated_token_count,
+        "generationTokenBudget": generation_token_budget,
+        "hitTokenBudget": generated_token_count >= generation_token_budget,
+    }
+    attempt["generationAttemptSHA256"] = _canonical_sha256(attempt)
+    return attempt
 
 
 def evaluate_records(
@@ -478,26 +1393,85 @@ def evaluate_records(
     max_seq_length: int,
     max_new_tokens: int,
     evaluation_module: ModuleType,
+    tool_contracts: Mapping[str, Any] | None = None,
     torch_module: ModuleType | Any | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
+) -> tuple[dict[str, Any], list[dict[str, Any]], int, int, int]:
     outputs: dict[str, Any] = {}
     output_rows: list[dict[str, Any]] = []
     format_failure_count = 0
+    initial_format_failure_count = 0
+    format_recovery_count = 0
     for index, record in enumerate(records, start=1):
-        completion, input_tokens, generated_tokens = generate_completion(
-            model,
-            tokenizer,
-            record["messages"],
-            max_seq_length=max_seq_length,
-            max_new_tokens=max_new_tokens,
-            torch_module=torch_module,
-        )
-        output, output_kind, format_error = normalize_candidate_output(
+        prompt_messages = _structured_output_messages(
             agent,
-            completion,
-            evaluation_module=evaluation_module,
+            record["messages"],
+            tool_contracts=tool_contracts,
         )
+        attempt_limit = STRICT_JSON_MAX_ATTEMPTS if agent in JSON_OUTPUT_AGENTS else 1
+        generation_attempts: list[dict[str, Any]] = []
+        output: Any = ""
+        output_kind = "empty_text"
+        format_error: str | None = "empty_candidate_output"
+        input_tokens = 0
+        generated_tokens = 0
+        generation_token_budget = 0
+        for attempt_index in range(1, attempt_limit + 1):
+            (
+                completion,
+                input_tokens,
+                generated_tokens,
+                generation_token_budget,
+            ) = generate_completion(
+                model,
+                tokenizer,
+                prompt_messages,
+                max_seq_length=max_seq_length,
+                max_new_tokens=max_new_tokens,
+                torch_module=torch_module,
+            )
+            output, output_kind, format_error = normalize_candidate_output(
+                agent,
+                completion,
+                evaluation_module=evaluation_module,
+                tool_contracts=tool_contracts,
+            )
+            generation_attempts.append(
+                _generation_attempt_record(
+                    attempt_index=attempt_index,
+                    prompt_kind=(
+                        "frozen_evaluation"
+                        if attempt_index == 1
+                        else "strict_json_retry"
+                    ),
+                    messages=prompt_messages,
+                    completion=completion,
+                    output_kind=output_kind,
+                    format_error=format_error,
+                    input_token_count=input_tokens,
+                    generated_token_count=generated_tokens,
+                    generation_token_budget=generation_token_budget,
+                )
+            )
+            if format_error is None:
+                break
+            if attempt_index == 1 and agent in JSON_OUTPUT_AGENTS:
+                initial_format_failure_count += 1
+                prompt_messages = _strict_json_retry_messages(
+                    prompt_messages,
+                    validation_error=format_error,
+                    failed_candidate=output,
+                    tool_contracts=tool_contracts,
+                )
+
+        if (
+            len(generation_attempts) == STRICT_JSON_MAX_ATTEMPTS
+            and generation_attempts[0]["formatError"] is not None
+            and format_error is None
+        ):
+            format_recovery_count += 1
         if format_error is not None:
+            if len(generation_attempts) == 1:
+                initial_format_failure_count += 1
             format_failure_count += 1
         eval_id = str(record["evalID"])
         outputs[eval_id] = output
@@ -510,6 +1484,8 @@ def evaluate_records(
             "formatError": format_error,
             "inputTokenCount": input_tokens,
             "generatedTokenCount": generated_tokens,
+            "selectedAttemptIndex": len(generation_attempts),
+            "generationAttempts": generation_attempts,
         }
         row["candidateRecordSHA256"] = _canonical_sha256(row)
         output_rows.append(row)
@@ -517,7 +1493,13 @@ def evaluate_records(
             f"[{agent}] evaluated {index}/{len(records)} {eval_id} ({output_kind})",
             flush=True,
         )
-    return outputs, output_rows, format_failure_count
+    return (
+        outputs,
+        output_rows,
+        format_failure_count,
+        initial_format_failure_count,
+        format_recovery_count,
+    )
 
 
 def load_inference_model(
@@ -542,6 +1524,7 @@ def load_inference_model(
         revision=cfg["baseModelRevision"],
         max_seq_length=int(cfg["max_seq_length"]),
         load_in_4bit=True,
+        use_exact_model_name=True,
     )
     model = PeftModel.from_pretrained(
         model,
@@ -591,11 +1574,137 @@ def _jsonl_bytes(rows: Sequence[Mapping[str, Any]]) -> bytes:
     ).encode("utf-8")
 
 
-def load_candidate_outputs(path: Path, *, agent: str) -> dict[str, Any]:
+def _validated_generation_attempts(
+    row: Mapping[str, Any],
+    *,
+    agent: str,
+    evaluation_module: ModuleType,
+    tool_contracts: Mapping[str, Any] | None,
+    expected_prompt_sha256: Sequence[str],
+    path: Path,
+    line_number: int,
+) -> tuple[list[Mapping[str, Any]], Any]:
+    attempts = row.get("generationAttempts")
+    selected_attempt_index = row.get("selectedAttemptIndex")
+    expected_attempt_keys = {
+        "schemaVersion",
+        "attemptIndex",
+        "promptKind",
+        "promptSHA256",
+        "rawOutput",
+        "outputKind",
+        "formatError",
+        "inputTokenCount",
+        "generatedTokenCount",
+        "generationTokenBudget",
+        "hitTokenBudget",
+        "generationAttemptSHA256",
+    }
+    maximum_attempts = STRICT_JSON_MAX_ATTEMPTS if agent in JSON_OUTPUT_AGENTS else 1
+    if (
+        not isinstance(attempts, list)
+        or not attempts
+        or len(attempts) > maximum_attempts
+        or type(selected_attempt_index) is not int
+        or selected_attempt_index != len(attempts)
+    ):
+        raise ValueError(f"{path}:{line_number} has invalid generation attempt evidence")
+
+    normalized_attempt_outputs: list[Any] = []
+    for expected_index, attempt in enumerate(attempts, start=1):
+        if not isinstance(attempt, dict) or set(attempt) != expected_attempt_keys:
+            raise ValueError(f"{path}:{line_number} has invalid generation attempt evidence")
+        expected_sha256 = attempt.get("generationAttemptSHA256")
+        unsigned = dict(attempt)
+        unsigned.pop("generationAttemptSHA256", None)
+        raw_output = attempt.get("rawOutput")
+        format_error = attempt.get("formatError")
+        if (
+            attempt.get("schemaVersion") != GENERATION_ATTEMPT_SCHEMA_VERSION
+            or type(attempt.get("attemptIndex")) is not int
+            or attempt.get("attemptIndex") != expected_index
+            or attempt.get("promptKind")
+            != ("frozen_evaluation" if expected_index == 1 else "strict_json_retry")
+            or not isinstance(attempt.get("promptSHA256"), str)
+            or _SHA256_PATTERN.fullmatch(attempt["promptSHA256"]) is None
+            or expected_index > len(expected_prompt_sha256)
+            or attempt["promptSHA256"] != expected_prompt_sha256[expected_index - 1]
+            or not isinstance(raw_output, str)
+            or (format_error is not None and not isinstance(format_error, str))
+            or type(attempt.get("inputTokenCount")) is not int
+            or attempt["inputTokenCount"] <= 0
+            or type(attempt.get("generatedTokenCount")) is not int
+            or attempt["generatedTokenCount"] < 0
+            or type(attempt.get("generationTokenBudget")) is not int
+            or attempt["generationTokenBudget"] <= 0
+            or attempt["generatedTokenCount"] > attempt["generationTokenBudget"]
+            or type(attempt.get("hitTokenBudget")) is not bool
+            or attempt["hitTokenBudget"]
+            != (
+                attempt["generatedTokenCount"] >= attempt["generationTokenBudget"]
+            )
+            or not isinstance(expected_sha256, str)
+            or _SHA256_PATTERN.fullmatch(expected_sha256) is None
+            or _canonical_sha256(unsigned) != expected_sha256
+        ):
+            raise ValueError(f"{path}:{line_number} has invalid generation attempt evidence")
+        normalized_output, expected_kind, expected_error = normalize_candidate_output(
+            agent,
+            raw_output,
+            evaluation_module=evaluation_module,
+            tool_contracts=tool_contracts,
+        )
+        if (
+            attempt.get("outputKind") != expected_kind
+            or format_error != expected_error
+        ):
+            raise ValueError(f"{path}:{line_number} has inconsistent generation attempt evidence")
+        normalized_attempt_outputs.append(normalized_output)
+
+    if agent in JSON_OUTPUT_AGENTS:
+        if len(attempts) == 1 and attempts[0]["formatError"] is not None:
+            raise ValueError(f"{path}:{line_number} omits the bounded strict JSON retry")
+        if len(attempts) == STRICT_JSON_MAX_ATTEMPTS and attempts[0]["formatError"] is None:
+            raise ValueError(f"{path}:{line_number} contains an ineligible strict JSON retry")
+    elif len(attempts) != 1:
+        raise ValueError(f"{path}:{line_number} retries a non-JSON candidate")
+
+    return attempts, normalized_attempt_outputs[-1]
+
+
+def load_candidate_outputs(
+    path: Path,
+    *,
+    agent: str,
+    evaluation_records: Sequence[Mapping[str, Any]],
+    tool_contracts: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Load evaluator output without trusting duplicate or mutated JSONL rows."""
 
     if not path.is_file():
         raise FileNotFoundError(f"Candidate output JSONL not found: {path}")
+    expected_records: dict[str, Mapping[str, Any]] = {}
+    expected_record_order: list[str] = []
+    for index, record in enumerate(evaluation_records):
+        eval_id = record.get("evalID")
+        record_agent = str((record.get("metadata") or {}).get("agent") or "").strip().lower()
+        messages = record.get("messages")
+        if (
+            not isinstance(eval_id, str)
+            or not eval_id
+            or eval_id in expected_records
+            or record_agent != agent
+            or not isinstance(messages, list)
+            or not messages
+        ):
+            raise ValueError(
+                f"Expected evaluation record {index + 1} is not uniquely bound to agent {agent}"
+            )
+        expected_records[eval_id] = record
+        expected_record_order.append(eval_id)
+    if not expected_records:
+        raise ValueError("Expected evaluation records must not be empty")
+
     outputs: dict[str, Any] = {}
     expected_keys = {
         "schemaVersion",
@@ -606,18 +1715,20 @@ def load_candidate_outputs(path: Path, *, agent: str) -> dict[str, Any]:
         "formatError",
         "inputTokenCount",
         "generatedTokenCount",
+        "selectedAttemptIndex",
+        "generationAttempts",
         "candidateRecordSHA256",
     }
+    evaluation_module = _load_evaluation_module()
     for line_number, raw_line in enumerate(
         path.read_text(encoding="utf-8").splitlines(),
         start=1,
     ):
         if not raw_line.strip():
             continue
-        try:
-            row = json.loads(raw_line)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"{path}:{line_number} is not valid JSON") from exc
+        row, row_error = evaluation_module._parse_candidate_json(raw_line)
+        if row_error is not None:
+            raise ValueError(f"{path}:{line_number} is not valid unique-key JSON")
         if not isinstance(row, dict) or set(row) != expected_keys:
             raise ValueError(f"{path}:{line_number} has an invalid candidate record")
         expected_sha256 = row.get("candidateRecordSHA256")
@@ -629,21 +1740,91 @@ def load_candidate_outputs(path: Path, *, agent: str) -> dict[str, Any]:
             or row.get("agent") != agent
             or not isinstance(eval_id, str)
             or not eval_id
+            or eval_id not in expected_records
             or eval_id in outputs
             or not isinstance(expected_sha256, str)
             or _SHA256_PATTERN.fullmatch(expected_sha256) is None
             or _canonical_sha256(unsigned) != expected_sha256
-            or row.get("outputKind")
-            not in {"json_object", "invalid_json", "text", "empty_text"}
             or type(row.get("inputTokenCount")) is not int
             or row["inputTokenCount"] <= 0
             or type(row.get("generatedTokenCount")) is not int
             or row["generatedTokenCount"] < 0
         ):
             raise ValueError(f"{path}:{line_number} failed candidate lineage validation")
-        outputs[eval_id] = row["output"]
+        record_messages = expected_records[eval_id]["messages"]
+        primary_messages = _structured_output_messages(
+            agent,
+            record_messages,
+            tool_contracts=tool_contracts,
+        )
+        expected_prompt_sha256 = [_canonical_sha256(primary_messages)]
+        if agent in JSON_OUTPUT_AGENTS:
+            raw_attempts = row.get("generationAttempts")
+            first_attempt = (
+                raw_attempts[0]
+                if isinstance(raw_attempts, list)
+                and raw_attempts
+                and isinstance(raw_attempts[0], Mapping)
+                else None
+            )
+            first_raw_output = (
+                first_attempt.get("rawOutput")
+                if isinstance(first_attempt, Mapping)
+                and isinstance(first_attempt.get("rawOutput"), str)
+                else None
+            )
+            first_output: Any = None
+            first_error: str | None = None
+            if first_raw_output is not None:
+                first_output, _, first_error = normalize_candidate_output(
+                    agent,
+                    first_raw_output,
+                    evaluation_module=evaluation_module,
+                    tool_contracts=tool_contracts,
+                )
+            expected_prompt_sha256.append(
+                _canonical_sha256(
+                    _strict_json_retry_messages(
+                        primary_messages,
+                        validation_error=first_error,
+                        failed_candidate=first_output,
+                        tool_contracts=tool_contracts,
+                    )
+                )
+            )
+        attempts, selected_output = _validated_generation_attempts(
+            row,
+            agent=agent,
+            evaluation_module=evaluation_module,
+            tool_contracts=tool_contracts,
+            expected_prompt_sha256=expected_prompt_sha256,
+            path=path,
+            line_number=line_number,
+        )
+        selected_attempt = attempts[-1]
+        if (
+            row.get("outputKind") != selected_attempt.get("outputKind")
+            or row.get("formatError") != selected_attempt.get("formatError")
+            or row.get("inputTokenCount") != selected_attempt.get("inputTokenCount")
+            or row.get("generatedTokenCount")
+            != selected_attempt.get("generatedTokenCount")
+            or _canonical_sha256(row.get("output"))
+            != _canonical_sha256(selected_output)
+        ):
+            raise ValueError(f"{path}:{line_number} has inconsistent selected attempt evidence")
+        # The outer evidence row is canonically serialized with sorted keys, so its
+        # nested output object cannot preserve the model's protocol-significant key
+        # order. Score the independently replayed selected raw attempt instead.
+        outputs[eval_id] = selected_output
     if not outputs:
         raise ValueError(f"Candidate output JSONL is empty: {path}")
+    if len(outputs) != len(expected_record_order) or set(outputs) != set(expected_record_order):
+        missing = sorted(set(expected_record_order) - set(outputs))
+        extra = sorted(set(outputs) - set(expected_record_order))
+        raise ValueError(
+            "Candidate output evalID set does not match the frozen evaluation records: "
+            f"missing={missing} extra={extra}"
+        )
     return outputs
 
 
@@ -667,7 +1848,7 @@ def run(args: argparse.Namespace) -> int:
         raise ValueError("--max-new-tokens must be between 1 and 4096")
 
     config_path = Path(args.config).resolve()
-    cfg = load_export_config(config_path)
+    cfg, config_file_sha256 = _load_evaluation_config_snapshot(config_path)
     agent = str(cfg["agent"]).strip().lower()
     if agent not in SUPPORTED_AGENTS:
         raise ValueError(f"Unsupported evaluation agent: {agent}")
@@ -696,13 +1877,17 @@ def run(args: argparse.Namespace) -> int:
         agent=agent,
         evaluation_module=evaluation_module,
     )
-    tool_contracts, allowed_slots, behavior_manifest_sha256 = load_behavior_contract(
-        behavior_manifest_path
-    )
+    (
+        tool_contracts,
+        allowed_slots,
+        behavior_manifest_sha256,
+        behavior_manifest_file_sha256,
+    ) = _load_behavior_contract_snapshot(behavior_manifest_path)
     expected_behavior_file_sha256 = cfg.get("behaviorManifestFileSHA256")
     if (
-        expected_behavior_file_sha256 is not None
-        and _file_sha256(behavior_manifest_path) != expected_behavior_file_sha256
+        not isinstance(expected_behavior_file_sha256, str)
+        or _SHA256_PATTERN.fullmatch(expected_behavior_file_sha256) is None
+        or behavior_manifest_file_sha256 != expected_behavior_file_sha256
     ):
         raise ValueError("Behavior manifest file drifted from the finalized evaluation config")
     validate_scoring_contracts(
@@ -724,14 +1909,19 @@ def run(args: argparse.Namespace) -> int:
     if artifact_sha256 != finalized["artifact"]["adapterSHA256"]:
         raise ValueError("Verified adapter artifact digest does not match finalized lineage")
 
-    selected_records = (
-        all_records[: args.max_examples]
-        if args.max_examples is not None
-        else all_records
+    selected_records = select_evaluation_records(
+        all_records,
+        max_examples=args.max_examples,
     )
     complete_evaluation = len(selected_records) == len(all_records)
     model, tokenizer = load_inference_model(cfg, adapter_dir=adapter_dir)
-    outputs, output_rows, format_failure_count = evaluate_records(
+    (
+        outputs,
+        output_rows,
+        format_failure_count,
+        initial_format_failure_count,
+        format_recovery_count,
+    ) = evaluate_records(
         selected_records,
         agent=agent,
         model=model,
@@ -739,6 +1929,7 @@ def run(args: argparse.Namespace) -> int:
         max_seq_length=int(cfg["max_seq_length"]),
         max_new_tokens=int(args.max_new_tokens),
         evaluation_module=evaluation_module,
+        tool_contracts=tool_contracts,
     )
     controlled_lineage_builder = getattr(
         evaluation_module,
@@ -748,8 +1939,9 @@ def run(args: argparse.Namespace) -> int:
     if controlled_lineage_builder is None:
         raise RuntimeError("Evaluation module lacks controlled-lineage scoring support")
     report = evaluation_module.score_evaluation_suite(
-        all_records,
+        selected_records,
         outputs,
+        frozen_evaluation_records=all_records,
         tool_contracts=tool_contracts,
         allowed_slots=allowed_slots,
         agent=agent,
@@ -758,28 +1950,23 @@ def run(args: argparse.Namespace) -> int:
         variant_manifest=finalized,
         artifact_sha256=artifact_sha256,
     )
-    if report.get("promotionEvidenceBound") is not True:
-        raise RuntimeError("Evaluation report could not bind to finalized adapter lineage")
+    if not _evaluation_report_scope_valid(
+        report,
+        selected_case_count=len(selected_records),
+        frozen_case_count=len(all_records),
+    ):
+        raise RuntimeError(
+            "Evaluation report scope could not bind to the finalized adapter lineage"
+        )
 
     candidate_bytes = _jsonl_bytes(output_rows)
     report_bytes = _json_bytes(report)
     candidate_file_sha256 = hashlib.sha256(candidate_bytes).hexdigest()
     report_file_sha256 = hashlib.sha256(report_bytes).hexdigest()
-    quality_gate_passed = (
-        complete_evaluation
-        and format_failure_count == 0
-        and report.get("evidenceComplete") is True
-        and report.get("criticalFailureCount") == 0
-        and report.get("passedCaseCount") == report.get("caseCount")
-    )
-    status = (
-        "format_failed"
-        if format_failure_count
-        else "quality_gate_passed"
-        if quality_gate_passed
-        else "quality_gate_failed"
-        if complete_evaluation
-        else "smoke_complete"
+    status, quality_gate_passed = _evaluation_outcome(
+        complete_evaluation=complete_evaluation,
+        format_failure_count=format_failure_count,
+        report=report,
     )
     run_manifest: dict[str, Any] = {
         "schemaVersion": EVALUATION_RUN_SCHEMA_VERSION,
@@ -789,7 +1976,7 @@ def run(args: argparse.Namespace) -> int:
         "agent": agent,
         "variant": cfg["variant"],
         "configPath": str(config_path),
-        "configSHA256": _file_sha256(config_path),
+        "configSHA256": config_file_sha256,
         "adapterDirectory": str(adapter_dir),
         "adapterSHA256": artifact_sha256,
         "finalizedVariantManifestPath": str(finalized_path),
@@ -807,16 +1994,33 @@ def run(args: argparse.Namespace) -> int:
         "fullCaseCount": len(all_records),
         "generatedCaseCount": len(selected_records),
         "completeEvaluation": complete_evaluation,
+        "initialFormatFailureCount": initial_format_failure_count,
+        "formatRecoveryCount": format_recovery_count,
         "formatFailureCount": format_failure_count,
         "criticalFailureCount": report["criticalFailureCount"],
         "qualityGatePassed": quality_gate_passed,
         "generation": {
             "doSample": False,
             "numBeams": 1,
+            "repetitionPenalty": GENERATION_REPETITION_PENALTY,
             "thinkingEnabled": False,
             "maxNewTokens": int(args.max_new_tokens),
             "maxSequenceLength": int(cfg["max_seq_length"]),
             "seed": int(cfg["seed"]),
+            "structuredOutputContractEligible": agent in JSON_OUTPUT_AGENTS,
+            "structuredOutputContractVersion": STRUCTURED_OUTPUT_CONTRACT_VERSION,
+            "structuredOutputContractSHA256": _structured_output_contract_sha256(
+                agent,
+                tool_contracts=tool_contracts,
+            ),
+            "strictJSONRetryEligible": agent in JSON_OUTPUT_AGENTS,
+            "strictJSONMaxAttempts": (
+                STRICT_JSON_MAX_ATTEMPTS if agent in JSON_OUTPUT_AGENTS else 1
+            ),
+            "strictJSONRetryContractVersion": STRICT_JSON_RETRY_CONTRACT_VERSION,
+            "strictJSONRetryContractSHA256": hashlib.sha256(
+                STRICT_JSON_RETRY_INSTRUCTION.encode("utf-8")
+            ).hexdigest(),
         },
     }
     run_manifest["runManifestSHA256"] = _canonical_sha256(run_manifest)
@@ -830,13 +2034,13 @@ def run(args: argparse.Namespace) -> int:
     print(
         f"Evaluation status={status} weightedScore={report['weightedScore']} "
         f"criticalFailures={report['criticalFailureCount']} "
-        f"formatFailures={format_failure_count}"
+        f"formatFailures={format_failure_count} "
+        f"formatRecoveries={format_recovery_count}"
     )
-    if format_failure_count:
-        return 2
-    if complete_evaluation and not quality_gate_passed:
-        return 3
-    return 0
+    return _evaluation_exit_code(
+        status=status,
+        format_failure_count=format_failure_count,
+    )
 
 
 def main() -> None:

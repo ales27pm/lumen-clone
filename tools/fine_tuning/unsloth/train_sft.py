@@ -1557,6 +1557,7 @@ def main() -> None:
         revision=cfg["baseModelRevision"],
         max_seq_length=int(cfg["max_seq_length"]),
         load_in_4bit=bool(cfg["load_in_4bit"]),
+        use_exact_model_name=True,
     )
     model = FastLanguageModel.get_peft_model(
         model,

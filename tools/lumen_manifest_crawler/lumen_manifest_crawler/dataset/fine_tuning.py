@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
+from itertools import combinations
 from typing import Any
 
 from lumen_manifest_crawler.dataset.adapter_export import augment_unsloth_config_for_adapter_export
@@ -18,10 +20,13 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
     EVALUATION_SCHEMA_VERSION,
     EXPERIMENT_VARIANTS,
+    DEFAULT_NEAR_DUPLICATE_THRESHOLD,
+    SHORT_WINDOW_SHINGLE_SIZE,
     build_contamination_report,
     build_experiment_manifest,
     build_experiment_variant_manifest,
     canonical_sha256,
+    declarative_metrics_from_expected,
     default_training_lineage_contract,
     default_training_environment_lock,
     promotion_contract,
@@ -45,14 +50,436 @@ CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES = frozenset(
         CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
     }
 )
+CORTEX_SUPPLEMENTAL_GROUNDING_SOURCE_FAMILIES = frozenset(
+    {
+        *CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES,
+        "manifest_grounding_cards",
+        "self_model_cards",
+        "self_model_sft",
+        "fleet_system_prompts",
+    }
+)
+CORTEX_ROUTE_SYSTEM_PROMPT = (
+    "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route "
+    "mode. Return exactly one valid JSON object and nothing else. Use only exact "
+    "manifest tool IDs and never construct Executor arguments. Serialize every "
+    "response in this visible key order: selectedToolID, intent, one concise "
+    "manifest-row grounding reasoningSummary, then any route-state fields, then "
+    "requiresApproval and nextModel. The summary is not hidden chain-of-thought. "
+    "A complete actionable route also has actionStep exactly "
+    '{"type":"tool_call","toolID":"<selectedToolID>",'
+    '"mustPersistBeforeFinal":true}; it has no status, missingArguments, or '
+    "clarification. An incomplete route omits actionStep, uses status "
+    "needs_clarification, lists only the exact still-missing required arguments in "
+    "manifest order, asks one clarification question, and routes next to mouth. A "
+    "selection response is only the five common fields. A request with no allowed "
+    "tool uses selectedToolID null and status no_tool_route; a named nonexistent "
+    "tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool "
+    "lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden "
+    "reasoning in route mode. Set requiresApproval from the manifest. For a complete "
+    "actionable route or five-field selection, route next to approval when true and "
+    "executor when false; an incomplete route always routes to mouth."
+)
+CORTEX_CODEBASE_SYSTEM_PROMPT = (
+    "You are Cortex, Lumen's static-grounding agent. Task mode: Cortex "
+    "grounding mode. Return exactly one valid JSON object and nothing else. "
+    "Ground it only in the supplied static source-map, manifest, or self-model evidence. "
+    "Do not emit a route, selectedToolID, "
+    "actionStep, handoff, or claim live runtime state."
+)
+STRUCTURED_OUTPUT_INSTRUCTION = (
+    "Response format contract: output exactly one valid JSON object. Do not include "
+    "prose, markdown, code fences, or hidden reasoning."
+)
+CORTEX_ROUTE_INSTRUCTION = (
+    "Cortex route mode: use the manifest catalog below as exact runtime truth. "
+    "The catalog is TSV: defaultIntent is the canonical intent for an ordinary "
+    "action request, allowedIntents is the comma-separated set of manifest-routed "
+    "intents, required '-' means no required arguments, and approval 1 means true "
+    "while 0 means false. "
+    "Never invent, rename, pluralize, or abbreviate a tool ID. If the user names a "
+    "catalog ID explicitly, copy it exactly. Match ordinary requests to catalog names "
+    "and descriptions. Choose selectedToolID first, then find the single TSV row whose "
+    "id cell exactly equals it and stop consulting every other row. Every actionable "
+    "or clarification route copies defaultIntent exactly; never echo meta-language "
+    "such as app action, operation, request, or capability as intent. Only an explicit "
+    "choose-only intent-category request may use a different value, and it must occur "
+    "verbatim in that row's allowedIntents cell. Copy required and approval only from "
+    "that row. If "
+    "the request explicitly says choose or select only, return routing only, or do not "
+    "begin the action, emit the five common fields and stop. Otherwise start with that "
+    "row's required names; '-' is an empty list. When required is '-', the missing "
+    "set is empty: emit actionStep and never borrow a field, status, or clarification "
+    "from another row. "
+    "Optional names mentioned in descriptions are never required. Natural wording can "
+    "supply a value without naming its field. A concrete topic after about, regarding, "
+    "or concerning supplies `query`. A complete proposition introduced by that supplies "
+    "`content`; explicit personal-preference wording supplies both that content and the "
+    "preference `kind`, even though Cortex never emits Executor arguments. A specifically "
+    "designated recipient may "
+    "be an address, person, organization, or role such as the supplier and supplies "
+    "`to`. A concrete event noun phrase supplies `title`. A precise relative delay supplies "
+    "`inMinutes` or `startsInMinutes`, while a vague daypart or scheduling adverb does not. "
+    "Operation wording supplies no required values. A standalone pronoun, deictic phrase, "
+    "unresolved relative reference, or bare object class does not supply an identifier, "
+    "path, query, title, body, content, or kind. Recognize explicit content but never "
+    "guess an absent value. Audit each required name literally before choosing a route "
+    "state. A tool display name or operation phrase never supplies a same-named "
+    "argument: asking to schedule an agent run supplies no title, prompt, or schedule; "
+    "asking to reply or reply-all supplies no body; a countdown duration plus alert "
+    "wording supplies no title. References such as that item or the selected message "
+    "supply no id or messageId. Only concrete user values remove those names from the "
+    "missing set. Remove a "
+    "required name only when this user request supplies its concrete value; do not copy "
+    "Executor arguments into the route. If names remain, emit "
+    "all of them in manifest order in missingArguments and omit actionStep; if none "
+    "remain, emit actionStep. Never infer one required value from another. Always emit "
+    "top-level keys in this visible order: selectedToolID (catalog string or null), "
+    "intent (string), reasoningSummary (one concise manifest-row grounding sentence), "
+    "then status, missingArguments, and clarification or actionStep when applicable, "
+    "then requiresApproval (boolean) and nextModel (string). The reasoningSummary is "
+    "not hidden chain-of-thought. For an actionable route, it states that the exact "
+    "selected row has no required values or names all exact required values as "
+    "supplied. For a clarification, it states the exact selected row and exact missing "
+    "subset. For a "
+    "complete actionable request, also emit actionStep exactly as "
+    '{"type":"tool_call","toolID":"<same selectedToolID>",'
+    '"mustPersistBeforeFinal":true}; set requiresApproval from the catalog and set '
+    "nextModel to approval when true, otherwise executor. When required arguments are "
+    "missing, keep the canonical selectedToolID and catalog requiresApproval, omit "
+    "actionStep, set nextModel to mouth, set status to needs_clarification, and emit "
+    "missingArguments plus one clarification. Use no_tool_route only when no catalog "
+    "tool applies, and invalid_tool only for a requested nonexistent ID. Do not emit "
+    "status on complete actionable routes."
+)
+CORTEX_ROUTE_DECISION_ENDCAP = (
+    "Final route decision: selectedToolID is an exact column-1 ID. Lock to that "
+    "one row: every action or clarification copies its defaultIntent; only a five-field "
+    "explicit choose-only selection may use another allowedIntent. Required '-' means "
+    "empty and can never produce missingArguments or clarification; required names and "
+    "approval come from that row only. Treat concrete natural "
+    "implicit values as supplied, including a specifically designated recipient role. "
+    "Operation wording, standalone pronouns, and unresolved relative references such as "
+    "that item, this one, the latest item, the selected message, or the entry discussed "
+    "earlier do not supply an identifier or other required value by themselves. In "
+    "contrast, a that-clause containing a complete proposition supplies content, a concrete "
+    "topic after about, regarding, or concerning supplies query, personal-preference "
+    "wording supplies preference kind, and a concrete event noun phrase supplies title. "
+    "Precise relative delays can supply numeric time fields; vague dayparts cannot. If any "
+    "required value is "
+    "absent, summarize that row and exact missing subset before status, "
+    "missingArguments, and clarification; omit actionStep. Otherwise summarize that "
+    "the row has no required values or that every exact required name is supplied, "
+    "then emit actionStep. Finish with requiresApproval and nextModel."
+)
+CORTEX_TOOL_CATALOG_HEADER = (
+    "Manifest tools TSV: id\tname\tdefaultIntent\tallowedIntents\trequired\tapproval\tdescription"
+)
 SYSTEM_PROMPTS = {
-    "cortex": "You are Cortex, Lumen’s routing, planning, orchestration, and codebase-self-awareness agent. Select manifest-approved tools, persist required action steps, delegate execution to Executor, and ground decisions in Lumen’s actual source map.",
+    "cortex": CORTEX_ROUTE_SYSTEM_PROMPT,
     "executor": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
     "mouth": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
     "mimicry": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries.",
     "rem": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
     "fleet": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.",
 }
+
+
+def _cortex_tool_catalog_instruction(manifest: AgentBehaviorManifest) -> str:
+    lines = [CORTEX_TOOL_CATALOG_HEADER]
+    for tool in sorted(manifest.tools, key=lambda item: item.id):
+        display_name = (tool.displayName or tool.id).strip()
+        description = " ".join(
+            (tool.description or f"Manifest tool {tool.id}.").split()
+        )
+        description = re.sub(r"\s+Args:\s.*$", "", description).strip()
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        default_intent = _routed_intent_for_tool(manifest, tool.id)
+        routed_intents = (
+            {
+                entry.intent
+                for entry in manifest.routingMatrix
+                if tool.id in entry.allowedTools
+            }
+            | {
+                intent.id
+                for intent in manifest.intents
+                if tool.id in intent.allowedToolIDs
+            }
+        )
+        allowed_intents = [
+            default_intent,
+            *sorted(routed_intents - {default_intent}),
+        ]
+        lines.append(
+            f"{tool.id}\t{display_name}\t"
+            f"{default_intent}\t{','.join(allowed_intents)}\t"
+            f"{','.join(required_arguments) or '-'}\t"
+            f"{'1' if tool.requiresApproval else '0'}\t{description}"
+        )
+    return "\n".join(lines)
+
+
+def cortex_runtime_route_system_prompt(manifest: AgentBehaviorManifest) -> str:
+    """Return the exact catalog-conditioned prompt used for Cortex route generation."""
+
+    return "\n\n".join(
+        (
+            CORTEX_ROUTE_SYSTEM_PROMPT,
+            STRUCTURED_OUTPUT_INSTRUCTION,
+            CORTEX_ROUTE_INSTRUCTION,
+            _cortex_tool_catalog_instruction(manifest),
+            CORTEX_ROUTE_DECISION_ENDCAP,
+        )
+    )
+
+
+_CORTEX_ROUTE_COMMON_FIELD_ORDER = (
+    "selectedToolID",
+    "intent",
+    "reasoningSummary",
+    "requiresApproval",
+    "nextModel",
+)
+_CORTEX_ROUTE_STATE_FIELD_ORDER = (
+    "status",
+    "missingArguments",
+    "clarification",
+    "actionStep",
+)
+
+
+class _DuplicateJSONKeyError(ValueError):
+    pass
+
+
+class _NonFiniteJSONNumberError(ValueError):
+    pass
+
+
+def _reject_duplicate_json_keys(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise _DuplicateJSONKeyError(f"Duplicate JSON key: {key}")
+        payload[key] = value
+    return payload
+
+
+def _reject_nonfinite_json_number(value: str) -> None:
+    raise _NonFiniteJSONNumberError(
+        f"Non-finite JSON number is not allowed: {value}"
+    )
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite_json_number(value)
+    return parsed
+
+
+def _strict_json_loads(value: str) -> Any:
+    return json.loads(
+        value,
+        object_pairs_hook=_reject_duplicate_json_keys,
+        parse_constant=_reject_nonfinite_json_number,
+        parse_float=_parse_finite_json_float,
+    )
+
+
+def _ordered_cortex_route_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    # Ground the visible route decision in one manifest row before emitting the
+    # mutually exclusive action/clarification state. Approval and handoff remain
+    # the endcap, after the row-grounded state is explicit.
+    field_order = ["selectedToolID", "intent", "reasoningSummary"]
+    if "status" in payload:
+        field_order.extend(
+            key
+            for key in ("status", "missingArguments", "clarification")
+            if key in payload
+        )
+    elif "actionStep" in payload:
+        field_order.append("actionStep")
+    field_order.extend(
+        key for key in ("requiresApproval", "nextModel") if key in payload
+    )
+    field_order.extend(
+        key
+        for key in _CORTEX_ROUTE_STATE_FIELD_ORDER
+        if key not in field_order
+    )
+    ordered = {key: payload[key] for key in field_order if key in payload}
+    for key in sorted(set(payload) - set(ordered)):
+        ordered[key] = payload[key]
+    action_step = ordered.get("actionStep")
+    if isinstance(action_step, dict):
+        ordered["actionStep"] = {
+            key: action_step[key]
+            for key in ("type", "toolID", "mustPersistBeforeFinal")
+            if key in action_step
+        } | {
+            key: action_step[key]
+            for key in sorted(
+                set(action_step) - {"type", "toolID", "mustPersistBeforeFinal"}
+            )
+        }
+    return ordered
+
+
+def _cortex_route_json(payload: dict[str, Any]) -> str:
+    return json.dumps(
+        _ordered_cortex_route_payload(payload),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _ordered_cortex_route_text(value: str) -> str:
+    try:
+        payload = _strict_json_loads(value)
+    except json.JSONDecodeError:
+        return value
+    return _cortex_route_json(payload) if isinstance(payload, dict) else value
+
+
+def _ordered_cortex_rejected_route_text(value: str) -> str:
+    """Order valid rejected routes without repairing malformed negative evidence."""
+
+    try:
+        payload = _strict_json_loads(value)
+    except (ValueError, TypeError, RecursionError):
+        return value
+    return _cortex_route_json(payload) if isinstance(payload, dict) else value
+
+
+def _training_system_prompt(
+    agent: str,
+    *,
+    source_family: str | None = None,
+    manifest: AgentBehaviorManifest | None = None,
+) -> str:
+    if (
+        agent == "cortex"
+        and source_family in CORTEX_SUPPLEMENTAL_GROUNDING_SOURCE_FAMILIES
+    ):
+        return CORTEX_CODEBASE_SYSTEM_PROMPT
+    if agent == "cortex":
+        if manifest is None:
+            raise ValueError("Cortex route training requires the behavior manifest")
+        return cortex_runtime_route_system_prompt(manifest)
+    return SYSTEM_PROMPTS[agent]
+
+
+STRICT_JSON_RETRY_DPO_INSTRUCTION = (
+    "This is the single bounded retry after strict raw JSON or manifest-route "
+    "validation failed. Re-read the manifest catalog and the user's request. "
+    "Emit a fresh, complete JSON object now. Output JSON only: no prose, markdown, "
+    "code fences, comments, or hidden reasoning. Start with { and stop after its "
+    "matching }. Keep the object concise. Do not emit a tool catalog, a rejected-tool "
+    "list, repeated keys, or an unbounded array. Do not repeat or repair the previous "
+    "output. For Cortex, a trusted exact-row digest may follow; treat it as "
+    "authoritative manifest data."
+)
+
+_CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE = {
+    "invalid_json": (
+        "Retry repair: discard the malformed text and emit the complete Cortex "
+        "route object from scratch. Include selectedToolID, intent, and "
+        "reasoningSummary before the route state, then requiresApproval and "
+        "nextModel. Never emit a flat tool call or Executor arguments."
+    ),
+    "cortex_route_protocol_field_invalid": (
+        "Retry repair: emit the complete Cortex route object from scratch. "
+        "Include selectedToolID, intent, and reasoningSummary before the route "
+        "state, then requiresApproval and nextModel. Never emit a flat tool call, "
+        "an actionStep-only fragment, or Executor arguments."
+    ),
+    "cortex_route_tool_not_in_manifest": (
+        "Retry repair: reselect an exact column-1 tool ID from the catalog; "
+        "never reuse or mutate the invalid ID."
+    ),
+    "cortex_route_intent_not_in_manifest": (
+        "Retry repair: after selecting one row, copy its defaultIntent for an "
+        "ordinary request or a verbatim allowedIntents value for an explicit "
+        "choose-only request."
+    ),
+    "cortex_route_clarification_state_invalid": (
+        "Retry repair: reread the selected row's required names. If every "
+        "required value is supplied, emit an actionable route with actionStep; "
+        "otherwise emit only the exact absent names in manifest order."
+    ),
+    "cortex_route_action_state_invalid": (
+        "Retry repair: reread the selected row's required names. If any required "
+        "value is absent, omit actionStep and ask for only the exact absent names "
+        "in manifest order; never infer them. Otherwise emit actionStep with exactly "
+        "type tool_call, the matching selectedToolID as toolID, and "
+        "mustPersistBeforeFinal true; never emit false."
+    ),
+}
+
+
+def _cortex_trusted_retry_row_instruction(
+    manifest: AgentBehaviorManifest,
+    tool: ToolManifest,
+) -> str:
+    row = {
+        "selectedToolID": tool.id,
+        "defaultIntent": _routed_intent_for_tool(manifest, tool.id),
+        "requiredArguments": [
+            argument.name for argument in tool.arguments if argument.required
+        ],
+        "requiresApproval": tool.requiresApproval,
+    }
+    instruction = (
+        " Trusted selected manifest row, derived only by exact selectedToolID lookup: "
+        + json.dumps(row, ensure_ascii=False, separators=(",", ":"))
+        + ". Copy defaultIntent, requiredArguments, and requiresApproval only from "
+        "this trusted row. Lock to this row and do not borrow fields from any other "
+        "catalog row or from the failed output."
+    )
+    if not row["requiredArguments"]:
+        instruction += (
+            " requiredArguments is empty: emit actionStep and do not emit status, "
+            "missingArguments, or clarification; set nextModel to approval when "
+            "requiresApproval is true, otherwise executor."
+        )
+    return instruction
+
+
+def _cortex_strict_retry_training_prompt(
+    user_prompt: str,
+    validation_error: str,
+    *,
+    manifest: AgentBehaviorManifest,
+    trusted_selected_tool: ToolManifest | None,
+) -> str:
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,127}", validation_error):
+        raise ValueError("Cortex retry curriculum received an invalid failure code")
+    prompt = (
+        user_prompt.rstrip()
+        + "\n\n"
+        + STRICT_JSON_RETRY_DPO_INSTRUCTION
+        + " Validation failure code: "
+        + validation_error
+        + ". Use that code only to re-check the response contract; do not "
+        "invent missing user values. "
+        + _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE.get(
+            validation_error,
+            "Retry repair: re-read the selected manifest row and emit the exact "
+            "contracted route state.",
+        )
+    )
+    if trusted_selected_tool is None:
+        return prompt
+    return prompt + _cortex_trusted_retry_row_instruction(
+        manifest,
+        trusted_selected_tool,
+    )
 
 AGENT_SOURCE_FAMILIES: dict[str, set[str]] = {
     "cortex": {
@@ -182,8 +609,10 @@ class FineTuningDatasetConfig:
     include_unsloth_config: bool = True
     max_sequence_length: int = 4096
     max_public_corpus_token_share: float | None = 0.35
-    max_chars_per_token: int = 2
+    max_chars_per_token: int = 4
     max_supplemental_sft_ratio: float = 0.25
+    max_cortex_supplemental_assistant_char_share: float = 0.15
+    max_cortex_public_sft_records_per_tool: int = 8
 
 
 @dataclass(frozen=True)
@@ -258,6 +687,8 @@ def compile_agent_fine_tuning_datasets(
             routing_stats[agent]["taskTypes"].add(task_type)
             routing_stats[agent]["availableSFTRecords"] += 1
 
+    _validate_cortex_sft_route_intents(manifest, routed_sft["cortex"])
+
     routed_dpo = _build_agent_dpo_records(manifest, augmented_records, config, known_tools)
     routed_eval = _build_agent_eval_records(manifest, augmented_records, known_tools)
     public_validation_group_keys = _public_validation_group_keys(
@@ -286,11 +717,21 @@ def compile_agent_fine_tuning_datasets(
             for record in deduped_sft
             if _fits_sequence_budget(record, config)
         ]
-        role_balanced_sft = _limit_supplemental_sft_records(agent, budget_eligible_sft, config)
+        public_balanced_sft = _limit_cortex_public_sft_records(
+            agent,
+            budget_eligible_sft,
+            config,
+        )
+        role_balanced_sft = _limit_supplemental_sft_records(
+            agent,
+            public_balanced_sft,
+            config,
+        )
         train_sft, val_sft = _stable_source_stratified_split(
             role_balanced_sft,
             config,
             public_validation_group_keys=public_validation_group_keys,
+            agent=agent,
         )
         available_train_sft = list(train_sft)
         available_val_sft = list(val_sft)
@@ -311,6 +752,7 @@ def compile_agent_fine_tuning_datasets(
             materialized_role_balanced_sft,
             config,
             public_validation_group_keys=public_validation_group_keys,
+            agent=agent,
         )
 
         dpo_records = (
@@ -321,7 +763,7 @@ def compile_agent_fine_tuning_datasets(
             if config.include_dpo
             else []
         )
-        train_dpo, val_dpo = _stable_split(
+        train_dpo, val_dpo = _stable_dpo_split(
             dpo_records,
             config,
             public_validation_group_keys=public_validation_group_keys,
@@ -353,6 +795,25 @@ def compile_agent_fine_tuning_datasets(
         )
 
         materialized_sft = train_sft + val_sft
+        assistant_char_total = sum(
+            _assistant_target_char_count(record) for record in materialized_sft
+        )
+        supplemental_source_families = (
+            CORTEX_SUPPLEMENTAL_GROUNDING_SOURCE_FAMILIES
+            if agent == "cortex"
+            else CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES
+        )
+        supplemental_assistant_char_total = sum(
+            _assistant_target_char_count(record)
+            for record in materialized_sft
+            if (record.get("metadata") or {}).get("sourceFamily")
+            in supplemental_source_families
+        )
+        supplemental_assistant_char_share = (
+            supplemental_assistant_char_total / assistant_char_total
+            if assistant_char_total
+            else 0.0
+        )
         source_family_counts = _metadata_value_counts(materialized_sft, "sourceFamily")
         task_type_counts = _metadata_value_counts(materialized_sft, "taskType")
         materialized_cortex_codebase = [
@@ -437,6 +898,16 @@ def compile_agent_fine_tuning_datasets(
                 "agentSpecific": True,
                 "ultraSpecificAdapterCorpus": True,
                 "maxPublicCorpusSFTTokenShare": config.max_public_corpus_token_share,
+                "maxCortexSupplementalAssistantCharShare": (
+                    config.max_cortex_supplemental_assistant_char_share
+                    if agent == "cortex"
+                    else None
+                ),
+                "maxCortexPublicSFTRecordsPerTool": (
+                    config.max_cortex_public_sft_records_per_tool
+                    if agent == "cortex"
+                    else None
+                ),
             },
             "quality": {
                 "ultraSpecificSourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
@@ -455,9 +926,21 @@ def compile_agent_fine_tuning_datasets(
                 "supplementalSFTRecordCount": sum(
                     count
                     for family, count in source_family_counts.items()
-                    if family in CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES
+                    if family in supplemental_source_families
+                ),
+                "assistantTargetCharCount": assistant_char_total,
+                "supplementalAssistantTargetCharCount": (
+                    supplemental_assistant_char_total
+                ),
+                "supplementalAssistantTargetCharShare": (
+                    supplemental_assistant_char_share
                 ),
                 "sequenceBudgetDroppedRecordCount": len(deduped_sft) - len(budget_eligible_sft),
+                "cortexPublicBalanceDroppedRecordCount": (
+                    len(budget_eligible_sft) - len(public_balanced_sft)
+                    if agent == "cortex"
+                    else 0
+                ),
                 "supplementalBalanceDroppedRecordCount": len(budget_eligible_sft) - len(role_balanced_sft),
             },
         }
@@ -661,6 +1144,20 @@ def _to_sft_record(
 ) -> dict[str, Any] | None:
     user = normalized["user"].strip() or "Follow the manifest and return the correct response."
     assistant = normalized["assistant"].strip()
+    if agent == "cortex":
+        assistant = _canonicalize_cortex_sft_output(
+            assistant,
+            manifest=manifest,
+            source_family=normalized["sourceFamily"],
+            task_type=normalized["taskType"],
+        )
+        public_corpus = normalized.get("publicCorpus")
+        if isinstance(public_corpus, dict) and not _public_cortex_route_is_safe(
+            manifest,
+            assistant,
+            public_corpus=public_corpus,
+        ):
+            return None
     assistant = _scrub_forbidden_sentinels(assistant, manifest.sentinels.forbiddenInUserOutput)
     if not assistant:
         return None
@@ -692,11 +1189,240 @@ def _to_sft_record(
         metadata["publicCorpus"] = dict(public_corpus)
     return {
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPTS[agent]},
+            {
+                "role": "system",
+                "content": _training_system_prompt(
+                    agent,
+                    source_family=normalized["sourceFamily"],
+                    manifest=manifest,
+                ),
+            },
             {"role": "user", "content": user},
             {"role": "assistant", "content": assistant},
         ],
         "metadata": metadata,
+    }
+
+
+def _cortex_required_argument_names(tool: ToolManifest) -> list[str]:
+    return [
+        argument.name for argument in tool.arguments if argument.required
+    ]
+
+
+def _cortex_exact_name_list(names: list[str]) -> str:
+    if not names:
+        raise ValueError("Cortex manifest-row summary requires at least one name")
+    return ", ".join(names)
+
+
+def _cortex_selection_reasoning_summary(tool: ToolManifest, intent: str) -> str:
+    return (
+        f"Manifest row {tool.id} is selected for intent {intent} without actionStep."
+    )
+
+
+def _cortex_action_reasoning_summary(tool: ToolManifest) -> str:
+    required_arguments = _cortex_required_argument_names(tool)
+    if not required_arguments:
+        return f"Manifest row {tool.id} has no required values."
+    return (
+        f"Manifest row {tool.id} has all exact required names supplied: "
+        f"{_cortex_exact_name_list(required_arguments)}."
+    )
+
+
+def _cortex_clarification_reasoning_summary(
+    tool: ToolManifest,
+    missing_arguments: list[str],
+) -> str:
+    return (
+        f"Manifest row {tool.id} is missing exactly this required subset: "
+        f"{_cortex_exact_name_list(missing_arguments)}."
+    )
+
+
+def _canonicalize_cortex_sft_output(
+    assistant: str,
+    *,
+    manifest: AgentBehaviorManifest,
+    source_family: str,
+    task_type: str,
+) -> str:
+    if source_family in CORTEX_SUPPLEMENTAL_GROUNDING_SOURCE_FAMILIES:
+        return assistant
+    try:
+        payload = _strict_json_loads(assistant)
+    except json.JSONDecodeError:
+        return assistant
+    if not isinstance(payload, dict) or "selectedToolID" not in payload:
+        return assistant
+
+    selected_tool_id = payload.get("selectedToolID")
+    intent = payload.get("intent")
+    if not isinstance(intent, str) or not intent.strip():
+        intent = "unknown" if selected_tool_id is None else "tool"
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    tool = tools_by_id.get(selected_tool_id) if isinstance(selected_tool_id, str) else None
+    if tool is None:
+        status = (
+            "invalid_tool"
+            if payload.get("status") == "invalid_tool" or selected_tool_id is not None
+            else "no_tool_route"
+        )
+        normalized = {
+            "intent": intent,
+            "selectedToolID": None,
+            "requiresApproval": False,
+            "nextModel": "mouth",
+            "reasoningSummary": (
+                f"No manifest row has exact tool ID {selected_tool_id}."
+                if selected_tool_id is not None
+                else f"No manifest row applies to intent {intent}."
+            ),
+            "status": status,
+        }
+        return _cortex_route_json(normalized)
+
+    selection_only = task_type in {
+        "routing_matrix_adherence",
+        "cortex_contrast_route_selection",
+    } or (
+        payload.get("status") != "needs_clarification"
+        and "actionStep" not in payload
+    )
+    route_intent = (
+        intent
+        if selection_only
+        else _routed_intent_for_tool(manifest, tool.id)
+    )
+    base = {
+        "intent": route_intent,
+        "selectedToolID": tool.id,
+        "requiresApproval": tool.requiresApproval,
+        "nextModel": "approval" if tool.requiresApproval else "executor",
+    }
+    if payload.get("status") == "needs_clarification":
+        required_arguments = _cortex_required_argument_names(tool)
+        declared_missing = payload.get("missingArguments")
+        missing_arguments = (
+            [
+                argument
+                for argument in required_arguments
+                if argument in declared_missing
+            ]
+            if isinstance(declared_missing, list)
+            else required_arguments
+        )
+        if not missing_arguments:
+            return _cortex_route_json(
+                {
+                    **base,
+                    "reasoningSummary": _cortex_action_reasoning_summary(tool),
+                    "actionStep": _canonical_cortex_action_step(tool.id),
+                }
+            )
+        clarification = payload.get("clarification")
+        if not isinstance(clarification, str) or not clarification.strip().endswith("?"):
+            clarification = (
+                f"What should I use for {_natural_language_list(missing_arguments)} "
+                f"in {tool.id}?"
+            )
+        return _cortex_route_json(
+            {
+                **base,
+                "reasoningSummary": _cortex_clarification_reasoning_summary(
+                    tool,
+                    missing_arguments,
+                ),
+                "nextModel": "mouth",
+                "status": "needs_clarification",
+                "missingArguments": missing_arguments,
+                "clarification": clarification.strip(),
+            }
+        )
+
+    if selection_only:
+        return _cortex_route_json(
+            {
+                **base,
+                "reasoningSummary": _cortex_selection_reasoning_summary(
+                    tool,
+                    route_intent,
+                ),
+            }
+        )
+    return _cortex_route_json(
+        {
+            **base,
+            "reasoningSummary": _cortex_action_reasoning_summary(tool),
+            "actionStep": _canonical_cortex_action_step(tool.id),
+        }
+    )
+
+
+def _public_cortex_route_is_safe(
+    manifest: AgentBehaviorManifest,
+    assistant: str,
+    *,
+    public_corpus: dict[str, Any],
+) -> bool:
+    """Fail closed when an offline public snapshot cannot prove route completeness."""
+
+    try:
+        payload = _strict_json_loads(assistant)
+    except (
+        json.JSONDecodeError,
+        _DuplicateJSONKeyError,
+        _NonFiniteJSONNumberError,
+    ):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    selected_tool_id = payload.get("selectedToolID")
+    if selected_tool_id is None:
+        return payload.get("status") == "no_tool_route"
+
+    tool = next(
+        (item for item in manifest.tools if item.id == selected_tool_id),
+        None,
+    )
+    if tool is None:
+        return False
+    required_arguments = [
+        argument.name for argument in tool.arguments if argument.required
+    ]
+    if payload.get("status") == "needs_clarification":
+        missing_arguments = payload.get("missingArguments")
+        if (
+            not required_arguments
+            or not isinstance(missing_arguments, list)
+            or not missing_arguments
+            or missing_arguments
+            != [
+                argument
+                for argument in required_arguments
+                if argument in missing_arguments
+            ]
+        ):
+            return False
+    elif payload.get("actionStep") != _canonical_cortex_action_step(tool.id):
+        return False
+
+    if not required_arguments:
+        return True
+    quality = public_corpus.get("quality")
+    return (
+        isinstance(quality, dict)
+        and quality.get("sameRowArgumentCoverageAudited") is True
+    )
+
+
+def _canonical_cortex_action_step(tool_id: str) -> dict[str, Any]:
+    return {
+        "type": "tool_call",
+        "toolID": tool_id,
+        "mustPersistBeforeFinal": True,
     }
 
 
@@ -718,6 +1444,13 @@ def _route_record_agents(
     slot_roles: set[str],
 ) -> list[str]:
     routed: set[str] = set()
+
+    # Cross-model handoff and peer-private-state objects belong to Fleet's
+    # directory/boundary schema. They are not Cortex route objects and must not
+    # share its route-mode SFT or preference prompt. Source-family ownership
+    # takes precedence over incidental prompt or provenance metadata.
+    if source_family == "cross_model_training":
+        return ["fleet"]
 
     if _is_public_adapter_corpus(source_family, record):
         public_corpus = _public_corpus_metadata(record)
@@ -1142,11 +1875,9 @@ def _ultra_specific_cortex_records(
         if tool is None:
             continue
         prompt = _cortex_prompt_for_intent(entry.intent, selected_tool_id, tool)
-        rejected = sorted(entry.forbiddenTools)[:6]
         assistant = {
             "intent": entry.intent,
             "selectedToolID": selected_tool_id,
-            "rejectedToolIDs": rejected,
             "requiresApproval": tool.requiresApproval,
             "permissionKey": tool.permissionKey,
             "permissionKind": tool.permissionKind,
@@ -1157,8 +1888,11 @@ def _ultra_specific_cortex_records(
                 "toolID": selected_tool_id,
                 "mustPersistBeforeFinal": True,
             },
-            "decisionBoundary": f"Use only tools allowed for intent `{entry.intent}`; do not substitute {rejected[0] if rejected else 'a forbidden tool'}.",
-            "reasoningSummary": f"The routing matrix allows {selected_tool_id} for {entry.intent}; approval={tool.requiresApproval}, permission={tool.permissionKey or 'none'}, permissionKind={tool.permissionKind or 'none'}, confirmationMode={tool.confirmationMode or 'none'}.",
+            "decisionBoundary": f"Use only tools allowed for intent `{entry.intent}`.",
+            "reasoningSummary": (
+                f"The routing matrix permits {selected_tool_id} for {entry.intent}, and this action "
+                f"{'requires' if tool.requiresApproval else 'does not require'} user approval."
+            ),
         }
         records.append(
             _adapter_sft_record(
@@ -1170,7 +1904,6 @@ def _ultra_specific_cortex_records(
                 _risk_for_tool(tool),
                 {
                     "intent": entry.intent,
-                    "contrastForbiddenToolIDs": rejected,
                     "specificityVector": ["routing_matrix", "action_step_persistence", "approval_permission_boundary"],
                 },
                 manifest,
@@ -1179,7 +1912,7 @@ def _ultra_specific_cortex_records(
 
     regression_cases = [
         (
-            "The user asks: Read my latest Outlook email attachment list, but the model previously only resolved latest for message.read. Route the full action.",
+            "The user asks: For the already resolved Outlook message AAMk-REGRESSION-attach-042, list its attachments. Route the full action.",
             "outlook.attachments.list",
             "outlook",
             "latest_message_reference_resolution",
@@ -1236,6 +1969,108 @@ def _ultra_specific_cortex_records(
                 manifest,
             )
         )
+
+    intents_by_tool_id: dict[str, list[str]] = {}
+    for entry in sorted(manifest.routingMatrix, key=lambda item: item.intent):
+        for tool_id in entry.allowedTools:
+            intents_by_tool_id.setdefault(tool_id, []).append(entry.intent)
+
+    files_read = tools_by_id.get("files.read")
+    files_read_intents = sorted(set(intents_by_tool_id.get("files.read", [])))
+    if files_read is not None and files_read_intents:
+        files_read_intent = files_read_intents[0]
+        files_read_required_arguments = [
+            argument.name for argument in files_read.arguments if argument.required
+        ]
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                (
+                    "Cortex repair drill 7B: the imported-document route was selected, but the "
+                    "user supplied neither a document name nor a path. Return the exact "
+                    "clarification state without persisting an action."
+                ),
+                {
+                    "intent": files_read_intent,
+                    "selectedToolID": "files.read",
+                    "requiresApproval": files_read.requiresApproval,
+                    "permissionKey": files_read.permissionKey,
+                    "permissionKind": files_read.permissionKind,
+                    "confirmationMode": files_read.confirmationMode,
+                    "nextModel": "mouth",
+                    "status": "needs_clarification",
+                    "missingArguments": files_read_required_arguments,
+                    "clarification": "Which file should I read?",
+                    "reasoningSummary": (
+                        "A file name or path is required before files.read can be executed."
+                    ),
+                },
+                "ultra_specific_files_read_clarification",
+                ["files.read"],
+                "boundary",
+                {
+                    "intent": files_read_intent,
+                    "specificityVector": [
+                        "missing_name_or_path",
+                        "exact_clarification",
+                        "no_action_before_required_arguments",
+                    ],
+                },
+                manifest,
+            )
+        )
+
+    for tool in sorted(tools_by_id.values(), key=lambda item: item.id):
+        required_arguments = [argument.name for argument in tool.arguments if argument.required]
+        if not required_arguments or tool.id == "files.read":
+            continue
+        argument_list = _natural_language_list(required_arguments)
+        routing_intents = sorted(set(intents_by_tool_id.get(tool.id, [])))
+        if not routing_intents:
+            # Cortex may teach only routes that the manifest actually owns.
+            # Executor coverage remains responsible for otherwise-unrouted tools.
+            continue
+        intent = routing_intents[0]
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                (
+                    f"Cortex required-argument repair drill for `{tool.id}`: the manifest route is "
+                    "already known, but the request omitted every required value. Return a "
+                    "clarification state without persisting an action."
+                ),
+                {
+                    "intent": intent,
+                    "selectedToolID": tool.id,
+                    "requiresApproval": tool.requiresApproval,
+                    "permissionKey": tool.permissionKey,
+                    "permissionKind": tool.permissionKind,
+                    "confirmationMode": tool.confirmationMode,
+                    "nextModel": "mouth",
+                    "status": "needs_clarification",
+                    "missingArguments": required_arguments,
+                    "clarification": f"What should I use for {argument_list} in {tool.id}?",
+                    "reasoningSummary": (
+                        f"{tool.id} requires {argument_list} before it can be routed for execution."
+                    ),
+                },
+                "ultra_specific_missing_required_argument_clarification",
+                [tool.id],
+                "boundary",
+                {
+                    "intent": intent,
+                    "specificityVector": [
+                        "missing_required_arguments",
+                        "clarification_before_action",
+                        "no_executor_arguments",
+                    ],
+                },
+                manifest,
+            )
+        )
+    records.extend(
+        _cortex_route_state_curriculum_sft_records(manifest, tools_by_id)
+    )
     return records
 
 
@@ -1324,6 +2159,7 @@ def _ultra_specific_executor_records(
                     manifest,
                 )
             )
+
     return records
 
 
@@ -1675,14 +2511,58 @@ def _adapter_sft_record(
     extra_metadata: dict[str, Any],
     manifest: AgentBehaviorManifest,
 ) -> dict[str, Any]:
+    resolved_extra_metadata = dict(extra_metadata)
+    source_family = str(
+        resolved_extra_metadata.get("sourceFamily") or ULTRA_SPECIFIC_SOURCE_FAMILY
+    )
+    assistant_text = _to_string(assistant)
+    if agent == "cortex":
+        assistant_text = _canonicalize_cortex_sft_output(
+            assistant_text,
+            manifest=manifest,
+            source_family=source_family,
+            task_type=task_type,
+        )
+        try:
+            route_payload = _strict_json_loads(assistant_text)
+        except (
+            json.JSONDecodeError,
+            _DuplicateJSONKeyError,
+            _NonFiniteJSONNumberError,
+        ):
+            route_payload = None
+        if (
+            isinstance(route_payload, dict)
+            and isinstance(route_payload.get("selectedToolID"), str)
+            and isinstance(route_payload.get("intent"), str)
+        ):
+            output_intent = route_payload["intent"]
+            metadata_intent = resolved_extra_metadata.get("intent")
+            if (
+                isinstance(metadata_intent, str)
+                and metadata_intent
+                and metadata_intent != output_intent
+            ):
+                resolved_extra_metadata.setdefault(
+                    "requestedIntent",
+                    metadata_intent,
+                )
+            resolved_extra_metadata["intent"] = output_intent
     assistant_text = _scrub_forbidden_sentinels(
-        _to_string(assistant),
+        assistant_text,
         manifest.sentinels.forbiddenInUserOutput,
     )
     source_integrity = _source_integrity_metadata(manifest)
     return {
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPTS[agent]},
+            {
+                "role": "system",
+                "content": _training_system_prompt(
+                    agent,
+                    source_family=source_family,
+                    manifest=manifest,
+                ),
+            },
             {"role": "user", "content": user},
             {"role": "assistant", "content": assistant_text},
         ],
@@ -1699,7 +2579,7 @@ def _adapter_sft_record(
             "worktreeFingerprint": source_integrity["worktreeFingerprint"],
             "specificity": "ultra_specific",
             "toolContracts": _tool_contracts_for_ids(manifest, tool_ids),
-            **extra_metadata,
+            **resolved_extra_metadata,
         },
     }
 
@@ -1806,15 +2686,31 @@ def _cortex_module_routing_use(module: str) -> str:
 
 
 def _cortex_prompt_for_intent(intent: str, tool_id: str, tool: ToolManifest) -> str:
+    required_arguments = _adapter_sample_arguments(tool)
+    if required_arguments:
+        details = "; ".join(
+            f"{name} is {json.dumps(value, ensure_ascii=False)}"
+            for name, value in required_arguments.items()
+        )
+        return (
+            f"All required details are supplied for {tool.displayName or tool.id}: {details}. "
+            f"Route this complete `{intent}` request to `{tool.id}` and persist exactly one "
+            "action without constructing Executor arguments."
+        )
+
     examples = {
         "calendar.list": "What is on my calendar today? Route the read-only lookup and persist the action step.",
         "calendar.create": "Add a calendar event called supplier call tomorrow at 2 PM. Route with approval if required.",
         "maps.search": "Find a hardware store nearby. Prefer local map search over web search.",
         "maps.directions": "Give me directions to the airport from my current location.",
         "messages.draft": "Text 555-0142 that I will arrive in 10 minutes.",
-        "outlook.attachments.list": "Show attachments on the latest Outlook email.",
-        "outlook.message.read": "Read the latest email body from Outlook.",
-        "memory.recall": "What do you remember about my Lumen release workflow?",
+        "outlook.attachments.list": (
+            "Show attachments on resolved Outlook item AAMk-INTENT-attach-042."
+        ),
+        "outlook.message.read": (
+            "Read resolved Outlook item AAMk-INTENT-read-042."
+        ),
+        "memory.recall": "Retrieve stored context concerning the inference benchmark.",
         "motion.activity": "Check whether I am walking or driving right now.",
         "weather": "Will it rain in Montreal today?",
     }
@@ -1877,8 +2773,14 @@ def _adapter_sample_value(
         return ["sample"]
     if type_l == "object":
         return {"source": "ultra_specific_adapter_dataset"}
-    if "messageid" in lowered or lowered == "id":
-        return "AAMkAGI2T-latest-resolved"
+    if "messageid" in lowered:
+        return "AAMk-TRAIN-message-042"
+    if lowered == "id":
+        if tool_id.startswith("alarm."):
+            return "alarm-train-042"
+        if tool_id.startswith("trigger."):
+            return "trigger-train-042"
+        return "item-train-042"
     if "folder" in lowered:
         return "Projects"
     if "alarm" in lowered:
@@ -1988,6 +2890,14 @@ def _risk_for_tool(tool: ToolManifest) -> str:
     if tool.requiresApproval:
         return "approval_required"
     return "standard"
+
+
+def _natural_language_list(values: list[str]) -> str:
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return f"{', '.join(values[:-1])}, and {values[-1]}"
 
 
 def _tool_contracts_for_ids(manifest: AgentBehaviorManifest, tool_ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -2222,7 +3132,14 @@ def _build_agent_dpo_records(
                     routed[agent].append(
                         {
                             "prompt": [
-                                {"role": "system", "content": SYSTEM_PROMPTS[agent]},
+                                {
+                                    "role": "system",
+                                    "content": _training_system_prompt(
+                                        agent,
+                                        source_family=source_family,
+                                        manifest=manifest,
+                                    ),
+                                },
                                 {"role": "user", "content": user},
                             ],
                             "chosen": {"role": "assistant", "content": chosen_content},
@@ -2252,6 +3169,12 @@ def _build_agent_dpo_records(
     ultra_specific = _ultra_specific_dpo_pairs(manifest, known_tools)
     for agent, pairs in ultra_specific.items():
         routed[agent].extend(pairs)
+    routed["cortex"].extend(_balanced_cortex_route_dpo_pairs(manifest))
+    routed["cortex"] = _bind_cortex_dpo_route_contract(
+        manifest,
+        routed["cortex"],
+    )
+    _validate_cortex_dpo_chosen_routes(manifest, routed["cortex"])
     routed["executor"] = [
         record
         for record in routed["executor"]
@@ -2264,45 +3187,4340 @@ def _build_agent_dpo_records(
     return routed
 
 
+def _bind_cortex_dpo_route_contract(
+    manifest: AgentBehaviorManifest,
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    system_prompt = cortex_runtime_route_system_prompt(manifest)
+    bound: list[dict[str, Any]] = []
+    for record in records:
+        prompt = record.get("prompt")
+        user = _first_role_content(prompt if isinstance(prompt, list) else [], "user")
+        if not user:
+            raise ValueError("Cortex DPO route record requires one user prompt")
+        chosen = record.get("chosen")
+        rejected = record.get("rejected")
+        if not isinstance(chosen, dict) or not isinstance(rejected, dict):
+            raise ValueError("Cortex DPO route record requires chosen and rejected outputs")
+        bound.append(
+            {
+                **record,
+                "prompt": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user},
+                ],
+                "chosen": {
+                    **chosen,
+                    "content": _ordered_cortex_route_text(
+                        _to_string(chosen.get("content"))
+                    ),
+                },
+                "rejected": {
+                    **rejected,
+                    "content": _ordered_cortex_rejected_route_text(
+                        _to_string(rejected.get("content"))
+                    ),
+                },
+            }
+        )
+    return bound
+
+
+def _validate_cortex_dpo_chosen_routes(
+    manifest: AgentBehaviorManifest,
+    records: list[dict[str, Any]],
+) -> None:
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    routed_intents_by_tool: dict[str, set[str]] = {}
+    for entry in manifest.routingMatrix:
+        for tool_id in entry.allowedTools:
+            routed_intents_by_tool.setdefault(tool_id, set()).add(entry.intent)
+    for intent in manifest.intents:
+        for tool_id in intent.allowedToolIDs:
+            routed_intents_by_tool.setdefault(tool_id, set()).add(intent.id)
+    base_fields = {
+        "intent",
+        "selectedToolID",
+        "requiresApproval",
+        "nextModel",
+        "reasoningSummary",
+    }
+    for record in records:
+        chosen = (record.get("chosen") or {}).get("content")
+        try:
+            payload = _strict_json_loads(chosen)
+        except (
+            json.JSONDecodeError,
+            TypeError,
+            _DuplicateJSONKeyError,
+            _NonFiniteJSONNumberError,
+        ) as exc:
+            raise ValueError("Cortex DPO chosen output must be strict JSON") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Cortex DPO chosen output must be a JSON object")
+        intent = payload.get("intent")
+        if not isinstance(intent, str) or not intent.strip():
+            raise ValueError("Cortex DPO chosen intent must be a non-empty string")
+        selected_tool_id = payload.get("selectedToolID")
+        if selected_tool_id is None:
+            if (
+                set(payload) != base_fields | {"status"}
+                or tuple(payload)
+                != (
+                    "selectedToolID",
+                    "intent",
+                    "reasoningSummary",
+                    "status",
+                    "requiresApproval",
+                    "nextModel",
+                )
+                or payload.get("requiresApproval") is not False
+                or payload.get("nextModel") != "mouth"
+                or payload.get("status") not in {"no_tool_route", "invalid_tool"}
+                or payload.get("reasoningSummary")
+                != f"No manifest row applies to intent {intent}."
+            ):
+                raise ValueError("Cortex DPO null route is not canonical")
+            continue
+        tool = tools_by_id.get(selected_tool_id)
+        if tool is None:
+            raise ValueError(
+                f"Cortex DPO chosen output uses unknown tool {selected_tool_id!r}"
+            )
+        routed_intents = routed_intents_by_tool.get(selected_tool_id, set())
+        if routed_intents and intent not in routed_intents:
+            raise ValueError("Cortex DPO chosen intent is not allowed for its tool")
+        default_intent = _routed_intent_for_tool(manifest, selected_tool_id)
+        if payload.get("requiresApproval") is not tool.requiresApproval:
+            raise ValueError("Cortex DPO chosen approval contract drifted")
+        if payload.get("status") == "needs_clarification":
+            if intent != default_intent:
+                raise ValueError(
+                    "Cortex DPO clarification intent must equal the tool default intent"
+                )
+            required_arguments = [
+                argument.name for argument in tool.arguments if argument.required
+            ]
+            missing_arguments = payload.get("missingArguments")
+            if (
+                set(payload)
+                != base_fields | {"status", "missingArguments", "clarification"}
+                or tuple(payload)
+                != (
+                    "selectedToolID",
+                    "intent",
+                    "reasoningSummary",
+                    "status",
+                    "missingArguments",
+                    "clarification",
+                    "requiresApproval",
+                    "nextModel",
+                )
+                or not isinstance(missing_arguments, list)
+                or not missing_arguments
+                or missing_arguments
+                != [
+                    argument
+                    for argument in required_arguments
+                    if argument in missing_arguments
+                ]
+                or payload.get("nextModel") != "mouth"
+                or not isinstance(payload.get("clarification"), str)
+                or not payload["clarification"].strip().endswith("?")
+                or payload.get("reasoningSummary")
+                != _cortex_clarification_reasoning_summary(
+                    tool,
+                    missing_arguments if isinstance(missing_arguments, list) else [],
+                )
+            ):
+                raise ValueError("Cortex DPO clarification route is not canonical")
+            continue
+        if set(payload) == base_fields:
+            expected_next = "approval" if tool.requiresApproval else "executor"
+            if (
+                tuple(payload) != _CORTEX_ROUTE_COMMON_FIELD_ORDER
+                or payload.get("nextModel") != expected_next
+                or payload.get("reasoningSummary")
+                != _cortex_selection_reasoning_summary(tool, intent)
+            ):
+                raise ValueError("Cortex DPO selection nextModel drifted")
+            continue
+        action_step = payload.get("actionStep")
+        expected_next = "approval" if tool.requiresApproval else "executor"
+        if intent != default_intent:
+            raise ValueError(
+                "Cortex DPO actionable intent must equal the tool default intent"
+            )
+        if (
+            set(payload) != base_fields | {"actionStep"}
+            or tuple(payload)
+            != (
+                "selectedToolID",
+                "intent",
+                "reasoningSummary",
+                "actionStep",
+                "requiresApproval",
+                "nextModel",
+            )
+            or payload.get("nextModel") != expected_next
+            or action_step != _canonical_cortex_action_step(tool.id)
+            or not isinstance(action_step, dict)
+            or tuple(action_step)
+            != ("type", "toolID", "mustPersistBeforeFinal")
+            or payload.get("reasoningSummary")
+            != _cortex_action_reasoning_summary(tool)
+        ):
+            preference_type = (record.get("metadata") or {}).get(
+                "preferenceType"
+            )
+            raise ValueError(
+                "Cortex DPO actionable route is not canonical: "
+                f"preferenceType={preference_type!r}, tool={tool.id!r}, "
+                f"fields={sorted(payload)}"
+            )
+
+
+def _validate_cortex_sft_route_intents(
+    manifest: AgentBehaviorManifest,
+    records: list[dict[str, Any]],
+) -> None:
+    """Reject chosen Cortex routes whose intent is absent from the selected row."""
+
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    routed_intents_by_tool: dict[str, set[str]] = {}
+    for entry in manifest.routingMatrix:
+        for tool_id in entry.allowedTools:
+            if tool_id in tools_by_id:
+                routed_intents_by_tool.setdefault(tool_id, set()).add(entry.intent)
+    for intent in manifest.intents:
+        for tool_id in intent.allowedToolIDs:
+            if tool_id in tools_by_id:
+                routed_intents_by_tool.setdefault(tool_id, set()).add(intent.id)
+
+    for record in records:
+        messages = record.get("messages")
+        if not isinstance(messages, list):
+            continue
+        assistant = _first_role_content(messages, "assistant")
+        try:
+            payload = _strict_json_loads(assistant)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        selected_tool_id = payload.get("selectedToolID")
+        if selected_tool_id is None:
+            continue
+        if not isinstance(selected_tool_id, str) or selected_tool_id not in tools_by_id:
+            raise ValueError(
+                "Cortex SFT chosen output uses an unknown selectedToolID"
+            )
+        intent = payload.get("intent")
+        allowed_intents = routed_intents_by_tool.get(selected_tool_id, set())
+        if (
+            not isinstance(intent, str)
+            or not intent.strip()
+            or (allowed_intents and intent not in allowed_intents)
+        ):
+            raise ValueError(
+                "Cortex SFT chosen intent is not allowed for its selected tool"
+            )
+        if (
+            payload.get("status") == "needs_clarification"
+            or "actionStep" in payload
+        ) and intent != _routed_intent_for_tool(manifest, selected_tool_id):
+            raise ValueError(
+                "Cortex SFT action or clarification intent must equal the tool "
+                "default intent"
+            )
+
+
+def _routed_intent_for_tool(manifest: AgentBehaviorManifest, tool_id: str) -> str:
+    for entry in sorted(manifest.routingMatrix, key=lambda item: item.intent):
+        if tool_id in entry.allowedTools:
+            return entry.intent
+    for intent in sorted(manifest.intents, key=lambda item: item.id):
+        if tool_id in intent.allowedToolIDs:
+            return intent.id
+    return "tool"
+
+
+def _canonical_cortex_selection_route(
+    manifest: AgentBehaviorManifest,
+    tool: ToolManifest,
+    *,
+    intent: str | None = None,
+) -> dict[str, Any]:
+    routed_intent = intent or _routed_intent_for_tool(manifest, tool.id)
+    return {
+        "intent": routed_intent,
+        "nextModel": "approval" if tool.requiresApproval else "executor",
+        "reasoningSummary": _cortex_selection_reasoning_summary(
+            tool,
+            routed_intent,
+        ),
+        "requiresApproval": tool.requiresApproval,
+        "selectedToolID": tool.id,
+    }
+
+
+def _canonical_cortex_action_route(
+    manifest: AgentBehaviorManifest,
+    tool: ToolManifest,
+) -> dict[str, Any]:
+    # Only five-field choose-only selections may use an alternate allowed intent.
+    # Stateful action routes always use the selected row's canonical default.
+    route = _canonical_cortex_selection_route(manifest, tool)
+    return {
+        **route,
+        "reasoningSummary": _cortex_action_reasoning_summary(tool),
+        "actionStep": {
+            "mustPersistBeforeFinal": True,
+            "toolID": tool.id,
+            "type": "tool_call",
+        },
+    }
+
+
+def _canonical_cortex_no_tool_route(intent: str) -> dict[str, Any]:
+    if not intent.strip():
+        raise ValueError("Cortex no-tool route requires a non-empty intent")
+    return {
+        "intent": intent,
+        "nextModel": "mouth",
+        "reasoningSummary": f"No manifest row applies to intent {intent}.",
+        "requiresApproval": False,
+        "selectedToolID": None,
+        "status": "no_tool_route",
+    }
+
+
+def _canonical_cortex_clarification_route(
+    manifest: AgentBehaviorManifest,
+    tool: ToolManifest,
+    missing_arguments: list[str],
+) -> dict[str, Any]:
+    required_arguments = _cortex_required_argument_names(tool)
+    ordered_missing = [
+        argument
+        for argument in required_arguments
+        if argument in missing_arguments
+    ]
+    if not ordered_missing:
+        raise ValueError(
+            f"Cortex clarification for {tool.id} requires a non-empty missing subset"
+        )
+    # Only five-field choose-only selections may use an alternate allowed intent.
+    # Stateful clarification routes always use the selected row's canonical default.
+    routed_intent = _routed_intent_for_tool(manifest, tool.id)
+    return {
+        "clarification": (
+            f"What should I use for {_natural_language_list(ordered_missing)} "
+            f"in {tool.id}?"
+        ),
+        "intent": routed_intent,
+        "missingArguments": ordered_missing,
+        "nextModel": "mouth",
+        "reasoningSummary": _cortex_clarification_reasoning_summary(
+            tool,
+            ordered_missing,
+        ),
+        "requiresApproval": tool.requiresApproval,
+        "selectedToolID": tool.id,
+        "status": "needs_clarification",
+    }
+
+
+def _cortex_curriculum_supplied_details(
+    tool: ToolManifest,
+    supplied_argument_names: list[str],
+) -> str:
+    sample_arguments = _adapter_sample_arguments(tool)
+    missing_samples = [
+        name for name in supplied_argument_names if name not in sample_arguments
+    ]
+    if missing_samples:
+        raise ValueError(
+            f"Cortex route curriculum lacks sample values for {tool.id}: "
+            f"{missing_samples}"
+        )
+    return " and ".join(
+        f"{name} set to {json.dumps(sample_arguments[name], ensure_ascii=False)}"
+        for name in supplied_argument_names
+    )
+
+
+def _cortex_natural_supplied_details(
+    tool: ToolManifest,
+    supplied_argument_names: list[str],
+) -> str:
+    """Render manifest sample values as ordinary request language, not field drills."""
+
+    sample_arguments = _adapter_sample_arguments(tool)
+    missing_samples = [
+        name for name in supplied_argument_names if name not in sample_arguments
+    ]
+    if missing_samples:
+        raise ValueError(
+            f"Cortex natural route curriculum lacks sample values for {tool.id}: "
+            f"{missing_samples}"
+        )
+
+    def rendered(value: Any) -> str:
+        if isinstance(value, list):
+            return " and ".join(str(item) for item in value)
+        if isinstance(value, bool):
+            return "enabled" if value else "disabled"
+        return str(value)
+
+    templates = {
+        "body": "saying {value}",
+        "content": "that {value}",
+        "destination": "toward {value}",
+        "durationSeconds": "lasting {value} seconds",
+        "id": "identified by {value}",
+        "inMinutes": "for {value} minutes from now",
+        "kind": "as a {value} memory",
+        "messageId": "for Outlook item {value}",
+        "months": "covering {value} months",
+        "name": "named {value}",
+        "number": "at {value}",
+        "prompt": "to {value}",
+        "query": "about {value}",
+        "schedule": "on the schedule {value}",
+        "startsInMinutes": "starting in {value} minutes",
+        "subject": "with the subject {value}",
+        "title": "called {value}",
+        "to": "to {value}",
+        "url": "from {value}",
+    }
+    fragments = []
+    for name in supplied_argument_names:
+        value = rendered(sample_arguments[name])
+        template = templates.get(name, "with {value}")
+        fragments.append(template.format(value=value))
+    return " and ".join(fragments)
+
+
+_CORTEX_NATURAL_IMPLICIT_COMPLETE_PROMPTS: dict[str, str] = {
+    "alarm.authorization_status": (
+        "Check whether device-alarm access is currently authorized."
+    ),
+    "alarm.cancel": "Cancel the scheduled alarm identified as alarm-train-042.",
+    "alarm.countdown": (
+        "Start a ninety-second countdown called soldering break."
+    ),
+    "alarm.pause": (
+        "Temporarily suspend alarm alarm-train-042 without ending it."
+    ),
+    "alarm.resume": "Continue the paused alarm alarm-train-042.",
+    "alarm.schedule": (
+        "Set an alarm called morning build for fifteen minutes from now."
+    ),
+    "alarm.list": "Show the alarms that are active on this device.",
+    "alarm.request_authorization": (
+        "Ask the system for permission to manage device alarms."
+    ),
+    "alarm.snooze": "Snooze alarm alarm-train-042 for a little longer.",
+    "alarm.stop": "End the sounding alarm alarm-train-042 now.",
+    "calendar.create": (
+        "Put a design review on my calendar twenty minutes from now."
+    ),
+    "calendar.list": "Show the events coming up on my calendar.",
+    "camera.capture": "Use the device camera to take a new picture.",
+    "contacts.search": "Look in my contacts for Mireille.",
+    "files.read": "Open my imported release-checklist.md document.",
+    "health.summary": "Summarize my recent health activity.",
+    "location.current": "Tell me where this device is right now.",
+    "mail.draft": (
+        "Compose a mail draft to mireille@example.com saying the inspection moved "
+        "to Friday."
+    ),
+    "maps.directions": "Guide me to the Montreal Biodome.",
+    "maps.search": "Locate a bakery close to me.",
+    "memory.recall": (
+        "Recall my saved notes about simulator boot reliability."
+    ),
+    "memory.save": (
+        "Preserve diagnosis-first engineering explanations as my preferred response style."
+    ),
+    "messages.draft": (
+        "Prepare a text to 555-0198 saying the delivery is confirmed."
+    ),
+    "outlook.attachments.list": (
+        "For Outlook item AAMk-TRAIN-attach-042, list every attached file."
+    ),
+    "outlook.draft.create": (
+        "Create an Outlook draft to mireille@example.com titled Schedule change: "
+        "the inspection moved to Friday."
+    ),
+    "outlook.mail.send": (
+        "Send an Outlook email to mireille@example.com titled Schedule change, "
+        "saying the inspection moved to Friday."
+    ),
+    "outlook.folders.list": "Show the folders in my connected Outlook mailbox.",
+    "outlook.message.archive": (
+        "Archive Outlook item AAMk-TRAIN-archive-042."
+    ),
+    "outlook.message.delete": (
+        "Delete Outlook item AAMk-TRAIN-delete-042."
+    ),
+    "outlook.message.forward": (
+        "Forward Outlook item AAMk-TRAIN-forward-042 to mireille@example.com."
+    ),
+    "outlook.message.mark_read": (
+        "Mark Outlook item AAMk-TRAIN-read-042 as read."
+    ),
+    "outlook.message.mark_unread": (
+        "Mark Outlook item AAMk-TRAIN-unread-042 as unread."
+    ),
+    "outlook.message.move": (
+        "Move Outlook item AAMk-TRAIN-move-042 into the Inspections folder."
+    ),
+    "outlook.message.read": (
+        "Open Outlook item AAMk-TRAIN-open-042 and show its full content."
+    ),
+    "outlook.message.reply": (
+        "Reply to Outlook item AAMk-TRAIN-reply-042 saying Friday works for me."
+    ),
+    "outlook.message.reply_all": (
+        "Reply to everyone on Outlook item AAMk-TRAIN-all-042 saying Friday works "
+        "for me."
+    ),
+    "outlook.messages.search": (
+        "Look through Outlook for the budget note from Mireille."
+    ),
+    "outlook.messages.list": "Show the unread items in my Outlook inbox.",
+    "outlook.status": "Check whether my Outlook account is connected.",
+    "motion.activity": (
+        "Tell me what kind of motion this device detected recently."
+    ),
+    "phone.call": "Dial 555-0198.",
+    "photos.search": "Find pictures from the kitchen renovation.",
+    "rag.index_photos": "Rebuild the photo index for the last eight months.",
+    "rag.index_files": "Refresh the search index for my imported documents.",
+    "rag.search": (
+        "Search my indexed documents for notes about Metal memory pressure."
+    ),
+    "reminders.create": "Remind me to inspect the release archive.",
+    "reminders.list": "Show the reminders I still have pending.",
+    "trigger.cancel": "Cancel scheduled run trigger-train-042.",
+    "trigger.create": (
+        "Schedule a task called adapter audit to run a local validation report "
+        "every weekday morning."
+    ),
+    "trigger.list": "Show my currently scheduled agent runs.",
+    "weather": "What are the current weather conditions?",
+    "web.fetch": "Read https://example.com/lumen-training-guide.",
+    "web.search": "Look online for current Swift macro migration advice.",
+}
+
+
+def _cortex_natural_implicit_complete_prompt(tool: ToolManifest) -> str:
+    prompt = _CORTEX_NATURAL_IMPLICIT_COMPLETE_PROMPTS.get(tool.id)
+    if prompt is not None:
+        return prompt
+    sample_values = list(_adapter_sample_arguments(tool).values())
+    if not sample_values:
+        return (
+            f"Please carry out {(tool.displayName or tool.id).strip().lower()} now; "
+            "the request itself is complete."
+        )
+    rendered_values = "; ".join(
+        json.dumps(value, ensure_ascii=False)
+        for value in sample_values
+    )
+    return (
+        f"Please complete {(tool.displayName or tool.id).strip().lower()} using "
+        f"these concrete user details in manifest order: {rendered_values}."
+    )
+
+
+def _cortex_structured_complete_prompt(tool: ToolManifest) -> str:
+    supplied_values = json.dumps(
+        _adapter_sample_arguments(tool),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return (
+        f"Catalog route drill for `{tool.id}`: the complete user-value object is "
+        f"{supplied_values}. Emit the actionable route without Executor arguments."
+    )
+
+
+def _cortex_manifest_action_step_rehearsal_prompt(tool: ToolManifest) -> str:
+    supplied_values = json.dumps(
+        _adapter_sample_arguments(tool),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return (
+        f"Manifest action-step rehearsal for `{tool.id}`: supplied training values "
+        f"are {supplied_values}. Emit one full Cortex action route with its persisted "
+        "tool call; do not emit an Executor argument fragment."
+    )
+
+
+def _cortex_boundary_complete_prompt(
+    tool: ToolManifest,
+    *,
+    boundary: str,
+) -> str:
+    supplied_values = json.dumps(
+        _adapter_sample_arguments(tool),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    display = (tool.displayName or tool.id).strip().lower()
+    if boundary == "approval":
+        return (
+            f"This complete {display} request carries user values {supplied_values}. "
+            "Preserve its catalog approval boundary and persist the route only."
+        )
+    if boundary == "permission":
+        return (
+            f"Route this complete {display} request from values {supplied_values} "
+            "even while its app permission or sign-in is unavailable; keep the "
+            "selection manifest-bound."
+        )
+    raise ValueError(f"Unsupported Cortex boundary curriculum: {boundary!r}")
+
+
+def _cortex_foreign_schema_arguments(
+    tool: ToolManifest,
+    tools_by_id: dict[str, ToolManifest],
+) -> list[str]:
+    own_required = {
+        argument.name for argument in tool.arguments if argument.required
+    }
+    namespace = tool.id.split(".", 1)[0]
+    for sibling in sorted(tools_by_id.values(), key=lambda item: item.id):
+        if sibling.id == tool.id or sibling.id.split(".", 1)[0] != namespace:
+            continue
+        foreign = [
+            argument.name
+            for argument in sibling.arguments
+            if argument.required and argument.name not in own_required
+        ]
+        if foreign:
+            return foreign
+    return ["inventedArgument"]
+
+
+def _cortex_wrong_schema_clarification(
+    manifest: AgentBehaviorManifest,
+    tool: ToolManifest,
+    wrong_arguments: list[str],
+    *,
+    intent: str,
+) -> dict[str, Any]:
+    route = _canonical_cortex_selection_route(manifest, tool, intent=intent)
+    return {
+        **route,
+        "clarification": (
+            "What should I use for "
+            f"{_natural_language_list(wrong_arguments)} in {tool.id}?"
+        ),
+        "missingArguments": wrong_arguments,
+        "nextModel": "mouth",
+        "reasoningSummary": (
+            f"{tool.id} supposedly requires "
+            f"{_natural_language_list(wrong_arguments)} before routing."
+        ),
+        "status": "needs_clarification",
+    }
+
+
+def _cortex_failure_repair_sft_records(
+    manifest: AgentBehaviorManifest,
+    tools_by_id: dict[str, ToolManifest],
+) -> list[dict[str, Any]]:
+    """Encode fresh, bidirectional repairs for model-backed route failures."""
+
+    action_specs = (
+        (
+            "schema_alarm_authorization_status_action",
+            "Determine whether device-alarm access is authorized on this phone.",
+            "alarm.authorization_status",
+        ),
+        (
+            "zero_required_alarm_list_action",
+            "Display every alarm currently registered on this device.",
+            "alarm.list",
+        ),
+        (
+            "zero_required_alarm_request_authorization_action",
+            "Open the system request for alarm access now.",
+            "alarm.request_authorization",
+        ),
+        (
+            "schema_alarm_pause_action",
+            "Temporarily suspend alarm alarm-repair-907 until I resume it.",
+            "alarm.pause",
+        ),
+        (
+            "deictic_alarm_resume_explicit_id_action",
+            "Continue paused alarm alarm-repair-381 now.",
+            "alarm.resume",
+        ),
+        (
+            "deictic_trigger_cancel_explicit_id_action",
+            "Cancel scheduled run trigger-repair-381.",
+            "trigger.cancel",
+        ),
+        (
+            "structured_alarm_cancel_explicit_id_action",
+            (
+                "Route alarm.cancel with user values "
+                '{"id":"alarm-repair-cancel-642"}; preserve its catalog '
+                "approval boundary and begin the action."
+            ),
+            "alarm.cancel",
+        ),
+        (
+            "partial_countdown_complete_action",
+            "Start a seventy-five-second countdown called shader rest.",
+            "alarm.countdown",
+        ),
+        (
+            "schema_camera_capture_action",
+            "Use the device camera to make a fresh photograph now.",
+            "camera.capture",
+        ),
+        (
+            "implicit_memory_recall_action",
+            "Bring back what I saved about sustained thermal throttling.",
+            "memory.recall",
+        ),
+        (
+            "implicit_memory_save_action",
+            "Remember that I want compact crash summaries as a user preference.",
+            "memory.save",
+        ),
+        (
+            "action_persistence_photos_search",
+            "Look through my photo library for whiteboard sketches from yesterday.",
+            "photos.search",
+        ),
+        (
+            "action_persistence_rag_search",
+            "Search my indexed personal data for the provisioning audit notes.",
+            "rag.search",
+        ),
+        (
+            "implicit_reminder_title_action",
+            "Remind me to renew the provisioning profile tomorrow afternoon.",
+            "reminders.create",
+        ),
+        (
+            "schema_outlook_status_action",
+            "Report whether the connected Microsoft mailbox session is authenticated.",
+            "outlook.status",
+        ),
+        (
+            "route_outlook_send_action",
+            (
+                "Send a new Outlook email to devon@example.com with subject "
+                "Provisioning window, saying the signing slot opens at noon."
+            ),
+            "outlook.mail.send",
+        ),
+        (
+            "route_outlook_forward_action",
+            (
+                "Forward Outlook item AAMk-REPAIR-forward-381 to "
+                "devon@example.com."
+            ),
+            "outlook.message.forward",
+        ),
+        (
+            "schema_outlook_delete_action",
+            "Remove Microsoft Graph item AAMk-REPAIR-delete-907 from the mailbox.",
+            "outlook.message.delete",
+        ),
+        (
+            "route_outlook_list_action",
+            "Display the unread entries in my connected Microsoft mailbox.",
+            "outlook.messages.list",
+        ),
+        (
+            "boundary_reminder_complete_action",
+            "Remind me to upload the signed invoice at dusk.",
+            "reminders.create",
+        ),
+        (
+            "route_outlook_search_action",
+            "Look through my Microsoft mailbox for messages mentioning signing latency.",
+            "outlook.messages.search",
+        ),
+        (
+            "route_new_text_action",
+            "Compose a new text to 555-0142 saying the signing audit passed.",
+            "messages.draft",
+        ),
+    )
+    clarification_specs = (
+        (
+            "deictic_alarm_resume_missing_id",
+            "Resume that paused alarm for me; I have not given its identifier.",
+            "alarm.resume",
+            ["id"],
+        ),
+        (
+            "deictic_trigger_cancel_missing_id",
+            "Cancel that scheduled run; I have not identified which one.",
+            "trigger.cancel",
+            ["id"],
+        ),
+        (
+            "schema_alarm_pause_missing_id",
+            "Temporarily suspend an alarm, but I have not identified which alarm.",
+            "alarm.pause",
+            ["id"],
+        ),
+        (
+            "schema_alarm_countdown_missing_details",
+            "Start a countdown, but its label and length have not been provided.",
+            "alarm.countdown",
+            ["title", "durationSeconds"],
+        ),
+        (
+            "partial_countdown_missing_title",
+            (
+                "Start a seventy-five-second countdown, but I have not said what "
+                "to call it."
+            ),
+            "alarm.countdown",
+            ["title"],
+        ),
+        (
+            "implicit_memory_recall_missing_query",
+            "Look through saved memory, but I have not said what to look for.",
+            "memory.recall",
+            ["query"],
+        ),
+        (
+            "implicit_memory_save_missing_content_and_kind",
+            (
+                "Save something in memory, but I have supplied neither the "
+                "information nor the type of memory."
+            ),
+            "memory.save",
+            ["content", "kind"],
+        ),
+        (
+            "boundary_reminder_missing_title",
+            (
+                "At dusk I want an alert, but I have not said what the reminder "
+                "is about."
+            ),
+            "reminders.create",
+            ["title"],
+        ),
+        (
+            "schema_outlook_mark_read_missing_id",
+            "Mark an Outlook item as read, but I have not identified the item.",
+            "outlook.message.mark_read",
+            ["messageId"],
+        ),
+        (
+            "schema_outlook_reply_missing_body",
+            (
+                "Reply to Outlook item AAMk-REPAIR-reply-907, but I have not "
+                "supplied the response text."
+            ),
+            "outlook.message.reply",
+            ["body"],
+        ),
+        (
+            "route_outlook_reply_missing_all",
+            (
+                "I want to answer an existing Outlook email, but I have not "
+                "identified the item or written the response text."
+            ),
+            "outlook.message.reply",
+            ["messageId", "body"],
+        ),
+        (
+            "route_outlook_send_missing_body",
+            (
+                "Send a new Outlook email to devon@example.com titled Build slot, "
+                "but I have not written the message."
+            ),
+            "outlook.mail.send",
+            ["body"],
+        ),
+        (
+            "route_outlook_forward_missing_id",
+            (
+                "Forward an Outlook message to devon@example.com, but I have not "
+                "identified the message."
+            ),
+            "outlook.message.forward",
+            ["messageId"],
+        ),
+        (
+            "route_outlook_search_missing_query",
+            "Search my Microsoft mailbox, but I have not provided search terms.",
+            "outlook.messages.search",
+            ["query"],
+        ),
+        (
+            "route_new_text_missing_all",
+            "Draft a new text, but I have not supplied a recipient or message body.",
+            "messages.draft",
+            ["to", "body"],
+        ),
+    )
+    natural_minimal_pair_specs = (
+        (
+            "outlook_attachments_reference",
+            "explicit_id",
+            "outlook.attachments.list",
+            None,
+            (
+                "Inspect the files attached to Microsoft mail item AAMk-NAT-attach-204.",
+                "Retrieve the attachment inventory for mailbox item AAMk-NAT-attach-517.",
+                "Check which files accompany Graph message AAMk-NAT-attach-893.",
+            ),
+        ),
+        (
+            "outlook_attachments_reference",
+            "unresolved_reference",
+            "outlook.attachments.list",
+            ["messageId"],
+            (
+                "Inspect the files attached to the Outlook message I selected.",
+                "Retrieve the attachment inventory for the latest mailbox item.",
+                "Check which files accompany the Microsoft email we were discussing.",
+            ),
+        ),
+        (
+            "outlook_mark_unread_reference",
+            "explicit_id",
+            "outlook.message.mark_unread",
+            None,
+            (
+                "Restore the unread flag on Microsoft mail item AAMk-NAT-unread-204.",
+                "Change Graph message AAMk-NAT-unread-517 back to an unread state.",
+                "Apply the unread marker to mailbox item AAMk-NAT-unread-893.",
+            ),
+        ),
+        (
+            "outlook_mark_unread_reference",
+            "unresolved_reference",
+            "outlook.message.mark_unread",
+            ["messageId"],
+            (
+                "Restore the unread flag on the Outlook message I selected.",
+                "Change that Microsoft mailbox message back to unread.",
+                "Apply an unread marker to the email we were discussing.",
+            ),
+        ),
+        (
+            "outlook_reply_all_reference",
+            "explicit_id",
+            "outlook.message.reply_all",
+            None,
+            (
+                "Answer every participant on Graph item AAMk-NAT-replyall-204 with: the signing review is complete.",
+                "Respond to all recipients of mailbox item AAMk-NAT-replyall-517 saying the build window moved to Friday.",
+                "Send everyone on Microsoft message AAMk-NAT-replyall-893 the response: diagnostics are attached.",
+            ),
+        ),
+        (
+            "outlook_reply_all_reference",
+            "unresolved_reference",
+            "outlook.message.reply_all",
+            ["messageId"],
+            (
+                "Answer every participant on this Outlook message with: the signing review is complete.",
+                "Respond to all recipients of the selected mailbox item saying the build window moved to Friday.",
+                "Send everyone on that Microsoft email the response: diagnostics are attached.",
+            ),
+        ),
+        (
+            "alarm_resume_reference",
+            "explicit_id",
+            "alarm.resume",
+            None,
+            (
+                "Reactivate suspended wake-up entry alarm-natural-204.",
+                "Put paused alarm alarm-natural-517 back into service.",
+            ),
+        ),
+        (
+            "alarm_resume_reference",
+            "unresolved_reference",
+            "alarm.resume",
+            ["id"],
+            (
+                "Reactivate the suspended wake-up entry I selected.",
+                "Put that paused alarm back into service.",
+                "Continue the alarm we paused earlier.",
+            ),
+        ),
+        (
+            "trigger_cancel_reference",
+            "explicit_id",
+            "trigger.cancel",
+            None,
+            (
+                "Delete automation trigger-natural-204 from the scheduler.",
+                "Withdraw scheduled automation trigger-natural-517.",
+            ),
+        ),
+        (
+            "trigger_cancel_reference",
+            "unresolved_reference",
+            "trigger.cancel",
+            ["id"],
+            (
+                "Delete the automation trigger I selected.",
+                "Withdraw that scheduled automation.",
+                "Cancel the trigger we discussed earlier.",
+            ),
+        ),
+        (
+            "alarm_countdown_duration_only",
+            "complete",
+            "alarm.countdown",
+            None,
+            (
+                "Begin a ninety-second timer named cache cooldown.",
+                "Run a countdown called upload buffer for two hundred forty seconds.",
+            ),
+        ),
+        (
+            "alarm_countdown_duration_only",
+            "missing_title",
+            "alarm.countdown",
+            ["title"],
+            (
+                "Begin a timer lasting ninety seconds.",
+                "Run a two-hundred-forty-second countdown.",
+            ),
+        ),
+        (
+            "alarm_schedule_missing_values",
+            "unmarked_incomplete",
+            "alarm.schedule",
+            ["title", "inMinutes"],
+            (
+                "Schedule an alarm for me.",
+                "Set up a new wake-up alarm.",
+            ),
+        ),
+        (
+            "calendar_create_missing_values",
+            "unmarked_incomplete",
+            "calendar.create",
+            ["title", "startsInMinutes"],
+            (
+                "Add a new event to my calendar.",
+                "Create a calendar appointment for me.",
+            ),
+        ),
+        (
+            "outlook_send_recipient_only",
+            "unmarked_incomplete",
+            "outlook.mail.send",
+            ["subject", "body"],
+            (
+                "Send a new Outlook email to devon@example.com.",
+                "Email kai@example.com through my Microsoft mailbox.",
+            ),
+        ),
+        (
+            "outlook_send_named_recipient_only",
+            "unmarked_incomplete",
+            "outlook.mail.send",
+            ["subject", "body"],
+            (
+                "Email the release vendor through my connected Outlook account.",
+                "Send the component supplier a new Microsoft-mail message.",
+                "Contact the build contractor by Outlook email.",
+            ),
+        ),
+        (
+            "outlook_send_named_recipient_only",
+            "complete",
+            "outlook.mail.send",
+            None,
+            (
+                "Email the release vendor through Outlook with subject Delivery window and body: the parts arrive Friday.",
+                "Send the component supplier a Microsoft-mail message titled Audit result saying the inspection passed.",
+                "Contact the build contractor by Outlook email, subject Signing slot, body: the slot opens at noon.",
+            ),
+        ),
+        (
+            "outlook_forward_reference",
+            "unresolved_reference",
+            "outlook.message.forward",
+            ["messageId"],
+            (
+                "Forward this Outlook email to devon@example.com.",
+                "Pass the selected Microsoft mailbox message to kai@example.com.",
+            ),
+        ),
+        (
+            "photo_reindex_missing_months",
+            "unmarked_incomplete",
+            "rag.index_photos",
+            ["months"],
+            (
+                "Rebuild the searchable index for my photo library.",
+                "Reindex my recent photos for retrieval.",
+            ),
+        ),
+        (
+            "zero_required_alarm_list",
+            "actionable",
+            "alarm.list",
+            None,
+            (
+                "Read back every wake-up entry configured on this device.",
+                "Show the complete on-device alarm roster.",
+                "Enumerate every configured wake-up entry on this device.",
+            ),
+        ),
+        (
+            "zero_required_calendar_list",
+            "actionable",
+            "calendar.list",
+            None,
+            (
+                "Display the upcoming event roster from my calendar.",
+            ),
+        ),
+        (
+            "zero_required_outlook_folders_list",
+            "actionable",
+            "outlook.folders.list",
+            None,
+            (
+                "Enumerate connected Microsoft folder inventory with unread totals.",
+            ),
+        ),
+        (
+            "zero_required_outlook_messages_list",
+            "actionable",
+            "outlook.messages.list",
+            None,
+            (
+                "Retrieve recent mail items from the connected account.",
+            ),
+        ),
+        (
+            "zero_required_alarm_authorization_request",
+            "actionable",
+            "alarm.request_authorization",
+            None,
+            (
+                "Ask iOS for device-alarm access now.",
+                "Present the operating-system permission request for alarms.",
+                "Have the phone begin the AlarmKit access flow.",
+                "Initiate on-device authorization for scheduling alarms.",
+                "Show the system consent interface for alarm features.",
+            ),
+        ),
+        (
+            "zero_required_reminders_list",
+            "actionable",
+            "reminders.list",
+            None,
+            (
+                "Read out the pending to-dos from Apple Reminders.",
+                "Display the unfinished entries stored in Reminders.",
+                "Bring up my open reminder tasks from the device database.",
+                "Enumerate pending reminders on the device.",
+                "List unfinished to-dos from local storage.",
+            ),
+        ),
+        (
+            "zero_required_trigger_list",
+            "actionable",
+            "trigger.list",
+            None,
+            (
+                "Enumerate the active background-run registrations in Lumen.",
+            ),
+        ),
+        (
+            "calendar_human_event_vague_time",
+            "missing_numeric_start",
+            "calendar.create",
+            ["startsInMinutes"],
+            (
+                "Put quarterly safety inspection into the device calendar sometime next week.",
+                "Add supplier walkthrough as a calendar event during a future weekday period.",
+                "Book equipment handoff as a calendar event during an unspecified morning.",
+                "Reserve a calendar slot for the warehouse survey on an upcoming weekday.",
+            ),
+        ),
+        (
+            "zero_required_weather",
+            "actionable",
+            "weather",
+            None,
+            (
+                "Give me local atmospheric conditions where the phone is.",
+                "Report the nearby forecast using my current area.",
+                "Tell me the conditions outside at my present location.",
+            ),
+        ),
+        (
+            "outlook_send_vs_system_draft",
+            "outlook_send",
+            "outlook.mail.send",
+            None,
+            (
+                "Using the connected Microsoft account, send kai@example.com a message titled Release window with body: deployment begins at three.",
+                "Transmit through Outlook to noa@example.com, subject Adapter report, body: the verification run passed.",
+            ),
+        ),
+        (
+            "outlook_send_vs_system_draft",
+            "system_mail_draft",
+            "mail.draft",
+            None,
+            (
+                "Open an Apple Mail composer draft to kai@example.com containing deployment begins at three.",
+                "Prepare, but do not send, a system Mail draft for noa@example.com saying the verification run passed.",
+                "Compose an unsent message in the device Mail sheet to ivy@example.com with body: review the trace bundle.",
+            ),
+        ),
+        (
+            "provider_neutral_send_vs_draft",
+            "send_now",
+            "outlook.mail.send",
+            None,
+            (
+                "Send an email now to maya.chen@example.com with subject Friday rehearsal and body: rehearsal starts at 6:30 PM this Friday.",
+                "Email devon.lee@example.com now with subject Invoice approved and body: the April invoice has been approved for payment.",
+            ),
+        ),
+        (
+            "provider_neutral_send_vs_draft",
+            "draft_only",
+            "mail.draft",
+            None,
+            (
+                "Compose a draft email to priya.shah@example.com saying we should move our meeting to Wednesday afternoon; do not send it.",
+                "Open a new email draft addressed to noah.kim@example.com containing that the materials will be ready tomorrow, and leave it unsent.",
+            ),
+        ),
+        (
+            "outlook_forward_vs_system_draft",
+            "outlook_forward",
+            "outlook.message.forward",
+            None,
+            (
+                "Relay Microsoft mailbox item AAMk-NAT-forward-204 to kai@example.com.",
+                "Pass Graph message AAMk-NAT-forward-517 along to noa@example.com.",
+            ),
+        ),
+        (
+            "memory_save_preference",
+            "actionable",
+            "memory.save",
+            None,
+            (
+                "Retain my preference for terse stack-trace explanations.",
+                "Keep in memory that I favor numbered remediation steps as a preference.",
+                "Store the fact that I favor concise dependency-failure explanations as a user preference.",
+                "Please remember my preference for numbered crash-recovery instructions.",
+                "Note for future conversations: I like short summaries before diagnostic details.",
+                "Keep this preference: lead with the failing subsystem before the stack trace.",
+                "Remember that compact launch reports work best for me.",
+                "Keep in mind that evidence-first explanations are what I prefer.",
+                "Retain a user preference for diagnosis-first engineering explanations.",
+                "Store my preferred response style: concise findings before details.",
+            ),
+        ),
+        (
+            "memory_save_app_operation",
+            "unmarked_incomplete",
+            "memory.save",
+            ["content", "kind"],
+            (
+                "Please perform the store-in-memory app operation.",
+                "Handle the save-to-memory capability for me.",
+            ),
+        ),
+        (
+            "memory_save_recall_same_topic",
+            "save",
+            "memory.save",
+            None,
+            (
+                "Remember my preference for compact root-cause explanations.",
+                "Keep my preference for terse build diagnostics in memory.",
+            ),
+        ),
+        (
+            "memory_save_recall_same_topic",
+            "recall",
+            "memory.recall",
+            None,
+            (
+                "Retrieve my saved preference about compact root-cause explanations.",
+                "What did I store about my preference for terse build diagnostics?",
+            ),
+        ),
+        (
+            "memory_recall_query",
+            "actionable",
+            "memory.recall",
+            None,
+            (
+                "Retrieve my stored notes concerning adapter merge latency.",
+                "Bring up saved context about the thermal watchdog investigation.",
+                "Retrieve stored context concerning the on-device inference benchmark.",
+                "Which saved details concern the signing workflow?",
+            ),
+        ),
+        (
+            "reminder_creation_title",
+            "actionable",
+            "reminders.create",
+            None,
+            (
+                "Make a reminder to rotate the signing certificate.",
+                "Add renew the staging token to my reminders.",
+            ),
+        ),
+        (
+            "maps_search_query",
+            "actionable",
+            "maps.search",
+            None,
+            (
+                "Locate bicycle repair shops around my position.",
+                "Find a quiet study cafe in the surrounding area.",
+                "Look on the map for nearby electronics recycling depots.",
+            ),
+        ),
+        (
+            "alarm_countdown_notify_without_title",
+            "missing_title",
+            "alarm.countdown",
+            ["title"],
+            (
+                "Count down for four minutes and notify me when it ends.",
+                "Run a six-minute timer and alert me at zero.",
+                "Start a two-minute countdown and make a sound at zero.",
+                "Give me a ninety-second timer that alerts at completion.",
+            ),
+        ),
+        (
+            "alarm_countdown_notify_without_title",
+            "complete",
+            "alarm.countdown",
+            None,
+            (
+                "Count down for four minutes under the title shader cooldown and notify me when it ends.",
+                "Run a six-minute timer named upload buffer and alert me at zero.",
+            ),
+        ),
+        (
+            "outlook_reply_reference_without_body",
+            "unresolved_reference",
+            "outlook.message.reply",
+            ["messageId", "body"],
+            (
+                "Send a response to an existing Microsoft mailbox message.",
+                "Answer the Outlook conversation currently open in the mailbox.",
+                "Respond to the Graph mail item we looked at earlier.",
+                "Write back to the email at the top of my Outlook inbox.",
+            ),
+        ),
+        (
+            "outlook_reply_all_reference_without_body",
+            "unresolved_reference",
+            "outlook.message.reply_all",
+            ["messageId", "body"],
+            (
+                "Reply to everyone on the currently highlighted Outlook conversation.",
+                "Respond to all recipients of the Microsoft message we discussed.",
+                "Answer everyone included on the Microsoft mail thread I am viewing.",
+                "Send a group response on that Outlook conversation.",
+                "Send an all-recipient response on the highlighted Microsoft-mail item.",
+                "Answer every participant in the chosen Graph mailbox thread.",
+            ),
+        ),
+        (
+            "outlook_reply_all_selected_message_body_boundary",
+            "missing_message_id",
+            "outlook.message.reply_all",
+            ["messageId"],
+            (
+                "Answer every participant in the chosen Graph mailbox thread saying the release is clear.",
+            ),
+        ),
+        (
+            "outlook_send_named_recipient_unresolved_content",
+            "unmarked_incomplete",
+            "outlook.mail.send",
+            ["subject", "body"],
+            (
+                "Use Outlook to send our release coordinator the note we discussed.",
+                "Email the component vendor that information through the connected Microsoft account.",
+                "Send the audit partner this news by Outlook.",
+                "Through Microsoft mail, contact our build contractor with what we covered earlier.",
+            ),
+        ),
+        (
+            "outlook_move_required_subsets",
+            "all_missing",
+            "outlook.message.move",
+            ["messageId", "destination"],
+            (
+                "Move an Outlook message into another mailbox folder.",
+                "Relocate a Microsoft-mail item for me.",
+            ),
+        ),
+        (
+            "outlook_move_required_subsets",
+            "missing_message_id",
+            "outlook.message.move",
+            ["messageId"],
+            (
+                "Move the Outlook message I selected into the Archive folder.",
+                "Relocate that Microsoft-mail item to Project Records.",
+            ),
+        ),
+        (
+            "outlook_move_required_subsets",
+            "missing_destination",
+            "outlook.message.move",
+            ["destination"],
+            (
+                "Move Outlook message AAMk-NAT-move-642 into another folder.",
+                "Relocate Microsoft-mail item AAMk-NAT-move-917 for me.",
+            ),
+        ),
+        (
+            "outlook_move_required_subsets",
+            "complete",
+            "outlook.message.move",
+            None,
+            (
+                "Move Outlook message AAMk-NAT-move-642 into the Archive folder.",
+                "Relocate Microsoft-mail item AAMk-NAT-move-917 to Project Records.",
+            ),
+        ),
+    )
+    targeted_failure_families = {
+        "alarm_countdown_notify_without_title": (
+            "implicit_duration_countdown_missing_title"
+        ),
+        "calendar_human_event_vague_time": (
+            "calendar_event_title_without_numeric_delay"
+        ),
+        "memory_recall_query": "implicit_topic_memory_recall",
+        "memory_save_preference": "implicit_preference_memory_save",
+        "outlook_reply_reference_without_body": (
+            "outlook_reply_unresolved_reference_and_body"
+        ),
+        "outlook_reply_all_reference_without_body": (
+            "outlook_reply_unresolved_reference_and_body"
+        ),
+        "outlook_reply_all_selected_message_body_boundary": (
+            "outlook_reply_unresolved_reference_and_body"
+        ),
+        "outlook_send_named_recipient_unresolved_content": (
+            "outlook_send_unresolved_subject_and_body"
+        ),
+        "zero_required_alarm_authorization_request": (
+            "zero_required_action_without_invented_arguments"
+        ),
+        "zero_required_alarm_list": "zero_required_list_action",
+        "zero_required_calendar_list": "zero_required_list_action",
+        "zero_required_outlook_folders_list": "zero_required_list_action",
+        "zero_required_outlook_messages_list": "zero_required_list_action",
+        "zero_required_reminders_list": "zero_required_list_action",
+        "zero_required_trigger_list": "zero_required_list_action",
+    }
+    records: list[dict[str, Any]] = []
+    for repair_case, prompt, tool_id in action_specs:
+        tool = tools_by_id.get(tool_id)
+        if tool is None:
+            continue
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                prompt,
+                _canonical_cortex_action_route(manifest, tool),
+                "cortex_route_failure_repair_action",
+                [tool.id],
+                _risk_for_tool(tool),
+                {
+                    "curriculumMode": "failure_repair_actionable",
+                    "repairCase": repair_case,
+                    "requiredSplit": "train",
+                    "suppliedArguments": required_arguments,
+                },
+                manifest,
+            )
+        )
+    for repair_case, prompt, tool_id, missing_arguments in clarification_specs:
+        tool = tools_by_id.get(tool_id)
+        if tool is None:
+            continue
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                prompt,
+                _canonical_cortex_clarification_route(
+                    manifest,
+                    tool,
+                    missing_arguments,
+                ),
+                "cortex_route_failure_repair_clarification",
+                [tool.id],
+                "boundary",
+                {
+                    "curriculumMode": "failure_repair_clarification",
+                    "missingArguments": missing_arguments,
+                    "repairCase": repair_case,
+                    "requiredSplit": "train",
+                    "suppliedArguments": [
+                        argument
+                        for argument in required_arguments
+                        if argument not in missing_arguments
+                    ],
+                },
+                manifest,
+            )
+        )
+    for (
+        minimal_pair_family,
+        minimal_pair_state,
+        tool_id,
+        missing_arguments,
+        prompts,
+    ) in natural_minimal_pair_specs:
+        tool = tools_by_id.get(tool_id)
+        if tool is None:
+            continue
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        if missing_arguments is not None and any(
+            argument not in required_arguments for argument in missing_arguments
+        ):
+            continue
+        supplied_arguments = [
+            argument
+            for argument in required_arguments
+            if missing_arguments is None or argument not in missing_arguments
+        ]
+        if missing_arguments is None:
+            route = _canonical_cortex_action_route(manifest, tool)
+            curriculum_mode = "failure_repair_actionable"
+            risk = _risk_for_tool(tool)
+        else:
+            route = _canonical_cortex_clarification_route(
+                manifest,
+                tool,
+                missing_arguments,
+            )
+            curriculum_mode = "failure_repair_clarification"
+            risk = "boundary"
+        for surface_index, prompt in enumerate(prompts, start=1):
+            repair_case = (
+                f"natural_{minimal_pair_family}_{minimal_pair_state}_"
+                f"{surface_index}"
+            )
+            metadata: dict[str, Any] = {
+                "curriculumMode": curriculum_mode,
+                "minimalPairFamily": minimal_pair_family,
+                "minimalPairState": minimal_pair_state,
+                "repairCase": repair_case,
+                "requiredSplit": "train",
+                "surfaceForm": f"natural_minimal_pair_{surface_index}",
+                "suppliedArguments": supplied_arguments,
+            }
+            if missing_arguments is not None:
+                metadata["missingArguments"] = missing_arguments
+            targeted_failure_family = targeted_failure_families.get(
+                minimal_pair_family
+            )
+            if targeted_failure_family is not None:
+                metadata["targetedFailureFamily"] = targeted_failure_family
+            records.append(
+                _adapter_sft_record(
+                    "cortex",
+                    prompt,
+                    route,
+                    (
+                        "cortex_route_failure_repair_action"
+                        if missing_arguments is None
+                        else "cortex_route_failure_repair_clarification"
+                    ),
+                    [tool.id],
+                    risk,
+                    metadata,
+                    manifest,
+                )
+            )
+
+    retry_specs = (
+        (
+            "retry_unknown_tool_exact_catalog_reselection",
+            (
+                "Send an email now to maya.chen@example.com with subject Friday "
+                "rehearsal and body: rehearsal starts at 6:30 PM this Friday."
+            ),
+            "outlook.mail.send",
+            None,
+            "cortex_route_tool_not_in_manifest",
+            False,
+        ),
+        (
+            "retry_invalid_intent_default_reselection",
+            "Remember that I prefer compact runtime summaries as a preference.",
+            "memory.save",
+            None,
+            "cortex_route_intent_not_in_manifest",
+            True,
+        ),
+        (
+            "retry_zero_required_protocol_fields",
+            "Display every alarm configured on this phone.",
+            "alarm.list",
+            None,
+            "cortex_route_protocol_field_invalid",
+            True,
+        ),
+        (
+            "retry_invalid_json_without_trusted_row",
+            "Rebuild the search index for my imported local files and PDFs.",
+            "rag.index_files",
+            None,
+            "invalid_json",
+            False,
+        ),
+        (
+            "retry_protocol_fields_without_trusted_row",
+            "Show my Outlook folders with their unread and total counts.",
+            "outlook.folders.list",
+            None,
+            "cortex_route_protocol_field_invalid",
+            False,
+        ),
+        (
+            "retry_complete_approval_contract",
+            "Cancel alarm alarm-retry-117.",
+            "alarm.cancel",
+            None,
+            "cortex_route_approval_mismatch",
+            True,
+        ),
+        (
+            "retry_deictic_clarification_contract",
+            "Forward this Outlook email to noa@example.com.",
+            "outlook.message.forward",
+            ["messageId"],
+            "cortex_route_clarification_state_invalid",
+            True,
+        ),
+        (
+            "retry_partial_clarification_contract",
+            "Start a three-minute countdown.",
+            "alarm.countdown",
+            ["title"],
+            "cortex_route_action_state_invalid",
+            True,
+        ),
+        (
+            "retry_action_persistence_literal_true",
+            "Find skyline photographs from last month in my photo library.",
+            "photos.search",
+            None,
+            "cortex_route_action_state_invalid",
+            True,
+        ),
+        (
+            "retry_calendar_event_exact_catalog_reselection",
+            (
+                "Arrange a compliance workshop on my calendar during an "
+                "unspecified afternoon."
+            ),
+            "calendar.create",
+            ["startsInMinutes"],
+            "cortex_route_tool_not_in_manifest",
+            False,
+        ),
+    )
+    zero_required_retry_failure_codes = (
+        "cortex_route_clarification_state_invalid",
+        "cortex_route_protocol_field_invalid",
+    )
+    zero_required_retry_specs = tuple(
+        (
+            (
+                "retry_zero_required_catalog_"
+                f"{tool.id.replace('.', '_')}_{failure_code}"
+            ),
+            _cortex_natural_implicit_complete_prompt(tool),
+            tool.id,
+            None,
+            failure_code,
+            True,
+        )
+        for tool in sorted(tools_by_id.values(), key=lambda item: item.id)
+        if not any(argument.required for argument in tool.arguments)
+        for failure_code in zero_required_retry_failure_codes
+    )
+    retry_specs = retry_specs + zero_required_retry_specs
+    zero_required_retry_cases = {
+        spec[0] for spec in zero_required_retry_specs
+    }
+    retry_required_contracts = {
+        "retry_unknown_tool_exact_catalog_reselection": ["to", "subject", "body"],
+        "retry_invalid_intent_default_reselection": ["content", "kind"],
+        "retry_zero_required_protocol_fields": [],
+        "retry_invalid_json_without_trusted_row": [],
+        "retry_protocol_fields_without_trusted_row": [],
+        "retry_complete_approval_contract": ["id"],
+        "retry_deictic_clarification_contract": ["messageId", "to"],
+        "retry_partial_clarification_contract": ["title", "durationSeconds"],
+        "retry_action_persistence_literal_true": ["query"],
+        "retry_calendar_event_exact_catalog_reselection": [
+            "title",
+            "startsInMinutes",
+        ],
+    }
+    retry_required_contracts.update(
+        {repair_case: [] for repair_case in zero_required_retry_cases}
+    )
+    for (
+        repair_case,
+        prompt,
+        tool_id,
+        missing_arguments,
+        failure_code,
+        include_trusted_row,
+    ) in retry_specs:
+        tool = tools_by_id.get(tool_id)
+        if tool is None:
+            continue
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        if required_arguments != retry_required_contracts[repair_case]:
+            continue
+        route = (
+            _canonical_cortex_action_route(manifest, tool)
+            if missing_arguments is None
+            else _canonical_cortex_clarification_route(
+                manifest,
+                tool,
+                missing_arguments,
+            )
+        )
+        metadata: dict[str, Any] = {
+            "curriculumMode": "strict_retry_repair",
+            "failureCode": failure_code,
+            "missingArguments": missing_arguments or [],
+            "repairCase": repair_case,
+            "requiredSplit": "train",
+            "suppliedArguments": [
+                argument
+                for argument in required_arguments
+                if missing_arguments is None
+                or argument not in missing_arguments
+            ],
+        }
+        if repair_case in zero_required_retry_cases:
+            metadata.update(
+                {
+                    "surfaceForm": "systematic_zero_required_strict_retry",
+                    "targetedFailureFamily": (
+                        "zero_required_strict_retry_action"
+                    ),
+                }
+            )
+        elif repair_case == "retry_calendar_event_exact_catalog_reselection":
+            metadata.update(
+                {
+                    "surfaceForm": "strict_retry_calendar_event",
+                    "targetedFailureFamily": (
+                        "calendar_event_title_without_numeric_delay"
+                    ),
+                }
+            )
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                _cortex_strict_retry_training_prompt(
+                    prompt,
+                    failure_code,
+                    manifest=manifest,
+                    trusted_selected_tool=tool if include_trusted_row else None,
+                ),
+                route,
+                "cortex_route_strict_retry_repair",
+                [tool.id],
+                "boundary",
+                metadata,
+                manifest,
+            )
+        )
+    semantic_validation_specs = (
+        (
+            "validation_memory_recall_topic",
+            "Do my saved notes mention the signing audit?",
+            "memory.recall",
+            None,
+            "implicit_topic_memory_recall",
+        ),
+        (
+            "validation_memory_save_preference",
+            (
+                "Keep for later that terse explanations should come before "
+                "commands as my preference."
+            ),
+            "memory.save",
+            None,
+            "implicit_preference_memory_save",
+        ),
+        (
+            "validation_zero_required_reminders_list",
+            "Display the remaining items in my reminder queue.",
+            "reminders.list",
+            None,
+            "zero_required_list_action",
+        ),
+        (
+            "validation_calendar_event_missing_start",
+            "Plan a contractor walkthrough for me.",
+            "calendar.create",
+            ["startsInMinutes"],
+            "calendar_event_title_without_numeric_delay",
+        ),
+    )
+    for (
+        repair_case,
+        prompt,
+        tool_id,
+        missing_arguments,
+        targeted_failure_family,
+    ) in semantic_validation_specs:
+        tool = tools_by_id.get(tool_id)
+        if tool is None:
+            continue
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        if missing_arguments is not None and not set(missing_arguments).issubset(
+            required_arguments
+        ):
+            continue
+        route = (
+            _canonical_cortex_action_route(manifest, tool)
+            if missing_arguments is None
+            else _canonical_cortex_clarification_route(
+                manifest,
+                tool,
+                missing_arguments,
+            )
+        )
+        metadata = {
+            "curriculumMode": (
+                "semantic_generalization_actionable"
+                if missing_arguments is None
+                else "semantic_generalization_clarification"
+            ),
+            "repairCase": repair_case,
+            "requiredSplit": "validation",
+            "surfaceForm": "held_out_semantic_generalization",
+            "suppliedArguments": [
+                argument
+                for argument in required_arguments
+                if missing_arguments is None
+                or argument not in missing_arguments
+            ],
+            "targetedFailureFamily": targeted_failure_family,
+        }
+        if missing_arguments is not None:
+            metadata["missingArguments"] = missing_arguments
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                prompt,
+                route,
+                "cortex_route_semantic_generalization_validation",
+                [tool.id],
+                _risk_for_tool(tool) if missing_arguments is None else "boundary",
+                metadata,
+                manifest,
+            )
+        )
+    return records
+
+
+def _cortex_failure_repair_dpo_pairs(
+    manifest: AgentBehaviorManifest,
+    tools_by_id: dict[str, ToolManifest],
+) -> list[dict[str, Any]]:
+    """Prefer repaired states and their reverse boundaries on fresh prompts."""
+
+    def action(tool_id: str) -> dict[str, Any]:
+        return _canonical_cortex_action_route(manifest, tools_by_id[tool_id])
+
+    def action_with_false_persistence(tool_id: str) -> dict[str, Any]:
+        route = action(tool_id)
+        action_step = route["actionStep"]
+        return {
+            **route,
+            "actionStep": {
+                **action_step,
+                "mustPersistBeforeFinal": False,
+            },
+        }
+
+    def selection(tool_id: str) -> dict[str, Any]:
+        return _canonical_cortex_selection_route(manifest, tools_by_id[tool_id])
+
+    def clarification(tool_id: str, missing: list[str]) -> dict[str, Any]:
+        return _canonical_cortex_clarification_route(
+            manifest,
+            tools_by_id[tool_id],
+            missing,
+        )
+
+    def wrong_schema(tool_id: str, missing: list[str]) -> dict[str, Any]:
+        tool = tools_by_id[tool_id]
+        return _cortex_wrong_schema_clarification(
+            manifest,
+            tool,
+            missing,
+            intent=_routed_intent_for_tool(manifest, tool.id),
+        )
+
+    def route_with_nonexistent_alias(
+        route: dict[str, Any],
+        alias: str,
+    ) -> dict[str, Any]:
+        rejected = {
+            **route,
+            "selectedToolID": alias,
+            "reasoningSummary": f"Route this request through {alias}.",
+        }
+        action_step = route.get("actionStep")
+        if isinstance(action_step, dict):
+            rejected["actionStep"] = {**action_step, "toolID": alias}
+        return rejected
+
+    def nonexistent_alias(tool_id: str, alias: str) -> dict[str, Any]:
+        return route_with_nonexistent_alias(action(tool_id), alias)
+
+    def route_with_intent(
+        route: dict[str, Any],
+        intent: str,
+    ) -> dict[str, Any]:
+        return {**route, "intent": intent}
+
+    def wrong_missing_subset(
+        tool_id: str,
+        chosen_missing: list[str],
+        rejected_missing: list[str],
+    ) -> dict[str, Any]:
+        route = clarification(tool_id, chosen_missing)
+        return {
+            **route,
+            "missingArguments": rejected_missing,
+            "clarification": (
+                "What should I use for "
+                f"{_natural_language_list(rejected_missing)} in {tool_id}?"
+            ),
+            "reasoningSummary": (
+                f"{tool_id} supposedly still lacks "
+                f"{_natural_language_list(rejected_missing)}."
+            ),
+        }
+
+    required_tools = {
+        "alarm.cancel",
+        "alarm.authorization_status",
+        "alarm.list",
+        "alarm.pause",
+        "alarm.request_authorization",
+        "alarm.resume",
+        "alarm.schedule",
+        "alarm.countdown",
+        "calendar.create",
+        "calendar.list",
+        "camera.capture",
+        "health.summary",
+        "memory.recall",
+        "memory.save",
+        "messages.draft",
+        "outlook.mail.send",
+        "outlook.folders.list",
+        "outlook.message.delete",
+        "outlook.message.forward",
+        "outlook.message.mark_read",
+        "outlook.message.move",
+        "outlook.message.reply",
+        "outlook.message.reply_all",
+        "outlook.messages.list",
+        "outlook.messages.search",
+        "outlook.status",
+        "photos.search",
+        "rag.search",
+        "reminders.create",
+        "reminders.list",
+        "trigger.cancel",
+        "trigger.create",
+        "trigger.list",
+        "weather",
+    }
+    if not required_tools.issubset(tools_by_id):
+        return []
+
+    specs = (
+        (
+            "schema_alarm_authorization_status_action",
+            "Determine whether device-alarm access is authorized on this phone.",
+            action("alarm.authorization_status"),
+            wrong_schema("alarm.authorization_status", ["id", "title"]),
+        ),
+        (
+            "zero_required_alarm_list_action",
+            "Display every alarm currently registered on this device.",
+            action("alarm.list"),
+            wrong_schema("alarm.list", ["id", "title"]),
+        ),
+        (
+            "zero_required_alarm_request_authorization_action",
+            "Open the system request for alarm access now.",
+            action("alarm.request_authorization"),
+            wrong_schema("alarm.request_authorization", ["id", "title"]),
+        ),
+        (
+            "schema_alarm_pause_missing_id",
+            "Temporarily suspend an alarm, but I have not identified which alarm.",
+            clarification("alarm.pause", ["id"]),
+            action("alarm.pause"),
+        ),
+        (
+            "schema_alarm_pause_action",
+            "Temporarily suspend alarm alarm-repair-907 until I resume it.",
+            action("alarm.pause"),
+            wrong_schema("alarm.pause", ["title"]),
+        ),
+        (
+            "schema_alarm_countdown_missing_details",
+            "Start a countdown, but its label and length have not been provided.",
+            clarification("alarm.countdown", ["title", "durationSeconds"]),
+            action("alarm.countdown"),
+        ),
+        (
+            "deictic_alarm_resume_missing_id",
+            "Resume that paused alarm for me; I have not given its identifier.",
+            clarification("alarm.resume", ["id"]),
+            action("alarm.resume"),
+        ),
+        (
+            "deictic_alarm_resume_explicit_id_action",
+            "Continue paused alarm alarm-repair-381 now.",
+            action("alarm.resume"),
+            clarification("alarm.resume", ["id"]),
+        ),
+        (
+            "deictic_trigger_cancel_missing_id",
+            "Cancel that scheduled run; I have not identified which one.",
+            clarification("trigger.cancel", ["id"]),
+            action("trigger.cancel"),
+        ),
+        (
+            "deictic_trigger_cancel_explicit_id_action",
+            "Cancel scheduled run trigger-repair-381.",
+            action("trigger.cancel"),
+            clarification("trigger.cancel", ["id"]),
+        ),
+        (
+            "structured_alarm_cancel_explicit_id_action",
+            (
+                "Route alarm.cancel with user values "
+                '{"id":"alarm-repair-cancel-642"}; preserve its catalog '
+                "approval boundary and begin the action."
+            ),
+            action("alarm.cancel"),
+            wrong_schema("alarm.cancel", ["title"]),
+        ),
+        (
+            "partial_countdown_missing_title",
+            (
+                "Start a seventy-five-second countdown, but I have not said what "
+                "to call it."
+            ),
+            clarification("alarm.countdown", ["title"]),
+            action("alarm.countdown"),
+        ),
+        (
+            "partial_countdown_complete_action",
+            "Start a seventy-five-second countdown called shader rest.",
+            action("alarm.countdown"),
+            clarification("alarm.countdown", ["title"]),
+        ),
+        (
+            "schema_camera_capture_action",
+            "Use the device camera to make a fresh photograph now.",
+            action("camera.capture"),
+            wrong_schema("camera.capture", ["title"]),
+        ),
+        (
+            "implicit_memory_recall_action",
+            "Bring back what I saved about sustained thermal throttling.",
+            action("memory.recall"),
+            clarification("memory.recall", ["query"]),
+        ),
+        (
+            "implicit_memory_recall_missing_query",
+            "Look through saved memory, but I have not said what to look for.",
+            clarification("memory.recall", ["query"]),
+            action("memory.recall"),
+        ),
+        (
+            "implicit_memory_save_action",
+            "Remember that I want compact crash summaries as a user preference.",
+            action("memory.save"),
+            clarification("memory.save", ["content", "kind"]),
+        ),
+        (
+            "implicit_memory_save_missing_content_and_kind",
+            (
+                "Save something in memory, but I have supplied neither the "
+                "information nor the type of memory."
+            ),
+            clarification("memory.save", ["content", "kind"]),
+            action("memory.save"),
+        ),
+        (
+            "implicit_reminder_title_action",
+            "Remind me to renew the provisioning profile tomorrow afternoon.",
+            action("reminders.create"),
+            clarification("reminders.create", ["title"]),
+        ),
+        (
+            "boundary_reminder_missing_title",
+            (
+                "Create a reminder later today, though I have not supplied its "
+                "subject."
+            ),
+            clarification("reminders.create", ["title"]),
+            action("reminders.create"),
+        ),
+        (
+            "schema_outlook_status_action",
+            "Report whether the connected Microsoft mailbox session is authenticated.",
+            action("outlook.status"),
+            wrong_schema("outlook.status", ["messageId"]),
+        ),
+        (
+            "route_outlook_send_action",
+            (
+                "Send a new Outlook email to devon@example.com with subject "
+                "Provisioning window, saying the signing slot opens at noon."
+            ),
+            action("outlook.mail.send"),
+            action("outlook.message.forward"),
+        ),
+        (
+            "route_outlook_forward_action",
+            (
+                "Forward Outlook item AAMk-REPAIR-forward-381 to "
+                "devon@example.com."
+            ),
+            action("outlook.message.forward"),
+            action("outlook.mail.send"),
+        ),
+        (
+            "route_outlook_forward_exact_id",
+            (
+                "Pass Outlook message AAMk-REPAIR-forward-731 along to "
+                "lee@example.com."
+            ),
+            action("outlook.message.forward"),
+            nonexistent_alias("outlook.message.forward", "mail.forward"),
+        ),
+        (
+            "route_outlook_send_missing_body",
+            (
+                "Send a new Outlook email to devon@example.com titled Build slot, "
+                "but I have not written the message."
+            ),
+            clarification("outlook.mail.send", ["body"]),
+            action("outlook.mail.send"),
+        ),
+        (
+            "route_outlook_named_recipient_missing_subject_body_alias",
+            "Email the release vendor through my connected Outlook account.",
+            clarification("outlook.mail.send", ["subject", "body"]),
+            route_with_nonexistent_alias(
+                clarification("outlook.mail.send", ["subject", "body"]),
+                "mail.send",
+            ),
+        ),
+        (
+            "route_outlook_named_recipient_missing_subject_body_intent",
+            "Send the component supplier a new Microsoft-mail message.",
+            clarification("outlook.mail.send", ["subject", "body"]),
+            route_with_intent(
+                clarification("outlook.mail.send", ["subject", "body"]),
+                "emailOperation",
+            ),
+        ),
+        (
+            "route_outlook_forward_missing_id",
+            (
+                "Forward an Outlook message to devon@example.com, but I have not "
+                "identified the message."
+            ),
+            clarification("outlook.message.forward", ["messageId"]),
+            action("outlook.message.forward"),
+        ),
+        (
+            "schema_outlook_mark_read_missing_id",
+            "Mark an Outlook item as read, but I have not identified the item.",
+            clarification("outlook.message.mark_read", ["messageId"]),
+            action("outlook.message.mark_read"),
+        ),
+        (
+            "schema_outlook_delete_action",
+            "Remove Microsoft Graph item AAMk-REPAIR-delete-907 from the mailbox.",
+            action("outlook.message.delete"),
+            wrong_schema("outlook.message.delete", ["body"]),
+        ),
+        (
+            "schema_outlook_reply_missing_body",
+            (
+                "Reply to Outlook item AAMk-REPAIR-reply-907, but I have not "
+                "supplied the response text."
+            ),
+            clarification("outlook.message.reply", ["body"]),
+            action("outlook.message.reply"),
+        ),
+        (
+            "route_outlook_reply_missing_all",
+            (
+                "I want to answer an existing Outlook email, but I have not "
+                "identified the item or written the response text."
+            ),
+            clarification("outlook.message.reply", ["messageId", "body"]),
+            clarification("messages.draft", ["to", "body"]),
+        ),
+        (
+            "route_outlook_reply_all_reference_missing_all",
+            "Reply to everyone on the currently highlighted Outlook conversation.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId", "body"],
+                ["messageId"],
+            ),
+        ),
+        (
+            "route_outlook_move_missing_all",
+            "Move an Outlook message into another mailbox folder.",
+            clarification("outlook.message.move", ["messageId", "destination"]),
+            action("outlook.message.move"),
+        ),
+        (
+            "route_outlook_move_missing_message_id",
+            "Move the Outlook message I selected into the Archive folder.",
+            clarification("outlook.message.move", ["messageId"]),
+            wrong_missing_subset(
+                "outlook.message.move",
+                ["messageId"],
+                ["destination"],
+            ),
+        ),
+        (
+            "route_outlook_move_missing_destination",
+            "Move Outlook message AAMk-NAT-move-642 into another folder.",
+            clarification("outlook.message.move", ["destination"]),
+            wrong_missing_subset(
+                "outlook.message.move",
+                ["destination"],
+                ["messageId"],
+            ),
+        ),
+        (
+            "route_new_text_action",
+            "Compose a new text to 555-0142 saying the signing audit passed.",
+            action("messages.draft"),
+            action("outlook.message.reply"),
+        ),
+        (
+            "route_outlook_list_action",
+            "Display the unread entries in my connected Microsoft mailbox.",
+            action("outlook.messages.list"),
+            clarification("outlook.messages.search", ["query"]),
+        ),
+        (
+            "route_outlook_search_action",
+            "Look through my Microsoft mailbox for messages mentioning signing latency.",
+            action("outlook.messages.search"),
+            action("outlook.messages.list"),
+        ),
+        (
+            "boundary_reminder_time_only",
+            "At dusk I want an alert, but I have not said what the reminder is about.",
+            clarification("reminders.create", ["title"]),
+            action("reminders.create"),
+        ),
+        (
+            "boundary_reminder_complete_action",
+            "Remind me to upload the signed invoice at dusk.",
+            action("reminders.create"),
+            clarification("reminders.create", ["title"]),
+        ),
+        (
+            "memory_app_operation_missing_contract",
+            "Please perform the store-in-memory app operation.",
+            clarification("memory.save", ["content", "kind"]),
+            route_with_intent(
+                clarification("memory.save", ["content", "kind"]),
+                "appOperation",
+            ),
+        ),
+        (
+            "memory_same_topic_save_not_recall",
+            "Remember my preference for compact root-cause explanations.",
+            action("memory.save"),
+            action("memory.recall"),
+        ),
+        (
+            "memory_same_topic_recall_not_save",
+            "Retrieve my saved preference about compact root-cause explanations.",
+            action("memory.recall"),
+            action("memory.save"),
+        ),
+        (
+            "countdown_notify_missing_title",
+            "Count down for four minutes and notify me when it ends.",
+            clarification("alarm.countdown", ["title"]),
+            action("alarm.countdown"),
+        ),
+    )
+    targeted_specs = (
+        (
+            "memory_preference_implicit_action_1",
+            "Store the fact that I favor concise dependency-failure explanations as a user preference.",
+            action("memory.save"),
+            clarification("memory.save", ["content", "kind"]),
+            "implicit_preference_memory_save",
+            "natural_preference_1",
+        ),
+        (
+            "memory_preference_implicit_action_2",
+            "Please remember my preference for numbered crash-recovery instructions.",
+            action("memory.save"),
+            clarification("memory.save", ["kind"]),
+            "implicit_preference_memory_save",
+            "natural_preference_2",
+        ),
+        (
+            "memory_preference_implicit_action_3",
+            "Note for future conversations: I like short summaries before diagnostic details.",
+            action("memory.save"),
+            action("memory.recall"),
+            "implicit_preference_memory_save",
+            "natural_preference_3",
+        ),
+        (
+            "memory_preference_implicit_action_4",
+            "Keep this preference: lead with the failing subsystem before the stack trace.",
+            action("memory.save"),
+            clarification("memory.save", ["content"]),
+            "implicit_preference_memory_save",
+            "natural_preference_4",
+        ),
+        (
+            "outlook_reply_unresolved_without_body_1",
+            "Send a response to an existing Microsoft mailbox message.",
+            clarification("outlook.message.reply", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply",
+                ["messageId", "body"],
+                ["messageId"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_1",
+        ),
+        (
+            "outlook_reply_unresolved_without_body_2",
+            "Answer the Outlook conversation currently open in the mailbox.",
+            clarification("outlook.message.reply", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply",
+                ["messageId", "body"],
+                ["body"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_2",
+        ),
+        (
+            "outlook_reply_unresolved_without_body_3",
+            "Respond to the Graph mail item we looked at earlier.",
+            clarification("outlook.message.reply", ["messageId", "body"]),
+            action("outlook.message.reply"),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_3",
+        ),
+        (
+            "outlook_reply_all_unresolved_without_body_1",
+            "Answer everyone included on the Microsoft mail thread I am viewing.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId", "body"],
+                ["messageId"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_1",
+        ),
+        (
+            "outlook_reply_all_unresolved_without_body_2",
+            "Send a group response on that Outlook conversation.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId", "body"],
+                ["body"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_2",
+        ),
+        (
+            "outlook_reply_all_unresolved_without_body_3",
+            "Write back to every participant on the Graph mail thread we opened earlier.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            action("outlook.message.reply_all"),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_3",
+        ),
+        (
+            "outlook_send_named_recipient_unresolved_content_1",
+            "Use Outlook to send our release coordinator the note we discussed.",
+            clarification("outlook.mail.send", ["subject", "body"]),
+            wrong_missing_subset(
+                "outlook.mail.send",
+                ["subject", "body"],
+                ["subject"],
+            ),
+            "outlook_send_unresolved_subject_and_body",
+            "natural_named_recipient_1",
+        ),
+        (
+            "outlook_send_named_recipient_unresolved_content_2",
+            "Email the component vendor that information through the connected Microsoft account.",
+            clarification("outlook.mail.send", ["subject", "body"]),
+            wrong_missing_subset(
+                "outlook.mail.send",
+                ["subject", "body"],
+                ["body"],
+            ),
+            "outlook_send_unresolved_subject_and_body",
+            "natural_named_recipient_2",
+        ),
+        (
+            "outlook_send_named_recipient_unresolved_content_3",
+            "Send the audit partner this news by Outlook.",
+            clarification("outlook.mail.send", ["subject", "body"]),
+            wrong_missing_subset(
+                "outlook.mail.send",
+                ["subject", "body"],
+                ["to", "subject", "body"],
+            ),
+            "outlook_send_unresolved_subject_and_body",
+            "natural_named_recipient_3",
+        ),
+        (
+            "outlook_send_named_recipient_unresolved_content_4",
+            "Through Microsoft mail, contact our build contractor with what we covered earlier.",
+            clarification("outlook.mail.send", ["subject", "body"]),
+            action("outlook.mail.send"),
+            "outlook_send_unresolved_subject_and_body",
+            "natural_named_recipient_4",
+        ),
+        (
+            "zero_required_alarm_request_action_1",
+            "Have the phone begin the AlarmKit access flow.",
+            action("alarm.request_authorization"),
+            wrong_schema("alarm.request_authorization", ["id"]),
+            "zero_required_action_without_invented_arguments",
+            "natural_zero_required_1",
+        ),
+        (
+            "zero_required_alarm_request_action_2",
+            "Initiate on-device authorization for scheduling alarms.",
+            action("alarm.request_authorization"),
+            wrong_schema("alarm.request_authorization", ["description"]),
+            "zero_required_action_without_invented_arguments",
+            "natural_zero_required_2",
+        ),
+        (
+            "zero_required_alarm_request_action_3",
+            "Show the system consent interface for alarm features.",
+            action("alarm.request_authorization"),
+            wrong_schema("alarm.request_authorization", ["id", "description"]),
+            "zero_required_action_without_invented_arguments",
+            "natural_zero_required_3",
+        ),
+        (
+            "zero_required_alarm_request_action_4",
+            "Begin the operating-system alarm permission flow.",
+            action("alarm.request_authorization"),
+            selection("alarm.request_authorization"),
+            "zero_required_action_without_invented_arguments",
+            "natural_zero_required_4",
+        ),
+        (
+            "countdown_duration_supplied_missing_title_1",
+            "Run an eight-minute timer and chime when time expires.",
+            clarification("alarm.countdown", ["title"]),
+            wrong_missing_subset(
+                "alarm.countdown",
+                ["title"],
+                ["durationSeconds"],
+            ),
+            "implicit_duration_countdown_missing_title",
+            "natural_duration_only_1",
+        ),
+        (
+            "countdown_duration_supplied_missing_title_2",
+            "Start a three-minute countdown and sound an alert at zero.",
+            clarification("alarm.countdown", ["title"]),
+            wrong_missing_subset(
+                "alarm.countdown",
+                ["title"],
+                ["durationSeconds"],
+            ),
+            "implicit_duration_countdown_missing_title",
+            "natural_duration_only_2",
+        ),
+        (
+            "memory_preference_implicit_action_5",
+            "Remember that terse incident reports suit me best.",
+            action("memory.save"),
+            clarification("memory.save", ["content", "kind"]),
+            "implicit_preference_memory_save",
+            "natural_preference_5",
+        ),
+        (
+            "memory_preference_implicit_action_6",
+            "Keep in mind that I favor evidence-first engineering explanations.",
+            action("memory.save"),
+            clarification("memory.save", ["kind"]),
+            "implicit_preference_memory_save",
+            "natural_preference_6",
+        ),
+        (
+            "zero_required_list_alarm_action",
+            "Enumerate every configured wake-up entry on this device.",
+            action("alarm.list"),
+            wrong_schema("alarm.list", ["id", "title"]),
+            "zero_required_list_action",
+            "natural_list_alarm",
+        ),
+        (
+            "zero_required_list_calendar_action",
+            "Display the upcoming event roster from my calendar.",
+            action("calendar.list"),
+            wrong_schema("calendar.list", ["title"]),
+            "zero_required_list_action",
+            "natural_list_calendar",
+        ),
+        (
+            "zero_required_list_outlook_folders_action",
+            "Enumerate connected Microsoft folder inventory with unread totals.",
+            action("outlook.folders.list"),
+            wrong_schema("outlook.folders.list", ["messageId"]),
+            "zero_required_list_action",
+            "natural_list_outlook_folders",
+        ),
+        (
+            "zero_required_list_outlook_messages_action",
+            "Retrieve recent mail items from the connected account.",
+            action("outlook.messages.list"),
+            wrong_schema("outlook.messages.list", ["query"]),
+            "zero_required_list_action",
+            "natural_list_outlook_messages",
+        ),
+        (
+            "zero_required_list_reminders_action_1",
+            "Enumerate pending reminders on the device.",
+            action("reminders.list"),
+            wrong_schema("reminders.list", ["title"]),
+            "zero_required_list_action",
+            "natural_list_reminders_1",
+        ),
+        (
+            "zero_required_list_reminders_action_2",
+            "List unfinished to-dos from local storage.",
+            action("reminders.list"),
+            action("reminders.create"),
+            "zero_required_list_action",
+            "natural_list_reminders_2",
+        ),
+        (
+            "zero_required_list_trigger_action",
+            "Enumerate the active background-run registrations in Lumen.",
+            action("trigger.list"),
+            wrong_schema("trigger.list", ["title", "prompt", "schedule"]),
+            "zero_required_list_action",
+            "natural_list_trigger",
+        ),
+        (
+            "memory_recall_topic_action_1",
+            "Retrieve stored context concerning the on-device inference benchmark.",
+            action("memory.recall"),
+            clarification("memory.recall", ["query"]),
+            "implicit_topic_memory_recall",
+            "natural_recall_topic_1",
+        ),
+        (
+            "memory_recall_topic_action_2",
+            "Which saved details concern the signing workflow?",
+            action("memory.recall"),
+            clarification("memory.recall", ["query"]),
+            "implicit_topic_memory_recall",
+            "natural_recall_topic_2",
+        ),
+        (
+            "memory_save_preference_action_7",
+            "Retain a user preference for diagnosis-first engineering explanations.",
+            action("memory.save"),
+            clarification("memory.save", ["content", "kind"]),
+            "implicit_preference_memory_save",
+            "natural_preference_7",
+        ),
+        (
+            "memory_save_preference_action_8",
+            "Store my preferred response style: concise findings before details.",
+            action("memory.save"),
+            clarification("memory.save", ["kind"]),
+            "implicit_preference_memory_save",
+            "natural_preference_8",
+        ),
+        (
+            "calendar_event_vague_time_missing_start_1",
+            "Put quarterly safety inspection into the device calendar sometime next week.",
+            clarification("calendar.create", ["startsInMinutes"]),
+            wrong_missing_subset(
+                "calendar.create",
+                ["startsInMinutes"],
+                ["title"],
+            ),
+            "calendar_event_title_without_numeric_delay",
+            "natural_calendar_partial_1",
+        ),
+        (
+            "calendar_event_vague_time_missing_start_2",
+            "Add supplier walkthrough as a calendar event during a future weekday period.",
+            clarification("calendar.create", ["startsInMinutes"]),
+            clarification("trigger.create", ["prompt", "schedule"]),
+            "calendar_event_title_without_numeric_delay",
+            "natural_calendar_partial_2",
+        ),
+        (
+            "calendar_event_vague_time_missing_start_3",
+            "Book equipment handoff as a calendar event during an unspecified morning.",
+            clarification("calendar.create", ["startsInMinutes"]),
+            clarification("alarm.schedule", ["inMinutes"]),
+            "calendar_event_title_without_numeric_delay",
+            "natural_calendar_partial_3",
+        ),
+        (
+            "calendar_event_vague_time_missing_start_4",
+            "Reserve a calendar slot for the warehouse survey on an upcoming weekday.",
+            clarification("calendar.create", ["startsInMinutes"]),
+            route_with_nonexistent_alias(
+                clarification("calendar.create", ["startsInMinutes"]),
+                "calendar.schedule",
+            ),
+            "calendar_event_title_without_numeric_delay",
+            "natural_calendar_partial_4",
+        ),
+        (
+            "outlook_reply_all_selected_without_body_1",
+            "Send an all-recipient response on the chosen Microsoft-mail item.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId", "body"],
+                ["messageId"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_selected_1",
+        ),
+        (
+            "outlook_reply_all_selected_without_body_2",
+            "Use Reply All on the highlighted Graph mailbox conversation.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId", "body"],
+                ["body"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_selected_2",
+        ),
+        (
+            "outlook_reply_all_selected_with_body",
+            (
+                "Use Reply All on the chosen Graph mailbox conversation saying "
+                "the release is clear."
+            ),
+            clarification("outlook.message.reply_all", ["messageId"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId"],
+                ["messageId", "body"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_selected_body",
+        ),
+        (
+            "selection_only_health_forbidden_decoys",
+            (
+                "Intent health routing audit: select a permitted tool only; "
+                "forbidden decoys are alarm.pause, maps.search, and memory.recall. "
+                "Do not begin work."
+            ),
+            selection("health.summary"),
+            action("health.summary"),
+            "selection_only_route_state",
+            "natural_selection_health",
+        ),
+        (
+            "selection_only_weather_forbidden_decoys",
+            (
+                "Routing-only choice for intent weather: identify a valid tool, "
+                "exclude alarm.stop, calendar.list, and photos.search, and stop "
+                "before execution."
+            ),
+            selection("weather"),
+            action("weather"),
+            "selection_only_route_state",
+            "natural_selection_weather",
+        ),
+        (
+            "action_persistence_photos_search",
+            "Search my photo library for pictures of handwritten diagrams.",
+            action("photos.search"),
+            action_with_false_persistence("photos.search"),
+            "action_step_persistence_literal_true",
+            "natural_persistence_photos",
+        ),
+        (
+            "action_persistence_rag_search",
+            "Search my indexed personal data for notes about thermal throttling.",
+            action("rag.search"),
+            action_with_false_persistence("rag.search"),
+            "action_step_persistence_literal_true",
+            "natural_persistence_rag",
+        ),
+        (
+            "action_persistence_memory_recall",
+            "Retrieve my saved context about the signing-certificate rotation.",
+            action("memory.recall"),
+            action_with_false_persistence("memory.recall"),
+            "action_step_persistence_literal_true",
+            "natural_persistence_memory",
+        ),
+    )
+    specs = specs + tuple(spec[:4] for spec in targeted_specs)
+    targeted_metadata = {
+        repair_case: {
+            "surfaceForm": surface_form,
+            "targetedFailureFamily": targeted_failure_family,
+        }
+        for (
+            repair_case,
+            _,
+            _,
+            _,
+            targeted_failure_family,
+            surface_form,
+        ) in targeted_specs
+    }
+    pairs: list[dict[str, Any]] = []
+    for repair_case, prompt, chosen, rejected in specs:
+        pair = _dpo(
+            "cortex",
+            prompt,
+            json.dumps(chosen, ensure_ascii=False, sort_keys=True),
+            json.dumps(rejected, ensure_ascii=False, sort_keys=True),
+            "route_failure_repair_bidirectional",
+            f"chosen repairs {repair_case}; rejected reproduces its paired boundary error",
+            required_split="train",
+        )
+        pair["metadata"]["repairCase"] = repair_case
+        pair["metadata"].update(targeted_metadata.get(repair_case, {}))
+        pairs.append(pair)
+    semantic_validation_specs = (
+        (
+            "validation_memory_recall_topic",
+            "Do my saved notes mention the signing audit?",
+            action("memory.recall"),
+            clarification("memory.recall", ["query"]),
+            "implicit_topic_memory_recall",
+        ),
+        (
+            "validation_memory_save_preference",
+            (
+                "Keep for later that terse explanations should come before "
+                "commands as my preference."
+            ),
+            action("memory.save"),
+            clarification("memory.save", ["content", "kind"]),
+            "implicit_preference_memory_save",
+        ),
+        (
+            "validation_zero_required_reminders_list",
+            "Display the remaining items in my reminder queue.",
+            action("reminders.list"),
+            wrong_schema("reminders.list", ["title"]),
+            "zero_required_list_action",
+        ),
+        (
+            "validation_calendar_event_missing_start",
+            "Plan a contractor walkthrough for me.",
+            clarification("calendar.create", ["startsInMinutes"]),
+            clarification("trigger.create", ["prompt", "schedule"]),
+            "calendar_event_title_without_numeric_delay",
+        ),
+        (
+            "validation_calendar_canonical_id",
+            "Reserve a design critique on my calendar.",
+            clarification("calendar.create", ["startsInMinutes"]),
+            route_with_nonexistent_alias(
+                clarification("calendar.create", ["startsInMinutes"]),
+                "calendar.schedule",
+            ),
+            "calendar_event_title_without_numeric_delay",
+        ),
+    )
+    for (
+        repair_case,
+        prompt,
+        chosen,
+        rejected,
+        targeted_failure_family,
+    ) in semantic_validation_specs:
+        pair = _dpo(
+            "cortex",
+            prompt,
+            json.dumps(chosen, ensure_ascii=False, sort_keys=True),
+            json.dumps(rejected, ensure_ascii=False, sort_keys=True),
+            "route_semantic_generalization_validation",
+            (
+                f"held-out semantic generalization checks {repair_case} without "
+                "reusing a frozen evaluation request"
+            ),
+            required_split="validation",
+        )
+        pair["metadata"].update(
+            {
+                "repairCase": repair_case,
+                "surfaceForm": "held_out_semantic_generalization",
+                "targetedFailureFamily": targeted_failure_family,
+            }
+        )
+        pairs.append(pair)
+    return pairs
+
+
+def _cortex_route_state_curriculum_sft_records(
+    manifest: AgentBehaviorManifest,
+    tools_by_id: dict[str, ToolManifest],
+) -> list[dict[str, Any]]:
+    """Build natural, forced-train route-state coverage without eval text reuse."""
+
+    routed_tool_ids = sorted(
+        {
+            tool_id
+            for entry in manifest.routingMatrix
+            for tool_id in entry.allowedTools
+            if tool_id in tools_by_id
+        }
+        | {
+            tool_id
+            for intent in manifest.intents
+            for tool_id in intent.allowedToolIDs
+            if tool_id in tools_by_id
+        }
+    )
+    records: list[dict[str, Any]] = []
+    all_missing_templates = (
+        ("natural_all_missing_1", "Would Lumen {display} for me?"),
+        ("natural_all_missing_2", "I'd like to use {display}."),
+        (
+            "natural_all_missing_3",
+            "Could you arrange {display} through Lumen?",
+        ),
+        (
+            "operation_label_all_missing",
+            "Can Lumen handle the {display} app operation?",
+        ),
+    )
+    partial_templates = (
+        (
+            "natural_partial_missing",
+            "For {display}, I have already asked for it {details}.",
+        ),
+        (
+            "concrete_only_partial_missing",
+            "Use {display} with only these concrete details: {details}. No other "
+            "required value was supplied.",
+        ),
+    )
+
+    for tool_id in routed_tool_ids:
+        tool = tools_by_id[tool_id]
+        intent = _routed_intent_for_tool(manifest, tool.id)
+        display = (tool.displayName or tool.id).strip().lower()
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        action_route = _canonical_cortex_action_route(
+            manifest,
+            tool,
+        )
+        action_surfaces = [
+            ("structured_json_complete", _cortex_structured_complete_prompt(tool)),
+            (
+                "manifest_action_step_rehearsal",
+                _cortex_manifest_action_step_rehearsal_prompt(tool),
+            ),
+            ("natural_implicit", _cortex_natural_implicit_complete_prompt(tool)),
+        ]
+        if required_arguments:
+            action_surfaces.append(
+                (
+                    "operation_label_complete",
+                    (
+                        f"Use the {display} app operation with these concrete "
+                        "details: "
+                        f"{_cortex_natural_supplied_details(tool, required_arguments)}. "
+                        "Every required value is supplied."
+                    ),
+                )
+            )
+        for surface_form, prompt in action_surfaces:
+            records.append(
+                _adapter_sft_record(
+                    "cortex",
+                    prompt,
+                    action_route,
+                    "cortex_route_curriculum_action",
+                    [tool.id],
+                    _risk_for_tool(tool),
+                    {
+                        "curriculumMode": "actionable",
+                        "requiredSplit": "train",
+                        "surfaceForm": surface_form,
+                        "suppliedArguments": required_arguments,
+                    },
+                    manifest,
+                )
+            )
+
+        for boundary, enabled in (
+            ("approval", tool.requiresApproval),
+            ("permission", bool(tool.permissionKey)),
+        ):
+            if not enabled:
+                continue
+            records.append(
+                _adapter_sft_record(
+                    "cortex",
+                    _cortex_boundary_complete_prompt(tool, boundary=boundary),
+                    action_route,
+                    "cortex_route_curriculum_action",
+                    [tool.id],
+                    _risk_for_tool(tool),
+                    {
+                        "curriculumMode": "actionable",
+                        "requiredSplit": "train",
+                        "surfaceForm": f"{boundary}_framed_complete",
+                        "suppliedArguments": required_arguments,
+                    },
+                    manifest,
+                )
+            )
+
+        if not required_arguments:
+            continue
+        all_missing_route = _canonical_cortex_clarification_route(
+            manifest,
+            tool,
+            required_arguments,
+        )
+        for surface_form, template in all_missing_templates:
+            records.append(
+                _adapter_sft_record(
+                    "cortex",
+                    template.format(display=display),
+                    all_missing_route,
+                    "cortex_route_curriculum_clarification",
+                    [tool.id],
+                    "boundary",
+                    {
+                        "curriculumMode": "clarification_all_missing",
+                        "missingArguments": required_arguments,
+                        "requiredSplit": "train",
+                        "surfaceForm": surface_form,
+                        "suppliedArguments": [],
+                    },
+                    manifest,
+                )
+            )
+
+        for missing_count in range(1, len(required_arguments)):
+            for missing_tuple in combinations(required_arguments, missing_count):
+                missing_arguments = list(missing_tuple)
+                supplied_arguments = [
+                    argument
+                    for argument in required_arguments
+                    if argument not in missing_arguments
+                ]
+                partial_details = _cortex_natural_supplied_details(
+                    tool,
+                    supplied_arguments,
+                )
+                partial_route = _canonical_cortex_clarification_route(
+                    manifest,
+                    tool,
+                    missing_arguments,
+                )
+                for surface_form, template in partial_templates:
+                    records.append(
+                        _adapter_sft_record(
+                            "cortex",
+                            template.format(
+                                display=display,
+                                details=partial_details,
+                            ),
+                            partial_route,
+                            "cortex_route_curriculum_clarification",
+                            [tool.id],
+                            "boundary",
+                            {
+                                "curriculumMode": "clarification_partial_missing",
+                                "missingArguments": missing_arguments,
+                                "requiredSplit": "train",
+                                "surfaceForm": (
+                                    f"{surface_form}_{missing_count}"
+                                ),
+                                "suppliedArguments": supplied_arguments,
+                            },
+                            manifest,
+                        )
+                    )
+
+        reference_argument = next(
+            (
+                argument
+                for argument in required_arguments
+                if argument in {"id", "messageId"}
+            ),
+            None,
+        )
+        if reference_argument is not None:
+            non_reference_arguments = [
+                argument
+                for argument in required_arguments
+                if argument != reference_argument
+            ]
+            for supplied_count in range(len(non_reference_arguments) + 1):
+                for supplied_tuple in combinations(
+                    non_reference_arguments,
+                    supplied_count,
+                ):
+                    supplied_arguments = list(supplied_tuple)
+                    supplied_set = set(supplied_arguments)
+                    missing_arguments = [
+                        argument
+                        for argument in required_arguments
+                        if argument == reference_argument
+                        or argument not in supplied_set
+                    ]
+                    supplied_details = _cortex_natural_supplied_details(
+                        tool,
+                        supplied_arguments,
+                    )
+                    detail_clause = (
+                        f" and {supplied_details}" if supplied_details else ""
+                    )
+                    reference_route = _canonical_cortex_clarification_route(
+                        manifest,
+                        tool,
+                        missing_arguments,
+                    )
+                    for surface_form, prompt in (
+                        (
+                            "unmarked_selected_reference",
+                            f"Use {display} for the selected item{detail_clause}.",
+                        ),
+                        (
+                            "unmarked_discussed_reference",
+                            (
+                                f"Apply {display} to the one we discussed earlier"
+                                f"{detail_clause}."
+                            ),
+                        ),
+                    ):
+                        records.append(
+                            _adapter_sft_record(
+                                "cortex",
+                                prompt,
+                                reference_route,
+                                "cortex_route_curriculum_clarification",
+                                [tool.id],
+                                "boundary",
+                                {
+                                    "curriculumMode": (
+                                        "clarification_reference_missing"
+                                    ),
+                                    "missingArguments": missing_arguments,
+                                    "requiredSplit": "train",
+                                    "surfaceForm": surface_form,
+                                    "suppliedArguments": supplied_arguments,
+                                },
+                                manifest,
+                            )
+                        )
+                    records.append(
+                        _adapter_sft_record(
+                            "cortex",
+                            (
+                                f"Use the {display} operation on that item"
+                                f"{detail_clause}."
+                            ),
+                            reference_route,
+                            "cortex_route_curriculum_clarification",
+                            [tool.id],
+                            "boundary",
+                            {
+                                "curriculumMode": (
+                                    "clarification_operation_reference_missing"
+                                ),
+                                "missingArguments": missing_arguments,
+                                "requiredSplit": "train",
+                                "surfaceForm": "unmarked_operation_reference",
+                                "suppliedArguments": supplied_arguments,
+                            },
+                            manifest,
+                        )
+                    )
+
+    records.extend(_cortex_failure_repair_sft_records(manifest, tools_by_id))
+
+    targeted_selection_specs = (
+        (
+            "health",
+            "health.summary",
+            (
+                "Routing-only decision for intent health: return one permitted "
+                "manifest selection, excluding alarm.list, camera.capture, and "
+                "memory.save. Do not create actionStep."
+            ),
+            "select_only_health_forbidden_decoys",
+        ),
+        (
+            "weather",
+            "weather",
+            (
+                "For intent weather, identify only an allowed catalog route and "
+                "reject alarm.cancel, calendar.create, and photos.search; stop "
+                "before execution."
+            ),
+            "select_only_weather_forbidden_decoys",
+        ),
+    )
+    for intent, tool_id, prompt, repair_case in targeted_selection_specs:
+        selected_tool = tools_by_id.get(tool_id)
+        if selected_tool is None:
+            continue
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                prompt,
+                _canonical_cortex_selection_route(
+                    manifest,
+                    selected_tool,
+                    intent=intent,
+                ),
+                "cortex_route_curriculum_selection",
+                [selected_tool.id],
+                _risk_for_tool(selected_tool),
+                {
+                    "curriculumMode": "selection",
+                    "repairCase": repair_case,
+                    "requiredSplit": "train",
+                    "surfaceForm": "targeted_select_only_forbidden_decoys",
+                    "targetedFailureFamily": "selection_only_route_state",
+                },
+                manifest,
+            )
+        )
+
+    for entry in sorted(manifest.routingMatrix, key=lambda item: item.intent):
+        allowed_tools = [
+            tools_by_id[tool_id]
+            for tool_id in entry.allowedTools
+            if tool_id in tools_by_id
+        ]
+        if not allowed_tools:
+            continue
+        selected_tool = allowed_tools[0]
+        selection_route = _canonical_cortex_selection_route(
+            manifest,
+            selected_tool,
+            intent=entry.intent,
+        )
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                (
+                    f"For the {entry.intent} category, which allowed catalog tool "
+                    "should handle it? Choose only; do not begin the action."
+                ),
+                selection_route,
+                "cortex_route_curriculum_selection",
+                [selected_tool.id],
+                _risk_for_tool(selected_tool),
+                {
+                    "curriculumMode": "selection",
+                    "requiredSplit": "train",
+                    "surfaceForm": "natural_selection_only",
+                },
+                manifest,
+            )
+        )
+    return records
+
+
+def _balanced_cortex_route_dpo_pairs(
+    manifest: AgentBehaviorManifest,
+) -> list[dict[str, Any]]:
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    intents_by_tool: dict[str, list[str]] = {}
+    for entry in sorted(manifest.routingMatrix, key=lambda item: item.intent):
+        for tool_id in entry.allowedTools:
+            if tool_id in tools_by_id:
+                intents_by_tool.setdefault(tool_id, []).append(entry.intent)
+    for intent in sorted(manifest.intents, key=lambda item: item.id):
+        for tool_id in intent.allowedToolIDs:
+            if tool_id in tools_by_id:
+                intents_by_tool.setdefault(tool_id, []).append(intent.id)
+
+    pairs: list[dict[str, Any]] = []
+    for index, tool_id in enumerate(sorted(intents_by_tool)):
+        tool = tools_by_id[tool_id]
+        intent = sorted(set(intents_by_tool[tool_id]))[0]
+        chosen_action = _canonical_cortex_action_route(
+            manifest,
+            tool,
+        )
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        rejected_action = {
+            **chosen_action,
+            "requiresApproval": not tool.requiresApproval,
+            "nextModel": "executor" if tool.requiresApproval else "approval",
+        }
+        complete_prompt = _natural_cortex_route_prompt(tool)
+        pairs.append(
+            _dpo(
+                "cortex",
+                complete_prompt,
+                json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+                json.dumps(rejected_action, ensure_ascii=False, sort_keys=True),
+                "route_exact_approval_and_next_model",
+                (
+                    f"chosen copies the exact {tool.id} approval contract and its "
+                    "derived next model; rejected flips both"
+                ),
+                required_split="train",
+            )
+        )
+        if index % 7 == 0:
+            pairs.append(
+                _dpo(
+                    "cortex",
+                    _natural_cortex_route_prompt(tool, wording="validation"),
+                    json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+                    json.dumps(rejected_action, ensure_ascii=False, sort_keys=True),
+                    "route_exact_approval_and_next_model_validation",
+                    "held-out wording checks exact approval and next-model copying",
+                    required_split="validation",
+                )
+            )
+
+        foreign_arguments = _cortex_foreign_schema_arguments(tool, tools_by_id)
+        wrong_schema_clarification = _cortex_wrong_schema_clarification(
+            manifest,
+            tool,
+            foreign_arguments,
+            intent=intent,
+        )
+        for preference_type, prompt in (
+            (
+                "route_natural_complete_vs_wrong_schema",
+                _cortex_natural_implicit_complete_prompt(tool),
+            ),
+            (
+                "route_structured_complete_vs_wrong_schema",
+                _cortex_structured_complete_prompt(tool),
+            ),
+        ):
+            pair = _dpo(
+                "cortex",
+                prompt,
+                json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+                json.dumps(
+                    wrong_schema_clarification,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                preference_type,
+                (
+                    f"chosen uses only the {tool.id} row; rejected borrows "
+                    f"foreign required names {_natural_language_list(foreign_arguments)}"
+                ),
+                required_split="train",
+            )
+            pair["metadata"]["rejectedMissingArguments"] = foreign_arguments
+            pairs.append(pair)
+
+        if tool.id in {"alarm.countdown", "rag.index_files"}:
+            protocol_fragment = {
+                "actionStep": chosen_action["actionStep"],
+                "nextModel": chosen_action["nextModel"],
+                "requiresApproval": chosen_action["requiresApproval"],
+            }
+            action_step_pair = _dpo(
+                "cortex",
+                _cortex_manifest_action_step_rehearsal_prompt(tool),
+                json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+                json.dumps(protocol_fragment, ensure_ascii=False, sort_keys=True),
+                "route_manifest_action_step_full_route_vs_protocol_fragment",
+                (
+                    "chosen emits the complete Cortex route prefix and persisted "
+                    "action; rejected emits only an Executor-like route fragment"
+                ),
+                required_split="train",
+            )
+            action_step_pair["metadata"].update(
+                {
+                    "rejectedRouteState": "protocol_fragment",
+                    "surfaceForm": "manifest_action_step_rehearsal",
+                }
+            )
+            pairs.append(action_step_pair)
+
+        reference_argument = next(
+            (
+                argument
+                for argument in required_arguments
+                if argument in {"id", "messageId"}
+            ),
+            None,
+        )
+        if reference_argument is not None:
+            non_reference_arguments = [
+                argument
+                for argument in required_arguments
+                if argument != reference_argument
+            ]
+            for supplied_count in range(len(non_reference_arguments) + 1):
+                for supplied_tuple in combinations(
+                    non_reference_arguments,
+                    supplied_count,
+                ):
+                    supplied_arguments = list(supplied_tuple)
+                    supplied_set = set(supplied_arguments)
+                    missing_arguments = [
+                        argument
+                        for argument in required_arguments
+                        if argument == reference_argument
+                        or argument not in supplied_set
+                    ]
+                    supplied_details = _cortex_natural_supplied_details(
+                        tool,
+                        supplied_arguments,
+                    )
+                    detail_clause = (
+                        f" and {supplied_details}" if supplied_details else ""
+                    )
+                    chosen_reference_clarification = (
+                        _canonical_cortex_clarification_route(
+                            manifest,
+                            tool,
+                            missing_arguments,
+                        )
+                    )
+                    if missing_arguments == [reference_argument]:
+                        rejected_reference_route = chosen_action
+                        rejected_route_state = "premature_action"
+                        rejected_missing_arguments: list[str] = []
+                        reason = (
+                            f"chosen asks for the literal {reference_argument}; "
+                            "rejected treats the relative reference as supplied and "
+                            "persists a premature action"
+                        )
+                    else:
+                        rejected_reference_route = (
+                            _canonical_cortex_clarification_route(
+                                manifest,
+                                tool,
+                                [reference_argument],
+                            )
+                        )
+                        rejected_route_state = "underreported_clarification"
+                        rejected_missing_arguments = [reference_argument]
+                        reason = (
+                            "chosen lists the exact manifest-ordered missing subset; "
+                            f"rejected reports only {reference_argument} and omits "
+                            "other absent required values"
+                        )
+                    pair = _dpo(
+                        "cortex",
+                        (
+                            f"Use {(tool.displayName or tool.id).strip().lower()} "
+                            f"for the selected item{detail_clause}."
+                        ),
+                        json.dumps(
+                            chosen_reference_clarification,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            rejected_reference_route,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        "route_unmarked_reference_exact_missing_subset",
+                        reason,
+                        required_split="train",
+                    )
+                    pair["metadata"].update(
+                        {
+                            "missingArguments": missing_arguments,
+                            "referenceArgument": reference_argument,
+                            "rejectedMissingArguments": (
+                                rejected_missing_arguments
+                            ),
+                            "rejectedRouteState": rejected_route_state,
+                            "suppliedArguments": supplied_arguments,
+                        }
+                    )
+                    pairs.append(pair)
+        if not required_arguments:
+            pairs.append(
+                _dpo(
+                    "cortex",
+                    (
+                        f"The catalog row for `{tool.id}` has required '-'. "
+                        "Carry out this complete request without clarification."
+                    ),
+                    json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+                    json.dumps(
+                        wrong_schema_clarification,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "route_zero_required_vs_spurious_clarification",
+                    (
+                        "chosen treats the empty required column as authoritative; "
+                        "rejected invents a missing field"
+                    ),
+                    required_split="train",
+                )
+            )
+            continue
+        chosen_all_missing = _canonical_cortex_clarification_route(
+            manifest,
+            tool,
+            required_arguments,
+        )
+        structured_missing_pair = _dpo(
+            "cortex",
+            (
+                f"Catalog route drill for `{tool.id}`: the user-value object is "
+                "{}. Treat every required name absent from that object as still "
+                "missing and emit the exact clarification route."
+            ),
+            json.dumps(
+                chosen_all_missing,
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            json.dumps(
+                wrong_schema_clarification,
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            "route_structured_incomplete_vs_wrong_schema",
+            (
+                f"chosen copies the complete missing set from {tool.id}; rejected "
+                f"borrows foreign names {_natural_language_list(foreign_arguments)}"
+            ),
+            required_split="train",
+        )
+        structured_missing_pair["metadata"][
+            "rejectedMissingArguments"
+        ] = foreign_arguments
+        pairs.append(structured_missing_pair)
+        pairs.append(
+            _dpo(
+                "cortex",
+                _natural_cortex_route_prompt(tool, supplied_argument_names=[]),
+                json.dumps(chosen_all_missing, ensure_ascii=False, sort_keys=True),
+                json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+                "route_natural_all_missing_vs_premature_action",
+                (
+                    "chosen asks for every required manifest value on a natural "
+                    "incomplete request; rejected persists a premature action"
+                ),
+                required_split="train",
+            )
+        )
+        operation_label_prompt = (
+            f"Please use the {(tool.displayName or tool.id).strip().lower()} app "
+            "operation"
+            + (" on that item" if reference_argument is not None else "")
+            + "."
+        )
+        operation_label_pair = _dpo(
+            "cortex",
+            operation_label_prompt,
+            json.dumps(chosen_all_missing, ensure_ascii=False, sort_keys=True),
+            json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+            "route_operation_label_all_missing_vs_premature_action",
+            (
+                "chosen keeps every required value missing because an operation "
+                "label supplies no argument; rejected persists a premature action"
+            ),
+            required_split="train",
+        )
+        operation_label_pair["metadata"].update(
+            {
+                "missingArguments": required_arguments,
+                "rejectedMissingArguments": [],
+                "rejectedRouteState": "premature_action",
+                "suppliedArguments": [],
+                "surfaceForm": "operation_label_all_missing",
+                "boundaryDirection": "label_only_to_clarification",
+            }
+        )
+        pairs.append(operation_label_pair)
+        concrete_details = _cortex_natural_supplied_details(
+            tool,
+            required_arguments,
+        )
+        operation_complete_pair = _dpo(
+            "cortex",
+            (
+                f"Carry out the {(tool.displayName or tool.id).strip().lower()} app "
+                f"operation; the concrete user values are: {concrete_details}."
+            ),
+            json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+            json.dumps(chosen_all_missing, ensure_ascii=False, sort_keys=True),
+            "route_operation_label_complete_vs_spurious_clarification",
+            (
+                "chosen acts because every required value is concrete; rejected "
+                "ignores supplied values and asks for the entire manifest row"
+            ),
+            required_split="train",
+        )
+        operation_complete_pair["metadata"].update(
+            {
+                "boundaryDirection": "concrete_values_to_action",
+                "rejectedMissingArguments": required_arguments,
+                "rejectedRouteState": "spurious_clarification",
+                "suppliedArguments": required_arguments,
+                "surfaceForm": "operation_label_complete",
+            }
+        )
+        pairs.append(operation_complete_pair)
+        wrong_missing_subsets = (
+            [
+                list(subset)
+                for subset_size in range(1, len(required_arguments))
+                for subset in combinations(required_arguments, subset_size)
+            ]
+            if len(required_arguments) > 1
+            else [["inventedArgument"]]
+        )
+        wrong_all_missing_for_validation: dict[str, Any] | None = None
+        for wrong_missing_arguments in wrong_missing_subsets:
+            wrong_all_missing = {
+                **chosen_all_missing,
+                "missingArguments": wrong_missing_arguments,
+                "clarification": (
+                    "What should I use for "
+                    f"{_natural_language_list(wrong_missing_arguments)} in {tool.id}?"
+                ),
+            }
+            if wrong_all_missing_for_validation is None:
+                wrong_all_missing_for_validation = wrong_all_missing
+            pair = _dpo(
+                "cortex",
+                _natural_cortex_route_prompt(
+                    tool,
+                    supplied_argument_names=[],
+                    wording="all_missing_wrong_list_negative",
+                ),
+                json.dumps(
+                    chosen_all_missing,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    wrong_all_missing,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "route_all_missing_vs_wrong_subset",
+                (
+                    "chosen lists every absent required value in manifest order; "
+                    "rejected emits an incomplete or invented missing list"
+                ),
+                required_split="train",
+            )
+            pair["metadata"]["rejectedMissingArguments"] = wrong_missing_arguments
+            pairs.append(pair)
+        if wrong_all_missing_for_validation is None:
+            raise ValueError(
+                f"Cortex all-missing audit produced no negative for {tool.id}"
+            )
+        pairs.append(
+            _dpo(
+                "cortex",
+                complete_prompt,
+                json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+                json.dumps(chosen_all_missing, ensure_ascii=False, sort_keys=True),
+                "route_complete_vs_spurious_clarification",
+                (
+                    "chosen persists the complete request; rejected asks again for "
+                    "values already present"
+                ),
+                required_split="train",
+            )
+        )
+        if index % 7 == 0:
+            pairs.append(
+                _dpo(
+                    "cortex",
+                    _natural_cortex_route_prompt(
+                        tool,
+                        supplied_argument_names=[],
+                        wording="validation",
+                    ),
+                    json.dumps(chosen_all_missing, ensure_ascii=False, sort_keys=True),
+                    json.dumps(chosen_action, ensure_ascii=False, sort_keys=True),
+                    "route_natural_all_missing_validation",
+                    "held-out natural wording checks the clarification boundary",
+                    required_split="validation",
+                )
+            )
+            pairs.append(
+                _dpo(
+                    "cortex",
+                    _natural_cortex_route_prompt(
+                        tool,
+                        supplied_argument_names=[],
+                        wording="all_missing_wrong_list_validation",
+                    ),
+                    json.dumps(
+                        chosen_all_missing,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        wrong_all_missing_for_validation,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "route_all_missing_vs_wrong_subset_validation",
+                    "held-out wording checks the complete manifest-order missing list",
+                    required_split="validation",
+                )
+            )
+        clarification_subsets = [required_arguments]
+        clarification_subsets.extend(
+            list(subset)
+            for subset_size in range(1, len(required_arguments))
+            for subset in combinations(required_arguments, subset_size)
+        )
+        for subset_index, missing_arguments in enumerate(
+            clarification_subsets[1:],
+            start=1,
+        ):
+            chosen_clarification = _canonical_cortex_clarification_route(
+                manifest,
+                tool,
+                missing_arguments,
+            )
+            supplied_arguments = [
+                argument
+                for argument in required_arguments
+                if argument not in missing_arguments
+            ]
+            pairs.append(
+                _dpo(
+                    "cortex",
+                    _natural_cortex_route_prompt(
+                        tool,
+                        supplied_argument_names=supplied_arguments,
+                    ),
+                    json.dumps(
+                        chosen_clarification,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        chosen_action,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "route_natural_partial_missing_vs_premature_action",
+                    (
+                        "chosen asks only for the required value not present in the "
+                        "natural request; rejected persists a premature action"
+                    ),
+                    required_split="train",
+                )
+            )
+            wrong_partial_missing = {
+                **chosen_clarification,
+                "missingArguments": required_arguments,
+                "clarification": (
+                    "What should I use for "
+                    f"{_natural_language_list(required_arguments)} in {tool.id}?"
+                ),
+            }
+            pairs.append(
+                _dpo(
+                    "cortex",
+                    _natural_cortex_route_prompt(
+                        tool,
+                        supplied_argument_names=supplied_arguments,
+                        wording="partial_missing_wrong_list_negative",
+                    ),
+                    json.dumps(
+                        chosen_clarification,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        wrong_partial_missing,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "route_partial_missing_vs_wrong_subset",
+                    (
+                        "chosen asks only for the absent value; rejected asks again "
+                        "for values already supplied"
+                    ),
+                    required_split="train",
+                )
+            )
+            if (index + subset_index) % 7 == 0:
+                pairs.append(
+                    _dpo(
+                        "cortex",
+                        _natural_cortex_route_prompt(
+                            tool,
+                            supplied_argument_names=supplied_arguments,
+                            wording="partial_missing_wrong_list_validation",
+                        ),
+                        json.dumps(
+                            chosen_clarification,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            wrong_partial_missing,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        "route_partial_missing_vs_wrong_subset_validation",
+                        "held-out wording checks the exact remaining missing subset",
+                        required_split="validation",
+                    )
+                )
+
+    pairs.extend(_cortex_failure_repair_dpo_pairs(manifest, tools_by_id))
+
+    semantic_sibling_contrasts = (
+        (
+            "End alarm alarm-contrast-117 now; do not merely suspend it for later.",
+            "alarm.stop",
+            "alarm.pause",
+        ),
+        (
+            "Temporarily suspend alarm alarm-contrast-118 so it can continue later.",
+            "alarm.pause",
+            "alarm.stop",
+        ),
+        (
+            "Show the newest messages in my connected Outlook inbox without sending "
+            "anything.",
+            "outlook.messages.list",
+            "outlook.mail.send",
+        ),
+        (
+            "Send an Outlook note to mireille@example.com titled Inspection update, "
+            "saying Friday is confirmed; this is not an inbox listing.",
+            "outlook.mail.send",
+            "outlook.messages.list",
+        ),
+        (
+            "Send a brand-new Outlook email to lee@example.com titled Audit ready, "
+            "saying the package passed; do not forward an existing item.",
+            "outlook.mail.send",
+            "outlook.message.forward",
+        ),
+        (
+            "Forward existing Outlook item AAMk-CONTRAST-forward-219 to "
+            "lee@example.com rather than composing a new email.",
+            "outlook.message.forward",
+            "outlook.mail.send",
+        ),
+        (
+            "Send an email now to lena.ortiz@example.com with subject Reservation "
+            "confirmed and body: the Saturday reservation is confirmed.",
+            "outlook.mail.send",
+            "mail.draft",
+        ),
+        (
+            "Draft an email to omar.hassan@example.com saying I would like to "
+            "discuss the revised timeline; keep it as a draft and do not send it.",
+            "mail.draft",
+            "outlook.mail.send",
+        ),
+        (
+            "Report whether device-alarm permission is already enabled; do not request it.",
+            "alarm.authorization_status",
+            "alarm.request_authorization",
+        ),
+        (
+            "Ask the system to grant alarm access instead of merely reporting its status.",
+            "alarm.request_authorization",
+            "alarm.authorization_status",
+        ),
+        (
+            "Show my upcoming calendar entries without creating a new event.",
+            "calendar.list",
+            "calendar.create",
+        ),
+        (
+            "Create a calendar event called Release review thirty minutes from now; do not list events.",
+            "calendar.create",
+            "calendar.list",
+        ),
+        (
+            "Add a portfolio review to my calendar forty minutes from now; this is a human event, not an automated agent run.",
+            "calendar.create",
+            "trigger.create",
+        ),
+        (
+            "Schedule an automated task called cache audit to inspect local logs every night; this is not a calendar appointment.",
+            "trigger.create",
+            "calendar.create",
+        ),
+        (
+            "Show the reminders still pending without adding a new one.",
+            "reminders.list",
+            "reminders.create",
+        ),
+        (
+            "Create a reminder to rotate the signing keys; this is not a request to list reminders.",
+            "reminders.create",
+            "reminders.list",
+        ),
+        (
+            "Show my Outlook folder names and counts, not the individual messages.",
+            "outlook.folders.list",
+            "outlook.messages.list",
+        ),
+        (
+            "Display the newest Outlook mail items rather than mailbox folders.",
+            "outlook.messages.list",
+            "outlook.folders.list",
+        ),
+        (
+            "Check whether Outlook is connected; do not list folders or messages.",
+            "outlook.status",
+            "outlook.messages.list",
+        ),
+        (
+            "Capture a brand-new photograph with the camera instead of searching existing photos.",
+            "camera.capture",
+            "photos.search",
+        ),
+        (
+            "Find my existing photographs of the release board; do not open the camera.",
+            "photos.search",
+            "camera.capture",
+        ),
+        (
+            "Return this device's current GPS position, not a weather report.",
+            "location.current",
+            "weather",
+        ),
+        (
+            "Tell me the current weather conditions rather than my raw GPS location.",
+            "weather",
+            "location.current",
+        ),
+        (
+            "Show the agent runs already scheduled; do not create another schedule.",
+            "trigger.list",
+            "trigger.create",
+        ),
+        (
+            "Schedule a task called nightly audit to run a validation report every evening; do not list schedules.",
+            "trigger.create",
+            "trigger.list",
+        ),
+        (
+            "List the alarms currently active without setting a new alarm.",
+            "alarm.list",
+            "alarm.schedule",
+        ),
+        (
+            "Set an alarm called build check for ten minutes from now rather than listing alarms.",
+            "alarm.schedule",
+            "alarm.list",
+        ),
+        (
+            "Rebuild the imported-file search index; do not run a document query.",
+            "rag.index_files",
+            "rag.search",
+        ),
+        (
+            "Search indexed documents for Metal heap notes without rebuilding the index.",
+            "rag.search",
+            "rag.index_files",
+        ),
+        (
+            "Summarize recent health measurements rather than classifying current device motion.",
+            "health.summary",
+            "motion.activity",
+        ),
+        (
+            "Describe whether the device recently detected walking or running, not a health summary.",
+            "motion.activity",
+            "health.summary",
+        ),
+        (
+            "Recall what I previously saved about thermal throttling; do not store a new memory.",
+            "memory.recall",
+            "memory.save",
+        ),
+        (
+            "Remember that terse crash reports are my preference; do not search existing memories.",
+            "memory.save",
+            "memory.recall",
+        ),
+    )
+    for prompt, chosen_tool_id, rejected_tool_id in semantic_sibling_contrasts:
+        chosen_tool = tools_by_id.get(chosen_tool_id)
+        rejected_tool = tools_by_id.get(rejected_tool_id)
+        if (
+            chosen_tool is None
+            or rejected_tool is None
+            or chosen_tool_id not in intents_by_tool
+            or rejected_tool_id not in intents_by_tool
+        ):
+            continue
+        pair = _dpo(
+            "cortex",
+            prompt,
+            json.dumps(
+                _canonical_cortex_action_route(manifest, chosen_tool),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            json.dumps(
+                _canonical_cortex_action_route(manifest, rejected_tool),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            "route_semantic_sibling_contrast",
+            (
+                f"chosen matches the request to {chosen_tool_id}; rejected confuses "
+                f"it with sibling {rejected_tool_id}"
+            ),
+            required_split="train",
+        )
+        pair["metadata"]["contrastToolID"] = rejected_tool_id
+        pairs.append(pair)
+
+    for index, entry in enumerate(sorted(manifest.routingMatrix, key=lambda item: item.intent)):
+        allowed = [tool_id for tool_id in entry.allowedTools if tool_id in tools_by_id]
+        if not allowed or not entry.forbiddenTools:
+            continue
+        selected_tool = tools_by_id[allowed[0]]
+        chosen_selection = _canonical_cortex_selection_route(
+            manifest,
+            selected_tool,
+            intent=entry.intent,
+        )
+        rejected_selection = {
+            **chosen_selection,
+            "actionStep": _canonical_cortex_action_step(selected_tool.id),
+        }
+        decoys = ", ".join(sorted(entry.forbiddenTools)[-3:])
+        pairs.append(
+            _dpo(
+                "cortex",
+                (
+                    f"For the {entry.intent} intent, choose one allowed catalog tool "
+                    f"and ignore these unrelated choices: {decoys}."
+                ),
+                json.dumps(chosen_selection, ensure_ascii=False, sort_keys=True),
+                json.dumps(rejected_selection, ensure_ascii=False, sort_keys=True),
+                "route_selection_without_action",
+                "chosen performs selection only; rejected prematurely persists an action",
+                required_split="train",
+            )
+        )
+        rejected_no_tool_selection = {
+            **chosen_selection,
+            "nextModel": "mouth",
+            "status": "no_tool_route",
+        }
+        pairs.append(
+            _dpo(
+                "cortex",
+                (
+                    f"For the {entry.intent} intent, select one allowed catalog "
+                    "tool without persisting an action or declaring no route."
+                ),
+                json.dumps(
+                    chosen_selection,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    rejected_no_tool_selection,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "route_selection_vs_no_tool_hybrid",
+                (
+                    "chosen is the exact five-field selection; rejected attaches "
+                    "no_tool_route to a nonnull allowed tool"
+                ),
+                required_split="train",
+            )
+        )
+        if index % 7 == 0:
+            pairs.append(
+                _dpo(
+                    "cortex",
+                    (
+                        f"Which allowed catalog tool fits the {entry.intent} "
+                        "category? Return only the selection state."
+                    ),
+                    json.dumps(
+                        chosen_selection,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        rejected_no_tool_selection,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "route_selection_vs_no_tool_hybrid_validation",
+                    "held-out selection wording rejects a nonnull no-route hybrid",
+                    required_split="validation",
+                )
+            )
+
+    allowed_tools_by_intent: dict[str, set[str]] = {}
+    for entry in manifest.routingMatrix:
+        allowed_tools_by_intent.setdefault(entry.intent, set()).update(
+            tool_id for tool_id in entry.allowedTools if tool_id in tools_by_id
+        )
+    for intent in manifest.intents:
+        allowed_tools_by_intent.setdefault(intent.id, set()).update(
+            tool_id for tool_id in intent.allowedToolIDs if tool_id in tools_by_id
+        )
+    no_tool_intents = sorted(
+        intent
+        for intent, allowed_tool_ids in allowed_tools_by_intent.items()
+        if not allowed_tool_ids
+    )
+    decoy_tools = [tools_by_id[tool_id] for tool_id in sorted(intents_by_tool)]
+    natural_train_no_tool_templates = {
+        "chat": (
+            "Let's just chat for a moment.",
+            "I want to talk this through with you.",
+            "Can we have a quick conversation?",
+            "I'd like a direct conversational reply.",
+            "Stay with me here and answer in the chat.",
+        ),
+        "unknown": (
+            "I'm not sure what I need yet; can you help me think it through?",
+            "This is still vague, so help me clarify what I'm asking.",
+            "I haven't made a concrete request yet; respond conversationally.",
+            "I need help deciding what to ask for.",
+            "Can you answer generally while I figure out the details?",
+        ),
+    }
+    fallback_natural_train_no_tool_templates = (
+        "I'd like to discuss this {intent} request without taking an app action.",
+        "Help me think through this {intent} topic conversationally.",
+        "Can you answer this {intent} question directly in the chat?",
+        "I'm still figuring out this {intent} request, so just respond for now.",
+        "Let's talk about this {intent} topic without starting an action.",
+    )
+    contract_train_no_tool_templates = (
+        "For intent `{intent}`, the manifest lists no allowed tools. Keep the route tool-free.",
+        "Classify this as `{intent}` and do not substitute an unrelated catalog action.",
+        "This request belongs to `{intent}`; return control to Mouth without persisting an action.",
+        "No manifest tool is available for `{intent}`. Keep the selected tool null.",
+        "Respect the tool-free `{intent}` route and do not invent a substitute action.",
+    )
+    natural_validation_no_tool_templates = {
+        "chat": (
+            "Could we simply talk this over?",
+            "Give me a conversational response, please.",
+        ),
+        "unknown": (
+            "I am still unsure what action I want, so respond generally.",
+            "Help me frame this vague request before anything happens.",
+        ),
+    }
+    fallback_natural_validation_no_tool_templates = (
+        "Could we talk through this {intent} request without doing anything yet?",
+        "Give me a conversational answer about this {intent} topic, please.",
+    )
+    contract_validation_no_tool_templates = (
+        "Which route should `{intent}` use when its allowed-tool list is empty?",
+        "Send `{intent}` back to the response layer because no tool applies.",
+    )
+    if no_tool_intents and not decoy_tools:
+        raise ValueError("Cortex no-tool DPO anchors require one valid decoy tool")
+    for intent_index, intent in enumerate(no_tool_intents):
+        chosen_no_tool = _canonical_cortex_no_tool_route(intent)
+        natural_train_surfaces = natural_train_no_tool_templates.get(
+            intent,
+            tuple(
+                template.format(intent=intent)
+                for template in fallback_natural_train_no_tool_templates
+            ),
+        )
+        train_surfaces = (
+            *(("natural", surface) for surface in natural_train_surfaces),
+            *(("contract", template.format(intent=intent)) for template in contract_train_no_tool_templates),
+        )
+        for surface_index, (surface_style, prompt) in enumerate(train_surfaces):
+            decoy_tool = decoy_tools[
+                (intent_index * len(train_surfaces) + surface_index)
+                % len(decoy_tools)
+            ]
+            pair = _dpo(
+                "cortex",
+                prompt,
+                json.dumps(chosen_no_tool, ensure_ascii=False, sort_keys=True),
+                json.dumps(
+                    _canonical_cortex_action_route(manifest, decoy_tool),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "route_no_tool_vs_spurious_action",
+                (
+                    f"chosen preserves the empty allowed-tool set for {intent}; "
+                    f"rejected persists unrelated {decoy_tool.id}"
+                ),
+                required_split="train",
+            )
+            pair["metadata"]["surfaceStyle"] = surface_style
+            pairs.append(pair)
+        natural_validation_surfaces = natural_validation_no_tool_templates.get(
+            intent,
+            tuple(
+                template.format(intent=intent)
+                for template in fallback_natural_validation_no_tool_templates
+            ),
+        )
+        validation_surfaces = (
+            *(("natural", surface) for surface in natural_validation_surfaces),
+            *(("contract", template.format(intent=intent)) for template in contract_validation_no_tool_templates),
+        )
+        for surface_index, (surface_style, prompt) in enumerate(validation_surfaces):
+            decoy_tool = decoy_tools[
+                (
+                    intent_index * len(validation_surfaces)
+                    + surface_index
+                    + len(train_surfaces)
+                )
+                % len(decoy_tools)
+            ]
+            pair = _dpo(
+                "cortex",
+                prompt,
+                json.dumps(chosen_no_tool, ensure_ascii=False, sort_keys=True),
+                json.dumps(
+                    _canonical_cortex_action_route(manifest, decoy_tool),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "route_no_tool_vs_spurious_action_validation",
+                (
+                    f"held-out wording preserves the no-tool route for {intent}; "
+                    f"rejected persists unrelated {decoy_tool.id}"
+                ),
+                required_split="validation",
+            )
+            pair["metadata"]["surfaceStyle"] = surface_style
+            pairs.append(pair)
+    return pairs
+
+
+def _natural_cortex_route_prompt(
+    tool: ToolManifest,
+    *,
+    supplied_argument_names: list[str] | None = None,
+    wording: str = "train",
+) -> str:
+    display_name = (tool.displayName or tool.id).strip().lower()
+    sample_arguments = _adapter_sample_arguments(tool)
+    if supplied_argument_names is None:
+        supplied_argument_names = list(sample_arguments)
+    details = _cortex_natural_supplied_details(
+        tool,
+        [name for name in supplied_argument_names if name in sample_arguments],
+    )
+    detail_clause = f" {details}" if details else ""
+    templates = {
+        "train": "Could Lumen {display} for me{details}?",
+        "validation": "Would you ask Lumen to {display} for me{details}?",
+        "action_bare_negative": (
+            "Please route a complete {display} request{details}."
+        ),
+        "action_no_tool_negative": (
+            "I'd like Lumen to {display}{details}."
+        ),
+        "action_bare_validation": (
+            "Would you have Lumen {display}{details} now?"
+        ),
+        "action_no_tool_validation": (
+            "Can Lumen carry out {display}{details}?"
+        ),
+        "all_missing_wrong_list_negative": (
+            "Would Lumen {display} for me{details}?"
+        ),
+        "all_missing_wrong_list_validation": (
+            "May Lumen {display} for me{details}?"
+        ),
+        "partial_missing_wrong_list_negative": (
+            "I want to use {display}{details}."
+        ),
+        "partial_missing_wrong_list_validation": (
+            "Please arrange {display}{details}."
+        ),
+    }
+    template = templates.get(wording)
+    if template is None:
+        raise ValueError(f"Unsupported Cortex route prompt wording: {wording!r}")
+    return template.format(display=display_name, details=detail_clause)
+
+
 def _synthetic_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[str]) -> dict[str, list[dict[str, Any]]]:
-    first_tool = next(iter(sorted(known_tools)), "tool.unknown")
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    routed_tool_ids = sorted({
+        tool_id
+        for entry in manifest.routingMatrix
+        for tool_id in entry.allowedTools
+        if tool_id in tools_by_id
+    })
+    first_tool = next(iter(routed_tool_ids or sorted(known_tools)), "tool.unknown")
     approval_tool = _first_tool_with(manifest.tools, lambda tool: tool.requiresApproval) or first_tool
     fake_tool = "system.root.delete"
 
     fleet_slot_ids = [slot.id for slot in manifest.fleet.slots] or ["cortex", "executor"]
     known_slot = fleet_slot_ids[0]
     unknown_slot = "invented_shadow_slot"
-    tools_by_id = {tool.id: tool for tool in manifest.tools}
     first_tool_arguments = _adapter_sample_arguments(tools_by_id[first_tool]) if first_tool in tools_by_id else {}
     approval_arguments = _adapter_sample_arguments(tools_by_id[approval_tool]) if approval_tool in tools_by_id else {}
+    first_tool_manifest = tools_by_id.get(first_tool)
+    safe_tool_id = "weather" if "weather" in tools_by_id else first_tool
+    safe_tool_manifest = tools_by_id.get(safe_tool_id)
+    first_route = (
+        _canonical_cortex_action_route(manifest, first_tool_manifest)
+        if first_tool_manifest is not None
+        else {
+            "actionStep": {"mustPersistBeforeFinal": True, "toolID": first_tool, "type": "tool_call"},
+            "intent": "tool",
+            "nextModel": "executor",
+            "reasoningSummary": f"Route this request through {first_tool} and persist one action.",
+            "requiresApproval": False,
+            "selectedToolID": first_tool,
+        }
+    )
+    first_selection = (
+        _canonical_cortex_selection_route(manifest, first_tool_manifest)
+        if first_tool_manifest is not None
+        else {key: value for key, value in first_route.items() if key != "actionStep"}
+    )
+    safe_selection = (
+        _canonical_cortex_selection_route(manifest, safe_tool_manifest)
+        if safe_tool_manifest is not None
+        else first_selection
+    )
 
     return {
-        "cortex": [
+        "cortex": ([
             _dpo(
                 "cortex",
-                "Route this read-only user prompt and persist the action step.",
-                '{"intent":"search","selectedToolID":"%s","nextModel":"executor","actionStep":"call_tool"}' % first_tool,
-                '{"intent":"search","answer":"here is the result with no tool action"}',
+                f"Route an explicit request for `{first_tool}` and persist its one manifest action.",
+                json.dumps(first_route, ensure_ascii=False, sort_keys=True),
+                json.dumps({"intent": first_route["intent"], "answer": "Here is a result with no persisted tool action."}, ensure_ascii=False, sort_keys=True),
                 "action_step_persistence",
                 "chosen persists required action step; rejected skips tool action",
             ),
             _dpo(
                 "cortex",
-                "Select a tool for this request using only manifest tools.",
-                '{"selectedToolID":"%s","nextModel":"executor"}' % first_tool,
-                '{"selectedToolID":"invented.tool","nextModel":"executor"}',
+                f"Select exactly the manifest tool `{first_tool}` for this explicit request.",
+                json.dumps(first_selection, ensure_ascii=False, sort_keys=True),
+                json.dumps({"selectedToolID": "invented.tool", "nextModel": "executor"}, ensure_ascii=False, sort_keys=True),
                 "manifest_tool_only",
                 "rejected invents a tool",
             ),
             _dpo(
                 "cortex",
-                "User asks to read current weather safely.",
-                '{"selectedToolID":"%s","risk":"standard"}' % first_tool,
-                '{"selectedToolID":"%s","risk":"destructive"}' % fake_tool,
+                f"Contrast the manifest route `{safe_tool_id}` with the invented destructive tool `{fake_tool}`.",
+                json.dumps(safe_selection, ensure_ascii=False, sort_keys=True),
+                json.dumps({"selectedToolID": fake_tool, "nextModel": "executor"}, ensure_ascii=False, sort_keys=True),
                 "safe_tool_selection",
-                "rejected selects destructive/non-manifest tool for read prompt",
+                "rejected selects a destructive non-manifest tool instead of the explicit safe route",
             ),
-        ],
+        ] if first_tool_manifest is not None else []),
         "executor": [
             _dpo(
                 "executor",
@@ -2388,7 +7606,21 @@ def _synthetic_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[str])
     }
 
 
-def _dpo(agent: str, user: str, chosen: str, rejected: str, pref_type: str, reason: str) -> dict[str, Any]:
+def _dpo(
+    agent: str,
+    user: str,
+    chosen: str,
+    rejected: str,
+    pref_type: str,
+    reason: str,
+    *,
+    required_split: str | None = None,
+) -> dict[str, Any]:
+    if required_split not in {None, "train", "validation"}:
+        raise ValueError(f"Unsupported required DPO split: {required_split!r}")
+    metadata = {"agent": agent, "preferenceType": pref_type, "reason": reason}
+    if required_split is not None:
+        metadata["requiredSplit"] = required_split
     return {
         "prompt": [
             {"role": "system", "content": SYSTEM_PROMPTS[agent]},
@@ -2396,7 +7628,7 @@ def _dpo(agent: str, user: str, chosen: str, rejected: str, pref_type: str, reas
         ],
         "chosen": {"role": "assistant", "content": chosen},
         "rejected": {"role": "assistant", "content": rejected},
-        "metadata": {"agent": agent, "preferenceType": pref_type, "reason": reason},
+        "metadata": metadata,
     }
 
 
@@ -2438,40 +7670,356 @@ def _ultra_specific_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[
     calendar_list = _known_tool_or_default(known_tools, "calendar.list")
     maps_search = _known_tool_or_default(known_tools, "maps.search")
     messages_draft = _known_tool_or_default(known_tools, "messages.draft")
-    outlook_read = _known_tool_or_default(known_tools, "outlook.message.read")
     outlook_attachments = _known_tool_or_default(known_tools, "outlook.attachments.list")
     motion_activity = _known_tool_or_default(known_tools, "motion.activity")
     approval_tool = _first_tool_with(manifest.tools, lambda tool: tool.requiresApproval) or _known_tool_or_default(known_tools, "")
     permission_tool = _first_tool_with(manifest.tools, lambda tool: bool(tool.permissionKey)) or _known_tool_or_default(known_tools, "")
     slots = [slot.role for slot in manifest.fleet.slots] or list(AGENTS)
     tools_by_id = {tool.id: tool for tool in manifest.tools}
+    trigger_list_tool = tools_by_id.get("trigger.list")
+    alarm_list_tool = tools_by_id.get("alarm.list")
+    messages_draft_tool = tools_by_id.get("messages.draft")
+    phone_call_tool = tools_by_id.get("phone.call")
+    files_read_tool = tools_by_id.get("files.read")
+    calendar_list_tool = tools_by_id.get(calendar_list)
+    maps_search_tool = tools_by_id.get(maps_search)
+    outlook_attachments_tool = tools_by_id.get("outlook.attachments.list")
     approval_arguments = _adapter_sample_arguments(tools_by_id[approval_tool]) if approval_tool in tools_by_id else {}
 
     return {
         "cortex": [
-            _dpo(
-                "cortex",
-                "Route: What is on my calendar today?",
-                json.dumps({"selectedToolID": calendar_list, "actionStep": {"mustPersistBeforeFinal": True}, "nextModel": "executor"}, ensure_ascii=False, sort_keys=True),
-                json.dumps({"selectedToolID": "chat", "final": "Calendar tools are unavailable."}, ensure_ascii=False, sort_keys=True),
-                "ultra_specific_calendar_read_routing",
-                "chosen routes the read-only calendar query and persists a tool action; rejected answers from fallback text",
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        "Repair the routing object for reading the imported document named quarterly-plan.pdf.",
+                        json.dumps(
+                            _canonical_cortex_action_route(
+                                manifest,
+                                files_read_tool,
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        (
+                            '{"confirmationMode": "none", "intent": "files", "nextModel": '
+                            '"executor", "permissionKey": null, "permissionKind": null, '
+                            '"reasoningSummary": "The manifest allows files.read for files; '
+                            'approval=False, permission=none, permissionKind=permissionKind, '
+                            'reason=manifest_routing, requiresApproval": true, '
+                            '"requiresApproval": true, "selectedToolID": "files.read"}'
+                        ),
+                        "ultra_specific_cortex_json_field_splice_repair",
+                        (
+                            "chosen emits one canonical files.read routing object; rejected splices an "
+                            "outer requiresApproval field into reasoningSummary and is invalid JSON"
+                        ),
+                        required_split="train",
+                    )
+                ]
+                if files_read_tool is not None
+                else []
             ),
-            _dpo(
-                "cortex",
-                "Route: Show attachments on the latest Outlook email.",
-                json.dumps({"selectedToolID": outlook_attachments, "referenceResolution": "resolve_latest_message_first", "nextModel": "executor"}, ensure_ascii=False, sort_keys=True),
-                json.dumps({"selectedToolID": outlook_read, "referenceResolution": "read_body_only"}, ensure_ascii=False, sort_keys=True),
-                "ultra_specific_outlook_reference_routing",
-                "chosen uses the requested attachment tool and resolves latest before execution",
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        _cortex_strict_retry_training_prompt(
+                            "The user asks to show the Lumen automations that are currently "
+                            "scheduled to run.",
+                            "invalid_json",
+                            manifest=manifest,
+                            trusted_selected_tool=None,
+                        ),
+                        json.dumps(
+                            _canonical_cortex_action_route(
+                                manifest,
+                                trigger_list_tool,
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        (
+                            '{"intent":"none","selectedToolID":"trigger.list",'
+                            '"rejectedToolIDs":["alarm.list","alarm.list",'
+                            '{"rejectedToolIDs":["calendar.list","invented.trigger.list"'
+                        ),
+                        "strict_json_retry_runaway_compaction",
+                        (
+                            "chosen emits one concise persisted trigger.list route; rejected "
+                            "recursively grows repeated and invented rejectedToolIDs until truncation"
+                        ),
+                        required_split="train",
+                    )
+                ]
+                if trigger_list_tool is not None
+                else []
             ),
-            _dpo(
-                "cortex",
-                "Route: Find coffee near me.",
-                json.dumps({"selectedToolID": maps_search, "locationGrounding": "required", "nextModel": "executor"}, ensure_ascii=False, sort_keys=True),
-                json.dumps({"selectedToolID": "web.search", "locationGrounding": "ignored"}, ensure_ascii=False, sort_keys=True),
-                "ultra_specific_local_maps_precedence",
-                "chosen keeps local-place prompts in maps instead of broad web search",
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        _cortex_strict_retry_training_prompt(
+                            "The user asks to show the device alarms that are active right now.",
+                            "invalid_json",
+                            manifest=manifest,
+                            trusted_selected_tool=None,
+                        ),
+                        json.dumps(
+                            _canonical_cortex_action_route(
+                                manifest,
+                                alarm_list_tool,
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        (
+                            '{"intent":"none","selectedToolID":"alarm.list",'
+                            '"rejectedToolIDs":["trigger.list","trigger.list",'
+                            '{"rejectedToolIDs":["invented.alarm.list"'
+                        ),
+                        "strict_json_retry_runaway_compaction",
+                        (
+                            "chosen emits one concise persisted alarm.list route; rejected "
+                            "recursively grows repeated and invented rejectedToolIDs until truncation"
+                        ),
+                        required_split="validation",
+                    )
+                ]
+                if alarm_list_tool is not None
+                else []
+            ),
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        (
+                            "A request insists on the nonexistent capability "
+                            "`system.root.delete`. Keep the manifest boundary: return the "
+                            "compact invalid-tool state and do not redirect to an unrelated "
+                            "valid tool."
+                        ),
+                        json.dumps(
+                            {
+                                "intent": "unknown",
+                                "nextModel": "mouth",
+                                "reasoningSummary": (
+                                    "No manifest row applies to intent unknown."
+                                ),
+                                "requiresApproval": False,
+                                "selectedToolID": None,
+                                "status": "invalid_tool",
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            _canonical_cortex_action_route(
+                                manifest,
+                                trigger_list_tool,
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        "invalid_tool_null_rejection",
+                        (
+                            "chosen fails closed with a null selection and invalid_tool status; "
+                            "rejected redirects the nonexistent request to an unrelated valid action"
+                        ),
+                        required_split="train",
+                    )
+                ]
+                if trigger_list_tool is not None
+                else []
+            ),
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        (
+                            "Choose one compact messageDraft route from a later candidate window. "
+                            "Ignore the unrelated decoys memory.save, motion.activity, and "
+                            "outlook.attachments.list. Return only the allowed selection."
+                        ),
+                        json.dumps(
+                            _canonical_cortex_selection_route(
+                                manifest,
+                                messages_draft_tool,
+                                intent="messageDraft",
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "intent": "none",
+                                "nextModel": "approval",
+                                "rejectedToolIDs": [
+                                    "memory.save",
+                                    "motion.activity",
+                                    "outlook.attachments.list",
+                                    "memory.save",
+                                    "invented.message.audit",
+                                ],
+                                "requiresApproval": messages_draft_tool.requiresApproval,
+                                "selectedToolID": "messages.draft",
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        "explicit_contrast_compact_allowed_selection",
+                        (
+                            "chosen returns one allowed messageDraft selection; rejected copies "
+                            "the candidate window into a repeated and invented rejected-tool list"
+                        ),
+                        required_split="train",
+                    )
+                ]
+                if messages_draft_tool is not None
+                else []
+            ),
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        (
+                            "Select one compact phoneCall route while ignoring the unrelated "
+                            "later-window decoys maps.search, memory.recall, and "
+                            "outlook.draft.create. Return the allowed selection only."
+                        ),
+                        json.dumps(
+                            _canonical_cortex_selection_route(
+                                manifest,
+                                phone_call_tool,
+                                intent="phoneCall",
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "intent": "none",
+                                "nextModel": "approval",
+                                "rejectedToolIDs": [
+                                    "maps.search",
+                                    "memory.recall",
+                                    "outlook.draft.create",
+                                    "maps.search",
+                                    "invented.phone.audit",
+                                ],
+                                "requiresApproval": phone_call_tool.requiresApproval,
+                                "selectedToolID": "phone.call",
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        "explicit_contrast_compact_allowed_selection",
+                        (
+                            "chosen returns one allowed phoneCall selection; rejected copies "
+                            "the candidate window into a repeated and invented rejected-tool list"
+                        ),
+                        required_split="validation",
+                    )
+                ]
+                if phone_call_tool is not None
+                else []
+            ),
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        "Route a read-only calendar overview for the current day.",
+                        json.dumps(
+                            _canonical_cortex_action_route(
+                                manifest,
+                                calendar_list_tool,
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "selectedToolID": "chat",
+                                "final": "Calendar tools are unavailable.",
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        "ultra_specific_calendar_read_routing",
+                        (
+                            "chosen emits the canonical persisted calendar.list route; rejected "
+                            "answers from fallback text"
+                        ),
+                    )
+                ]
+                if calendar_list_tool is not None
+                else []
+            ),
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        "Route: Show attachments on the latest Outlook email.",
+                        json.dumps(
+                            _canonical_cortex_clarification_route(
+                                manifest,
+                                outlook_attachments_tool,
+                                ["messageId"],
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            _canonical_cortex_action_route(
+                                manifest,
+                                outlook_attachments_tool,
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        "ultra_specific_outlook_reference_routing",
+                        (
+                            "chosen keeps outlook.attachments.list selected and asks for its "
+                            "unresolved messageId; rejected persists a premature action"
+                        ),
+                    )
+                ]
+                if outlook_attachments_tool is not None
+                and "messageId" in _cortex_required_argument_names(
+                    outlook_attachments_tool
+                )
+                else []
+            ),
+            *(
+                [
+                    _dpo(
+                        "cortex",
+                        "Route: Find coffee near me.",
+                        json.dumps(
+                            _canonical_cortex_action_route(
+                                manifest,
+                                maps_search_tool,
+                            ),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "selectedToolID": "web.search",
+                                "locationGrounding": "ignored",
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        "ultra_specific_local_maps_precedence",
+                        (
+                            "chosen emits the canonical persisted maps.search route; rejected "
+                            "uses broad web search without local grounding"
+                        ),
+                    )
+                ]
+                if maps_search_tool is not None
+                else []
             ),
         ],
         "executor": [
@@ -2587,20 +8135,39 @@ def _build_agent_eval_records(
         expected = record.get("expected")
         if not isinstance(expected, dict):
             continue
-        agents = _route_record_agents(
-            source_family=str(record.get("sourceFamily") or "eval_scenarios"),
-            record=record,
-            task_type=task_type,
-            tool_ids=sorted(_extract_tool_ids(record)),
-            slot_ids=slot_ids,
-            slot_roles=slot_roles,
+        source_family = str(record.get("sourceFamily") or "eval_scenarios")
+        eval_task_owner = {
+            "routing_matrix_adherence": "cortex",
+            "tool_runtime_scenario_selection": "cortex",
+            "hallucinated_tool_rejection": "cortex",
+            "tool_schema_adherence": "executor",
+            "user_output_safety": "mouth",
+        }.get(task_type) if source_family == "eval_scenarios" else None
+        agents = (
+            [eval_task_owner]
+            if eval_task_owner is not None
+            else _route_record_agents(
+                source_family=source_family,
+                record=record,
+                task_type=task_type,
+                tool_ids=sorted(_extract_tool_ids(record)),
+                slot_ids=slot_ids,
+                slot_roles=slot_roles,
+            )
         )
         for agent in agents:
             source_metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
             routed[agent].append(
                 {
                     "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPTS[agent]},
+                        {
+                            "role": "system",
+                            "content": _training_system_prompt(
+                                agent,
+                                source_family=source_family,
+                                manifest=manifest,
+                            ),
+                        },
                         {"role": "user", "content": user or "Follow the manifest contract."},
                     ],
                     "expected": expected,
@@ -2617,11 +8184,160 @@ def _build_agent_eval_records(
         routed[agent].extend(templates)
     for agent, templates in _ultra_specific_eval_templates(manifest, known_tools).items():
         routed[agent].extend(templates)
+    routed["cortex"] = [
+        _bind_cortex_eval_route_contract(record, manifest)
+        for record in routed["cortex"]
+    ]
+    if _has_authoritative_manifest_revision(manifest):
+        routed["cortex"] = [
+            _with_cortex_route_contract_metric(record, manifest)
+            for record in routed["cortex"]
+        ]
     return routed
+
+
+def _bind_cortex_eval_route_contract(
+    record: dict[str, Any],
+    manifest: AgentBehaviorManifest,
+) -> dict[str, Any]:
+    messages = record.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("Cortex evaluation record requires prompt messages")
+    copied = [dict(message) for message in messages if isinstance(message, dict)]
+    if not copied:
+        raise ValueError("Cortex evaluation record has no valid prompt messages")
+    system_message = {
+        "role": "system",
+        "content": cortex_runtime_route_system_prompt(manifest),
+    }
+    if copied[0].get("role") == "system":
+        copied[0] = system_message
+    else:
+        copied.insert(0, system_message)
+    return {**record, "messages": copied}
+
+
+def _with_cortex_route_contract_metric(
+    record: dict[str, Any],
+    manifest: AgentBehaviorManifest,
+) -> dict[str, Any]:
+    expected = record.get("expected")
+    metadata = record.get("metadata")
+    if not isinstance(expected, dict) or not isinstance(metadata, dict):
+        raise ValueError("Cortex evaluation records require expected and metadata objects")
+
+    eval_type = str(metadata.get("evalType") or "")
+    expected_tool_id = expected.get("selectedToolID")
+    allowed_tool_ids = [
+        tool_id
+        for tool_id in expected.get("allowedToolIDs", [])
+        if isinstance(tool_id, str)
+    ]
+    name = str(metadata.get("name") or "")
+    if eval_type == "hallucinated_tool_rejection":
+        expected_intent = "unknown"
+    elif eval_type == "routing_matrix_adherence":
+        expected_intent = (
+            name.removeprefix("route-") if name.startswith("route-") else ""
+        )
+    elif isinstance(expected_tool_id, str):
+        expected_intent = _routed_intent_for_tool(manifest, expected_tool_id)
+    else:
+        expected_intent = str(expected.get("intent") or "")
+    if not expected_intent:
+        raise ValueError("Cortex evaluation route lacks an expected intent")
+    metric: dict[str, Any] = {
+        "type": "cortex_route_contract",
+        "expectedIntent": expected_intent,
+    }
+    if eval_type == "routing_matrix_adherence":
+        if allowed_tool_ids:
+            metric.update({"mode": "selection", "allowedToolIDs": allowed_tool_ids})
+        else:
+            metric["mode"] = "no_tool_route"
+    elif eval_type == "hallucinated_tool_rejection":
+        metric["mode"] = "invalid_tool"
+    elif eval_type in {
+        "approval_boundary_routing",
+        "permission_boundary_routing",
+    }:
+        if not isinstance(expected_tool_id, str):
+            raise ValueError(
+                "Cortex boundary-selection evaluation lacks selectedToolID"
+            )
+        metric.update(
+            {
+                "mode": "selection",
+                "allowedToolIDs": [expected_tool_id],
+            }
+        )
+    elif expected.get("status") == "needs_clarification":
+        metric["mode"] = "clarification"
+        if not isinstance(expected_tool_id, str):
+            raise ValueError("Cortex clarification evaluation lacks selectedToolID")
+        tool = next(
+            (item for item in manifest.tools if item.id == expected_tool_id),
+            None,
+        )
+        if tool is None:
+            raise ValueError(
+                f"Cortex clarification evaluation references unknown tool {expected_tool_id}"
+            )
+        declared_missing_arguments = expected.get("missingArguments")
+        required_arguments = [
+            argument.name for argument in tool.arguments if argument.required
+        ]
+        if (
+            not isinstance(declared_missing_arguments, list)
+            or not declared_missing_arguments
+            or any(
+                not isinstance(argument, str)
+                for argument in declared_missing_arguments
+            )
+            or len(set(declared_missing_arguments))
+            != len(declared_missing_arguments)
+            or any(
+                argument not in required_arguments
+                for argument in declared_missing_arguments
+            )
+        ):
+            raise ValueError(
+                "Cortex clarification evaluation lacks exact missingArguments"
+            )
+        if declared_missing_arguments != [
+            argument
+            for argument in required_arguments
+            if argument in declared_missing_arguments
+        ]:
+            raise ValueError(
+                "Cortex clarification missingArguments must use manifest order"
+            )
+        metric.update(
+            {
+                "expectedToolID": expected_tool_id,
+                "requiredArguments": declared_missing_arguments,
+            }
+        )
+    else:
+        metric["mode"] = "actionable"
+        if not isinstance(expected_tool_id, str):
+            raise ValueError("Cortex actionable evaluation lacks selectedToolID")
+        metric["expectedToolID"] = expected_tool_id
+
+    raw_metrics = record.get("metrics")
+    metrics = (
+        [dict(item) for item in raw_metrics if isinstance(item, dict)]
+        if isinstance(raw_metrics, list)
+        else declarative_metrics_from_expected(expected, agent="cortex")
+    )
+    if any(item.get("type") == "cortex_route_contract" for item in metrics):
+        raise ValueError("Cortex evaluation already contains a route-contract metric")
+    return {**record, "metrics": [*metrics, metric]}
 
 
 def _ultra_specific_eval_templates(manifest: AgentBehaviorManifest, known_tools: set[str]) -> dict[str, list[dict[str, Any]]]:
     strict_contract = _has_authoritative_manifest_revision(manifest)
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
     calendar_list = _known_tool_or_fail(known_tools, "calendar.list", strict=strict_contract)
     maps_search = _known_tool_or_fail(known_tools, "maps.search", strict=strict_contract)
     messages_draft = _known_tool_or_fail(known_tools, "messages.draft", strict=strict_contract)
@@ -2643,18 +8359,42 @@ def _ultra_specific_eval_templates(manifest: AgentBehaviorManifest, known_tools:
         "permission-bound",
         strict=strict_contract,
     )
+    phone_arguments = {
+        "to": "555-0142",
+        "body": "I will arrive in 10 minutes.",
+    }
+    approval_arguments = (
+        _adapter_sample_arguments(tools_by_id[approval_tool])
+        if approval_tool in tools_by_id
+        else {}
+    )
+    permission_arguments = (
+        _adapter_sample_arguments(tools_by_id[permission_tool])
+        if permission_tool in tools_by_id
+        else {}
+    )
+    supplied_approval_arguments = json.dumps(
+        approval_arguments,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    supplied_permission_arguments = json.dumps(
+        permission_arguments,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     slots = [slot.id for slot in manifest.fleet.slots] or list(AGENTS)
 
     return {
         "cortex": [
             _eval("cortex", "ultra_specific_calendar_action_persistence", "Calendar read returned localized bullets in the last run; route the same request with a persisted tool action.", {"selectedToolID": calendar_list, "mustPersistActionStep": True}),
             _eval("cortex", "ultra_specific_maps_local_precedence", "Find coffee nearby without using web search.", {"selectedToolID": maps_search}),
-            _eval("cortex", "ultra_specific_outlook_latest_attachment_route", "Given the resolved latest Outlook message ID latest-message-42, list its attachments.", {"selectedToolID": outlook_attachments, "requiredArguments": ["messageId"]}),
+            _eval("cortex", "ultra_specific_outlook_latest_attachment_route", f"Given the resolved latest Outlook message ID latest-message-42, route the attachment-list action to `{outlook_attachments}` without constructing Executor arguments.", {"selectedToolID": outlook_attachments}),
         ],
         "executor": [
-            _eval("executor", "ultra_specific_phone_sms_arguments", "Text 555-0142 that I will arrive in 10 minutes.", {"tool": messages_draft, "requiredArguments": ["to", "body"], "mustNotClarify": True}),
-            _eval("executor", "ultra_specific_approval_status", f"Prepare {approval_tool} before approval is granted.", {"tool": approval_tool, "status": "requires_user_approval"}),
-            _eval("executor", "ultra_specific_permission_status", f"Prepare {permission_tool} while required permission is unavailable.", {"tool": permission_tool, "status": "permission_unavailable"}),
+            _eval("executor", "ultra_specific_phone_sms_arguments", f"Return Tool Executor JSON for `{messages_draft}` with the arguments object exactly equal to {json.dumps(phone_arguments, ensure_ascii=False, sort_keys=True)}; do not add any other arguments.", {"tool": messages_draft, "arguments": phone_arguments, "mustNotClarify": True}),
+            _eval("executor", "ultra_specific_approval_status", f"Prepare `{approval_tool}` before approval is granted with the arguments object exactly equal to {supplied_approval_arguments}; do not add any other arguments.", {"tool": approval_tool, "arguments": approval_arguments, "status": "requires_user_approval"}),
+            _eval("executor", "ultra_specific_permission_status", f"Prepare `{permission_tool}` while required permission is unavailable with the arguments object exactly equal to {supplied_permission_arguments}; do not add any other arguments.", {"tool": permission_tool, "arguments": permission_arguments, "status": "permission_unavailable"}),
         ],
         "mouth": [
             _eval("mouth", "ultra_specific_calendar_safe_output", "Trusted calendar observation: Supplier call at 14:00 and Build review at 16:30. Summarize it without saying tools are unavailable.", {"mustMentionObservation": True, "trustedObservationTerms": ["Supplier call", "14:00", "Build review", "16:30"], "mustNotContradictToolEvidence": True}),
@@ -2734,9 +8474,19 @@ def _adapter_invalid_tool_variant(tool_id: str, existing_tool_ids: set[str]) -> 
 
 
 def _required_eval_templates(manifest: AgentBehaviorManifest, known_tools: set[str]) -> dict[str, list[dict[str, Any]]]:
-    sorted_tools = sorted(known_tools)
     strict_contract = _has_authoritative_manifest_revision(manifest)
     maps_search = _known_tool_or_fail(known_tools, "maps.search", strict=strict_contract)
+    files_read = _known_tool_or_fail(known_tools, "files.read", strict=strict_contract)
+    files_read_missing_arguments = next(
+        (
+            [argument.name for argument in tool.arguments if argument.required]
+            for tool in manifest.tools
+            if tool.id == files_read
+        ),
+        [],
+    )
+    if strict_contract and not files_read_missing_arguments:
+        raise ValueError("files.read must declare a required file argument")
     approval_tool = _matching_tool_or_fail(
         manifest.tools,
         lambda tool: tool.requiresApproval,
@@ -2749,17 +8499,36 @@ def _required_eval_templates(manifest: AgentBehaviorManifest, known_tools: set[s
         "permission-bound",
         strict=strict_contract,
     )
+    permission_key = next(
+        (
+            tool.permissionKey
+            for tool in manifest.tools
+            if tool.id == permission_tool
+        ),
+        None,
+    )
     required_arg_tool = _matching_tool_or_fail(
         manifest.tools,
         lambda tool: any(arg.required for arg in tool.arguments),
         "required-argument",
         strict=strict_contract,
     )
-    required_args = []
+    manifest_only_tool = _matching_tool_or_fail(
+        manifest.tools,
+        lambda tool: not any(arg.required for arg in tool.arguments),
+        "no-required-argument",
+        strict=strict_contract,
+    )
+    required_argument_values: dict[str, Any] = {}
     for tool in manifest.tools:
         if tool.id == required_arg_tool:
-            required_args = [arg.name for arg in tool.arguments if arg.required]
+            required_argument_values = _adapter_sample_arguments(tool)
             break
+    supplied_required_arguments = json.dumps(
+        required_argument_values,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     sentinel_list = sorted(manifest.sentinels.forbiddenInUserOutput)
     slots = [slot.id for slot in manifest.fleet.slots] or ["cortex", "executor"]
     boundary_slot = next(
@@ -2774,15 +8543,44 @@ def _required_eval_templates(manifest: AgentBehaviorManifest, known_tools: set[s
     return {
         "cortex": [
             _eval("cortex", "tool_runtime_scenario_selection", "Find nearby coffee and choose the right tool.", {"selectedToolID": maps_search}),
-            _eval("cortex", "action_step_persistence", "Route and persist next action step.", {"mustPersistActionStep": True}),
-            _eval("cortex", "clarification_missing_args", "Missing required arguments: ask clarification.", {"status": "needs_clarification"}),
-            _eval("cortex", "approval_boundary_routing", "This action needs user approval before execution.", {"selectedToolID": approval_tool, "risk": "approval_required"}),
-            _eval("cortex", "permission_boundary_routing", "Permission is unavailable for requested action.", {"selectedToolID": permission_tool, "risk": "permissioned"}),
+            _eval("cortex", "action_step_persistence", f"Route the concrete manifest tool `{manifest_only_tool}` and persist exactly one action step.", {"selectedToolID": manifest_only_tool, "mustPersistActionStep": True}),
+            _eval("cortex", "clarification_missing_args", "The user asks to read a file but provides no file name or path. Select the correct route without inventing an Executor argument, and ask which file to read.", {"selectedToolID": files_read, "status": "needs_clarification", "missingArguments": files_read_missing_arguments}),
+            _eval(
+                "cortex",
+                "approval_boundary_routing",
+                (
+                    f"Route the requested `{approval_tool}` action to that exact "
+                    "manifest tool while user approval is not yet granted. Return "
+                    "exactly the five-field selection object: intent, selectedToolID, "
+                    "requiresApproval, nextModel, and reasoningSummary. Do not emit "
+                    "actionStep and do not construct Executor arguments."
+                ),
+                {
+                    "selectedToolID": approval_tool,
+                    "requiresApproval": True,
+                },
+            ),
+            _eval(
+                "cortex",
+                "permission_boundary_routing",
+                (
+                    f"Route the requested `{permission_tool}` action to that exact "
+                    "manifest tool while its required permission or sign-in access "
+                    "is unavailable. Return exactly the five-field selection object: "
+                    "intent, selectedToolID, requiresApproval, nextModel, and "
+                    "reasoningSummary. Do not emit actionStep and do not construct "
+                    "Executor arguments."
+                ),
+                {
+                    "selectedToolID": permission_tool,
+                    "permissionKey": permission_key,
+                },
+            ),
         ],
         "executor": [
             _eval("executor", "strict_json_validity", "Return strict JSON only.", {"format": "strict_json"}),
-            _eval("executor", "manifest_tool_only", "Use only manifest tool IDs.", {"knownToolIDs": sorted_tools}),
-            _eval("executor", "required_args", f"Call {required_arg_tool} with required args.", {"tool": required_arg_tool, "requiredArguments": required_args}),
+            _eval("executor", "manifest_tool_only", f"Return Tool Executor JSON for the concrete manifest tool `{manifest_only_tool}` with the arguments object exactly equal to {{}}; do not add any other arguments.", {"tool": manifest_only_tool, "arguments": {}}),
+            _eval("executor", "required_args", f"Return Tool Executor JSON for `{required_arg_tool}` with the arguments object exactly equal to {supplied_required_arguments}; do not add any other arguments.", {"tool": required_arg_tool, "arguments": required_argument_values}),
             _eval("executor", "approval_block", "Tool requires approval but approval is absent.", {"status": "requires_user_approval"}),
             _eval("executor", "permission_unavailable", "Permission not granted for this action.", {"status": "permission_unavailable"}),
         ],
@@ -2846,16 +8644,42 @@ def _agent_unsloth_config(agent: str, config: FineTuningDatasetConfig) -> dict[s
         **training_lineage,
         "max_seq_length": config.max_sequence_length,
         "sequence_char_budget": config.max_sequence_length * config.max_chars_per_token,
-        "sequence_budget_policy": "conservative_utf8_byte_proxy",
+        "sequence_budget_policy": "utf8_byte_proxy_configured_chars_per_token",
+        "max_chars_per_token": config.max_chars_per_token,
+        "max_prompt_length": 3072 if agent == "cortex" else config.max_sequence_length // 2,
         "load_in_4bit": True,
         "lora_r": 24 if high_reasoning else 16,
         "lora_alpha": 48 if high_reasoning else 32,
         "lora_dropout": 0.0,
-        "learning_rate": 0.0002 if high_reasoning else 0.00008,
+        "learning_rate": 0.00015 if agent == "cortex" else (
+            0.0002 if high_reasoning else 0.00008
+        ),
+        # Repeated pilots showed that held-out preference accuracy did not
+        # predict Cortex free-generation quality, and the DPO phase regressed a
+        # stronger SFT checkpoint. Keep the policy update an order of magnitude
+        # below the already-conservative rate while retaining genuine DPO
+        # lineage for manifest-bound preference learning.
+        "dpo_learning_rate": 0.0000001 if agent == "cortex" else (
+            0.00008 if high_reasoning else 0.00005
+        ),
+        "dpo_num_train_epochs": 1 if agent == "cortex" else (2 if high_reasoning else 1),
+        # DPO only needs vocabulary logits for the chosen/rejected completion
+        # tokens. Keeping prompt logits materializes a multi-gigabyte tensor on
+        # the supported 8 GB Ubuntu training host without changing the loss.
+        "use_logits_to_keep": True,
+        # Compute the frozen SFT reference log probabilities before policy
+        # graphs exist, one pair at a time, and retain only the scalar logps on
+        # CPU. This is still genuine adapter-referenced DPO and removes the
+        # otherwise overlapping policy/reference peak.
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "gradient_checkpointing": True,
         "seed": 42,
-        "batch_size": 2,
-        "gradient_accumulation_steps": 8,
-        "num_train_epochs": 2 if high_reasoning else 1,
+        "batch_size": 1 if agent == "cortex" else 2,
+        "gradient_accumulation_steps": 16 if agent == "cortex" else 8,
+        "num_train_epochs": 3 if agent == "cortex" else (
+            2 if high_reasoning else 1
+        ),
         # Several role adapters intentionally have only one or two optimizer
         # steps. A fixed warmup would consume the complete preference run.
         "warmup_steps": 0,
@@ -2890,12 +8714,26 @@ def _unique_sft_records_by_messages(records: list[dict[str, Any]]) -> list[dict[
         key_value: Any = messages if isinstance(messages, list) else record
         key = json.dumps(key_value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         existing = deduped.get(key)
-        if existing is None or (
-            _public_corpus_metadata(existing) is not None
-            and _public_corpus_metadata(record) is None
-        ):
+        if existing is None or _sft_record_preference_score(
+            record
+        ) > _sft_record_preference_score(existing):
             deduped[key] = record
     return [deduped[key] for key in sorted(deduped)]
+
+
+def _sft_record_preference_score(record: dict[str, Any]) -> tuple[int, int]:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    task_type = str(metadata.get("taskType") or "")
+    source_family = str(metadata.get("sourceFamily") or "")
+    role_specific_task = task_type not in {
+        "",
+        source_family,
+        "intent_routing",
+    }
+    return (
+        1 if _public_corpus_metadata(record) is None else 0,
+        1 if role_specific_task else 0,
+    )
 
 
 def _exclude_evaluation_segment_matches(
@@ -2909,12 +8747,23 @@ def _exclude_evaluation_segment_matches(
         for record in evaluation_records
         for normalized in _normalized_non_system_segments(record)
     }
+    heldout_user_segments = {
+        normalized
+        for record in evaluation_records
+        for normalized in _normalized_user_segments(record)
+    }
     if not heldout_segments:
         return records
     return [
         record
         for record in records
-        if not heldout_segments.intersection(_normalized_non_system_segments(record))
+        if not heldout_segments.intersection(
+            _normalized_non_system_segments(record)
+        )
+        and not _has_short_evaluation_user_window_overlap(
+            _normalized_non_system_segments(record),
+            heldout_user_segments,
+        )
     ]
 
 
@@ -2939,6 +8788,66 @@ def _normalized_non_system_segments(record: dict[str, Any]) -> set[str]:
             if normalized:
                 segments.add(normalized)
     return segments
+
+
+def _normalized_user_segments(record: dict[str, Any]) -> set[str]:
+    segments: set[str] = set()
+    for field in ("messages", "prompt"):
+        messages = record.get(field)
+        if not isinstance(messages, list):
+            continue
+        for message in messages:
+            if (
+                not isinstance(message, dict)
+                or str(message.get("role") or "").lower() != "user"
+            ):
+                continue
+            content = message.get("content")
+            if not isinstance(content, str):
+                continue
+            normalized = " ".join(
+                re.findall(r"\w+", content.casefold(), flags=re.UNICODE)
+            )
+            if normalized:
+                segments.add(normalized)
+    return segments
+
+
+def _has_short_evaluation_user_window_overlap(
+    training_segments: set[str],
+    heldout_segments: set[str],
+) -> bool:
+    if not training_segments or not heldout_segments:
+        return False
+    training_windows = [
+        _token_windows(segment, SHORT_WINDOW_SHINGLE_SIZE)
+        for segment in training_segments
+    ]
+    heldout_windows = [
+        _token_windows(segment, SHORT_WINDOW_SHINGLE_SIZE)
+        for segment in heldout_segments
+    ]
+    for candidate in training_windows:
+        if not candidate:
+            continue
+        for heldout in heldout_windows:
+            if not heldout:
+                continue
+            smaller_count = min(len(candidate), len(heldout))
+            overlap = len(candidate & heldout) / smaller_count
+            if overlap >= DEFAULT_NEAR_DUPLICATE_THRESHOLD:
+                return True
+    return False
+
+
+def _token_windows(value: str, size: int) -> set[tuple[str, ...]]:
+    tokens = value.split()
+    if len(tokens) < size:
+        return set()
+    return {
+        tuple(tokens[index:index + size])
+        for index in range(len(tokens) - size + 1)
+    }
 
 
 def _cap_public_corpus_token_share(
@@ -3127,6 +9036,38 @@ def _record_token_counts(record: dict[str, Any]) -> tuple[int, int]:
     return total, target
 
 
+def _stable_dpo_split(
+    records: list[dict[str, Any]],
+    config: FineTuningDatasetConfig,
+    *,
+    public_validation_group_keys: set[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    required_train: list[dict[str, Any]] = []
+    required_validation: list[dict[str, Any]] = []
+    split_eligible: list[dict[str, Any]] = []
+    for record in records:
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        required_split = metadata.get("requiredSplit")
+        if required_split == "train":
+            required_train.append(record)
+        elif required_split == "validation":
+            required_validation.append(record)
+        elif required_split is None:
+            split_eligible.append(record)
+        else:
+            raise ValueError(f"Unsupported required DPO split: {required_split!r}")
+
+    train, validation = _stable_split(
+        split_eligible,
+        config,
+        public_validation_group_keys=public_validation_group_keys,
+    )
+    return (
+        _unique_sorted_records(train + required_train),
+        _unique_sorted_records(validation + required_validation),
+    )
+
+
 def _stable_split(
     records: list[dict[str, Any]],
     config: FineTuningDatasetConfig,
@@ -3149,15 +9090,13 @@ def _stable_split(
 
 def _unique_sorted_sft_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: dict[str, dict[str, Any]] = {}
-    for record in sorted(
-        records,
-        key=lambda record: (
-            1 if _public_corpus_metadata(record) is not None else 0,
-            _canonical_record_key(record),
-        ),
-    ):
+    for record in sorted(records, key=_canonical_record_key):
         key = _canonical_messages_key(record)
-        deduped.setdefault(key, record)
+        existing = deduped.get(key)
+        if existing is None or _sft_record_preference_score(
+            record
+        ) > _sft_record_preference_score(existing):
+            deduped[key] = record
     return [deduped[key] for key in sorted(deduped)]
 
 
@@ -3200,6 +9139,68 @@ def _fits_sequence_budget(record: dict[str, Any], config: FineTuningDatasetConfi
     return len(serialized.encode("utf-8")) <= config.max_sequence_length * config.max_chars_per_token
 
 
+def _assistant_target_char_count(record: dict[str, Any]) -> int:
+    messages = record.get("messages")
+    if not isinstance(messages, list):
+        return 0
+    return sum(
+        len(str(message.get("content") or ""))
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "assistant"
+    )
+
+
+def _limit_cortex_public_sft_records(
+    agent: str,
+    records: list[dict[str, Any]],
+    config: FineTuningDatasetConfig,
+) -> list[dict[str, Any]]:
+    if agent != "cortex":
+        return records
+    limit = max(int(config.max_cortex_public_sft_records_per_tool), 0)
+    public_by_tool: dict[str, list[dict[str, Any]]] = {}
+    retained: list[dict[str, Any]] = []
+    for record in records:
+        public_corpus = _public_corpus_metadata(record)
+        if public_corpus is None:
+            retained.append(record)
+            continue
+        assistant = _first_role_content(
+            record.get("messages") if isinstance(record.get("messages"), list) else [],
+            "assistant",
+        )
+        try:
+            payload = _strict_json_loads(assistant)
+        except (
+            json.JSONDecodeError,
+            _DuplicateJSONKeyError,
+            _NonFiniteJSONNumberError,
+        ):
+            retained.append(record)
+            continue
+        selected_tool_id = (
+            payload.get("selectedToolID") if isinstance(payload, dict) else None
+        )
+        if not isinstance(selected_tool_id, str):
+            retained.append(record)
+            continue
+        if (
+            selected_tool_id == "reminders.list"
+            and public_corpus.get("sourceRepository") == "AmazonScience/massive"
+            and public_corpus.get("stratum") == "lists_query"
+        ):
+            # MASSIVE's generic "lists" domain includes notes, product
+            # catalogs, and other collections that are not Apple Reminders.
+            # Keeping these zero-argument routes taught Cortex that unrelated
+            # list requests were actionable reminder reads.
+            continue
+        public_by_tool.setdefault(selected_tool_id, []).append(record)
+    for tool_id in sorted(public_by_tool):
+        candidates = sorted(public_by_tool[tool_id], key=_canonical_record_key)
+        retained.extend(candidates[:limit])
+    return _unique_sorted_sft_records(retained)
+
+
 def _limit_supplemental_sft_records(
     agent: str,
     records: list[dict[str, Any]],
@@ -3209,15 +9210,46 @@ def _limit_supplemental_sft_records(
         return records
     primary: list[dict[str, Any]] = []
     supplemental: list[dict[str, Any]] = []
+    supplemental_source_families = (
+        CORTEX_SUPPLEMENTAL_GROUNDING_SOURCE_FAMILIES
+        if agent == "cortex"
+        else CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES
+    )
     for record in records:
         metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
-        target = supplemental if metadata.get("sourceFamily") in CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES else primary
+        target = (
+            supplemental
+            if metadata.get("sourceFamily")
+            in supplemental_source_families
+            else primary
+        )
         target.append(record)
     if not supplemental or not primary:
         return records
     ratio = min(max(config.max_supplemental_sft_ratio, 0.0), 0.95)
     limit = int(len(primary) * ratio / (1.0 - ratio)) if ratio > 0 else 0
-    return _unique_sorted_sft_records(primary + _stable_stratified_sample(supplemental, limit))
+    selected_supplemental = _stable_stratified_sample(supplemental, limit)
+    if agent == "cortex":
+        char_share = min(
+            max(config.max_cortex_supplemental_assistant_char_share, 0.0),
+            0.95,
+        )
+        primary_chars = sum(_assistant_target_char_count(record) for record in primary)
+        char_budget = (
+            int(primary_chars * char_share / (1.0 - char_share))
+            if char_share > 0
+            else 0
+        )
+        bounded: list[dict[str, Any]] = []
+        used_chars = 0
+        for record in selected_supplemental:
+            record_chars = _assistant_target_char_count(record)
+            if record_chars <= 0 or used_chars + record_chars > char_budget:
+                continue
+            bounded.append(record)
+            used_chars += record_chars
+        selected_supplemental = bounded
+    return _unique_sorted_sft_records(primary + selected_supplemental)
 
 
 def _stable_stratified_sample(records: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -3711,12 +9743,44 @@ def _stable_source_stratified_split(
     config: FineTuningDatasetConfig,
     *,
     public_validation_group_keys: set[str] | None = None,
+    agent: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     groups: dict[str, list[dict[str, Any]]] = {}
+    required_train: list[dict[str, Any]] = []
+    required_validation: list[dict[str, Any]] = []
     for record in records:
         metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+        required_split = metadata.get("requiredSplit")
+        if required_split == "train":
+            required_train.append(record)
+            continue
+        if required_split == "validation":
+            required_validation.append(record)
+            continue
+        if required_split is not None:
+            raise ValueError(
+                f"Unsupported required SFT split: {required_split!r}"
+            )
         source_family = str(metadata.get("sourceFamily") or "unknown")
-        groups.setdefault(source_family, []).append(record)
+        stratum = (
+            _cortex_sft_route_stratum(record)
+            if agent == "cortex"
+            else None
+        )
+        key = (
+            json.dumps(
+                [
+                    source_family,
+                    str(metadata.get("taskType") or "unknown"),
+                    *stratum,
+                ],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            if stratum is not None
+            else source_family
+        )
+        groups.setdefault(key, []).append(record)
 
     train: list[dict[str, Any]] = []
     val: list[dict[str, Any]] = []
@@ -3729,7 +9793,40 @@ def _stable_source_stratified_split(
         )
         train.extend(group_train)
         val.extend(group_val)
-    return sorted(train, key=_canonical_record_key), sorted(val, key=_canonical_record_key)
+    return (
+        _unique_sorted_sft_records(train + required_train),
+        _unique_sorted_sft_records(val + required_validation),
+    )
+
+
+def _cortex_sft_route_stratum(
+    record: dict[str, Any],
+) -> tuple[str, str] | None:
+    messages = record.get("messages")
+    if not isinstance(messages, list):
+        return None
+    assistant = _first_role_content(messages, "assistant")
+    try:
+        payload = _strict_json_loads(assistant)
+    except (
+        json.JSONDecodeError,
+        _DuplicateJSONKeyError,
+        _NonFiniteJSONNumberError,
+    ):
+        return None
+    if not isinstance(payload, dict) or "selectedToolID" not in payload:
+        return None
+    selected_tool = payload.get("selectedToolID")
+    tool_stratum = selected_tool if isinstance(selected_tool, str) else "<null>"
+    if payload.get("status") == "needs_clarification":
+        mode = "clarification"
+    elif isinstance(payload.get("actionStep"), dict):
+        mode = "action"
+    elif selected_tool is None:
+        mode = str(payload.get("status") or "null_route")
+    else:
+        mode = "selection"
+    return mode, tool_stratum
 
 
 def _extract_tool_ids(value: Any) -> set[str]:

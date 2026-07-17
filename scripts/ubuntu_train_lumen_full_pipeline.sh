@@ -60,7 +60,7 @@ Options:
   --resume             Resume an existing run by skipping verified training phases
   --prepare-only       Validate and prepare run inputs without training
   --no-evaluate        Skip frozen post-training inference and scoring
-  --eval-smoke N       Evaluate only the first N frozen cases per agent
+  --eval-smoke N       Evaluate a deterministic semantic cohort of N frozen cases per agent
   --no-gguf            Skip adapter GGUF conversion
   --no-build           Reuse --image-tag instead of building it
   --no-pull            Do not refresh the pinned CUDA base tag during docker build

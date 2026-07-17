@@ -3,15 +3,22 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
+
+from tools.fine_tuning.unsloth.training_lineage import (
+    DEFAULT_LLAMA_CPP_REVISION,
+)
 
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
@@ -66,6 +73,142 @@ NON_CONTROLLED_CONFIG_FIELDS = {
     "variantManifestSHA256",
     *RUNTIME_CONFIG_FIELDS,
 }
+GGUF_FIXED_HEADER_SIZE = 24
+GGUF_SUPPORTED_VERSIONS = frozenset({2, 3})
+GGUF_READER_RELATIVE_PATH = Path("gguf-py/gguf/scripts/gguf_dump.py")
+GGUF_READER_TIMEOUT_SECONDS = 120
+_GGUF_READER_FD_BOOTSTRAP = """
+import os
+import sys
+
+reader_fd = int(sys.argv[1])
+reader_path = sys.argv[2]
+artifact_path = sys.argv[3]
+chunks = []
+offset = 0
+while True:
+    chunk = os.pread(reader_fd, 1 << 20, offset)
+    if not chunk:
+        break
+    chunks.append(chunk)
+    offset += len(chunk)
+source = b"".join(chunks)
+sys.argv = [reader_path, artifact_path, "--json"]
+sys.path[0] = os.path.dirname(os.path.abspath(reader_path))
+namespace = {
+    "__name__": "__main__",
+    "__file__": reader_path,
+    "__package__": None,
+    "__cached__": None,
+}
+exec(compile(source, reader_path, "exec"), namespace, namespace)
+"""
+
+
+@dataclass(frozen=True)
+class _VerifiedGGUFReaderScript:
+    path: Path
+    git_blob_sha1: str
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"Non-finite JSON number is not allowed: {value}")
+
+
+def _reject_duplicate_json_keys(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"Duplicate JSON key is not allowed: {key}")
+        value[key] = item
+    return value
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite_json_constant(value)
+    return parsed
+
+
+def _file_stability_signature(file_stat: os.stat_result) -> tuple[int, ...]:
+    return (
+        file_stat.st_dev,
+        file_stat.st_ino,
+        file_stat.st_mode,
+        file_stat.st_size,
+        file_stat.st_mtime_ns,
+        file_stat.st_ctime_ns,
+    )
+
+
+def _read_descriptor_bytes(handle: BinaryIO) -> bytes:
+    chunks: list[bytes] = []
+    offset = 0
+    while True:
+        chunk = os.pread(handle.fileno(), 1 << 20, offset)
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+        offset += len(chunk)
+
+
+def _git_blob_sha1(payload: bytes) -> str:
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return hashlib.sha1(header + payload, usedforsecurity=False).hexdigest()
+
+
+def _open_regular_readonly(path: Path, *, label: str) -> tuple[BinaryIO, os.stat_result]:
+    if path.is_symlink():
+        raise RuntimeError(f"{label} must not be a symlink: {path}")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise RuntimeError(f"{label} verification requires O_NOFOLLOW support")
+    try:
+        descriptor = os.open(path, flags | nofollow)
+    except OSError as exc:
+        raise RuntimeError(f"{label} is unavailable: {path}") from exc
+    try:
+        file_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise RuntimeError(f"{label} must be a regular file: {path}")
+        return os.fdopen(descriptor, "rb", closefd=True), file_stat
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _require_stable_descriptor(
+    handle: BinaryIO,
+    expected: os.stat_result,
+    *,
+    label: str,
+) -> None:
+    if _file_stability_signature(os.fstat(handle.fileno())) != _file_stability_signature(
+        expected
+    ):
+        raise RuntimeError(f"{label} changed while it was being verified")
+
+
+def _require_path_matches_descriptor(
+    path: Path,
+    expected: os.stat_result,
+    *,
+    label: str,
+) -> None:
+    try:
+        current = os.stat(path, follow_symlinks=False)
+    except OSError as exc:
+        raise RuntimeError(f"{label} changed while it was being verified") from exc
+    if (
+        not stat.S_ISREG(current.st_mode)
+        or current.st_dev != expected.st_dev
+        or current.st_ino != expected.st_ino
+    ):
+        raise RuntimeError(f"{label} changed while it was being verified")
 
 
 def canonical_sha256(value: Any) -> str:
@@ -86,10 +229,246 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _git_output(checkout: Path, *arguments: str) -> str:
+    environment = dict(os.environ)
+    environment["GIT_OPTIONAL_LOCKS"] = "0"
+    try:
+        return subprocess.check_output(
+            ["git", "--no-optional-locks", "-C", str(checkout), *arguments],
+            stderr=subprocess.PIPE,
+            text=True,
+            env=environment,
+        ).strip()
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", "") or ""
+        raise RuntimeError(
+            f"Unable to verify pinned llama.cpp checkout: {detail.strip()}"
+        ) from exc
+
+
+def _verified_pinned_gguf_reader_script(
+    run_root: Path,
+) -> _VerifiedGGUFReaderScript:
+    checkout = run_root / "llama.cpp"
+    reader_script = checkout / GGUF_READER_RELATIVE_PATH
+    if checkout.is_symlink() or not checkout.is_dir():
+        raise RuntimeError(
+            f"Missing regular pinned llama.cpp checkout for GGUF verification: {checkout}"
+        )
+    if reader_script.is_symlink() or not reader_script.is_file():
+        raise RuntimeError(
+            f"Missing regular pinned llama.cpp GGUF reader: {reader_script}"
+        )
+    if checkout.resolve() not in reader_script.resolve().parents:
+        raise RuntimeError(f"Pinned GGUF reader escapes its checkout: {reader_script}")
+    head = _git_output(checkout, "rev-parse", "HEAD")
+    if head != DEFAULT_LLAMA_CPP_REVISION:
+        raise RuntimeError("llama.cpp GGUF reader revision drifted")
+    if _git_output(
+        checkout,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+    ):
+        raise RuntimeError("llama.cpp GGUF reader checkout is dirty")
+    relative_reader = GGUF_READER_RELATIVE_PATH.as_posix()
+    expected_blob = _git_output(
+        checkout,
+        "rev-parse",
+        f"HEAD:{relative_reader}",
+    )
+    if re.fullmatch(r"[0-9a-f]{40}", expected_blob) is None:
+        raise RuntimeError("llama.cpp GGUF reader has an invalid pinned blob identity")
+    return _VerifiedGGUFReaderScript(
+        path=reader_script,
+        git_blob_sha1=expected_blob,
+    )
+
+
+def _verify_gguf_with_reader(
+    path: Path,
+    *,
+    artifact_handle: BinaryIO,
+    reader_script: Path | _VerifiedGGUFReaderScript,
+    tensor_count: int,
+    metadata_kv_count: int,
+) -> None:
+    if isinstance(reader_script, _VerifiedGGUFReaderScript):
+        reader_path = reader_script.path
+        expected_reader_blob = reader_script.git_blob_sha1
+    else:
+        reader_path = reader_script
+        expected_reader_blob = None
+    if reader_path.is_symlink() or not reader_path.is_file():
+        raise RuntimeError(f"Pinned llama.cpp GGUF reader is unavailable: {reader_path}")
+    reader_handle, reader_stat = _open_regular_readonly(
+        reader_path,
+        label="Pinned llama.cpp GGUF reader",
+    )
+    try:
+        if (
+            expected_reader_blob is not None
+            and _git_blob_sha1(_read_descriptor_bytes(reader_handle))
+            != expected_reader_blob
+        ):
+            raise RuntimeError(
+                "llama.cpp GGUF reader drifted from the pinned revision"
+            )
+        reader_fd = reader_handle.fileno()
+        artifact_fd = artifact_handle.fileno()
+        try:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    _GGUF_READER_FD_BOOTSTRAP,
+                    str(reader_fd),
+                    str(reader_path),
+                    f"/proc/self/fd/{artifact_fd}",
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=GGUF_READER_TIMEOUT_SECONDS,
+                pass_fds=(reader_fd, artifact_fd),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(
+                f"Pinned llama.cpp GGUF reader could not inspect artifact: {path}"
+            ) from exc
+        _require_stable_descriptor(
+            reader_handle,
+            reader_stat,
+            label="Pinned llama.cpp GGUF reader",
+        )
+        _require_path_matches_descriptor(
+            reader_path,
+            reader_stat,
+            label="Pinned llama.cpp GGUF reader",
+        )
+    finally:
+        reader_handle.close()
+    if completed.returncode != 0:
+        detail = completed.stderr.strip().splitlines()
+        suffix = f" ({detail[-1]})" if detail else ""
+        raise RuntimeError(
+            f"Pinned llama.cpp GGUF reader rejected artifact: {path}{suffix}"
+        )
+    try:
+        result = json.loads(
+            completed.stdout,
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_nonfinite_json_constant,
+            parse_float=_parse_finite_json_float,
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Pinned llama.cpp GGUF reader returned invalid evidence: {path}"
+        ) from exc
+    metadata = result.get("metadata") if isinstance(result, Mapping) else None
+    tensors = result.get("tensors") if isinstance(result, Mapping) else None
+    if (
+        not isinstance(result, Mapping)
+        or set(result) != {"filename", "endian", "metadata", "tensors"}
+        or Path(str(result.get("filename") or "")).resolve() != path.resolve()
+        or result.get("endian") not in {"LITTLE", "BIG"}
+        or not isinstance(metadata, Mapping)
+        or not isinstance(tensors, Mapping)
+        or not {
+            "GGUF.version",
+            "GGUF.tensor_count",
+            "GGUF.kv_count",
+        }.issubset(metadata)
+        or len(metadata) != metadata_kv_count + 3
+        or len(tensors) != tensor_count
+        or not all(isinstance(item, Mapping) for item in metadata.values())
+        or not all(isinstance(item, Mapping) for item in tensors.values())
+    ):
+        raise RuntimeError(
+            f"Pinned llama.cpp GGUF reader evidence mismatches the fixed header: {path}"
+        )
+
+
+def verify_gguf_artifact(
+    path: Path,
+    *,
+    reader_script: Path | _VerifiedGGUFReaderScript,
+) -> dict[str, Any]:
+    """Verify one regular GGUF file with the pinned llama.cpp reader."""
+
+    if path.is_symlink():
+        raise RuntimeError(f"GGUF artifact must not be a symlink: {path}")
+    handle, file_stat = _open_regular_readonly(path, label="GGUF artifact")
+    try:
+        if file_stat.st_size <= GGUF_FIXED_HEADER_SIZE:
+            raise RuntimeError(
+                "GGUF artifact must be a regular file larger than its fixed "
+                f"header: {path}"
+            )
+        header = handle.read(GGUF_FIXED_HEADER_SIZE)
+        if header[:4] != b"GGUF":
+            raise RuntimeError(f"GGUF artifact has invalid magic bytes: {path}")
+        version = int.from_bytes(header[4:8], byteorder="little", signed=False)
+        if version not in GGUF_SUPPORTED_VERSIONS:
+            raise RuntimeError(
+                f"GGUF artifact has unsupported version {version}: {path}"
+            )
+        tensor_count = int.from_bytes(
+            header[8:16], byteorder="little", signed=False
+        )
+        metadata_kv_count = int.from_bytes(
+            header[16:24], byteorder="little", signed=False
+        )
+        if tensor_count <= 0:
+            raise RuntimeError(f"GGUF artifact has no tensors: {path}")
+        if metadata_kv_count <= 0:
+            raise RuntimeError(f"GGUF artifact has no metadata key-values: {path}")
+        handle.seek(0)
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+        _require_stable_descriptor(
+            handle,
+            file_stat,
+            label="GGUF artifact",
+        )
+        _verify_gguf_with_reader(
+            path,
+            artifact_handle=handle,
+            reader_script=reader_script,
+            tensor_count=tensor_count,
+            metadata_kv_count=metadata_kv_count,
+        )
+        _require_stable_descriptor(
+            handle,
+            file_stat,
+            label="GGUF artifact",
+        )
+        _require_path_matches_descriptor(
+            path,
+            file_stat,
+            label="GGUF artifact",
+        )
+    except OSError as exc:
+        raise RuntimeError(f"Unable to read GGUF artifact: {path}") from exc
+    finally:
+        handle.close()
+    return {
+        "adapterGGUF": str(path),
+        "adapterGGUFSHA256": digest.hexdigest(),
+        "adapterGGUFSizeBytes": file_stat.st_size,
+    }
+
+
 def read_object(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_nonfinite_json_constant,
+            parse_float=_parse_finite_json_float,
+        )
+    except (OSError, UnicodeError, ValueError) as exc:
         raise RuntimeError(f"Unable to read JSON object: {path}") from exc
     if not isinstance(value, dict):
         raise RuntimeError(f"Expected a JSON object: {path}")
@@ -131,8 +510,13 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
         if not line.strip():
             continue
         try:
-            value = json.loads(line)
-        except json.JSONDecodeError as exc:
+            value = json.loads(
+                line,
+                object_pairs_hook=_reject_duplicate_json_keys,
+                parse_constant=_reject_nonfinite_json_constant,
+                parse_float=_parse_finite_json_float,
+            )
+        except ValueError as exc:
             raise RuntimeError(f"Invalid JSON at {path}:{lineno}") from exc
         if not isinstance(value, dict):
             raise RuntimeError(f"Expected a JSON object at {path}:{lineno}")
@@ -228,6 +612,132 @@ def _require_dataset_contract(
         raise RuntimeError(f"Dataset digest mismatch for datasets.{key}: {manifest_path}")
 
 
+def _load_adapter_evaluation_module() -> Any:
+    repo_root = Path(__file__).resolve().parents[3]
+    crawler_root = repo_root / "tools" / "lumen_manifest_crawler"
+    if not crawler_root.is_dir():
+        raise RuntimeError(
+            f"Contamination validators are unavailable: {crawler_root}"
+        )
+    if str(crawler_root) not in sys.path:
+        sys.path.insert(0, str(crawler_root))
+    try:
+        from lumen_manifest_crawler.dataset import adapter_evaluation
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise RuntimeError("Unable to load the contamination validators") from exc
+    return adapter_evaluation
+
+
+def _require_clean_contamination_report(
+    *,
+    report_path: Path,
+    manifest: Mapping[str, Any],
+    training_records: Sequence[Mapping[str, Any]],
+    evaluation_records: Sequence[Mapping[str, Any]],
+) -> None:
+    if report_path.is_symlink() or not report_path.is_file():
+        raise RuntimeError(
+            f"Missing regular controlled contamination report: {report_path}"
+        )
+    report = read_object(report_path)
+    evaluation_module = _load_adapter_evaluation_module()
+    valid_report = getattr(evaluation_module, "_valid_contamination_report", None)
+    matches_variant = getattr(
+        evaluation_module,
+        "_contamination_matches_variant",
+        None,
+    )
+    upgrade_record = getattr(evaluation_module, "upgrade_evaluation_record", None)
+    build_public_bundle = getattr(
+        evaluation_module,
+        "build_public_adapter_eval_fingerprint_bundle",
+        None,
+    )
+    if not all(
+        callable(item)
+        for item in (
+            valid_report,
+            matches_variant,
+            upgrade_record,
+            build_public_bundle,
+        )
+    ):
+        raise RuntimeError("Contamination validators are incomplete")
+    if not valid_report(report):
+        raise RuntimeError(
+            f"Contamination report integrity check failed: {report_path}"
+        )
+    if not matches_variant(report, manifest):
+        raise RuntimeError(
+            f"Contamination report is not bound to its variant manifest: {report_path}"
+        )
+
+    contamination = manifest.get("contamination")
+    if not isinstance(contamination, Mapping):
+        raise RuntimeError(
+            f"Variant manifest lacks contamination lineage: {report_path}"
+        )
+    bound_fields = (
+        "contaminated",
+        "matchCount",
+        "reportSHA256",
+        "trainingRecordsSHA256",
+        "evaluationRecordsSHA256",
+        "publicEvaluationBundleSHA256",
+        "publicEvaluationRowCount",
+    )
+    if any(report.get(field) != contamination.get(field) for field in bound_fields):
+        raise RuntimeError(
+            f"Contamination report lineage mismatches the variant manifest: {report_path}"
+        )
+    try:
+        public_bundle = build_public_bundle()
+    except (OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Public evaluation fingerprints could not be verified: {report_path}"
+        ) from exc
+    if (
+        not isinstance(public_bundle, Mapping)
+        or report.get("publicEvaluationBundleSHA256")
+        != public_bundle.get("bundleSHA256")
+        or report.get("publicEvaluationRowCount") != public_bundle.get("rowCount")
+    ):
+        raise RuntimeError(
+            f"Contamination report public-evaluation binding mismatch: {report_path}"
+        )
+
+    try:
+        upgraded_evaluation = [upgrade_record(record) for record in evaluation_records]
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Frozen evaluation records could not be normalized: {report_path}"
+        ) from exc
+    if (
+        report.get("trainingRecordCount") != len(training_records)
+        or report.get("trainingRecordsSHA256")
+        != canonical_sha256(list(training_records))
+    ):
+        raise RuntimeError(
+            f"Contamination report training-dataset binding mismatch: {report_path}"
+        )
+    if (
+        report.get("evaluationRecordCount") != len(upgraded_evaluation)
+        or report.get("evaluationRecordsSHA256")
+        != canonical_sha256(upgraded_evaluation)
+    ):
+        raise RuntimeError(
+            f"Contamination report evaluation-dataset binding mismatch: {report_path}"
+        )
+    if (
+        report.get("contaminated") is not False
+        or report.get("matchCount") != 0
+        or report.get("matches") != []
+    ):
+        raise RuntimeError(
+            f"Controlled training variant is contaminated: {report_path}"
+        )
+
+
 def validate_variant(
     source_root: Path,
     *,
@@ -298,6 +808,16 @@ def validate_variant(
     ]
     if manifest.get("trainingCorpusSHA256") != canonical_sha256(training_corpus):
         raise RuntimeError(f"Training-corpus digest mismatch: {manifest_path}")
+    evaluation_path = agent_root / "eval.jsonl"
+    if evaluation_path.is_symlink() or not evaluation_path.is_file():
+        raise RuntimeError(f"Missing regular frozen evaluation dataset: {evaluation_path}")
+    evaluation_records = read_jsonl(evaluation_path)
+    _require_clean_contamination_report(
+        report_path=variant_root / "contamination_report.json",
+        manifest=manifest,
+        training_records=training_corpus,
+        evaluation_records=evaluation_records,
+    )
 
     controlled = manifest.get("controlledTrainingConfig")
     if not isinstance(controlled, Mapping):
@@ -815,6 +1335,48 @@ def _expected_agent_paths(run_root: Path, agent: str) -> dict[str, Path]:
     }
 
 
+def _verify_prepared_agent_entry(
+    entry: Mapping[str, Any],
+    *,
+    run_root: Path,
+    agent: str,
+    config_sha256: str,
+    variant_root: Path,
+    variant_manifest_sha256: str,
+    preference_trainer: str,
+) -> None:
+    paths = _expected_agent_paths(run_root, agent)
+    expected = {
+        "agent": agent,
+        "config": str(paths["config"]),
+        "configSHA256": config_sha256,
+        "datasetDir": str(variant_root),
+        "variantManifestSHA256": variant_manifest_sha256,
+        "sftAdapterDir": str(paths["adapter_output_dir"]),
+        "sftFinalizedVariantManifest": str(
+            paths["output_dir"] / "finalized_variant_manifest.json"
+        ),
+        "preferenceTrainer": preference_trainer,
+        "preferenceAdapterDir": str(paths["dpo_output_dir"]),
+        "preferenceFinalizedVariantManifest": str(
+            paths["output_dir"] / "dpo" / "finalized_variant_manifest.json"
+        ),
+        "adapterGGUF": str(paths["adapter_gguf_output_path"]),
+    }
+    if dict(entry) != expected:
+        drifted = sorted(
+            key
+            for key in set(entry) | set(expected)
+            if entry.get(key) != expected.get(key)
+            or key not in entry
+            or key not in expected
+        )
+        raise RuntimeError(
+            f"Prepared agent ownership entry drifted for {agent}: "
+            + ", ".join(drifted)
+        )
+
+
 def validate_prepared_runtime(
     *,
     root: Path,
@@ -881,6 +1443,19 @@ def validate_prepared_runtime(
             seed=seed,
             base_model_override=str(prepared_config.get("base_model_name") or ""),
         )
+        _verify_prepared_agent_entry(
+            prepared_entry,
+            run_root=run_root,
+            agent=agent,
+            config_sha256=file_sha256(config_path),
+            variant_root=variant_root,
+            variant_manifest_sha256=str(
+                pending_manifest.get("variantManifestSHA256") or ""
+            ),
+            preference_trainer=str(
+                prepared_config.get("preference_trainer", "dpo")
+            ),
+        )
         expected_paths = {
             **paths,
             "dataset_dir": variant_root,
@@ -939,33 +1514,107 @@ def validate_prepared_runtime(
     }
 
 
+def _verify_gguf_inventory(
+    run_root: Path,
+    agents: Sequence[str],
+    *,
+    require_all: bool,
+) -> dict[str, Path]:
+    gguf_dir = run_root / "models" / "lora_qwen3_gguf"
+    if gguf_dir.is_symlink() or not gguf_dir.is_dir():
+        raise RuntimeError(f"Missing regular GGUF artifact directory: {gguf_dir}")
+    expected = {
+        f"lumen-{agent}-lora.gguf": gguf_dir / f"lumen-{agent}-lora.gguf"
+        for agent in agents
+    }
+    entries = list(gguf_dir.iterdir())
+    unexpected = sorted(entry.name for entry in entries if entry.name not in expected)
+    if unexpected:
+        raise RuntimeError(
+            "GGUF artifact directory contains unexpected entries: "
+            + ", ".join(unexpected)
+        )
+    unsafe = sorted(
+        entry.name
+        for entry in entries
+        if entry.is_symlink() or not entry.is_file()
+    )
+    if unsafe:
+        raise RuntimeError(
+            "GGUF artifact directory contains non-regular entries: "
+            + ", ".join(unsafe)
+        )
+    observed = {entry.name for entry in entries}
+    if require_all and observed != set(expected):
+        missing = sorted(set(expected) - observed)
+        raise RuntimeError(
+            "GGUF artifact directory is missing required entries: "
+            + ", ".join(missing)
+        )
+    return {name: path for name, path in expected.items() if name in observed}
+
+
+def verify_gguf_file(run_root: Path, path: Path) -> dict[str, Any]:
+    prepared_run = _verified_run_manifest(run_root)
+    prepared_entries = prepared_run.get("agents")
+    if not isinstance(prepared_entries, list) or any(
+        not isinstance(item, Mapping) for item in prepared_entries
+    ):
+        raise RuntimeError("Prepared run lacks exact agent ownership")
+    prepared_agents = tuple(str(item.get("agent") or "") for item in prepared_entries)
+    inventory = _verify_gguf_inventory(
+        run_root,
+        prepared_agents,
+        require_all=False,
+    )
+    expected_path = (
+        run_root / "models" / "lora_qwen3_gguf" / path.name
+    ).resolve()
+    if (
+        path.resolve() != expected_path
+        or path.name not in inventory
+        or path.name
+        not in {f"lumen-{agent}-lora.gguf" for agent in prepared_agents}
+    ):
+        raise RuntimeError(f"GGUF artifact is not owned by the prepared run: {path}")
+    reader_script = _verified_pinned_gguf_reader_script(run_root)
+    return verify_gguf_artifact(path, reader_script=reader_script)
+
+
 def verify_gguf(run_root: Path, agent: str) -> dict[str, Any]:
-    summary = read_object(run_root / "aio_summary.json")
-    expected_summary_sha = summary.get("summarySHA256")
-    unsigned = dict(summary)
-    unsigned.pop("summarySHA256", None)
-    if canonical_sha256(unsigned) != expected_summary_sha:
-        raise RuntimeError("Existing Ubuntu training summary integrity check failed")
-    agent_summary = (summary.get("agents") or {}).get(agent)
+    prepared_run = _verified_run_manifest(run_root)
+    prepared_agent_entries = prepared_run.get("agents")
+    if not isinstance(prepared_agent_entries, list) or any(
+        not isinstance(item, Mapping) for item in prepared_agent_entries
+    ):
+        raise RuntimeError("Prepared run lacks exact agent ownership")
+    prepared_agents = tuple(str(item["agent"]) for item in prepared_agent_entries)
+    if agent not in prepared_agents:
+        raise RuntimeError(f"Prepared run does not own agent {agent}")
+    summary = _verified_completed_summary(run_root, prepared_agents)
+    if summary.get("status") != "complete":
+        raise RuntimeError(
+            "Existing GGUF reuse requires a complete canonical training summary"
+        )
+    agent_summary = summary["agents"].get(agent)
     if not isinstance(agent_summary, Mapping):
         raise RuntimeError(f"Existing summary lacks agent {agent}")
     path = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
     expected_digest = agent_summary.get("adapterGGUFSHA256")
     expected_size = agent_summary.get("adapterGGUFSizeBytes")
+    reader_script = _verified_pinned_gguf_reader_script(run_root)
+    gguf = verify_gguf_artifact(path, reader_script=reader_script)
     if (
-        not path.is_file()
-        or type(expected_size) is not int
+        type(expected_size) is not int
         or expected_size <= 0
-        or path.stat().st_size != expected_size
+        or gguf["adapterGGUFSizeBytes"] != expected_size
         or re.fullmatch(r"[0-9a-f]{64}", str(expected_digest or "")) is None
-        or file_sha256(path) != expected_digest
+        or gguf["adapterGGUFSHA256"] != expected_digest
     ):
         raise RuntimeError(f"Existing GGUF does not match the completed summary: {path}")
     return {
         "agent": agent,
-        "adapterGGUF": str(path),
-        "adapterGGUFSHA256": expected_digest,
-        "adapterGGUFSizeBytes": expected_size,
+        **gguf,
     }
 
 
@@ -1294,31 +1943,19 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
     }
 
 
-def write_final_config(run_root: Path, agent: str) -> dict[str, Any]:
-    preference = verify_preference(run_root, agent)
-    run_manifest = read_object(run_root / "aio_run_manifest.json")
-    declared_run_sha = run_manifest.get("runManifestSHA256")
-    unsigned_run = dict(run_manifest)
-    unsigned_run.pop("runManifestSHA256", None)
-    if canonical_sha256(unsigned_run) != declared_run_sha:
-        raise RuntimeError("Prepared run manifest integrity check failed")
-    behavior_manifest_path = (
-        run_root
-        / "generated"
-        / "agent_manifest"
-        / "AgentBehaviorManifest.json"
-    )
-    behavior_file_sha = file_sha256(behavior_manifest_path)
-    if behavior_file_sha != run_manifest.get("behaviorManifestFileSHA256"):
-        raise RuntimeError("Frozen behavior manifest drifted from the prepared run")
-    config = read_object(run_root / "configs" / f"{agent}.json")
+def _final_evaluation_config_payload(
+    run_root: Path,
+    agent: str,
+    *,
+    base_config: Mapping[str, Any],
+    finalized: Mapping[str, Any],
+    preference: Mapping[str, Any],
+    behavior_file_sha: str,
+) -> dict[str, Any]:
+    config = dict(base_config)
     finalized_path = (
         run_root / "training" / agent / "dpo" / "finalized_variant_manifest.json"
     )
-    finalized = _verify_manifest_integrity(finalized_path)
-    artifact = finalized.get("artifact")
-    if not isinstance(artifact, Mapping):
-        raise RuntimeError("Preference finalized manifest lacks adapter lineage")
     trainer = str(config.get("preference_trainer", "dpo")).lower()
     phase_manifests = config.get("trainingCodeManifestsByPhase")
     phase_digests = config.get("trainingCodeSHA256ByPhase")
@@ -1363,9 +2000,10 @@ def write_final_config(run_root: Path, agent: str) -> dict[str, Any]:
             "behaviorManifestFileSHA256": behavior_file_sha,
         }
     )
-    export = config.get("adapterExport")
-    if not isinstance(export, dict):
+    original_export = config.get("adapterExport")
+    if not isinstance(original_export, Mapping):
         raise RuntimeError("Prepared config lacks adapter export lineage")
+    export = dict(original_export)
     export.update(
         {
             "adapterArtifact": str(
@@ -1384,8 +2022,45 @@ def write_final_config(run_root: Path, agent: str) -> dict[str, Any]:
             "mergeAdaptersByDefault": False,
         }
     )
+    config["adapterExport"] = export
     for field in RUNTIME_SOURCE_FIELDS:
         config[field] = finalized[field]
+    return config
+
+
+def write_final_config(run_root: Path, agent: str) -> dict[str, Any]:
+    preference = verify_preference(run_root, agent)
+    run_manifest = read_object(run_root / "aio_run_manifest.json")
+    declared_run_sha = run_manifest.get("runManifestSHA256")
+    unsigned_run = dict(run_manifest)
+    unsigned_run.pop("runManifestSHA256", None)
+    if canonical_sha256(unsigned_run) != declared_run_sha:
+        raise RuntimeError("Prepared run manifest integrity check failed")
+    behavior_manifest_path = (
+        run_root
+        / "generated"
+        / "agent_manifest"
+        / "AgentBehaviorManifest.json"
+    )
+    behavior_file_sha = file_sha256(behavior_manifest_path)
+    if behavior_file_sha != run_manifest.get("behaviorManifestFileSHA256"):
+        raise RuntimeError("Frozen behavior manifest drifted from the prepared run")
+    base_config = read_object(run_root / "configs" / f"{agent}.json")
+    finalized_path = (
+        run_root / "training" / agent / "dpo" / "finalized_variant_manifest.json"
+    )
+    finalized = _verify_manifest_integrity(finalized_path)
+    artifact = finalized.get("artifact")
+    if not isinstance(artifact, Mapping):
+        raise RuntimeError("Preference finalized manifest lacks adapter lineage")
+    config = _final_evaluation_config_payload(
+        run_root,
+        agent,
+        base_config=base_config,
+        finalized=finalized,
+        preference=preference,
+        behavior_file_sha=behavior_file_sha,
+    )
     final_path = run_root / "configs" / f"{agent}.final.json"
     write_object(final_path, config)
     return {
@@ -1439,12 +2114,63 @@ def clean_phase(run_root: Path, agent: str, phase: str) -> None:
             target.unlink()
 
 
+def _require_declared_run_file(
+    value: Any,
+    *,
+    run_root: Path,
+    expected_path: Path,
+    label: str,
+) -> Path:
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(f"{label} must declare an absolute path")
+    declared = Path(value)
+    root_resolved = run_root.resolve()
+    expected_resolved = expected_path.resolve()
+    if (
+        not declared.is_absolute()
+        or expected_path.is_symlink()
+        or not expected_path.is_file()
+        or root_resolved not in expected_resolved.parents
+        or declared != expected_resolved
+    ):
+        raise RuntimeError(f"{label} is not the expected regular file inside the run root")
+    return expected_path
+
+
+def _require_declared_run_directory(
+    value: Any,
+    *,
+    run_root: Path,
+    expected_path: Path,
+    label: str,
+) -> Path:
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(f"{label} must declare an absolute path")
+    declared = Path(value)
+    root_resolved = run_root.resolve()
+    expected_resolved = expected_path.resolve()
+    if (
+        not declared.is_absolute()
+        or expected_path.is_symlink()
+        or not expected_path.is_dir()
+        or root_resolved not in expected_resolved.parents
+        or declared != expected_resolved
+    ):
+        raise RuntimeError(
+            f"{label} is not the expected regular directory inside the run root"
+        )
+    return expected_path
+
+
 def _verify_evaluation_outputs(
     run_root: Path,
     agent: str,
     *,
     final_phase: Mapping[str, Any],
 ) -> dict[str, Any]:
+    if run_root.is_symlink() or not run_root.is_dir():
+        raise RuntimeError(f"Evaluation run root is not a regular directory: {run_root}")
+    _reject_managed_symlinks(run_root)
     evaluation_dir = run_root / "evaluation" / agent
     expected_names = {
         "candidate_outputs.jsonl",
@@ -1472,12 +2198,391 @@ def _verify_evaluation_outputs(
     unsigned_run.pop("runManifestSHA256", None)
     report = read_object(report_path)
     report_digest = report.get("reportSHA256")
-    unsigned_report = dict(report)
-    unsigned_report.pop("reportSHA256", None)
+    from tools.fine_tuning.unsloth import evaluate_adapter
+
+    expected_run_keys = {
+        "schemaVersion",
+        "status",
+        "evaluatorCodePath",
+        "evaluatorCodeSHA256",
+        "agent",
+        "variant",
+        "configPath",
+        "configSHA256",
+        "adapterDirectory",
+        "adapterSHA256",
+        "finalizedVariantManifestPath",
+        "finalizedVariantManifestSHA256",
+        "evaluationJSONLPath",
+        "evaluationSHA256",
+        "behaviorManifestPath",
+        "behaviorManifestSHA256",
+        "candidateOutputsPath",
+        "candidateOutputsFileSHA256",
+        "candidateOutputsSHA256",
+        "evaluationReportPath",
+        "evaluationReportFileSHA256",
+        "evaluationReportSHA256",
+        "fullCaseCount",
+        "generatedCaseCount",
+        "completeEvaluation",
+        "initialFormatFailureCount",
+        "formatRecoveryCount",
+        "formatFailureCount",
+        "criticalFailureCount",
+        "qualityGatePassed",
+        "generation",
+        "runManifestSHA256",
+    }
+    if set(evaluation_run) != expected_run_keys:
+        raise RuntimeError(
+            f"Evaluation run manifest has an unexpected evidence schema: {run_path}"
+        )
+
+    evaluation_path = run_root / "generated" / "fine_tuning" / agent / "eval.jsonl"
+    config_path = run_root / "configs" / f"{agent}.final.json"
+    adapter_dir = run_root / "models" / "lora_qwen3_dpo" / agent
+    finalized_path = (
+        run_root
+        / "training"
+        / agent
+        / "dpo"
+        / "finalized_variant_manifest.json"
+    )
+    behavior_path = (
+        run_root
+        / "generated"
+        / "agent_manifest"
+        / "AgentBehaviorManifest.json"
+    )
+    _require_declared_run_file(
+        evaluation_run.get("configPath"),
+        run_root=run_root,
+        expected_path=config_path,
+        label="Final evaluation config path",
+    )
+    _require_declared_run_directory(
+        evaluation_run.get("adapterDirectory"),
+        run_root=run_root,
+        expected_path=adapter_dir,
+        label="Final adapter directory",
+    )
+    _require_declared_run_file(
+        evaluation_run.get("finalizedVariantManifestPath"),
+        run_root=run_root,
+        expected_path=finalized_path,
+        label="Finalized variant manifest path",
+    )
+    _require_declared_run_file(
+        evaluation_run.get("evaluationJSONLPath"),
+        run_root=run_root,
+        expected_path=evaluation_path,
+        label="Frozen evaluation path",
+    )
+    _require_declared_run_file(
+        evaluation_run.get("candidateOutputsPath"),
+        run_root=run_root,
+        expected_path=candidate_path,
+        label="Candidate outputs path",
+    )
+    _require_declared_run_file(
+        evaluation_run.get("evaluationReportPath"),
+        run_root=run_root,
+        expected_path=report_path,
+        label="Evaluation report path",
+    )
+    _require_declared_run_file(
+        evaluation_run.get("behaviorManifestPath"),
+        run_root=run_root,
+        expected_path=behavior_path,
+        label="Frozen behavior manifest path",
+    )
+    evaluation_module = evaluate_adapter._load_evaluation_module()
+    try:
+        config = evaluate_adapter.load_evaluation_config(config_path)
+        base_config_path = run_root / "configs" / f"{agent}.json"
+        if base_config_path.is_symlink() or not base_config_path.is_file():
+            raise ValueError("Prepared base config is not a regular file")
+        base_config = read_object(base_config_path)
+        evaluation_records, evaluation_sha256 = evaluate_adapter.load_evaluation_records(
+            evaluation_path,
+            agent=agent,
+            evaluation_module=evaluation_module,
+        )
+        tool_contracts, allowed_slots, behavior_sha256 = (
+            evaluate_adapter.load_behavior_contract(behavior_path)
+        )
+        evaluate_adapter.validate_scoring_contracts(
+            evaluation_records,
+            tool_contracts=tool_contracts,
+            allowed_slots=allowed_slots,
+        )
+        finalized = evaluate_adapter.load_finalized_manifest(
+            finalized_path,
+            cfg=config,
+            evaluation_sha256=evaluation_sha256,
+            evaluation_module=evaluation_module,
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Frozen evaluation scoring lineage failed verification: {evaluation_path}"
+        ) from exc
+
+    prepared_run = _verified_run_manifest(run_root)
+    prepared_agents = prepared_run.get("agents")
+    prepared_agent = next(
+        (
+            item
+            for item in prepared_agents
+            if isinstance(item, Mapping) and item.get("agent") == agent
+        ),
+        None,
+    ) if isinstance(prepared_agents, list) else None
+    if (
+        not isinstance(prepared_agent, Mapping)
+        or sum(
+            1
+            for item in prepared_agents
+            if isinstance(item, Mapping) and item.get("agent") == agent
+        )
+        != 1
+        or prepared_run.get("variant") != config.get("variant")
+        or prepared_run.get("behaviorManifest") != str(behavior_path.resolve())
+        or prepared_run.get("behaviorManifestFileSHA256")
+        != file_sha256(behavior_path)
+        or prepared_agent.get("config") != str(base_config_path.resolve())
+        or prepared_agent.get("configSHA256") != file_sha256(base_config_path)
+    ):
+        raise RuntimeError(
+            f"Evaluation inputs drifted from the exact prepared run: {run_root}"
+        )
+
+    try:
+        expected_config = _final_evaluation_config_payload(
+            run_root,
+            agent,
+            base_config=base_config,
+            finalized=finalized,
+            preference=final_phase,
+            behavior_file_sha=file_sha256(behavior_path),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Final evaluation config could not be reconstructed: {config_path}"
+        ) from exc
+
+    config_max_sequence_length = config.get("max_seq_length")
+    config_seed = config.get("seed")
+    artifact = finalized.get("artifact")
+    if (
+        config != expected_config
+        or config.get("agent") != agent
+        or not isinstance(config.get("variant"), str)
+        or not config["variant"]
+        or config.get("adapter_training_phase") != "sft_dpo"
+        or config.get("preference_trainer") != final_phase.get("phase")
+        or Path(str(config.get("adapter_output_dir") or "")) != adapter_dir.resolve()
+        or Path(str(config.get("output_dir") or ""))
+        != (run_root / "training" / agent / "dpo").resolve()
+        or Path(str(config.get("finalized_variant_manifest") or ""))
+        != finalized_path.resolve()
+        or config.get("behaviorManifestFileSHA256") != file_sha256(behavior_path)
+        or type(config_max_sequence_length) is not int
+        or config_max_sequence_length <= 0
+        or type(config_seed) is not int
+        or not isinstance(artifact, Mapping)
+        or artifact.get("adapterSHA256") != final_phase.get("adapterSHA256")
+        or finalized.get("variantManifestSHA256")
+        != final_phase.get("finalizedVariantManifestSHA256")
+    ):
+        raise RuntimeError(
+            f"Final evaluation config or adapter lineage failed verification: {config_path}"
+        )
+    generated_case_count = evaluation_run.get("generatedCaseCount")
+    complete_evaluation = evaluation_run.get("completeEvaluation")
+    if (
+        type(generated_case_count) is not int
+        or generated_case_count <= 0
+        or generated_case_count > len(evaluation_records)
+        or type(evaluation_run.get("fullCaseCount")) is not int
+        or evaluation_run.get("fullCaseCount") != len(evaluation_records)
+        or complete_evaluation is not (generated_case_count == len(evaluation_records))
+    ):
+        raise RuntimeError(f"Evaluation case-count lineage failed verification: {run_path}")
+    if complete_evaluation:
+        selected_records = list(evaluation_records)
+    else:
+        try:
+            selected_records = evaluate_adapter.select_evaluation_records(
+                evaluation_records,
+                max_examples=generated_case_count,
+            )
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Evaluation smoke cohort failed reconstruction: {evaluation_path}"
+            ) from exc
+    try:
+        candidate_outputs = evaluate_adapter.load_candidate_outputs(
+            candidate_path,
+            agent=agent,
+            evaluation_records=selected_records,
+            tool_contracts=tool_contracts,
+        )
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"Candidate output evidence failed verification: {candidate_path}") from exc
+    candidate_rows = read_jsonl(candidate_path)
+    initial_format_failure_count = sum(
+        1
+        for row in candidate_rows
+        if row["generationAttempts"][0]["formatError"] is not None
+    )
+    format_recovery_count = sum(
+        1
+        for row in candidate_rows
+        if row["generationAttempts"][0]["formatError"] is not None
+        and row["generationAttempts"][-1]["formatError"] is None
+    )
+    format_failure_count = sum(
+        1
+        for row in candidate_rows
+        if row["generationAttempts"][-1]["formatError"] is not None
+    )
+    candidate_outputs_sha256 = canonical_sha256(candidate_outputs)
+    evaluator_path = Path(evaluate_adapter.__file__).resolve()
+    generation = evaluation_run.get("generation")
+    structured_eligible = agent in evaluate_adapter.JSON_OUTPUT_AGENTS
+    expected_generation_keys = {
+        "doSample",
+        "numBeams",
+        "repetitionPenalty",
+        "thinkingEnabled",
+        "maxNewTokens",
+        "maxSequenceLength",
+        "seed",
+        "structuredOutputContractEligible",
+        "structuredOutputContractVersion",
+        "structuredOutputContractSHA256",
+        "strictJSONRetryEligible",
+        "strictJSONMaxAttempts",
+        "strictJSONRetryContractVersion",
+        "strictJSONRetryContractSHA256",
+    }
+    generation_max_new_tokens = (
+        generation.get("maxNewTokens") if isinstance(generation, Mapping) else None
+    )
+    generation_contract_valid = (
+        isinstance(generation, Mapping)
+        and set(generation) == expected_generation_keys
+        and type(generation_max_new_tokens) is int
+        and 1 <= generation_max_new_tokens <= 4096
+        and type(generation.get("maxSequenceLength")) is int
+        and generation.get("maxSequenceLength") == config_max_sequence_length
+        and type(generation.get("seed")) is int
+        and generation.get("seed") == config_seed
+        and (
+            generation.get("structuredOutputContractEligible")
+            is structured_eligible
+            and generation.get("structuredOutputContractVersion")
+            == evaluate_adapter.STRUCTURED_OUTPUT_CONTRACT_VERSION
+            and generation.get("structuredOutputContractSHA256")
+            == evaluate_adapter._structured_output_contract_sha256(
+                agent,
+                tool_contracts=tool_contracts,
+            )
+            and generation.get("strictJSONRetryEligible") is structured_eligible
+            and type(generation.get("strictJSONMaxAttempts")) is int
+            and generation.get("strictJSONMaxAttempts")
+            == (
+                evaluate_adapter.STRICT_JSON_MAX_ATTEMPTS
+                if structured_eligible
+                else 1
+            )
+            and generation.get("strictJSONRetryContractVersion")
+            == evaluate_adapter.STRICT_JSON_RETRY_CONTRACT_VERSION
+            and generation.get("strictJSONRetryContractSHA256")
+            == hashlib.sha256(
+                evaluate_adapter.STRICT_JSON_RETRY_INSTRUCTION.encode("utf-8")
+            ).hexdigest()
+            and generation.get("doSample") is False
+            and type(generation.get("numBeams")) is int
+            and generation.get("numBeams") == 1
+            and type(generation.get("repetitionPenalty")) is float
+            and generation.get("repetitionPenalty")
+            == evaluate_adapter.GENERATION_REPETITION_PENALTY
+            and generation.get("thinkingEnabled") is False
+        )
+    )
+    attempt_budgets_valid = generation_contract_valid and bool(candidate_rows)
+    for row in (candidate_rows if generation_contract_valid else ()):
+        attempts = row.get("generationAttempts")
+        if not isinstance(attempts, list) or not attempts:
+            attempt_budgets_valid = False
+            break
+        for expected_index, attempt in enumerate(attempts, start=1):
+            if not isinstance(attempt, Mapping):
+                attempt_budgets_valid = False
+                break
+            input_token_count = attempt.get("inputTokenCount")
+            generation_token_budget = attempt.get("generationTokenBudget")
+            if (
+                type(attempt.get("attemptIndex")) is not int
+                or attempt.get("attemptIndex") != expected_index
+                or type(input_token_count) is not int
+                or input_token_count <= 0
+                or type(generation_token_budget) is not int
+                or generation_token_budget
+                != min(
+                    generation_max_new_tokens,
+                    config_max_sequence_length - input_token_count,
+                )
+                or generation_token_budget <= 0
+            ):
+                attempt_budgets_valid = False
+                break
+        if not attempt_budgets_valid:
+            break
+
+    controlled_lineage_builder = getattr(
+        evaluation_module,
+        "_variant_controlled_lineage",
+        None,
+    )
+    if controlled_lineage_builder is None:
+        raise RuntimeError("Evaluation module lacks controlled-lineage scoring support")
+    try:
+        recomputed_report = evaluation_module.score_evaluation_suite(
+            selected_records,
+            candidate_outputs,
+            frozen_evaluation_records=evaluation_records,
+            tool_contracts=tool_contracts,
+            allowed_slots=allowed_slots,
+            agent=agent,
+            variant=config["variant"],
+            controlled_lineage=controlled_lineage_builder(finalized),
+            variant_manifest=finalized,
+            artifact_sha256=final_phase["adapterSHA256"],
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Evaluation report could not be independently reconstructed: {report_path}"
+        ) from exc
+
+    expected_status, quality_gate_passed = evaluate_adapter._evaluation_outcome(
+        complete_evaluation=complete_evaluation,
+        format_failure_count=format_failure_count,
+        report=recomputed_report,
+    )
     if (
         canonical_sha256(unsigned_run) != run_digest
-        or canonical_sha256(unsigned_report) != report_digest
+        or report != recomputed_report
+        or report_digest != recomputed_report.get("reportSHA256")
+        or evaluation_run.get("schemaVersion")
+        != evaluate_adapter.EVALUATION_RUN_SCHEMA_VERSION
         or evaluation_run.get("agent") != agent
+        or evaluation_run.get("variant") != config.get("variant")
+        or evaluation_run.get("configSHA256") != file_sha256(config_path)
+        or evaluation_run.get("evaluatorCodePath") != str(evaluator_path)
+        or evaluation_run.get("evaluatorCodeSHA256") != file_sha256(evaluator_path)
         or evaluation_run.get("adapterSHA256") != final_phase.get("adapterSHA256")
         or evaluation_run.get("finalizedVariantManifestSHA256")
         != final_phase.get("finalizedVariantManifestSHA256")
@@ -1488,18 +2593,50 @@ def _verify_evaluation_outputs(
         or evaluation_run.get("evaluationReportSHA256") != report_digest
         or evaluation_run.get("candidateOutputsSHA256")
         != report.get("candidateOutputsSHA256")
+        or evaluation_run.get("candidateOutputsSHA256") != candidate_outputs_sha256
+        or evaluation_run.get("evaluationSHA256") != evaluation_sha256
+        or evaluation_run.get("behaviorManifestSHA256") != behavior_sha256
+        or recomputed_report.get("variantLineageBound") is not True
+        or recomputed_report.get("frozenCaseCount") != len(evaluation_records)
+        or recomputed_report.get("caseCount") != generated_case_count
+        or recomputed_report.get("completeEvaluation") is not complete_evaluation
+        or recomputed_report.get("promotionEvidenceBound") is not complete_evaluation
+        or type(evaluation_run.get("initialFormatFailureCount")) is not int
+        or evaluation_run.get("initialFormatFailureCount")
+        != initial_format_failure_count
+        or type(evaluation_run.get("formatRecoveryCount")) is not int
+        or evaluation_run.get("formatRecoveryCount") != format_recovery_count
+        or type(evaluation_run.get("formatFailureCount")) is not int
+        or evaluation_run.get("formatFailureCount") != format_failure_count
+        or evaluation_run.get("criticalFailureCount")
+        != recomputed_report.get("criticalFailureCount")
+        or type(evaluation_run.get("criticalFailureCount")) is not int
+        or evaluation_run.get("qualityGatePassed") is not quality_gate_passed
+        or evaluation_run.get("status") != expected_status
+        or not generation_contract_valid
+        or not attempt_budgets_valid
     ):
         raise RuntimeError(f"Evaluation evidence lineage failed verification: {evaluation_dir}")
-    if evaluation_run.get("status") not in {
-        "quality_gate_passed",
-        "smoke_complete",
-    }:
+    evaluation_status = evaluation_run.get("status")
+    if evaluation_status not in {"quality_gate_passed", "smoke_complete"}:
         raise RuntimeError(f"Evaluation did not pass or complete a smoke run: {run_path}")
-    if (
-        evaluation_run.get("completeEvaluation") is True
-        and evaluation_run.get("qualityGatePassed") is not True
+    if evaluation_status == "quality_gate_passed" and (
+        complete_evaluation is not True
+        or quality_gate_passed is not True
+        or format_failure_count != 0
+        or recomputed_report.get("promotionEvidenceBound") is not True
     ):
         raise RuntimeError(f"Full evaluation quality gate failed: {run_path}")
+    if evaluation_status == "smoke_complete" and (
+        complete_evaluation is not False
+        or quality_gate_passed is not False
+        or format_failure_count != 0
+        or recomputed_report.get("promotionEvidenceBound") is not False
+        or recomputed_report.get("criticalFailureCount") != 0
+        or recomputed_report.get("passedCaseCount")
+        != recomputed_report.get("caseCount")
+    ):
+        raise RuntimeError(f"Evaluation smoke status is inconsistent: {run_path}")
     return evaluation_run
 
 
@@ -1512,6 +2649,30 @@ def write_summary(
     require_gguf: bool,
     require_evaluation: bool,
 ) -> dict[str, Any]:
+    if run_root.is_symlink() or not run_root.is_dir():
+        raise RuntimeError(f"Summary run root is not a regular directory: {run_root}")
+    _reject_managed_symlinks(run_root)
+    run_manifest = _verified_run_manifest(run_root)
+    manifest_agents = run_manifest.get("agents")
+    if (
+        run_manifest.get("variant") != variant
+        or not isinstance(manifest_agents, list)
+        or any(not isinstance(item, Mapping) for item in manifest_agents)
+        or [item.get("agent") for item in manifest_agents] != list(agents)
+    ):
+        raise RuntimeError(
+            "Summary agents or variant do not match the exact prepared run"
+        )
+    gguf_inventory = _verify_gguf_inventory(
+        run_root,
+        agents,
+        require_all=require_gguf,
+    )
+    reader_script = (
+        _verified_pinned_gguf_reader_script(run_root)
+        if require_gguf or gguf_inventory
+        else None
+    )
     summary: dict[str, Any] = {
         "schema": "lumen.ubuntu-training-summary/2.0.0",
         "status": "pending_verification",
@@ -1524,7 +2685,13 @@ def write_summary(
         sft = verify_sft(run_root, agent)
         final_phase = verify_preference(run_root, agent) if preference else sft
         gguf = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
-        if require_gguf and (not gguf.is_file() or gguf.stat().st_size == 0):
+        gguf_metadata = (
+            verify_gguf_artifact(gguf, reader_script=reader_script)
+            if gguf.name in gguf_inventory and reader_script is not None
+            else None
+        )
+        gguf_exists = gguf_metadata is not None
+        if require_gguf and not gguf_exists:
             raise RuntimeError(f"Missing required GGUF adapter: {gguf}")
         evaluation_dir = run_root / "evaluation" / agent
         evaluation = evaluation_dir / "evaluation_report.json"
@@ -1546,9 +2713,13 @@ def write_summary(
             "sft": sft,
             "finalPhase": final_phase,
             "adapterGGUF": str(gguf),
-            "adapterGGUFExists": gguf.is_file(),
-            "adapterGGUFSHA256": file_sha256(gguf) if gguf.is_file() else None,
-            "adapterGGUFSizeBytes": gguf.stat().st_size if gguf.is_file() else 0,
+            "adapterGGUFExists": gguf_exists,
+            "adapterGGUFSHA256": (
+                gguf_metadata["adapterGGUFSHA256"] if gguf_metadata else None
+            ),
+            "adapterGGUFSizeBytes": (
+                gguf_metadata["adapterGGUFSizeBytes"] if gguf_metadata else 0
+            ),
             "evaluationReport": str(evaluation),
             "evaluationReportExists": evaluation.is_file(),
             "evaluation": evaluation_status,
@@ -1558,8 +2729,16 @@ def write_summary(
         for item in summary["agents"].values()
         if isinstance(item.get("evaluation"), Mapping)
     ]
-    if len(evaluations) == len(agents) and all(
-        item.get("status") == "quality_gate_passed" for item in evaluations
+    all_ggufs_exist = all(
+        item.get("adapterGGUFExists") is True
+        for item in summary["agents"].values()
+    )
+    if (
+        len(evaluations) == len(agents)
+        and all(
+            item.get("status") == "quality_gate_passed" for item in evaluations
+        )
+        and all_ggufs_exist
     ):
         summary["status"] = "complete"
     elif evaluations:
@@ -1575,6 +2754,17 @@ def _verified_completed_summary(
     run_root: Path,
     agents: Sequence[str],
 ) -> dict[str, Any]:
+    if run_root.is_symlink() or not run_root.is_dir():
+        raise RuntimeError(f"Summary run root is not a regular directory: {run_root}")
+    _reject_managed_symlinks(run_root)
+    run_manifest = _verified_run_manifest(run_root)
+    manifest_agents = run_manifest.get("agents")
+    if (
+        not isinstance(manifest_agents, list)
+        or any(not isinstance(item, Mapping) for item in manifest_agents)
+        or [item.get("agent") for item in manifest_agents] != list(agents)
+    ):
+        raise RuntimeError("Completed summary agents drifted from the prepared run")
     summary_path = run_root / "aio_summary.json"
     if summary_path.is_symlink() or not summary_path.is_file():
         raise RuntimeError(f"Missing regular completed summary: {summary_path}")
@@ -1585,8 +2775,19 @@ def _verified_completed_summary(
     summary_agents = summary.get("agents")
     if (
         canonical_sha256(unsigned) != declared
+        or set(summary)
+        != {
+            "schema",
+            "status",
+            "variant",
+            "runRoot",
+            "preferenceTraining",
+            "agents",
+            "summarySHA256",
+        }
         or summary.get("schema") != "lumen.ubuntu-training-summary/2.0.0"
         or summary.get("runRoot") != str(run_root)
+        or summary.get("variant") != run_manifest.get("variant")
         or summary.get("preferenceTraining") is not True
         or summary.get("status")
         not in {
@@ -1598,14 +2799,53 @@ def _verified_completed_summary(
         or set(summary_agents) != set(agents)
     ):
         raise RuntimeError("Completed Ubuntu training summary failed verification")
+    gguf_inventory = _verify_gguf_inventory(
+        run_root,
+        agents,
+        require_all=False,
+    )
+    reader_script = (
+        _verified_pinned_gguf_reader_script(run_root)
+        if gguf_inventory
+        else None
+    )
     evaluation_statuses: list[str] = []
+    all_ggufs_exist = True
     for agent in agents:
         item = summary_agents.get(agent)
-        if not isinstance(item, Mapping):
+        if (
+            not isinstance(item, Mapping)
+            or set(item)
+            != {
+                "sft",
+                "finalPhase",
+                "adapterGGUF",
+                "adapterGGUFExists",
+                "adapterGGUFSHA256",
+                "adapterGGUFSizeBytes",
+                "evaluationReport",
+                "evaluationReportExists",
+                "evaluation",
+            }
+        ):
             raise RuntimeError(f"Completed summary lacks agent {agent}")
+        sft = verify_sft(run_root, agent)
         final_phase = verify_preference(run_root, agent)
-        if item.get("finalPhase") != final_phase:
+        if item.get("sft") != sft or item.get("finalPhase") != final_phase:
             raise RuntimeError(f"Completed summary adapter lineage drifted for {agent}")
+        evaluation_report = run_root / "evaluation" / agent / "evaluation_report.json"
+        evaluation_report_exists = (
+            not evaluation_report.is_symlink()
+            and evaluation_report.is_file()
+            and evaluation_report.stat().st_size > 0
+        )
+        if (
+            item.get("evaluationReport") != str(evaluation_report)
+            or item.get("evaluationReportExists") is not evaluation_report_exists
+        ):
+            raise RuntimeError(
+                f"Completed summary evaluation-report evidence drifted for {agent}"
+            )
         evaluation = item.get("evaluation")
         if evaluation is not None:
             verified_evaluation = _verify_evaluation_outputs(
@@ -1616,23 +2856,48 @@ def _verified_completed_summary(
             if evaluation != verified_evaluation:
                 raise RuntimeError(f"Completed summary evaluation drifted for {agent}")
             evaluation_statuses.append(str(verified_evaluation.get("status")))
-        elif item.get("evaluationReportExists") is not False:
+        elif evaluation_report_exists:
             raise RuntimeError(f"Completed summary evaluation flag drifted for {agent}")
         gguf = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
-        if item.get("adapterGGUFExists") is True:
+        gguf_metadata = (
+            verify_gguf_artifact(gguf, reader_script=reader_script)
+            if gguf.name in gguf_inventory and reader_script is not None
+            else None
+        )
+        gguf_exists = gguf_metadata is not None
+        all_ggufs_exist = all_ggufs_exist and gguf_exists
+        if (
+            item.get("adapterGGUF") != str(gguf)
+            or item.get("adapterGGUFExists") is not gguf_exists
+        ):
+            raise RuntimeError(f"Completed summary GGUF flag drifted for {agent}")
+        if gguf_exists:
             if (
-                gguf.is_symlink()
-                or not gguf.is_file()
-                or gguf.stat().st_size != item.get("adapterGGUFSizeBytes")
-                or file_sha256(gguf) != item.get("adapterGGUFSHA256")
+                type(item.get("adapterGGUFSizeBytes")) is not int
+                or item["adapterGGUFSizeBytes"] <= 0
+                or re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    str(item.get("adapterGGUFSHA256") or ""),
+                )
+                is None
+                or gguf_metadata["adapterGGUFSizeBytes"]
+                != item["adapterGGUFSizeBytes"]
+                or gguf_metadata["adapterGGUFSHA256"]
+                != item.get("adapterGGUFSHA256")
             ):
                 raise RuntimeError(f"Completed summary GGUF drifted for {agent}")
-        elif gguf.exists():
-            raise RuntimeError(f"Unbound GGUF exists for {agent}")
+        elif (
+            gguf.exists()
+            or gguf.is_symlink()
+            or item.get("adapterGGUFSizeBytes") != 0
+            or item.get("adapterGGUFSHA256") is not None
+        ):
+            raise RuntimeError(f"Unbound or unsafe GGUF exists for {agent}")
     expected_status = (
         "complete"
         if len(evaluation_statuses) == len(agents)
         and set(evaluation_statuses) == {"quality_gate_passed"}
+        and all_ggufs_exist
         else "smoke_complete"
         if evaluation_statuses
         else "training_complete_without_full_evaluation"
@@ -1850,6 +3115,9 @@ def parse_args() -> argparse.Namespace:
     verify_gguf_parser = subparsers.add_parser("verify-gguf")
     verify_gguf_parser.add_argument("--run-root", type=Path, required=True)
     verify_gguf_parser.add_argument("--agent", choices=AGENTS, required=True)
+    verify_gguf_file_parser = subparsers.add_parser("verify-gguf-file")
+    verify_gguf_file_parser.add_argument("--run-root", type=Path, required=True)
+    verify_gguf_file_parser.add_argument("--path", type=Path, required=True)
     clean = subparsers.add_parser("clean-phase")
     clean.add_argument("--run-root", type=Path, required=True)
     clean.add_argument("--agent", choices=AGENTS, required=True)
@@ -1939,6 +3207,11 @@ def main() -> None:
         )
     elif args.command == "verify-gguf":
         result = verify_gguf(resolved_run_root, args.agent)
+    elif args.command == "verify-gguf-file":
+        result = verify_gguf_file(
+            resolved_run_root,
+            args.path.expanduser().resolve(),
+        )
     elif args.command == "clean-phase":
         clean_phase(resolved_run_root, args.agent, args.phase)
         result = {"status": "cleaned", "agent": args.agent, "phase": args.phase}

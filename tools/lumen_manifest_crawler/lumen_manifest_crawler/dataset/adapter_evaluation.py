@@ -19,11 +19,14 @@ from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
 
 
 EVALUATION_SCHEMA_VERSION = "lumen.adapter-eval/1.0.0"
-EVALUATION_REPORT_SCHEMA_VERSION = "lumen.adapter-eval-report/1.0.0"
-CONTAMINATION_SCHEMA_VERSION = "lumen.adapter-contamination/1.0.0"
+EVALUATION_REPORT_SCHEMA_VERSION = "lumen.adapter-eval-report/1.1.0"
+CONTAMINATION_SCHEMA_VERSION = "lumen.adapter-contamination/1.1.0"
 EXPERIMENT_SCHEMA_VERSION = "lumen.adapter-experiment/1.0.0"
 VARIANT_SCHEMA_VERSION = "lumen.adapter-experiment-variant/1.0.0"
 PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.0.0"
+_CANDIDATE_JSON_MAX_NESTING_DEPTH = 128
+_CANDIDATE_JSON_NESTING_ERROR = "json_nesting_too_deep"
+_CANDIDATE_JSON_SURROGATE_ERROR = "unpaired_unicode_surrogate"
 
 DEFAULT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_BASE_MODEL_REVISION = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
@@ -139,7 +142,36 @@ EXPERIMENT_VARIANTS = (
 )
 DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.80
 DEFAULT_SHINGLE_SIZE = 13
+SHORT_WINDOW_SHINGLE_SIZE = 4
 PUBLIC_EVALUATION_SKETCH_COVERAGE_THRESHOLD = 0.60
+_CONTAMINATION_MATCH_KINDS = frozenset(
+    {
+        "exact_record",
+        "exact_segment",
+        "near_segment",
+        "short_window_containment",
+        "public_evaluation_shingle_sketch",
+    }
+)
+_CONTAMINATION_REPORT_FIELDS = frozenset(
+    {
+        "schemaVersion",
+        "threshold",
+        "shingleSize",
+        "shortWindowShingleSize",
+        "hashOnly",
+        "trainingRecordCount",
+        "evaluationRecordCount",
+        "trainingRecordsSHA256",
+        "evaluationRecordsSHA256",
+        "publicEvaluationBundleSHA256",
+        "publicEvaluationRowCount",
+        "matchCount",
+        "contaminated",
+        "matches",
+        "reportSHA256",
+    }
+)
 _NON_TRAINING_CONFIG_FIELDS = {
     "adapterExport",
     "adapter_gguf_output_path",
@@ -701,6 +733,40 @@ def declarative_metrics_from_expected(
             )
         consumed.add("requiredArguments")
 
+    if "missingArguments" in expected:
+        missing_arguments = _string_values(expected["missingArguments"])
+        metrics.append(
+            {
+                "type": "json_field_equals",
+                "candidatePaths": ["missingArguments"],
+                "expected": missing_arguments,
+            }
+            if missing_arguments
+            else {
+                "type": "unsupported_contract",
+                "contractKey": "missingArguments",
+                "agent": agent,
+            }
+        )
+        consumed.add("missingArguments")
+
+    if "arguments" in expected:
+        expected_arguments = expected["arguments"]
+        metrics.append(
+            {
+                "type": "json_field_equals",
+                "candidatePaths": ["arguments"],
+                "expected": dict(expected_arguments),
+            }
+            if isinstance(expected_arguments, Mapping)
+            else {
+                "type": "unsupported_contract",
+                "contractKey": "arguments",
+                "agent": agent,
+            }
+        )
+        consumed.add("arguments")
+
     if expected.get("mustNotClarify") is True:
         metrics.append(
             {
@@ -763,6 +829,23 @@ def declarative_metrics_from_expected(
             }
         )
         consumed.add("requiresApproval")
+
+    if "outputPermissionKey" in expected:
+        output_permission_key = expected["outputPermissionKey"]
+        metrics.append(
+            {
+                "type": "json_field_equals",
+                "candidatePaths": ["permissionKey"],
+                "expected": output_permission_key,
+            }
+            if isinstance(output_permission_key, str) and output_permission_key.strip()
+            else {
+                "type": "unsupported_contract",
+                "contractKey": "outputPermissionKey",
+                "agent": agent,
+            }
+        )
+        consumed.add("outputPermissionKey")
 
     # These fields describe the held-out scenario and authoritative manifest
     # context. They are not candidate-output claims and are covered by the tool,
@@ -1068,6 +1151,7 @@ def score_evaluation_suite(
     records: Sequence[Mapping[str, Any]],
     candidate_outputs: Mapping[str, Any],
     *,
+    frozen_evaluation_records: Sequence[Mapping[str, Any]] | None = None,
     tool_contracts: Mapping[str, Any] | None = None,
     allowed_slots: Iterable[str] = (),
     agent: str | None = None,
@@ -1077,6 +1161,35 @@ def score_evaluation_suite(
     artifact_sha256: str | None = None,
 ) -> dict[str, Any]:
     upgraded = [upgrade_evaluation_record(record) for record in records]
+    frozen_upgraded = (
+        [upgrade_evaluation_record(record) for record in frozen_evaluation_records]
+        if frozen_evaluation_records is not None
+        else upgraded
+    )
+    if frozen_evaluation_records is not None:
+        frozen_by_id: dict[str, Mapping[str, Any]] = {}
+        for record in frozen_upgraded:
+            eval_id = record["evalID"]
+            if eval_id in frozen_by_id:
+                raise ValueError(
+                    "Frozen evaluation records contain duplicate evalID values"
+                )
+            frozen_by_id[eval_id] = record
+        scored_ids: set[str] = set()
+        for record in upgraded:
+            eval_id = record["evalID"]
+            if eval_id in scored_ids:
+                raise ValueError("Scored evaluation records contain duplicate evalID values")
+            scored_ids.add(eval_id)
+            frozen_record = frozen_by_id.get(eval_id)
+            if (
+                frozen_record is None
+                or canonical_sha256(record) != canonical_sha256(frozen_record)
+            ):
+                raise ValueError(
+                    "Scored evaluation cohort is not an exact subset of the frozen suite"
+                )
+    complete_evaluation = len(upgraded) == len(frozen_upgraded)
     record_agents = {
         str((record.get("metadata") or {}).get("agent") or "").strip().lower()
         for record in upgraded
@@ -1137,7 +1250,7 @@ def score_evaluation_suite(
             }
         )
 
-    evaluation_sha256 = canonical_sha256(upgraded)
+    evaluation_sha256 = canonical_sha256(frozen_upgraded)
     variant_binding_valid = (
         isinstance(variant_manifest, Mapping)
         and _valid_variant_manifest(
@@ -1219,8 +1332,11 @@ def score_evaluation_suite(
             variant_manifest if isinstance(variant_manifest, Mapping) else {}
         ),
         "artifactSHA256": artifact_sha256,
-        "promotionEvidenceBound": variant_binding_valid,
+        "variantLineageBound": variant_binding_valid,
+        "promotionEvidenceBound": variant_binding_valid and complete_evaluation,
         "caseCount": len(upgraded),
+        "frozenCaseCount": len(frozen_upgraded),
+        "completeEvaluation": complete_evaluation,
         "passedCaseCount": sum(1 for result in case_results if result["passed"]),
         "missingOutputCount": missing_outputs,
         "criticalFailureCount": critical_failures,
@@ -1276,6 +1392,8 @@ def _score_metric(
         required = _string_values(metric.get("values"))
         passed = found and isinstance(value, list) and set(required).issubset({str(item) for item in value})
         return _metric_result(metric_type, passed, "contains_required_values" if passed else "required_values_missing")
+    if metric_type == "cortex_route_contract":
+        return _score_cortex_route_contract(metric, parsed, tool_contracts)
     if metric_type == "manifest_tool_call":
         return _score_manifest_tool_call(metric, parsed, tool_contracts)
     if metric_type == "non_clarifying_tool_call":
@@ -1288,9 +1406,25 @@ def _score_metric(
     if metric_type == "action_step_persistence":
         found_action, action = _first_path_value(parsed, ["actionStep", "action", "nextAction"])
         found_tool, tool = _first_path_value(parsed, ["tool", "selectedToolID"])
-        passed = (found_action and action is not None and action != "") or (
-            metric.get("agent") == "executor" and found_tool and isinstance(tool, str) and bool(tool)
-        )
+        if metric.get("agent") == "cortex":
+            passed = (
+                found_action
+                and isinstance(action, Mapping)
+                and set(action)
+                == {"type", "toolID", "mustPersistBeforeFinal"}
+                and action.get("type") == "tool_call"
+                and found_tool
+                and isinstance(tool, str)
+                and action.get("toolID") == tool
+                and action.get("mustPersistBeforeFinal") is True
+            )
+        else:
+            passed = (found_action and action is not None and action != "") or (
+                metric.get("agent") == "executor"
+                and found_tool
+                and isinstance(tool, str)
+                and bool(tool)
+            )
         return _metric_result(metric_type, passed, "action_step_present" if passed else "action_step_missing")
     if metric_type == "approval_boundary":
         required = metric.get("required")
@@ -1681,6 +1815,224 @@ def _score_manifest_tool_call(
     return _metric_result("manifest_tool_call", True, "manifest_call_valid")
 
 
+def _score_cortex_route_contract(
+    metric: Mapping[str, Any],
+    parsed: Any,
+    tool_contracts: Mapping[str, Any],
+) -> dict[str, Any]:
+    metric_type = "cortex_route_contract"
+    if not isinstance(parsed, Mapping):
+        return _metric_result(metric_type, False, "route_object_missing")
+
+    prefix_fields = ("selectedToolID", "intent", "reasoningSummary")
+    suffix_fields = ("requiresApproval", "nextModel")
+    base_fields = set(prefix_fields + suffix_fields)
+    missing_fields = base_fields - set(parsed)
+    if missing_fields:
+        return _metric_result(metric_type, False, "route_protocol_field_missing")
+    if (
+        not isinstance(parsed.get("intent"), str)
+        or not parsed["intent"].strip()
+        or type(parsed.get("requiresApproval")) is not bool
+        or not isinstance(parsed.get("nextModel"), str)
+        or not parsed["nextModel"].strip()
+        or not isinstance(parsed.get("reasoningSummary"), str)
+        or not parsed["reasoningSummary"].strip()
+    ):
+        return _metric_result(metric_type, False, "route_protocol_field_invalid")
+    if "tool" in parsed or "arguments" in parsed:
+        return _metric_result(metric_type, False, "executor_field_leaked")
+    if _contains_json_object_key(parsed, {"rejectedToolID", "rejectedToolIDs"}):
+        return _metric_result(metric_type, False, "rejected_tool_catalog_forbidden")
+
+    expected_intent = metric.get("expectedIntent")
+    if not isinstance(expected_intent, str) or not expected_intent.strip():
+        return _metric_result(metric_type, False, "expected_intent_contract_missing")
+    if parsed.get("intent") != expected_intent:
+        return _metric_result(metric_type, False, "intent_contract_mismatch")
+
+    mode = metric.get("mode")
+    if mode not in {
+        "actionable",
+        "clarification",
+        "selection",
+        "no_tool_route",
+        "invalid_tool",
+    }:
+        return _metric_result(metric_type, False, "route_contract_mode_invalid")
+
+    if mode in {"no_tool_route", "invalid_tool"}:
+        expected_status = mode
+        if (
+            set(parsed) != base_fields | {"status"}
+            or parsed.get("selectedToolID") is not None
+            or parsed.get("requiresApproval") is not False
+            or parsed.get("nextModel") != "mouth"
+            or parsed.get("status") != expected_status
+        ):
+            return _metric_result(metric_type, False, f"{mode}_contract_failed")
+        if tuple(parsed) != (*prefix_fields, "status", *suffix_fields):
+            return _metric_result(metric_type, False, "route_key_order_invalid")
+        expected_summary = f"No manifest row applies to intent {expected_intent}."
+        if parsed.get("reasoningSummary") != expected_summary:
+            return _metric_result(
+                metric_type,
+                False,
+                "reasoning_summary_contract_mismatch",
+            )
+        return _metric_result(metric_type, True, "route_contract_valid")
+
+    selected_tool_id = parsed.get("selectedToolID")
+    if not isinstance(selected_tool_id, str) or not selected_tool_id:
+        return _metric_result(metric_type, False, "selected_tool_missing")
+    if mode == "selection":
+        allowed_tool_ids = set(_string_values(metric.get("allowedToolIDs")))
+        if set(parsed) != base_fields or selected_tool_id not in allowed_tool_ids:
+            return _metric_result(metric_type, False, "selection_contract_failed")
+    else:
+        expected_tool_id = metric.get("expectedToolID")
+        if not isinstance(expected_tool_id, str) or selected_tool_id != expected_tool_id:
+            return _metric_result(metric_type, False, "selected_tool_mismatch")
+
+    tool_contract = tool_contracts.get(selected_tool_id)
+    expected_approval = (
+        tool_contract.get("requiresApproval")
+        if isinstance(tool_contract, Mapping)
+        else None
+    )
+    if type(expected_approval) is not bool:
+        return _metric_result(metric_type, False, "tool_approval_contract_missing")
+    raw_arguments = (
+        tool_contract.get("arguments")
+        if isinstance(tool_contract, Mapping)
+        else None
+    )
+    if not isinstance(raw_arguments, list):
+        return _metric_result(metric_type, False, "tool_arguments_contract_missing")
+    required_tool_arguments: list[str] = []
+    seen_argument_names: set[str] = set()
+    for argument in raw_arguments:
+        if not isinstance(argument, Mapping):
+            return _metric_result(metric_type, False, "tool_arguments_contract_invalid")
+        name = argument.get("name")
+        required = argument.get("required")
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in seen_argument_names
+            or type(required) is not bool
+        ):
+            return _metric_result(metric_type, False, "tool_arguments_contract_invalid")
+        seen_argument_names.add(name)
+        if required:
+            required_tool_arguments.append(name)
+    if parsed.get("requiresApproval") is not expected_approval:
+        return _metric_result(metric_type, False, "tool_approval_contract_mismatch")
+
+    if mode == "clarification":
+        required_arguments = _string_values(metric.get("requiredArguments"))
+        clarification = parsed.get("clarification")
+        if (
+            set(parsed)
+            != base_fields | {"status", "missingArguments", "clarification"}
+            or
+            not required_arguments
+            or required_arguments
+            != [
+                name
+                for name in required_tool_arguments
+                if name in required_arguments
+            ]
+            or parsed.get("status") != "needs_clarification"
+            or parsed.get("missingArguments") != required_arguments
+            or not isinstance(clarification, str)
+            or not clarification.strip().endswith("?")
+            or parsed.get("nextModel") != "mouth"
+            or "actionStep" in parsed
+        ):
+            return _metric_result(metric_type, False, "clarification_contract_failed")
+        if tuple(parsed) != (
+            *prefix_fields,
+            "status",
+            "missingArguments",
+            "clarification",
+            *suffix_fields,
+        ):
+            return _metric_result(metric_type, False, "route_key_order_invalid")
+        expected_summary = (
+            f"Manifest row {selected_tool_id} is missing exactly this required subset: "
+            f"{', '.join(required_arguments)}."
+        )
+        if parsed.get("reasoningSummary") != expected_summary:
+            return _metric_result(
+                metric_type,
+                False,
+                "reasoning_summary_contract_mismatch",
+            )
+        return _metric_result(metric_type, True, "route_contract_valid")
+
+    expected_next_model = "approval" if expected_approval else "executor"
+    if parsed.get("nextModel") != expected_next_model:
+        return _metric_result(metric_type, False, "next_model_contract_mismatch")
+    if mode == "selection":
+        if tuple(parsed) != prefix_fields + suffix_fields:
+            return _metric_result(metric_type, False, "route_key_order_invalid")
+        expected_summary = (
+            f"Manifest row {selected_tool_id} is selected for intent "
+            f"{expected_intent} without actionStep."
+        )
+        if parsed.get("reasoningSummary") != expected_summary:
+            return _metric_result(
+                metric_type,
+                False,
+                "reasoning_summary_contract_mismatch",
+            )
+        return _metric_result(metric_type, True, "route_contract_valid")
+
+    action_step = parsed.get("actionStep")
+    if (
+        set(parsed) != base_fields | {"actionStep"}
+        or not isinstance(action_step, Mapping)
+        or set(action_step)
+        != {"type", "toolID", "mustPersistBeforeFinal"}
+        or action_step.get("type") != "tool_call"
+        or action_step.get("toolID") != selected_tool_id
+        or action_step.get("mustPersistBeforeFinal") is not True
+    ):
+        return _metric_result(metric_type, False, "action_contract_failed")
+    if (
+        tuple(parsed) != (*prefix_fields, "actionStep", *suffix_fields)
+        or tuple(action_step) != ("type", "toolID", "mustPersistBeforeFinal")
+    ):
+        return _metric_result(metric_type, False, "route_key_order_invalid")
+    expected_summary = (
+        f"Manifest row {selected_tool_id} has no required values."
+        if not required_tool_arguments
+        else (
+            f"Manifest row {selected_tool_id} has all exact required names supplied: "
+            f"{', '.join(required_tool_arguments)}."
+        )
+    )
+    if parsed.get("reasoningSummary") != expected_summary:
+        return _metric_result(
+            metric_type,
+            False,
+            "reasoning_summary_contract_mismatch",
+        )
+    return _metric_result(metric_type, True, "route_contract_valid")
+
+
+def _contains_json_object_key(value: Any, forbidden: set[str]) -> bool:
+    if isinstance(value, Mapping):
+        return bool(forbidden.intersection(value)) or any(
+            _contains_json_object_key(child, forbidden)
+            for child in value.values()
+        )
+    if isinstance(value, list):
+        return any(_contains_json_object_key(child, forbidden) for child in value)
+    return False
+
+
 def _score_repair_classification(metric: Mapping[str, Any], parsed: Any) -> dict[str, Any]:
     passed = parsed is not None
     if metric.get("expectedFailureType") is not None:
@@ -1937,6 +2289,7 @@ def build_evaluation_fingerprint_bundle(
         "purpose": "evaluation_only_contamination_fingerprints",
         "hashOnly": True,
         "shingleSize": shingle_size,
+        "shortWindowShingleSize": SHORT_WINDOW_SHINGLE_SIZE,
         "records": sorted(fingerprints, key=lambda item: item["recordID"]),
     }
     payload["bundleSHA256"] = canonical_sha256(payload)
@@ -1981,6 +2334,7 @@ def build_contamination_report(
         "schemaVersion": CONTAMINATION_SCHEMA_VERSION,
         "threshold": threshold,
         "shingleSize": shingle_size,
+        "shortWindowShingleSize": SHORT_WINDOW_SHINGLE_SIZE,
         "hashOnly": True,
         "trainingRecordCount": len(training_records),
         "evaluationRecordCount": len(evaluation_records),
@@ -2985,6 +3339,9 @@ def _valid_evaluation_report(
         and _valid_hardware_lineage(report, pending=False)
         and _valid_runtime_source_audit(report, pending=False)
         and _is_sha256(report.get("artifactSHA256"))
+        and report.get("variantLineageBound") is True
+        and report.get("completeEvaluation") is True
+        and report.get("frozenCaseCount") == report["caseCount"]
         and report.get("promotionEvidenceBound") is True
         and _evaluation_report_aggregates_valid(report)
         and _valid_embedded_hash(report, "reportSHA256")
@@ -2994,7 +3351,21 @@ def _valid_evaluation_report(
 def _evaluation_report_aggregates_valid(report: Mapping[str, Any]) -> bool:
     cases = report.get("caseResults")
     case_count = report.get("caseCount")
-    if not isinstance(cases, list) or type(case_count) is not int or len(cases) != case_count:
+    frozen_case_count = report.get("frozenCaseCount")
+    complete_evaluation = report.get("completeEvaluation")
+    variant_lineage_bound = report.get("variantLineageBound")
+    if (
+        not isinstance(cases, list)
+        or type(case_count) is not int
+        or len(cases) != case_count
+        or type(frozen_case_count) is not int
+        or frozen_case_count < case_count
+        or type(complete_evaluation) is not bool
+        or complete_evaluation is not (case_count == frozen_case_count)
+        or type(variant_lineage_bound) is not bool
+        or report.get("promotionEvidenceBound")
+        is not (variant_lineage_bound and complete_evaluation)
+    ):
         return False
     total_weight = 0.0
     passed_weight = 0.0
@@ -3522,6 +3893,9 @@ def _report_matches_variant(
             report.get(field) == manifest.get(field)
             for field in RUNTIME_SOURCE_AUDIT_FIELDS
         )
+        and report.get("variantLineageBound") is True
+        and report.get("completeEvaluation") is True
+        and report.get("frozenCaseCount") == report.get("caseCount")
         and report.get("promotionEvidenceBound") is True
     )
 
@@ -3595,16 +3969,73 @@ def _contamination_matches_variant(
 
 
 def _valid_contamination_report(report: Mapping[str, Any]) -> bool:
+    matches = report.get("matches")
+    threshold = report.get("threshold")
     return (
-        report.get("schemaVersion") == CONTAMINATION_SCHEMA_VERSION
+        set(report) == _CONTAMINATION_REPORT_FIELDS
+        and report.get("schemaVersion") == CONTAMINATION_SCHEMA_VERSION
+        and report.get("hashOnly") is True
+        and _finite_positive_unit_interval(threshold)
+        and type(report.get("shingleSize")) is int
+        and report["shingleSize"] > 0
+        and report.get("shortWindowShingleSize")
+        == SHORT_WINDOW_SHINGLE_SIZE
+        and type(report.get("trainingRecordCount")) is int
+        and report["trainingRecordCount"] >= 0
+        and type(report.get("evaluationRecordCount")) is int
+        and report["evaluationRecordCount"] >= 0
         and type(report.get("matchCount")) is int
+        and report["matchCount"] >= 0
         and type(report.get("contaminated")) is bool
         and _is_sha256(report.get("trainingRecordsSHA256"))
         and _is_sha256(report.get("evaluationRecordsSHA256"))
         and _is_sha256(report.get("publicEvaluationBundleSHA256"))
         and type(report.get("publicEvaluationRowCount")) is int
         and report["publicEvaluationRowCount"] > 0
+        and isinstance(matches, list)
+        and all(_valid_contamination_match(match) for match in matches)
+        and report["matchCount"] == len(matches)
+        and report["contaminated"] is bool(matches)
         and _valid_embedded_hash(report, "reportSHA256")
+    )
+
+
+def _valid_contamination_match(match: Any) -> bool:
+    if not isinstance(match, Mapping) or set(match) != {
+        "trainingRecordID",
+        "evaluationRecordID",
+        "matchKind",
+        "similarity",
+    }:
+        return False
+    training_record_id = match.get("trainingRecordID")
+    evaluation_record_id = match.get("evaluationRecordID")
+    similarity = match.get("similarity")
+    return (
+        isinstance(training_record_id, str)
+        and re.fullmatch(r"record-[0-9a-f]{24}", training_record_id) is not None
+        and isinstance(evaluation_record_id, str)
+        and (
+            re.fullmatch(r"record-[0-9a-f]{24}", evaluation_record_id)
+            is not None
+            or re.fullmatch(
+                r"public:[A-Za-z0-9._-]+:[0-9]+",
+                evaluation_record_id,
+            )
+            is not None
+        )
+        and match.get("matchKind") in _CONTAMINATION_MATCH_KINDS
+        and _finite_positive_unit_interval(similarity)
+    )
+
+
+def _finite_positive_unit_interval(value: Any) -> bool:
+    if type(value) is int:
+        return 0 < value <= 1
+    return (
+        type(value) is float
+        and math.isfinite(value)
+        and 0 < value <= 1
     )
 
 
@@ -3693,16 +4124,28 @@ def _record_fingerprint_from_canonical_json(
     shingle_size: int,
 ) -> dict[str, Any]:
     record = json.loads(canonical_record)
-    segments = _content_segments(record)
-    normalized_segments = [_normalize_text(segment) for segment in segments]
-    normalized_segments = [segment for segment in normalized_segments if segment]
-    normalized_text = "\n".join(normalized_segments)
+    segments = _content_segment_entries(record)
+    normalized_segments = [
+        (role, _normalize_text(segment))
+        for role, segment in segments
+    ]
+    normalized_segments = [
+        (role, segment)
+        for role, segment in normalized_segments
+        if segment
+    ]
+    normalized_text = "\n".join(segment for _, segment in normalized_segments)
     segment_items = []
-    for segment in normalized_segments:
+    for role, segment in normalized_segments:
         segment_items.append(
             {
+                "role": role,
                 "sha256": hashlib.sha256(segment.encode("utf-8")).hexdigest(),
                 "shingles": sorted(_hashed_shingles(segment, shingle_size)),
+                "shortWindowShingles": sorted(
+                    _hashed_shingles(segment, SHORT_WINDOW_SHINGLE_SIZE)
+                ),
+                "tokenCount": len(segment.split()),
             }
         )
     return {
@@ -3737,11 +4180,36 @@ def _fingerprint_match(
             union = train_shingles | eval_shingles
             similarity = len(train_shingles & eval_shingles) / len(union) if union else 0.0
             best = max(best, similarity)
-    return ("near_segment", best) if best >= threshold else (None, best)
+    if best >= threshold:
+        return "near_segment", best
+
+    short_window_best = 0.0
+    for train_segment in training_segments:
+        train_windows = set(train_segment.get("shortWindowShingles") or [])
+        if not train_windows:
+            continue
+        for eval_segment in evaluation_segments:
+            if eval_segment.get("role") != "user":
+                continue
+            eval_windows = set(eval_segment.get("shortWindowShingles") or [])
+            if not eval_windows:
+                continue
+            smaller_count = min(len(train_windows), len(eval_windows))
+            similarity = (
+                len(train_windows & eval_windows) / smaller_count
+                if smaller_count
+                else 0.0
+            )
+            short_window_best = max(short_window_best, similarity)
+    if short_window_best >= threshold:
+        return "short_window_containment", short_window_best
+    return None, max(best, short_window_best)
 
 
-def _content_segments(record: Mapping[str, Any]) -> list[str]:
-    segments: list[str] = []
+def _content_segment_entries(
+    record: Mapping[str, Any],
+) -> list[tuple[str, str]]:
+    segments: list[tuple[str, str]] = []
     for field in ("messages", "prompt"):
         messages = record.get(field)
         if not isinstance(messages, list):
@@ -3753,12 +4221,16 @@ def _content_segments(record: Mapping[str, Any]) -> list[str]:
             content = message.get("content")
             if role == "system" or not isinstance(content, str):
                 continue
-            segments.append(content)
+            segments.append((role or "unknown", content))
     for field in ("chosen", "rejected"):
         value = record.get(field)
         if isinstance(value, Mapping) and isinstance(value.get("content"), str):
-            segments.append(value["content"])
+            segments.append(("assistant", value["content"]))
     return segments
+
+
+def _content_segments(record: Mapping[str, Any]) -> list[str]:
+    return [content for _, content in _content_segment_entries(record)]
 
 
 def _normalize_text(value: str) -> str:
@@ -3785,28 +4257,81 @@ def _candidate_text(candidate: Any) -> str:
 
 def _parse_candidate_json(candidate: Any) -> tuple[Any, str | None]:
     if isinstance(candidate, (dict, list)):
-        return (candidate, None) if _has_only_finite_numbers(candidate) else (None, "non_finite_number")
-    if not isinstance(candidate, str) or not candidate.strip():
-        return None, "empty_or_non_text_output"
-    try:
-        parsed = json.loads(candidate, parse_constant=_reject_json_constant)
-        return (parsed, None) if _has_only_finite_numbers(parsed) else (None, "non_finite_number")
-    except (TypeError, ValueError):
-        return None, "invalid_json"
+        parsed = candidate
+    else:
+        if not isinstance(candidate, str) or not candidate.strip():
+            return None, "empty_or_non_text_output"
+        try:
+            parsed = json.loads(
+                candidate,
+                parse_constant=_reject_json_constant,
+                object_pairs_hook=_reject_duplicate_json_object_keys,
+            )
+        except RecursionError:
+            return None, _CANDIDATE_JSON_NESTING_ERROR
+        except (TypeError, ValueError):
+            return None, "invalid_json"
+
+    validation_error = _candidate_json_tree_error(parsed)
+    if validation_error is not None:
+        return None, validation_error
+    return parsed, None
 
 
 def _reject_json_constant(value: str) -> Any:
     raise ValueError(f"non-standard JSON constant: {value}")
 
 
-def _has_only_finite_numbers(value: Any) -> bool:
-    if type(value) is float:
-        return math.isfinite(value)
-    if isinstance(value, Mapping):
-        return all(_has_only_finite_numbers(child) for child in value.values())
-    if isinstance(value, list):
-        return all(_has_only_finite_numbers(child) for child in value)
-    return True
+def _reject_duplicate_json_object_keys(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
+def _candidate_json_tree_error(value: Any) -> str | None:
+    """Validate decoded JSON iteratively so candidate depth cannot exhaust Python."""
+
+    pending: list[tuple[Any, int]] = [(value, 0)]
+    while pending:
+        current, nesting_depth = pending.pop()
+        if isinstance(current, str):
+            if _contains_unicode_surrogate(current):
+                return _CANDIDATE_JSON_SURROGATE_ERROR
+            continue
+        if type(current) is float:
+            if not math.isfinite(current):
+                return "non_finite_number"
+            continue
+        if current is None or type(current) in {bool, int}:
+            continue
+        if isinstance(current, dict):
+            if nesting_depth >= _CANDIDATE_JSON_MAX_NESTING_DEPTH:
+                return _CANDIDATE_JSON_NESTING_ERROR
+            next_depth = nesting_depth + 1
+            for key, child in current.items():
+                if not isinstance(key, str):
+                    return "invalid_json"
+                if _contains_unicode_surrogate(key):
+                    return _CANDIDATE_JSON_SURROGATE_ERROR
+                pending.append((child, next_depth))
+            continue
+        if isinstance(current, list):
+            if nesting_depth >= _CANDIDATE_JSON_MAX_NESTING_DEPTH:
+                return _CANDIDATE_JSON_NESTING_ERROR
+            next_depth = nesting_depth + 1
+            pending.extend((child, next_depth) for child in current)
+            continue
+        return "invalid_json"
+    return None
+
+
+def _contains_unicode_surrogate(value: str) -> bool:
+    return any(0xD800 <= ord(character) <= 0xDFFF for character in value)
 
 
 def _path_value(value: Any, path: str) -> tuple[bool, Any]:

@@ -207,7 +207,7 @@ Additional launcher controls:
 | `--overwrite` | Destructively replace the selected run directory after path-safety checks. |
 | `--resume` | Reuse an existing run, skip phases whose complete artifacts re-verify, and restart incomplete phases. |
 | `--no-evaluate` | Skip frozen inference/scoring. Full evaluation is enabled by default. |
-| `--eval-smoke <n>` | Evaluate a deterministic prefix of `n` cases per role; this is smoke evidence, not a quality pass. |
+| `--eval-smoke <n>` | Evaluate a deterministic semantic cohort of `n` cases per role; this is smoke evidence, not a quality pass. |
 | `--token-file <file>` | Mount an owner-only, mode-600 token only into the upload container. |
 | `--upload` | Upload verified outputs after training. Upload is off by default and the destination is private by default. |
 | `--public` | With `--upload`, explicitly request public visibility. Public publication is never the default. |

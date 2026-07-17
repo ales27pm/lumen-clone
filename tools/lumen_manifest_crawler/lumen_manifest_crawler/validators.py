@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import Counter
 from collections.abc import Iterable
 from typing import Any
 
+from lumen_manifest_crawler.fleet_artifacts import generate_orchestration_evals
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ValidationFailure, ValidationReport, ValidationWarning
 
 DEFAULT_SUPPORTED_JSON_TYPES = {"string", "double", "int", "bool", "array", "object", "null", "number", "enum"}
@@ -98,6 +100,42 @@ FANOUT_INTENTS = {
     "weather",
     "webSearch",
 }
+CORTEX_ROUTE_SYSTEM_MARKER = "Task mode: Cortex route mode."
+CORTEX_ROUTE_BASE_FIELDS = {
+    "intent",
+    "selectedToolID",
+    "requiresApproval",
+    "nextModel",
+    "reasoningSummary",
+}
+
+
+class _DuplicateJSONKeyError(ValueError):
+    pass
+
+
+class _NonFiniteJSONNumberError(ValueError):
+    pass
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise _DuplicateJSONKeyError(key)
+        payload[key] = value
+    return payload
+
+
+def _reject_nonfinite_json_number(value: str) -> None:
+    raise _NonFiniteJSONNumberError(value)
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite_json_number(value)
+    return parsed
 
 
 def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str, list[dict]] | None = None, *, strict: bool = False) -> ValidationReport:  # NOSONAR
@@ -635,6 +673,11 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
                 failures.append(ValidationFailure(code="mouth_missing_sentinel_eval", message="Mouth eval is missing sentinel suppression coverage", path="fine_tuning.mouth.eval"))
         if agent == "fleet":
             _validate_fleet_slot_coverage(ds, slot_ids, failures)
+            _validate_fleet_orchestration_eval_coverage(
+                manifest=manifest,
+                ds=ds,
+                failures=failures,
+            )
 
         _validate_natural_intent_tool_leaks(agent=agent, ds=ds, failures=failures, known_tools=known_tools)
         _validate_boundary_coverage(agent=agent, ds=ds, approval_tools=approval_tools, permission_tools=permission_tools, failures=failures)
@@ -781,8 +824,20 @@ def _validate_agent_sft_records(  # NOSONAR
             continue
 
         assistant = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "assistant"), "")
+        system = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "system"), "")
         if not isinstance(assistant, str) or not assistant.strip():
             failures.append(ValidationFailure(code="empty_assistant_output", message=f"{agent} has empty assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
+        if agent == "cortex":
+            _validate_cortex_json_object_contract(
+                assistant=assistant,
+                failures=failures,
+                path=f"fine_tuning.{agent}.sft.{index}",
+                preference_chosen=False,
+                route_contract=(
+                    isinstance(system, str)
+                    and CORTEX_ROUTE_SYSTEM_MARKER in system
+                ),
+            )
         for sentinel in forbidden:
             if sentinel in assistant:
                 failures.append(ValidationFailure(code="sentinel_leak", message=f"{agent} leaked sentinel `{sentinel}`", path=f"fine_tuning.{agent}.sft.{index}"))
@@ -827,6 +882,123 @@ def _validate_agent_sft_records(  # NOSONAR
                     continue
                 if not _assistant_mentions_required_args(assistant, required_args):
                     failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor sample for {tool_id} missing required args in assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
+
+
+def _validate_cortex_json_object_contract(
+    *,
+    assistant: Any,
+    failures: list[ValidationFailure],
+    path: str,
+    preference_chosen: bool,
+    route_contract: bool,
+) -> None:
+    prefix = "cortex_dpo" if preference_chosen else "cortex"
+    label = "Cortex DPO chosen output" if preference_chosen else "Cortex SFT output"
+    try:
+        payload = json.loads(
+            assistant,
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_nonfinite_json_number,
+            parse_float=_parse_finite_json_float,
+        )
+    except _DuplicateJSONKeyError as exc:
+        failures.append(
+            ValidationFailure(
+                code=f"{prefix}_duplicate_json_key",
+                message=f"{label} repeats JSON key `{exc.args[0]}`",
+                path=path,
+            )
+        )
+        return
+    except (json.JSONDecodeError, TypeError, _NonFiniteJSONNumberError):
+        failures.append(
+            ValidationFailure(
+                code=f"{prefix}_non_json_output",
+                message=f"{label} must be strict JSON",
+                path=path,
+            )
+        )
+        return
+    if not isinstance(payload, dict):
+        failures.append(
+            ValidationFailure(
+                code=f"{prefix}_non_object_output",
+                message=f"{label} must be a JSON object",
+                path=path,
+            )
+        )
+        return
+    if route_contract and not _valid_cortex_route_payload(payload):
+        failures.append(
+            ValidationFailure(
+                code=f"{prefix}_route_contract_invalid",
+                message=f"{label} does not match one exact Cortex route mode",
+                path=path,
+            )
+        )
+
+
+def _valid_cortex_route_payload(payload: dict[str, Any]) -> bool:
+    if (
+        not isinstance(payload.get("intent"), str)
+        or not payload["intent"].strip()
+        or type(payload.get("requiresApproval")) is not bool
+        or not isinstance(payload.get("nextModel"), str)
+        or not isinstance(payload.get("reasoningSummary"), str)
+        or not payload["reasoningSummary"].strip()
+        or "tool" in payload
+        or "arguments" in payload
+    ):
+        return False
+
+    selected_tool_id = payload.get("selectedToolID")
+    status = payload.get("status")
+    if status in {"no_tool_route", "invalid_tool"}:
+        return (
+            set(payload) == CORTEX_ROUTE_BASE_FIELDS | {"status"}
+            and selected_tool_id is None
+            and payload["requiresApproval"] is False
+            and payload["nextModel"] == "mouth"
+        )
+    if status == "needs_clarification":
+        missing_arguments = payload.get("missingArguments")
+        clarification = payload.get("clarification")
+        return (
+            set(payload)
+            == CORTEX_ROUTE_BASE_FIELDS
+            | {"status", "missingArguments", "clarification"}
+            and isinstance(selected_tool_id, str)
+            and bool(selected_tool_id)
+            and payload["nextModel"] == "mouth"
+            and isinstance(missing_arguments, list)
+            and bool(missing_arguments)
+            and all(
+                isinstance(argument, str) and bool(argument)
+                for argument in missing_arguments
+            )
+            and len(missing_arguments) == len(set(missing_arguments))
+            and isinstance(clarification, str)
+            and clarification.strip().endswith("?")
+        )
+    if not isinstance(selected_tool_id, str) or not selected_tool_id:
+        return False
+
+    expected_next_model = (
+        "approval" if payload["requiresApproval"] else "executor"
+    )
+    if payload["nextModel"] != expected_next_model:
+        return False
+    if set(payload) == CORTEX_ROUTE_BASE_FIELDS:
+        return True
+    action_step = payload.get("actionStep")
+    return (
+        set(payload) == CORTEX_ROUTE_BASE_FIELDS | {"actionStep"}
+        and isinstance(action_step, dict)
+        and set(action_step) == {"type", "toolID", "mustPersistBeforeFinal"}
+        and action_step.get("type") == "tool_call"
+        and action_step.get("toolID") == selected_tool_id
+        and action_step.get("mustPersistBeforeFinal") is True
+    )
 
 
 def _validate_executor_json_contract(
@@ -976,6 +1148,26 @@ def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], fa
         if not isinstance(chosen_text, str) or not isinstance(rejected_text, str):
             failures.append(ValidationFailure(code="invalid_dpo_pair", message=f"{agent} DPO chosen/rejected content missing", path=f"fine_tuning.{agent}.dpo.{index}"))
             continue
+        if agent == "cortex":
+            system = next(
+                (
+                    message.get("content", "")
+                    for message in prompt
+                    if isinstance(message, dict)
+                    and message.get("role") == "system"
+                ),
+                "",
+            )
+            _validate_cortex_json_object_contract(
+                assistant=chosen_text,
+                failures=failures,
+                path=f"fine_tuning.{agent}.dpo.{index}.chosen",
+                preference_chosen=True,
+                route_contract=(
+                    isinstance(system, str)
+                    and CORTEX_ROUTE_SYSTEM_MARKER in system
+                ),
+            )
         if chosen_text == rejected_text:
             failures.append(ValidationFailure(code="dpo_chosen_equals_rejected", message=f"{agent} DPO chosen == rejected", path=f"fine_tuning.{agent}.dpo.{index}"))
 
@@ -1135,6 +1327,45 @@ def _validate_fleet_slot_coverage(ds: Any, slot_ids: set[str], failures: list[Va
     for slot_id in sorted(slot_ids):
         if slot_id not in blob:
             failures.append(ValidationFailure(code="fleet_slot_coverage_missing", message=f"fleet missing role-card coverage for slot {slot_id}", path="fine_tuning.fleet"))
+
+
+def _validate_fleet_orchestration_eval_coverage(
+    *,
+    manifest: AgentBehaviorManifest,
+    ds: Any,
+    failures: list[ValidationFailure],
+) -> None:
+    expected_scenarios = {
+        str(record.get("metadata", {}).get("scenarioID") or "")
+        for record in generate_orchestration_evals(manifest)
+    }
+    expected_scenarios.discard("")
+    actual_scenarios = [
+        str(record.get("metadata", {}).get("scenarioID") or "")
+        for record in ds.eval
+        if record.get("metadata", {}).get("evalType")
+        == "fleet_orchestration_event_graph_eval"
+    ]
+    actual_scenario_set = {scenario for scenario in actual_scenarios if scenario}
+    if (
+        actual_scenario_set != expected_scenarios
+        or len(actual_scenarios) != len(expected_scenarios)
+    ):
+        missing = sorted(expected_scenarios - actual_scenario_set)
+        unexpected = sorted(actual_scenario_set - expected_scenarios)
+        failures.append(
+            ValidationFailure(
+                code="fleet_orchestration_eval_coverage_missing",
+                message=(
+                    "Fleet orchestration eval coverage must exactly match the "
+                    "manifest-derived scenarios; "
+                    f"missing={missing}, unexpected={unexpected}, "
+                    f"actualCount={len(actual_scenarios)}, "
+                    f"expectedCount={len(expected_scenarios)}"
+                ),
+                path="fine_tuning.fleet.eval",
+            )
+        )
 
 
 def _validate_natural_intent_tool_leaks(*, agent: str, ds: Any, failures: list[ValidationFailure], known_tools: set[str]) -> None:  # NOSONAR

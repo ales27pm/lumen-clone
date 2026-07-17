@@ -39,6 +39,26 @@ _SAFETENSORS_DTYPE_BYTES = {
 }
 
 
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite_json_constant(value)
+    return parsed
+
+
 def canonical_sha256(value: Any) -> str:
     encoded = json.dumps(
         value,
@@ -59,9 +79,14 @@ def hash_file(path: Path) -> str:
 
 def _load_json_object(value: bytes, *, label: str) -> dict[str, Any]:
     try:
-        parsed = json.loads(value.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{label} is not valid JSON") from exc
+        parsed = json.loads(
+            value.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_nonfinite_json_constant,
+            parse_float=_parse_finite_json_float,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"{label} is not valid strict JSON") from exc
     if not isinstance(parsed, dict):
         raise ValueError(f"{label} must be a JSON object")
     return parsed
@@ -208,8 +233,11 @@ def _artifact_files(adapter_dir: Path) -> list[Path]:
             "Finalized adapter artifacts require adapter_model.safetensors"
         )
 
-    config = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
-    if not isinstance(config, dict) or str(config.get("peft_type") or "").upper() != "LORA":
+    config = _load_json_object(
+        (adapter_dir / "adapter_config.json").read_bytes(),
+        label="adapter_config.json",
+    )
+    if str(config.get("peft_type") or "").upper() != "LORA":
         raise ValueError("adapter_config.json must declare peft_type=LORA")
     tensor_names = _validate_weight_file(adapter_dir / weights[0])
     _validate_lora_config(config, tensor_names=tensor_names)
@@ -275,11 +303,14 @@ def verify_adapter_artifact(
     expected_parent_sft_adapter_sha256: str | None = None,
 ) -> dict[str, Any]:
     manifest_path = adapter_dir / ADAPTER_ARTIFACT_MANIFEST_FILENAME
-    if not manifest_path.is_file():
-        raise ValueError(f"Adapter artifact manifest is missing: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(manifest, Mapping):
-        raise ValueError("Adapter artifact manifest must be a JSON object")
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError(
+            f"Adapter artifact manifest must be a regular file: {manifest_path}"
+        )
+    manifest = _load_json_object(
+        manifest_path.read_bytes(),
+        label="Adapter artifact manifest",
+    )
     phase = str(manifest.get("trainingPhase") or "")
     rebuilt = build_adapter_artifact_manifest(
         adapter_dir,

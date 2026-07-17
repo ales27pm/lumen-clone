@@ -420,13 +420,37 @@ def _build_preference_trainer(
     orpo_config_class: Any,
     orpo_trainer_class: Any,
 ) -> tuple[Any, Any]:
+    gradient_checkpointing = cfg.get("gradient_checkpointing", True)
+    if type(gradient_checkpointing) is not bool:
+        raise ValueError("gradient_checkpointing must be a boolean")
+    if preference_trainer == "dpo" and gradient_checkpointing is not True:
+        raise ValueError("DPO requires gradient_checkpointing=true")
+    use_logits_to_keep = cfg.get("use_logits_to_keep", True)
+    if preference_trainer == "dpo" and use_logits_to_keep is not True:
+        raise ValueError("DPO requires use_logits_to_keep=true")
+    precompute_ref_log_probs = cfg.get("precompute_ref_log_probs", True)
+    if preference_trainer == "dpo" and precompute_ref_log_probs is not True:
+        raise ValueError("DPO requires precompute_ref_log_probs=true")
+    precompute_ref_batch_size = cfg.get("precompute_ref_batch_size", 1)
+    if (
+        preference_trainer == "dpo"
+        and (
+            type(precompute_ref_batch_size) is not int
+            or precompute_ref_batch_size <= 0
+        )
+    ):
+        raise ValueError("precompute_ref_batch_size must be a positive integer")
     common_config = {
         "output_dir": str(output_dir),
         "per_device_train_batch_size": int(cfg["batch_size"]),
         "per_device_eval_batch_size": max(1, int(cfg["batch_size"])),
         "gradient_accumulation_steps": int(cfg["gradient_accumulation_steps"]),
-        "learning_rate": float(cfg["learning_rate"]),
-        "num_train_epochs": float(cfg["num_train_epochs"]),
+        "learning_rate": float(
+            cfg.get("dpo_learning_rate", cfg["learning_rate"])
+        ),
+        "num_train_epochs": float(
+            cfg.get("dpo_num_train_epochs", cfg["num_train_epochs"])
+        ),
         "warmup_steps": int(cfg["warmup_steps"]),
         "logging_steps": int(cfg.get("logging_steps", 10)),
         "eval_strategy": "epoch" if val_dataset is not None else "no",
@@ -441,6 +465,7 @@ def _build_preference_trainer(
         "max_prompt_length": int(
             cfg.get("max_prompt_length", int(cfg["max_seq_length"]) // 2)
         ),
+        "gradient_checkpointing": gradient_checkpointing,
     }
     if preference_trainer == "dpo":
         training_args = dpo_config_class(
@@ -448,6 +473,9 @@ def _build_preference_trainer(
             beta=float(cfg.get("dpo_beta", 0.1)),
             model_adapter_name=POLICY_ADAPTER_NAME,
             ref_adapter_name=REFERENCE_ADAPTER_NAME,
+            use_logits_to_keep=use_logits_to_keep,
+            precompute_ref_log_probs=precompute_ref_log_probs,
+            precompute_ref_batch_size=precompute_ref_batch_size,
         )
         trainer = dpo_trainer_class(
             model=model,
@@ -481,6 +509,55 @@ def _save_policy_adapter(model: Any, output_dir: Path) -> None:
         safe_serialization=True,
         selected_adapters=[POLICY_ADAPTER_NAME],
     )
+
+
+def _precompute_reference_log_probs_before_training(
+    trainer: Any,
+    training_args: Any,
+    *,
+    has_eval_dataset: bool,
+) -> dict[str, bool]:
+    """Precompute frozen-reference logps before policy checkpoint graphs exist."""
+
+    if getattr(training_args, "precompute_ref_log_probs", None) is not True:
+        raise RuntimeError("DPO reference log-probability precomputation is required")
+    if getattr(training_args, "gradient_checkpointing", None) is not True:
+        raise RuntimeError("DPO policy gradient checkpointing is required")
+    model = trainer.model
+    disable = getattr(model, "gradient_checkpointing_disable", None)
+    enable = getattr(model, "gradient_checkpointing_enable", None)
+    if not callable(disable) or not callable(enable):
+        raise RuntimeError("DPO model lacks explicit gradient-checkpointing controls")
+
+    disable()
+    try:
+        trainer.get_train_dataloader()
+        if has_eval_dataset:
+            trainer.get_eval_dataloader()
+    finally:
+        enable(
+            gradient_checkpointing_kwargs=getattr(
+                training_args,
+                "gradient_checkpointing_kwargs",
+                None,
+            )
+        )
+
+    train_precomputed = (
+        getattr(trainer, "_precomputed_train_ref_log_probs", None) is True
+    )
+    eval_precomputed = (
+        not has_eval_dataset
+        or getattr(trainer, "_precomputed_eval_ref_log_probs", None) is True
+    )
+    if not train_precomputed or not eval_precomputed:
+        raise RuntimeError(
+            "DPO trainer did not bind precomputed frozen-reference log probabilities"
+        )
+    return {
+        "train": train_precomputed,
+        "evaluation": eval_precomputed,
+    }
 
 
 def _shared_finalized_variant_validator() -> Any:
@@ -833,6 +910,7 @@ def main() -> None:
         revision=cfg["baseModelRevision"],
         max_seq_length=int(cfg["max_seq_length"]),
         load_in_4bit=bool(cfg["load_in_4bit"]),
+        use_exact_model_name=True,
     )
     model = _load_sft_policy(
         model,
@@ -851,7 +929,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     dpo_adapter_dir.mkdir(parents=True, exist_ok=True)
 
-    trainer, _ = _build_preference_trainer(
+    trainer, training_args = _build_preference_trainer(
         cfg,
         preference_trainer=preference_trainer,
         seed=seed,
@@ -866,6 +944,15 @@ def main() -> None:
         orpo_trainer_class=ORPOTrainer,
     )
 
+    reference_log_probs_precomputed = None
+    if preference_trainer == "dpo":
+        reference_log_probs_precomputed = (
+            _precompute_reference_log_probs_before_training(
+                trainer,
+                training_args,
+                has_eval_dataset=val_dataset is not None,
+            )
+        )
     train_result = trainer.train()
     evaluation_metrics = trainer.evaluate() if val_dataset is not None else {}
     _save_policy_adapter(trainer.model, dpo_adapter_dir)
@@ -928,6 +1015,7 @@ def main() -> None:
             if preference_trainer == "dpo"
             else None
         ),
+        "reference_log_probs_precomputed": reference_log_probs_precomputed,
         "parentSFTLineage": parent_sft_lineage,
         "referenceSFTLineage": (
             parent_sft_lineage if preference_trainer == "dpo" else None

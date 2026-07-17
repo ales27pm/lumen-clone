@@ -17,6 +17,19 @@ def _lumen_manifest(path: Path) -> Path:
         "tools": [
             {"id": "alarm.list", "arguments": []},
             {"id": "calendar.list", "arguments": []},
+            {
+                "id": "calendar.create",
+                "displayName": "Create Event",
+                "arguments": [
+                    {"name": "title", "type": "string", "required": True, "allowedValues": None},
+                    {
+                        "name": "startsInMinutes",
+                        "type": "integer",
+                        "required": True,
+                        "allowedValues": None,
+                    },
+                ],
+            },
             {"id": "reminders.list", "arguments": []},
             {
                 "id": "weather",
@@ -47,7 +60,7 @@ def _lumen_manifest(path: Path) -> Path:
             {"id": intent, "allowedToolIDs": tools}
             for intent, tools in (
                 ("alarm", ["alarm.list"]),
-                ("calendar", ["calendar.list"]),
+                ("calendar", ["calendar.list", "calendar.create"]),
                 ("chat", []),
                 ("contactSearch", ["contacts.search"]),
                 ("emailDraft", []),
@@ -165,6 +178,24 @@ def _massive_tar(path: Path) -> Path:
             "intent": "play_music",
             "utt": "play music",
             "annot_utt": "play music",
+        },
+        {
+            "id": "5",
+            "locale": "en-US",
+            "partition": "train",
+            "scenario": "recommendation",
+            "intent": "recommendation_locations",
+            "utt": "find a vegetarian restaurant nearby",
+            "annot_utt": "find a [food_type : vegetarian] restaurant nearby",
+        },
+        {
+            "id": "6",
+            "locale": "en-US",
+            "partition": "train",
+            "scenario": "calendar",
+            "intent": "calendar_set",
+            "utt": "add a meeting to my calendar tomorrow",
+            "annot_utt": "add a [event_name : meeting] to my calendar [date : tomorrow]",
         },
     ]
     payload = "".join(json.dumps(row) + "\n" for row in rows).encode("utf-8")
@@ -451,6 +482,19 @@ def test_manifest_tool_validation_rejects_missing_extra_and_wrong_types(tmp_path
     assert not corpus._validate_tool_call(
         {"tool": "foreign.weather", "arguments": {}}, contract.tools
     )
+    implicit_required = {
+        "implicit.required": {
+            "id": "implicit.required",
+            "arguments": [{"name": "value", "type": "string"}],
+        }
+    }
+    assert not corpus._validate_tool_call(
+        {"tool": "implicit.required", "arguments": {}}, implicit_required
+    )
+    assert corpus._validate_tool_call(
+        {"tool": "implicit.required", "arguments": {"value": "present"}},
+        implicit_required,
+    )
 
 
 def test_download_redirect_validation_rejects_cross_source_and_nonstandard_port() -> None:
@@ -492,6 +536,21 @@ def test_massive_transform_uses_only_lumen_intents_and_valid_tool_envelopes(tmp_
     assert {record["metadata"]["agent"] for record in records} == {"cortex", "executor", "fleet"}
     assert all("reserved validation question" not in json.dumps(record) for record in records)
     assert all("play_music" not in json.dumps(record) for record in records)
+    assert any(
+        record["metadata"]["agent"] == "cortex"
+        and record["messages"][0]["content"] == "find a vegetarian restaurant nearby"
+        for record in records
+    )
+    assert not any(
+        record["metadata"]["agent"] == "cortex"
+        and record["messages"][0]["content"] == "add a meeting to my calendar tomorrow"
+        for record in records
+    )
+    assert any(
+        record["metadata"]["agent"] == "fleet"
+        and "add a meeting to my calendar tomorrow" in record["messages"][0]["content"]
+        for record in records
+    )
     for record in records:
         agent = record["metadata"]["agent"]
         if agent == "cortex":
@@ -501,6 +560,7 @@ def test_massive_transform_uses_only_lumen_intents_and_valid_tool_envelopes(tmp_
             if target["selectedToolID"] is None:
                 assert target["intent"] == "chat"
                 assert target["nextModel"] == "mouth"
+                assert target["status"] == "no_tool_route"
                 assert "actionStep" not in target
             else:
                 assert target["selectedToolID"] in contract.intents[target["intent"]]["allowedToolIDs"]
@@ -509,6 +569,11 @@ def test_massive_transform_uses_only_lumen_intents_and_valid_tool_envelopes(tmp_
                     "toolID": target["selectedToolID"],
                     "mustPersistBeforeFinal": True,
                 }
+                tool = contract.tools[target["selectedToolID"]]
+                if corpus._required_tool_argument_names(tool):
+                    assert record["metadata"]["publicCorpus"]["quality"][
+                        "sameRowArgumentCoverageAudited"
+                    ] is True
         if agent == "executor":
             call = json.loads(record["messages"][1]["content"])
             assert corpus._validate_tool_call(call, contract.tools)
@@ -527,6 +592,115 @@ def test_massive_cortex_target_fails_closed_for_non_manifest_tool_mapping(tmp_pa
         "actionStep": {"type": "tool_call", "toolID": "weather", "mustPersistBeforeFinal": True},
     }
     assert corpus._massive_cortex_target("alarm_set", "alarm", contract) is None
+
+
+def test_required_argument_cortex_target_requires_same_row_audit_or_exact_clarification(
+    tmp_path: Path,
+) -> None:
+    contract = corpus.load_lumen_contract(_lumen_manifest(tmp_path / "lumen.json"))
+    complete_call = {"tool": "maps.search", "arguments": {"query": "vegetarian"}}
+
+    actionable = corpus._massive_cortex_target(
+        "recommendation_locations",
+        "maps",
+        contract,
+        same_row_tool_call=complete_call,
+    )
+    assert actionable == {
+        "intent": "maps",
+        "selectedToolID": "maps.search",
+        "requiresApproval": False,
+        "nextModel": "executor",
+        "reasoningSummary": (
+            "The manifest allows maps.search for maps; persist the tool action before finalization."
+        ),
+        "actionStep": {
+            "type": "tool_call",
+            "toolID": "maps.search",
+            "mustPersistBeforeFinal": True,
+        },
+    }
+    assert corpus._validate_cortex_target(actionable, contract)
+    assert corpus._toolace_cortex_target("maps", "maps.search", contract) is None
+    assert corpus._toolace_cortex_target(
+        "maps",
+        "maps.search",
+        contract,
+        same_row_tool_call=complete_call,
+    ) == actionable
+    assert (
+        corpus._massive_cortex_target("recommendation_locations", "maps", contract)
+        is None
+    )
+    assert (
+        corpus._massive_cortex_target(
+            "recommendation_locations",
+            "maps",
+            contract,
+            same_row_tool_call={"tool": "maps.search", "arguments": {"query": 3}},
+        )
+        is None
+    )
+    assert (
+        corpus._massive_cortex_target(
+            "recommendation_locations",
+            "maps",
+            contract,
+            same_row_tool_call={"tool": "contacts.search", "arguments": {"query": "vegetarian"}},
+        )
+        is None
+    )
+
+    clarification = corpus._massive_cortex_target(
+        "recommendation_locations",
+        "maps",
+        contract,
+        same_row_tool_call={"tool": "maps.search", "arguments": {}},
+    )
+    assert clarification == {
+        "intent": "maps",
+        "selectedToolID": "maps.search",
+        "requiresApproval": False,
+        "nextModel": "mouth",
+        "status": "needs_clarification",
+        "missingArguments": ["query"],
+        "clarification": "What should I use for query in maps.search?",
+        "reasoningSummary": (
+            "maps.search requires query before one action can be persisted."
+        ),
+    }
+    assert corpus._validate_cortex_target(clarification, contract)
+    assert "actionStep" not in clarification
+
+    malformed = {**clarification, "missingArguments": ["unknown"]}
+    assert not corpus._validate_cortex_target(malformed, contract)
+    malformed = {
+        **clarification,
+        "actionStep": {
+            "type": "tool_call",
+            "toolID": "maps.search",
+            "mustPersistBeforeFinal": True,
+        },
+    }
+    assert not corpus._validate_cortex_target(malformed, contract)
+
+    partial_calendar_call = {
+        "tool": "calendar.create",
+        "arguments": {"title": "Planning session"},
+    }
+    calendar_clarification = corpus._massive_cortex_target(
+        "calendar_set",
+        "calendar",
+        contract,
+        same_row_tool_call=partial_calendar_call,
+    )
+    assert calendar_clarification is not None
+    assert calendar_clarification["status"] == "needs_clarification"
+    assert calendar_clarification["missingArguments"] == ["startsInMinutes"]
+    assert calendar_clarification["clarification"] == (
+        "What should I use for startsInMinutes in Create Event?"
+    )
+    assert corpus._validate_cortex_target(calendar_clarification, contract)
 
 
 def test_massive_normalizes_wake_words_and_rejects_cross_domain_list_labels() -> None:
@@ -1031,6 +1205,15 @@ def test_toolace_json_transform_emits_only_manifest_exact_role_native_records(tm
     assert Counter(record["metadata"]["agent"] for record in records) == Counter(
         {"cortex": 1, "executor": 1, "mouth": 1, "rem": 1}
     )
+    cortex_record = next(record for record in records if record["metadata"]["agent"] == "cortex")
+    assert json.loads(cortex_record["messages"][1]["content"])["actionStep"] == {
+        "type": "tool_call",
+        "toolID": "maps.search",
+        "mustPersistBeforeFinal": True,
+    }
+    assert cortex_record["metadata"]["publicCorpus"]["quality"][
+        "sameRowArgumentCoverageAudited"
+    ] is True
     executor = next(record for record in records if record["metadata"]["agent"] == "executor")
     assert json.loads(executor["messages"][1]["content"]) == {
         "arguments": {"query": "vegetarian restaurants near latitude 2.0, longitude 1.0"},
@@ -1124,6 +1307,10 @@ def test_apigen_xlam_transform_requires_override_and_exact_mapping(tmp_path: Pat
     assert Counter(record["metadata"]["agent"] for record in records) == Counter(
         {"cortex": 1, "executor": 1}
     )
+    cortex_record = next(record for record in records if record["metadata"]["agent"] == "cortex")
+    assert cortex_record["metadata"]["publicCorpus"]["quality"][
+        "sameRowArgumentCoverageAudited"
+    ] is True
     executor = next(record for record in records if record["metadata"]["agent"] == "executor")
     assert json.loads(executor["messages"][1]["content"]) == {
         "arguments": {"city": "Montreal"},

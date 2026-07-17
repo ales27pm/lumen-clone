@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -59,7 +61,6 @@ def generate_all_datasets(
 ) -> dict[str, list[dict[str, Any]]]:
     """Compile role datasets plus normalized runtime-audit-derived datasets."""
     role_records = generate_role_datasets(manifest)
-    codebase_home_records = generate_codebase_home_records(root) if root is not None else {}
     runtime_audit_reports = (
         runtime_audit_reports
         if runtime_audit_reports is not None
@@ -70,6 +71,11 @@ def generate_all_datasets(
         role_records,
         runtime_audit_reports=runtime_audit_reports,
         config=DatasetCompilerConfig(deterministic=deterministic),
+    )
+    codebase_home_records = generate_codebase_home_records(root) if root is not None else {}
+    _isolate_evaluation_source_records(
+        codebase_home_records,
+        compiled.records.get("eval_scenarios", []),
     )
     public_records, public_snapshot = _load_public_adapter_corpus_families(root, manifest)
     _augment_dataset_manifest_with_public_corpus(compiled.manifest, public_records, public_snapshot)
@@ -92,6 +98,110 @@ def generate_all_datasets(
     }
     complete_manifest = finalize_dataset_manifest(compiled.manifest, complete_datasets)
     return {**complete_datasets, "dataset_manifest": [complete_manifest]}
+
+
+def _isolate_evaluation_source_records(
+    codebase_home_records: dict[str, list[dict[str, Any]]],
+    evaluation_records: list[dict[str, Any]],
+) -> None:
+    """Keep tracked eval definitions available as corpus, never training text."""
+
+    heldout_segments = _normalized_evaluation_user_segments(evaluation_records)
+    if not heldout_segments or not codebase_home_records:
+        return
+
+    sensitive_chunk_count = 0
+    for record in codebase_home_records.get("codebase_home_chunks", []):
+        matches = _contained_evaluation_segments(
+            str(record.get("text") or ""),
+            heldout_segments,
+        )
+        if not matches:
+            continue
+        sensitive_chunk_count += 1
+        metadata = dict(record.get("metadata") or {})
+        metadata.update(
+            {
+                "evaluationOnly": True,
+                "evaluationIsolationReason": "contains_normalized_eval_user_segment",
+                "evaluationSegmentSHA256": [
+                    hashlib.sha256(segment.encode("utf-8")).hexdigest()
+                    for segment in matches
+                ],
+            }
+        )
+        record["metadata"] = metadata
+
+    excluded_sft_count = 0
+    for family in ("codebase_home_sft", "codebase_home_chunk_sft"):
+        retained: list[dict[str, Any]] = []
+        for record in codebase_home_records.get(family, []):
+            serialized = json.dumps(
+                record,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            if _contained_evaluation_segments(serialized, heldout_segments):
+                excluded_sft_count += 1
+                continue
+            retained.append(record)
+        codebase_home_records[family] = retained
+
+    overview = next(
+        (
+            record
+            for record in codebase_home_records.get("codebase_home_corpus", [])
+            if record.get("path") == "."
+        ),
+        None,
+    )
+    if overview is not None:
+        metadata = dict(overview.get("metadata") or {})
+        metadata.update(
+            {
+                "evaluationIsolationPolicy": "eval_user_segments_corpus_only",
+                "evaluationSensitiveChunkCount": sensitive_chunk_count,
+                "evaluationSensitiveSFTExcludedCount": excluded_sft_count,
+            }
+        )
+        overview["metadata"] = metadata
+
+
+def _normalized_evaluation_user_segments(
+    records: list[dict[str, Any]],
+) -> tuple[str, ...]:
+    segments: set[str] = set()
+    for record in records:
+        messages = record.get("messages")
+        if not isinstance(messages, list):
+            continue
+        for message in messages:
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            normalized = _normalize_evaluation_text(str(message.get("content") or ""))
+            if normalized:
+                segments.add(normalized)
+    return tuple(sorted(segments))
+
+
+def _contained_evaluation_segments(
+    value: str,
+    normalized_segments: tuple[str, ...],
+) -> tuple[str, ...]:
+    normalized_value = _normalize_evaluation_text(value)
+    if not normalized_value:
+        return ()
+    padded_value = f" {normalized_value} "
+    return tuple(
+        segment
+        for segment in normalized_segments
+        if f" {segment} " in padded_value
+    )
+
+
+def _normalize_evaluation_text(value: str) -> str:
+    return " ".join(re.findall(r"\w+", value.casefold(), flags=re.UNICODE))
 
 
 def _load_public_adapter_corpus_families(

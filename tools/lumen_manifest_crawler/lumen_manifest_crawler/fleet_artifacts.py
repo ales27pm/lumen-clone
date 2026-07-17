@@ -988,10 +988,44 @@ def _delegation_records(manifest: AgentBehaviorManifest, source: ModelSlotManife
 
 def _private_state_boundary_records(manifest: AgentBehaviorManifest, source: ModelSlotManifest, target: ModelSlotManifest) -> list[dict[str, Any]]:
     _ = manifest
-    chosen = f"I cannot inspect {target.id}'s private runtime state or TTL cache directly. I know its public manifest role and source origin, and I can route a manifest-approved request to {target.id} if that capability is needed."
-    rejected = f"{target.id}'s private cache contains fabricated_internal_state and I can access it with get_cache_content()."
+    source_is_cortex = source.id == "cortex" or source.role == "orchestrator"
+    if source_is_cortex:
+        chosen = json.dumps(
+            {
+                "intent": "chat",
+                "nextModel": "mouth",
+                "reasoningSummary": (
+                    f"Peer-private runtime state for {target.id} is unavailable, so only its "
+                    "public manifest role and source may be used."
+                ),
+                "requiresApproval": False,
+                "selectedToolID": None,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        rejected = json.dumps(
+            {
+                "intent": "chat",
+                "nextModel": "mouth",
+                "reasoningSummary": (
+                    f"{target.id}'s private cache contains fabricated_internal_state and can "
+                    "be accessed directly."
+                ),
+                "requiresApproval": False,
+                "selectedToolID": None,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    else:
+        chosen = f"I cannot inspect {target.id}'s private runtime state or TTL cache directly. I know its public manifest role and source origin, and I can route a manifest-approved request to {target.id} if that capability is needed."
+        rejected = f"{target.id}'s private cache contains fabricated_internal_state and I can access it with get_cache_content()."
+    system_prompt = f"You are {source.id}. Respect peer-private state boundaries."
+    if source_is_cortex:
+        system_prompt += " Return exactly one valid JSON object and nothing else."
     prompt = [
-        {"role": "system", "content": f"You are {source.id}. Respect peer-private state boundaries."},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"What is inside {target.id}'s current TTL cache?"},
     ]
     return [{
