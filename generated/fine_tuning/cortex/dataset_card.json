@@ -1,7 +1,7 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 1087,
-  "candidateSFTRecords": 12631,
+  "availableSFTRecords": 1090,
+  "candidateSFTRecords": 12738,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -17,18 +17,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "05ed3539b5964cbc9cf6aaa4432da7f1abd6466fdcf8555d6ed0ef856c925bcf"
+      "reportSHA256": "2b1f7c343fc96cd000e8e6f4d883db0e59de2b26d15d1ce4fa8bf3a4d2d9f042"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "9a12f6f1dc2340e66dddd10a028b2b50af3391dad44060cc31dbf6d17acfd371",
+    "frozenEvaluationSHA256": "c78f7d7e1519961e8c4ecd5f462f6b1d4dd7f95bbcdd5815ae424383aa2f45be",
     "recordCount": 504,
     "schemaVersion": "lumen.adapter-eval/1.0.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "62938dfb43a3727124883d8b562fcc520687445aeb7a6db3ee766ab84186fd1f",
-      "optimizedTrainingCorpusSHA256": "9d13e6770dcb62d95f4e4e73cd1b01417a8d055bb1def2607267f8f2000da128",
+      "baselineTrainingCorpusSHA256": "d4f5a78aa016ed4ed45d17ccd3dadad1321c8acdc187deeb4d2a87bf05c6c710",
+      "optimizedTrainingCorpusSHA256": "9b849360a50e523ab41722f87a556264a8332ea930a67c784f7a6fd46640726c",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 31,
@@ -55,7 +55,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "e0cd5478b98eec738483aee71f49dfff6baabaee037ad3c5864d92a8e2646f1d",
+    "experimentManifestSHA256": "091c0dc2f0962ad975711ba5032490902ca0fd3a326ffbaad59814e1d879a0b7",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -85,10 +85,10 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "4656e2b64d5426aad431338d7b749b6508074910",
+  "manifestCommit": "33c197e4326da227a6119e1c402b4da732ae9b1b",
   "preferenceTraining": {
     "includedInCheckpoint": false,
-    "recordCount": 771,
+    "recordCount": 775,
     "requiredPhase": "post_sft_preference_training",
     "status": "generated_not_trained"
   },
@@ -262,43 +262,43 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.010626,
-        "total": 0.026705
+        "target": 0.010616,
+        "total": 0.026689
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.022382,
-        "total": 0.089399
+        "target": 0.021739,
+        "total": 0.085615
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 378230,
+    "assistantTargetCharCount": 379287,
     "cortexCodebaseChunkRecordCount": 5,
     "cortexCodebaseFileRecordCount": 18,
-    "cortexCodebaseSelfAwarenessCandidateRecordCount": 6504,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 6559,
     "cortexCodebaseSelfAwarenessCoverage": "deterministic_supplemental_sample_of_git_tracked_text_files",
     "cortexCodebaseSelfAwarenessRecordCount": 25,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "cortexPublicBalanceDroppedRecordCount": 47,
     "sequenceBudgetDroppedRecordCount": 0,
-    "supplementalAssistantTargetCharCount": 56727,
-    "supplementalAssistantTargetCharShare": 0.14998017079554768,
-    "supplementalBalanceDroppedRecordCount": 11291,
+    "supplementalAssistantTargetCharCount": 56757,
+    "supplementalAssistantTargetCharShare": 0.14964130065095824,
+    "supplementalBalanceDroppedRecordCount": 11397,
     "supplementalSFTRecordCount": 42,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
-    "ultraSpecificRecordCount": 852,
+    "ultraSpecificRecordCount": 855,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
     "eval": 504,
-    "train_dpo": 725,
-    "train_sft": 1036,
-    "val_dpo": 46,
-    "val_sft": 51
+    "train_dpo": 727,
+    "train_sft": 1037,
+    "val_dpo": 48,
+    "val_sft": 53
   },
   "sourceDirty": false,
   "sourceFamilies": [
@@ -312,7 +312,7 @@
     "public_adapter_corpus_toolace_train"
   ],
   "sourceFamilyCounts": {
-    "adapter_ultra_specific": 852,
+    "adapter_ultra_specific": 855,
     "codebase_home_chunk_sft": 6,
     "codebase_home_sft": 7,
     "cortex_codebase_self_awareness": 25,
@@ -322,9 +322,9 @@
     "public_adapter_corpus_toolace_train": 7
   },
   "sourceIntegrity": {
-    "baseCommit": "4656e2b64d5426aad431338d7b749b6508074910",
+    "baseCommit": "33c197e4326da227a6119e1c402b4da732ae9b1b",
     "dirtyState": false,
-    "workingTreeDigest": "bddbd679f157064007d36e5ca8243460ae63951c2316a8a7ff29ff78a97d8751"
+    "workingTreeDigest": "5ea4e938b2aa2094838f318fb79da6060abb48253941263c9ebf8137ce53cafd"
   },
   "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
   "taskTypeCounts": {
@@ -340,8 +340,8 @@
     "cortex_route_curriculum_clarification": 288,
     "cortex_route_curriculum_selection": 22,
     "cortex_route_failure_repair_action": 101,
-    "cortex_route_failure_repair_clarification": 84,
-    "cortex_route_semantic_generalization_validation": 8,
+    "cortex_route_failure_repair_clarification": 85,
+    "cortex_route_semantic_generalization_validation": 10,
     "cortex_route_strict_retry_repair": 42,
     "manifest_grounding_cards": 4,
     "module_ownership_grounding": 6,
@@ -383,5 +383,5 @@
     "ultra_specific_missing_required_argument_clarification",
     "ultra_specific_regression_routing"
   ],
-  "worktreeFingerprint": "bddbd679f157064007d36e5ca8243460ae63951c2316a8a7ff29ff78a97d8751"
+  "worktreeFingerprint": "5ea4e938b2aa2094838f318fb79da6060abb48253941263c9ebf8137ce53cafd"
 }
