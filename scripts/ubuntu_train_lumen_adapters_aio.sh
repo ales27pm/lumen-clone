@@ -89,10 +89,29 @@ IFS=',' read -r -a AGENTS <<< "$AGENTS_CSV"
 if [[ -n "$EVAL_MAX_EXAMPLES" ]]; then
   [[ "$EVAL_MAX_EXAMPLES" =~ ^[1-9][0-9]*$ ]] || die "LUMEN_AIO_EVAL_MAX_EXAMPLES must be positive"
 fi
+[[ "$EVALUATE" != "0" || -z "$EVAL_MAX_EXAMPLES" ]] \
+  || die "disabled evaluation cannot retain a smoke cohort size"
 [[ "$OVERWRITE" == "0" || "$RESUME" == "0" ]] || die "overwrite and resume are mutually exclusive"
 [[ "$UPLOAD" == "0" ]] \
   || die "direct inner-loop upload is disabled; use ubuntu_train_lumen_full_pipeline.sh --upload"
 [[ "$EVALUATE" == "0" || "$RUN_PREFERENCE" == "1" ]] || die "evaluation requires the finalized preference adapters"
+
+if [[ "$EVALUATE" == "0" ]]; then
+  EVALUATION_SCOPE="none"
+elif [[ -n "$EVAL_MAX_EXAMPLES" ]]; then
+  EVALUATION_SCOPE="smoke"
+else
+  EVALUATION_SCOPE="full"
+fi
+EXECUTION_PLAN_ARGS=(--evaluation-scope "$EVALUATION_SCOPE")
+if [[ "$EVALUATION_SCOPE" == "smoke" ]]; then
+  EXECUTION_PLAN_ARGS+=(--evaluation-max-examples "$EVAL_MAX_EXAMPLES")
+fi
+if [[ "$CONVERT_GGUF" == "1" ]]; then
+  EXECUTION_PLAN_ARGS+=(--gguf-requested)
+else
+  EXECUTION_PLAN_ARGS+=(--no-gguf-requested)
+fi
 
 if [[ ! -d "$DATASET_SOURCE" && -d "$ROOT/generated/agent_manifest/fine_tuning" ]]; then
   DATASET_SOURCE="$ROOT/generated/agent_manifest/fine_tuning"
@@ -204,7 +223,8 @@ if [[ "$RESUME" == "1" ]]; then
       --run-root "$RUN_ROOT" \
       --agents "$AGENTS_CSV" \
       --variant "$EXPERIMENT_VARIANT" \
-      --container-digest "$CONTAINER_IMAGE_DIGEST"
+      --container-digest "$CONTAINER_IMAGE_DIGEST" \
+      "${EXECUTION_PLAN_ARGS[@]}"
   )
   log "resume mode skips verified complete phases and restarts incomplete phases"
 else
@@ -223,7 +243,8 @@ else
     cd "$ROOT"
     "$TRAIN_PY" -m tools.fine_tuning.unsloth.ubuntu_pipeline prepare \
       "${STATIC_ARGS[@]}" \
-      --run-root "$RUN_ROOT"
+      --run-root "$RUN_ROOT" \
+      "${EXECUTION_PLAN_ARGS[@]}"
   )
   (
     cd "$ROOT"
@@ -232,7 +253,8 @@ else
       --run-root "$RUN_ROOT" \
       --agents "$AGENTS_CSV" \
       --variant "$EXPERIMENT_VARIANT" \
-      --container-digest "$CONTAINER_IMAGE_DIGEST"
+      --container-digest "$CONTAINER_IMAGE_DIGEST" \
+      "${EXECUTION_PLAN_ARGS[@]}"
   )
 fi
 

@@ -167,6 +167,7 @@ bash scripts/ubuntu_train_lumen_full_pipeline.sh \
   --output-dir /srv/lumen-training/all-variants
 
 # Keep adapter directories but skip adapter-GGUF conversion.
+# Full evaluation still runs and records status=complete_without_gguf.
 bash scripts/ubuntu_train_lumen_full_pipeline.sh --no-gguf
 
 # Run only a bounded evaluation smoke pass while checking the host setup.
@@ -209,13 +210,16 @@ Additional launcher controls:
 | `--no-evaluate` | Skip frozen inference/scoring. Full evaluation is enabled by default. |
 | `--eval-smoke <n>` | Evaluate a deterministic semantic cohort of `n` cases per role; this is smoke evidence, not a quality pass. |
 | `--token-file <file>` | Mount an owner-only, mode-600 token only into the upload container. |
-| `--upload` | Upload verified outputs after training. Upload is off by default and the destination is private by default. |
+| `--upload` | Upload a full quality-passed run after training. Upload is off by default and the destination is private by default. |
+| `--allow-diagnostic-upload` | With `--upload`, explicitly permit smoke or unevaluated artifacts under the separate `diagnostic-runs/` namespace. |
 | `--public` | With `--upload`, explicitly request public visibility. Public publication is never the default. |
 
 Ubuntu resume is phase-boundary resume, not arbitrary checkpoint resume. With
 `--resume`, the image ID, source revision, environment, agents, variant,
-prepared-config digest, exact run-scoped paths, and self-hashed run manifest
-must still match. A fully verified SFT or DPO phase is kept; an incomplete
+prepared-config digest, exact run-scoped paths, self-hashed run manifest, and
+the immutable execution plan must still match. The execution plan binds
+`evaluationScope`, `evaluationMaxExamples`, and `ggufRequested` before training;
+resume cannot relabel missing evidence as an operator skip. A fully verified SFT or DPO phase is kept; an incomplete
 phase is removed only inside that agent's owned run subtree and restarted. For
 a multi-variant batch, existing variant directories resume and a variant that
 had not started yet is prepared fresh. Direct unbound
@@ -320,6 +324,28 @@ Use a fine-grained token with only the required repository permission. Do not
 put tokens in commands, checked-in environment files, logs, configs, or run
 manifests.
 
+Ordinary `--upload` requires `evaluationStatus=quality_gate_passed`,
+`evaluationScope=full`, and `promotionEligible=true`. A full quality pass is
+uploadable whether `ggufStatus` is `verified` or `skipped_by_operator`; the
+latter is the intentional `--no-gguf` case. Smoke and unevaluated artifacts
+require a second, explicit acknowledgement and never use the qualified run
+namespace:
+
+```bash
+bash scripts/ubuntu_train_lumen_full_pipeline.sh \
+  --eval-smoke 2 \
+  --upload \
+  --allow-diagnostic-upload \
+  --token-file /secure/path/lumen-hf-token
+```
+
+Qualified uploads use `runs/<run-id>/`; diagnostic uploads use
+`diagnostic-runs/<run-id>/`. The upload receipt binds the namespace, exact
+remote prefix, qualification, promotion eligibility, evaluation status/scope,
+GGUF status, whether GGUF was included, and whether the diagnostic override was
+applied. `--no-evaluate` and `--eval-smoke` are mutually exclusive regardless
+of argument order.
+
 ## Evidence And Promotion Boundaries
 
 A successful default Ubuntu run proves only the gates recorded by that run:
@@ -328,8 +354,17 @@ SFT/DPO training completion, adapter-lineage verification, the frozen
 evaluation quality gate, and any requested adapter conversion or upload. A
 bounded `--eval-smoke` run records smoke evidence and cannot become a full
 quality pass. Its top-level summary status is `smoke_complete`; a run without
-evaluation is `training_complete_without_full_evaluation`. Only a complete
-all-agent frozen quality pass records `status=complete`.
+evaluation is `training_complete_without_full_evaluation`. A complete all-agent
+frozen quality pass records `status=complete` when all requested GGUFs verify,
+or `status=complete_without_gguf` when conversion was disabled before execution.
+The summary records evaluation and conversion independently through
+`evaluationStatus`, `evaluationScope`, and `ggufStatus`; partial or mixed agent
+evidence is rejected.
+
+The execution-plan and summary schemas are fail-closed. Runs prepared with the
+older schema, which did not bind these independent state dimensions, are
+intentionally non-resumable and non-uploadable. Start a fresh run rather than
+rewriting historical evidence.
 
 It does not by itself prove:
 
