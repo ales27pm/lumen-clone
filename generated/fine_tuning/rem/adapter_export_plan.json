@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "6fc9f2dd33dc5e08638372d921263e985451363af87c143ee17f3e1469419918"
+        "reportSHA256": "bcded33c0282966dde47f6aa3684c048fc10163ced0ac603ccc0660eaf8ebcea"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,7 +41,7 @@
       "recordCount": 6,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "49b9e474f7fd248b635a04e8be10bc246d0d5280",
+    "manifestCommit": "4656e2b64d5426aad431338d7b749b6508074910",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 3,
@@ -63,9 +63,9 @@
       "rem_reflection"
     ],
     "sourceIntegrity": {
-      "baseCommit": "49b9e474f7fd248b635a04e8be10bc246d0d5280",
+      "baseCommit": "4656e2b64d5426aad431338d7b749b6508074910",
       "dirtyState": false,
-      "workingTreeDigest": "d5730c0ca10ad205d37008dbf1f31ecce80069da56ccf37b0941cb5623d40cba"
+      "workingTreeDigest": "bddbd679f157064007d36e5ca8243460ae63951c2316a8a7ff29ff78a97d8751"
     },
     "taskTypes": [
       "public_schema_failure_diagnosis",
@@ -120,7 +120,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "1bd085dea4c5ba1d543cb9d4a5c0ca81b940c1c38733faac285f9b2bde4a073c",
+    "experimentManifestSHA256": "9bdb5432a608a0ebc077054c284455eb4dd576358a895d61d41d7b44940bc867",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -179,12 +179,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
-  "trainingCodeBundleSHA256": "d5b7a4db0125761d4441a9468c88ced023eafbf2bae2648abd0779ac7ed1f337",
-  "trainingCodeSHA256": "7c53ebfac087ad6878108db9c98e7419cef79b10d63f4cb7d8672a7a34d9cf22",
+  "trainingCodeBundleSHA256": "7117b9431cb1838e6e24ede8bc70c39fab7c64fe0bfe22344f56666a8f991186",
+  "trainingCodeSHA256": "85997b098171d7c58f25db8f5a32b51a87f5e6c6ffee6bf3d82bd716eee6cdd0",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "e3133da09e1183073e92c1c2277388a2559aa91d4153d506f25310c7068881ec",
-    "orpo": "0761f3ec5690c7256db74373864a64c8af89eac607c2fe319e8e232624457c26",
-    "sft": "7c53ebfac087ad6878108db9c98e7419cef79b10d63f4cb7d8672a7a34d9cf22"
+    "dpo": "d87b4029fb47222434d779e7385279745f61611a9f1acb0fead6602571fa4afb",
+    "orpo": "87193d5863d481ca8d53ac7d1e6b408cd26df67e9cfa9007680ac72cc76e3436",
+    "sft": "85997b098171d7c58f25db8f5a32b51a87f5e6c6ffee6bf3d82bd716eee6cdd0"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
