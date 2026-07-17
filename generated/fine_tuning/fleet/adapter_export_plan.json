@@ -33,15 +33,15 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "085490a353c1ef66072c857a9d8bdc2ff350b7c4cd03c86c21e5c545dd4557e9"
+        "reportSHA256": "b0d81c96e2932177703651ac5b81eedc76f5b95b5b4d8817615763b3b3870314"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "c44c0a8670180dc9d7305a5590f323c065a4956a796b5d60c07907b5ba52368d",
+      "frozenEvaluationSHA256": "d084d6f59eb10dc09a91ed89e612db0285129524ed2b32bec5a59b4ffc510954",
       "recordCount": 15,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
+    "manifestCommit": "49b9e474f7fd248b635a04e8be10bc246d0d5280",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 25,
@@ -68,9 +68,9 @@
       "self_model_sft"
     ],
     "sourceIntegrity": {
-      "baseCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
+      "baseCommit": "49b9e474f7fd248b635a04e8be10bc246d0d5280",
       "dirtyState": false,
-      "workingTreeDigest": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
+      "workingTreeDigest": "d5730c0ca10ad205d37008dbf1f31ecce80069da56ccf37b0941cb5623d40cba"
     },
     "taskTypes": [
       "codebase_home_grounding",
@@ -132,7 +132,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "3935166c44061892233085f23e9f6c08bab5add8f9733f0ab7f08e086fdf6d7c",
+    "experimentManifestSHA256": "fb8850e033e4476f230de08c93075ffff3113570b5f863b0f119193402a28501",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -191,12 +191,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.",
-  "trainingCodeBundleSHA256": "42e198f843c54adcf48ada35067017d746041a10f55b39173c9a04d99ae05e99",
-  "trainingCodeSHA256": "3143af95849e563d9d33872fa4686c4dc4b7bc3002b1c66de308fe21d7f296d7",
+  "trainingCodeBundleSHA256": "d5b7a4db0125761d4441a9468c88ced023eafbf2bae2648abd0779ac7ed1f337",
+  "trainingCodeSHA256": "7c53ebfac087ad6878108db9c98e7419cef79b10d63f4cb7d8672a7a34d9cf22",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "aba8f66d2319c8dfd0a4eb089693efb5062f219360d69bca242e6c1066b593d3",
-    "orpo": "1cf8fc4d804c825475a97fd2b3beada04fa0ec8dba951b228ea5d2cdaf38e5d5",
-    "sft": "3143af95849e563d9d33872fa4686c4dc4b7bc3002b1c66de308fe21d7f296d7"
+    "dpo": "e3133da09e1183073e92c1c2277388a2559aa91d4153d506f25310c7068881ec",
+    "orpo": "0761f3ec5690c7256db74373864a64c8af89eac607c2fe319e8e232624457c26",
+    "sft": "7c53ebfac087ad6878108db9c98e7419cef79b10d63f4cb7d8672a7a34d9cf22"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
