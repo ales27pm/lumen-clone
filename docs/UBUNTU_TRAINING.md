@@ -225,7 +225,7 @@ Additional launcher controls:
 | `--overwrite` | Destructively replace the selected run directory after path-safety checks. |
 | `--resume` | Reuse an existing run, skip phases whose complete artifacts re-verify, and restart incomplete phases. |
 | `--no-evaluate` | Skip frozen inference/scoring. Full evaluation is enabled by default. |
-| `--eval-smoke <n>` | Evaluate a deterministic semantic cohort of `n` cases per role; this is smoke evidence, not a quality pass. |
+| `--eval-smoke <n>` | Evaluate a deterministic semantic cohort of `n` cases per role; `n` must be smaller than every selected role's frozen suite, and this is smoke evidence, not a quality pass. |
 | `--token-file <file>` | Mount an owner-only, mode-600 token only into the upload container. |
 | `--upload` | Upload a full quality-passed run after training. Upload is off by default and the destination is private by default. |
 | `--allow-diagnostic-upload` | With `--upload`, explicitly permit smoke or unevaluated artifacts under the separate `diagnostic-runs/` namespace. |
@@ -236,7 +236,11 @@ Ubuntu resume is phase-boundary resume, not arbitrary checkpoint resume. With
 prepared-config digest, exact run-scoped paths, self-hashed run manifest, and
 the immutable execution plan must still match. The execution plan binds
 `evaluationScope`, `evaluationMaxExamples`, and `ggufRequested` before training;
-resume cannot relabel missing evidence as an operator skip. A fully verified SFT or DPO phase is kept; an incomplete
+its digest is retained by each config's variant attestation, reconstructed from
+the hash-bound configs, and repeated in evaluation evidence, summaries, and
+upload receipts. Resume or rehashed evidence therefore cannot relabel a
+different cohort or missing conversion as an operator skip. A fully verified
+SFT or DPO phase is kept; an incomplete
 phase is removed only inside that agent's owned run subtree and restarted. For
 a multi-variant batch, existing variant directories resume and a variant that
 had not started yet is prepared fresh. Direct unbound
@@ -362,8 +366,8 @@ bash scripts/ubuntu_train_lumen_full_pipeline.sh \
 Qualified uploads use `runs/<run-id>/`; diagnostic uploads use
 `diagnostic-runs/<run-id>/`. The upload receipt binds the namespace, exact
 remote prefix, qualification, promotion eligibility, evaluation status/scope,
-GGUF status, whether GGUF was included, and whether the diagnostic override was
-applied. `--no-evaluate` and `--eval-smoke` are mutually exclusive regardless
+exact execution-plan digest, GGUF status, whether GGUF was included, and whether
+the diagnostic override was applied. `--no-evaluate` and `--eval-smoke` are mutually exclusive regardless
 of argument order.
 
 ## Evidence And Promotion Boundaries

@@ -22,7 +22,7 @@ from lumen_manifest_crawler.manifest import (
     ToolArgumentManifest,
     ToolManifest,
 )
-from tools.fine_tuning.unsloth import evaluate_adapter
+from tools.fine_tuning.unsloth import evaluate_adapter, ubuntu_pipeline
 
 
 _STRICT_JSON_EDGE_CASES = (
@@ -510,6 +510,36 @@ def test_evaluation_outcome_fails_smoke_unless_every_generated_case_passes(
         status=status,
         format_failure_count=format_failure_count,
     ) == expected_exit_code
+
+
+def test_prepared_smoke_plan_rejects_a_cohort_as_large_as_the_frozen_suite() -> None:
+    plan = ubuntu_pipeline.execution_plan(
+        evaluation_scope="smoke",
+        evaluation_max_examples=3,
+        gguf_requested=False,
+    )
+
+    with pytest.raises(ValueError, match="must be smaller"):
+        evaluate_adapter._verified_evaluation_execution_plan(
+            {"runExecutionPlan": plan},
+            max_examples=3,
+            frozen_case_count=3,
+        )
+
+
+def test_prepared_smoke_plan_rejects_cli_cohort_drift() -> None:
+    plan = ubuntu_pipeline.execution_plan(
+        evaluation_scope="smoke",
+        evaluation_max_examples=2,
+        gguf_requested=False,
+    )
+
+    with pytest.raises(ValueError, match="drifted from the prepared smoke plan"):
+        evaluate_adapter._verified_evaluation_execution_plan(
+            {"runExecutionPlan": plan},
+            max_examples=1,
+            frozen_case_count=3,
+        )
 
 
 @pytest.mark.parametrize(

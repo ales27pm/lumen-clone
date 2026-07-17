@@ -136,6 +136,7 @@ STATIC_ARGS=(
   cd "$ROOT"
   python3 -m tools.fine_tuning.unsloth.ubuntu_pipeline static-preflight \
     "${STATIC_ARGS[@]}" \
+    "${EXECUTION_PLAN_ARGS[@]}" \
     --run-root "$RUN_ROOT" \
     --allowed-run-parent "$ALLOWED_RUN_PARENT" \
     --run-id "$RUN_ID"

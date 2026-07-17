@@ -34,7 +34,7 @@ except ImportError:
     )
 
 
-EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.2.0"
+EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.3.0"
 UBUNTU_SOURCE_INTEGRITY_FIELDS = (
     "workingTreeDigest",
     "ubuntuOrchestrationCodeSHA256",
@@ -313,6 +313,35 @@ def select_evaluation_records(
             str(record.get("evalID") or ""),
         ),
     )[:max_examples]
+
+
+def _verified_evaluation_execution_plan(
+    cfg: Mapping[str, Any],
+    *,
+    max_examples: int | None,
+    frozen_case_count: int,
+) -> dict[str, Any] | None:
+    raw_plan = cfg.get("runExecutionPlan")
+    if raw_plan is None:
+        return None
+    from tools.fine_tuning.unsloth.ubuntu_pipeline import (
+        _verified_execution_plan,
+    )
+
+    plan = _verified_execution_plan(raw_plan)
+    scope = plan["evaluationScope"]
+    planned_max_examples = plan["evaluationMaxExamples"]
+    if scope == "none":
+        raise ValueError("The prepared execution plan disables evaluation")
+    if scope == "full" and max_examples is not None:
+        raise ValueError("Full evaluation cannot use --max-examples")
+    if scope == "smoke" and max_examples != planned_max_examples:
+        raise ValueError("--max-examples drifted from the prepared smoke plan")
+    if scope == "smoke" and planned_max_examples >= frozen_case_count:
+        raise ValueError(
+            "The prepared smoke cohort must be smaller than the frozen evaluation suite"
+        )
+    return plan
 
 
 def _evaluation_outcome(
@@ -2027,6 +2056,11 @@ def run(args: argparse.Namespace) -> int:
         agent=agent,
         evaluation_module=evaluation_module,
     )
+    evaluation_plan = _verified_evaluation_execution_plan(
+        cfg,
+        max_examples=args.max_examples,
+        frozen_case_count=len(all_records),
+    )
     (
         tool_contracts,
         allowed_slots,
@@ -2063,7 +2097,11 @@ def run(args: argparse.Namespace) -> int:
         all_records,
         max_examples=args.max_examples,
     )
-    complete_evaluation = len(selected_records) == len(all_records)
+    complete_evaluation = (
+        evaluation_plan["evaluationScope"] == "full"
+        if evaluation_plan is not None
+        else len(selected_records) == len(all_records)
+    )
     model, tokenizer = load_inference_model(cfg, adapter_dir=adapter_dir)
     (
         outputs,
@@ -2118,6 +2156,15 @@ def run(args: argparse.Namespace) -> int:
         format_failure_count=format_failure_count,
         report=report,
     )
+    execution_plan_evidence = (
+        {
+            "executionPlanSHA256": evaluation_plan["executionPlanSHA256"],
+            "evaluationScope": evaluation_plan["evaluationScope"],
+            "evaluationMaxExamples": evaluation_plan["evaluationMaxExamples"],
+        }
+        if evaluation_plan is not None
+        else {}
+    )
     run_manifest: dict[str, Any] = {
         "schemaVersion": EVALUATION_RUN_SCHEMA_VERSION,
         "status": status,
@@ -2144,6 +2191,7 @@ def run(args: argparse.Namespace) -> int:
         "fullCaseCount": len(all_records),
         "generatedCaseCount": len(selected_records),
         "completeEvaluation": complete_evaluation,
+        **execution_plan_evidence,
         "initialFormatFailureCount": initial_format_failure_count,
         "formatRecoveryCount": format_recovery_count,
         "formatFailureCount": format_failure_count,

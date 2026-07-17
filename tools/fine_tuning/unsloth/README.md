@@ -98,7 +98,9 @@ python -m tools.fine_tuning.unsloth.evaluate_adapter \
 The evaluator writes candidate outputs, a scored report, and a self-hashed run
 manifest. Malformed output and full-suite quality failures return nonzero.
 Training completion alone is not a model-quality pass, and no local result is
-a TestFlight/device pass. `--eval-smoke N` is bounded smoke evidence only.
+a TestFlight/device pass. `--eval-smoke N` is bounded smoke evidence only; the
+prepared `N` is bound into the evaluation evidence and must be smaller than the
+frozen suite.
 
 8. Never train on private app exports unless explicitly sanitized.
 
