@@ -85,6 +85,10 @@ RUNTIME_SOURCE_BINDING_SPACE_REPOSITORY_HEAD = (
 RUNTIME_SOURCE_BINDING_SPACE_DECLARATION = "operator_declared_only"
 RUNTIME_SOURCE_BINDING_LOCAL = "local_checkout_observed"
 RUNTIME_SOURCE_BINDING_LOCAL_METHOD = "git_head_plus_training_code_manifest"
+RUNTIME_SOURCE_BINDING_ATTESTED = "verified_clean_snapshot"
+RUNTIME_SOURCE_BINDING_ATTESTED_METHOD = (
+    "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+)
 _PHASES = ("sft", "dpo", "orpo")
 _TRAINING_CODE_EXTENSIONS = (
     ".cfg",
@@ -1540,16 +1544,17 @@ def validate_runtime_source_audit(
             raise ValueError(
                 "Local runtime-source observations must equal the current Git HEAD"
             )
-        if status != RUNTIME_SOURCE_BINDING_LOCAL:
-            raise ValueError(
-                "Local Git runtime source binding status must be "
-                "local_checkout_observed"
-            )
-        if method != RUNTIME_SOURCE_BINDING_LOCAL_METHOD:
-            raise ValueError(
-                "Local Git runtime source binding method must be "
-                "git_head_plus_training_code_manifest"
-            )
+        if (status, method) not in {
+            (
+                RUNTIME_SOURCE_BINDING_LOCAL,
+                RUNTIME_SOURCE_BINDING_LOCAL_METHOD,
+            ),
+            (
+                RUNTIME_SOURCE_BINDING_ATTESTED,
+                RUNTIME_SOURCE_BINDING_ATTESTED_METHOD,
+            ),
+        }:
+            raise ValueError("Unsupported local Git runtime-source binding evidence")
 
     return {
         field: value.get(field)

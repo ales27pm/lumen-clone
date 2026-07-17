@@ -189,6 +189,10 @@ _NON_TRAINING_CONFIG_FIELDS = {
     "observedRuntimeRevision",
     "runtimeSourceBindingStatus",
     "runtimeSourceBindingMethod",
+    "workingTreeDigest",
+    "ubuntuOrchestrationCodeSHA256",
+    "ubuntuSourceIntegritySHA256",
+    "ubuntuSourceIntegrity",
     "spaceConfigurationSHA256",
     "zeroGPUSize",
     "zeroGPUDurationSeconds",
@@ -215,6 +219,10 @@ RUNTIME_SOURCE_BINDING_SPACE_HEAD = "huggingface_repository_head_supplemental"
 RUNTIME_SOURCE_BINDING_DECLARATION = "operator_declared_only"
 RUNTIME_SOURCE_BINDING_LOCAL = "local_checkout_observed"
 RUNTIME_SOURCE_BINDING_LOCAL_METHOD = "git_head_plus_training_code_manifest"
+RUNTIME_SOURCE_BINDING_ATTESTED = "verified_clean_snapshot"
+RUNTIME_SOURCE_BINDING_ATTESTED_METHOD = (
+    "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+)
 SFT_PARENT_CONTROLLED_FIELDS = (
     "agent",
     "variant",
@@ -495,10 +503,20 @@ def _valid_runtime_source_audit(
         return (
             audit["observedRepositoryRevision"] == expected
             and audit["observedRuntimeRevision"] == expected
-            and audit["runtimeSourceBindingStatus"]
-            == RUNTIME_SOURCE_BINDING_LOCAL
-            and audit["runtimeSourceBindingMethod"]
-            == RUNTIME_SOURCE_BINDING_LOCAL_METHOD
+            and (
+                audit["runtimeSourceBindingStatus"],
+                audit["runtimeSourceBindingMethod"],
+            )
+            in {
+                (
+                    RUNTIME_SOURCE_BINDING_LOCAL,
+                    RUNTIME_SOURCE_BINDING_LOCAL_METHOD,
+                ),
+                (
+                    RUNTIME_SOURCE_BINDING_ATTESTED,
+                    RUNTIME_SOURCE_BINDING_ATTESTED_METHOD,
+                ),
+            }
         )
     return False
 
