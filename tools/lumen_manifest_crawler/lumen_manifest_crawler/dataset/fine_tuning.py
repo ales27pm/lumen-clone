@@ -118,7 +118,11 @@ CORTEX_ROUTE_INSTRUCTION = (
     "preference `kind`, even though Cortex never emits Executor arguments. A specifically "
     "designated recipient may "
     "be an address, person, organization, or role such as the supplier and supplies "
-    "`to`. A concrete event noun phrase supplies `title`. A precise relative delay supplies "
+    "`to`. An event title must be a distinct name, topic, or description separate from "
+    "the calendar-create operation. The generic object in operation wording such as "
+    "create, add, or schedule an event, calendar event, appointment, meeting, or calendar "
+    "entry does not supply `title`. A separate name or `for <topic>` complement does supply "
+    "`title`, even when that topic is a simple noun. A precise relative delay supplies "
     "`inMinutes` or `startsInMinutes`, while a vague daypart or scheduling adverb does not. "
     "Operation wording supplies no required values. A standalone pronoun, deictic phrase, "
     "unresolved relative reference, or bare object class does not supply an identifier, "
@@ -172,7 +176,9 @@ CORTEX_ROUTE_DECISION_ENDCAP = (
     "apply to generic latest items or selected/current message wording. In contrast, a "
     "that-clause containing a complete proposition supplies content, a concrete "
     "topic after about, regarding, or concerning supplies query, personal-preference "
-    "wording supplies preference kind, and a concrete event noun phrase supplies title. "
+    "wording supplies preference kind, and a distinct event name, topic, or `for <topic>` "
+    "complement supplies title. The generic event-like object of a create, add, or schedule "
+    "operation is only the object class and does not supply title. "
     "Precise relative delays can supply numeric time fields; vague dayparts cannot. If any "
     "required value is "
     "absent, summarize that row and exact missing subset before status, "
@@ -4252,6 +4258,15 @@ def _cortex_failure_repair_sft_records(
             ),
         ),
         (
+            "calendar_generic_object_with_time",
+            "missing_title",
+            "calendar.create",
+            ["title"],
+            (
+                "Put an event on the device calendar twenty minutes from now.",
+            ),
+        ),
+        (
             "outlook_send_recipient_only",
             "unmarked_incomplete",
             "outlook.mail.send",
@@ -4660,6 +4675,9 @@ def _cortex_failure_repair_sft_records(
         ),
         "calendar_human_event_vague_time": (
             "calendar_event_title_without_numeric_delay"
+        ),
+        "calendar_generic_object_with_time": (
+            "calendar_operation_object_not_title"
         ),
         "memory_recall_query": "implicit_topic_memory_recall",
         "memory_save_preference": "implicit_preference_memory_save",
@@ -5081,6 +5099,20 @@ def _cortex_failure_repair_sft_records(
             "calendar.create",
             ["startsInMinutes"],
             "calendar_event_title_without_numeric_delay",
+        ),
+        (
+            "validation_calendar_generic_object_missing_all",
+            "Arrange a fresh calendar item for me.",
+            "calendar.create",
+            ["title", "startsInMinutes"],
+            "calendar_operation_object_not_title",
+        ),
+        (
+            "validation_calendar_generic_object_missing_title",
+            "Place a calendar appointment on my agenda in ninety minutes.",
+            "calendar.create",
+            ["title"],
+            "calendar_operation_object_not_title",
         ),
         (
             "validation_outlook_latest_read",
@@ -6036,6 +6068,26 @@ def _cortex_failure_repair_dpo_pairs(
             "natural_calendar_partial_4",
         ),
         (
+            "calendar_generic_object_missing_all",
+            "Place a new event onto my calendar.",
+            clarification("calendar.create", ["title", "startsInMinutes"]),
+            wrong_missing_subset(
+                "calendar.create",
+                ["title", "startsInMinutes"],
+                ["startsInMinutes"],
+            ),
+            "calendar_operation_object_not_title",
+            "natural_calendar_generic_missing_all",
+        ),
+        (
+            "calendar_generic_object_with_time_missing_title",
+            "Schedule an event twenty minutes from now.",
+            clarification("calendar.create", ["title"]),
+            action("calendar.create"),
+            "calendar_operation_object_not_title",
+            "natural_calendar_generic_missing_title",
+        ),
+        (
             "outlook_reply_all_selected_without_body_1",
             "Send an all-recipient response on the chosen Microsoft-mail item.",
             clarification("outlook.message.reply_all", ["messageId", "body"]),
@@ -6193,6 +6245,24 @@ def _cortex_failure_repair_dpo_pairs(
                 "calendar.schedule",
             ),
             "calendar_event_title_without_numeric_delay",
+        ),
+        (
+            "validation_calendar_generic_object_missing_all",
+            "Arrange a fresh calendar item for me.",
+            clarification("calendar.create", ["title", "startsInMinutes"]),
+            wrong_missing_subset(
+                "calendar.create",
+                ["title", "startsInMinutes"],
+                ["startsInMinutes"],
+            ),
+            "calendar_operation_object_not_title",
+        ),
+        (
+            "validation_calendar_generic_object_missing_title",
+            "Place a calendar appointment on my agenda in ninety minutes.",
+            clarification("calendar.create", ["title"]),
+            action("calendar.create"),
+            "calendar_operation_object_not_title",
         ),
         (
             "validation_outlook_latest_not_files",

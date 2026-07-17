@@ -733,6 +733,8 @@ def test_cortex_prompts_and_preferred_outputs_enforce_one_json_object(compiled_f
         "Natural wording can supply a value without naming its field",
         "Every actionable or clarification route copies defaultIntent exactly",
         "specifically designated recipient",
+        "generic object in operation wording",
+        "A separate name or `for <topic>` complement",
         "unresolved relative reference, or bare object class",
         "every action or clarification copies its defaultIntent",
         "five-field explicit choose-only selection",
@@ -3456,6 +3458,7 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
         ("alarm_countdown_duration_only", "missing_title"): 2,
         ("alarm_schedule_missing_values", "unmarked_incomplete"): 2,
         ("calendar_create_missing_values", "unmarked_incomplete"): 2,
+        ("calendar_generic_object_with_time", "missing_title"): 1,
         ("outlook_send_recipient_only", "unmarked_incomplete"): 2,
         ("outlook_send_named_recipient_only", "unmarked_incomplete"): 3,
         ("outlook_send_named_recipient_only", "complete"): 3,
@@ -3588,6 +3591,8 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
             "calendar_event_vague_time_missing_start_2",
             "calendar_event_vague_time_missing_start_3",
             "calendar_event_vague_time_missing_start_4",
+            "calendar_generic_object_missing_all",
+            "calendar_generic_object_with_time_missing_title",
             "outlook_reply_all_selected_without_body_1",
             "outlook_reply_all_selected_without_body_2",
             "outlook_reply_all_selected_with_body",
@@ -3611,6 +3616,7 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
     assert len(dpo_records) == len(expected_dpo_cases)
     expected_targeted_family_counts = {
         "calendar_event_title_without_numeric_delay": (4, 4),
+        "calendar_operation_object_not_title": (1, 2),
         "implicit_duration_countdown_missing_title": (6, 2),
         "implicit_preference_memory_save": (10, 8),
         "implicit_topic_memory_recall": (4, 2),
@@ -3701,6 +3707,10 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
         ("calendar_create_missing_values", "unmarked_incomplete"): (
             "calendar.create",
             ["title", "startsInMinutes"],
+        ),
+        ("calendar_generic_object_with_time", "missing_title"): (
+            "calendar.create",
+            ["title"],
         ),
         ("outlook_send_recipient_only", "unmarked_incomplete"): (
             "outlook.mail.send",
@@ -4162,6 +4172,32 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
         assert rejected["selectedToolID"] == rejected_tool_id
         assert rejected["missingArguments"] == rejected_missing
 
+    generic_calendar_expectations = {
+        "calendar_generic_object_missing_all": (
+            ["title", "startsInMinutes"],
+            ["startsInMinutes"],
+        ),
+        "calendar_generic_object_with_time_missing_title": (
+            ["title"],
+            None,
+        ),
+    }
+    for case, (chosen_missing, rejected_missing) in (
+        generic_calendar_expectations.items()
+    ):
+        chosen = json.loads(by_case[case]["chosen"]["content"])
+        rejected = json.loads(by_case[case]["rejected"]["content"])
+        assert chosen["selectedToolID"] == "calendar.create"
+        assert chosen["missingArguments"] == chosen_missing
+        assert "actionStep" not in chosen
+        assert rejected["selectedToolID"] == "calendar.create"
+        if rejected_missing is None:
+            assert rejected["actionStep"]["toolID"] == "calendar.create"
+            assert "missingArguments" not in rejected
+        else:
+            assert rejected["missingArguments"] == rejected_missing
+            assert "actionStep" not in rejected
+
     reply_all_expected_missing = {
         "outlook_reply_all_selected_without_body_1": (
             ["messageId", "body"],
@@ -4277,6 +4313,16 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
             ["startsInMinutes"],
             "calendar_event_title_without_numeric_delay",
         ),
+        "validation_calendar_generic_object_missing_all": (
+            "calendar.create",
+            ["title", "startsInMinutes"],
+            "calendar_operation_object_not_title",
+        ),
+        "validation_calendar_generic_object_missing_title": (
+            "calendar.create",
+            ["title"],
+            "calendar_operation_object_not_title",
+        ),
         "validation_outlook_latest_read": (
             "outlook.message.read",
             None,
@@ -4324,6 +4370,16 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
             ["startsInMinutes"],
             "calendar_event_title_without_numeric_delay",
         ),
+        "validation_calendar_generic_object_missing_all": (
+            "calendar.create",
+            ["title", "startsInMinutes"],
+            "calendar_operation_object_not_title",
+        ),
+        "validation_calendar_generic_object_missing_title": (
+            "calendar.create",
+            ["title"],
+            "calendar_operation_object_not_title",
+        ),
         "validation_outlook_latest_not_files": (
             "outlook.message.read",
             None,
@@ -4346,8 +4402,8 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
         ),
     }
 
-    assert len(val_sft) == 8
-    assert len(val_dpo) == 9
+    assert len(val_sft) == 10
+    assert len(val_dpo) == 11
     assert {record["metadata"]["repairCase"] for record in val_sft} == set(
         expected_sft_routes
     )
@@ -4410,6 +4466,14 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
         "validation_calendar_canonical_id": (
             "calendar.schedule",
             ["startsInMinutes"],
+        ),
+        "validation_calendar_generic_object_missing_all": (
+            "calendar.create",
+            ["startsInMinutes"],
+        ),
+        "validation_calendar_generic_object_missing_title": (
+            "calendar.create",
+            None,
         ),
         "validation_outlook_latest_not_files": ("files.read", ["name"]),
         "validation_outlook_selected_not_files": ("files.read", ["name"]),
@@ -4517,6 +4581,7 @@ def test_cortex_targeted_failure_repairs_stay_below_frozen_eval_containment(
         "natural_calendar_human_event_vague_time_missing_numeric_start_2",
         "natural_calendar_human_event_vague_time_missing_numeric_start_3",
         "natural_calendar_human_event_vague_time_missing_numeric_start_4",
+        "natural_calendar_generic_object_with_time_missing_title_1",
         "natural_memory_recall_query_actionable_3",
         "natural_memory_recall_query_actionable_4",
         "natural_memory_save_preference_actionable_9",
@@ -4557,6 +4622,8 @@ def test_cortex_targeted_failure_repairs_stay_below_frozen_eval_containment(
         "calendar_event_vague_time_missing_start_2",
         "calendar_event_vague_time_missing_start_3",
         "calendar_event_vague_time_missing_start_4",
+        "calendar_generic_object_missing_all",
+        "calendar_generic_object_with_time_missing_title",
         "memory_recall_topic_action_1",
         "memory_recall_topic_action_2",
         "memory_save_preference_action_7",
