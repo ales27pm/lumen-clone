@@ -25,6 +25,8 @@ from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning
 from lumen_manifest_crawler.dataset.fine_tuning import (
     _exclude_evaluation_segment_matches,
     _required_eval_templates,
+    _ultra_specific_eval_templates,
+    _with_cortex_route_contract_metric,
 )
 from lumen_manifest_crawler.manifest import (
     AgentBehaviorManifest,
@@ -36,6 +38,20 @@ from lumen_manifest_crawler.output.writer import _write_fine_tuning_outputs
 from lumen_manifest_crawler.fleet_artifacts import generate_fleet_artifacts
 from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
     public_evaluation_text_shingle_hashes,
+)
+
+
+_STRICT_JSON_EDGE_CASES = (
+    pytest.param(
+        '{"a":' + "[" * 500 + "0" + "]" * 500 + "}",
+        "json_nesting_too_deep",
+        id="excessive-nesting",
+    ),
+    pytest.param(
+        '{"value":"\\ud800"}',
+        "unpaired_unicode_surrogate",
+        id="unpaired-unicode-surrogate",
+    ),
 )
 
 
@@ -242,6 +258,558 @@ def test_legacy_expectations_upgrade_to_versioned_executable_metrics() -> None:
     ]
 
 
+def test_exact_arguments_expectation_scores_entire_object_and_fails_closed() -> None:
+    record = upgrade_evaluation_record(
+        {
+            "messages": [{"role": "user", "content": "Use the exact supplied values."}],
+            "expected": {
+                "tool": "weather.current",
+                "arguments": {"location": "Montreal"},
+            },
+            "metadata": {"agent": "executor", "evalType": "tool_schema_adherence"},
+        }
+    )
+
+    assert [metric["type"] for metric in record["metrics"]] == [
+        "manifest_tool_call",
+        "json_field_equals",
+    ]
+    assert record["metrics"][1] == {
+        "type": "json_field_equals",
+        "candidatePaths": ["arguments"],
+        "expected": {"location": "Montreal"},
+    }
+
+    exact = score_evaluation_suite(
+        [record],
+        {record["evalID"]: {"tool": "weather.current", "arguments": {"location": "Montreal"}}},
+        tool_contracts=_tool_contracts(),
+    )
+    assert exact["weightedScore"] == 1.0
+
+    for arguments in (
+        {"location": "Toronto"},
+        {"location": "Montreal", "units": "metric"},
+    ):
+        mismatched = score_evaluation_suite(
+            [record],
+            {record["evalID"]: {"tool": "weather.current", "arguments": arguments}},
+            tool_contracts=_tool_contracts(),
+        )
+        exact_metric = next(
+            result
+            for result in mismatched["caseResults"][0]["metricResults"]
+            if result["type"] == "json_field_equals"
+        )
+        assert exact_metric["type"] == "json_field_equals"
+        assert exact_metric["passed"] is False
+        assert exact_metric["reason"] == "missing_or_unequal_field"
+        assert mismatched["weightedScore"] == 0.0
+
+    malformed = upgrade_evaluation_record(
+        {
+            "messages": [{"role": "user", "content": "Bad declarative contract."}],
+            "expected": {"arguments": ["location"]},
+            "metadata": {"agent": "executor", "evalType": "tool_schema_adherence"},
+        }
+    )
+    assert malformed["metrics"] == [
+        {
+            "type": "unsupported_contract",
+            "contractKey": "arguments",
+            "agent": "executor",
+        }
+    ]
+
+
+def test_smoke_scoring_binds_selected_cases_to_the_full_frozen_suite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frozen = [
+        upgrade_evaluation_record(
+            {
+                "evalID": f"eval-smoke-{index}",
+                "messages": [
+                    {"role": "user", "content": f"Return JSON for case {index}."}
+                ],
+                "metrics": [{"type": "json_valid"}],
+                "metadata": {
+                    "agent": "executor",
+                    "evalType": "smoke",
+                    "critical": True,
+                },
+            }
+        )
+        for index in range(1, 3)
+    ]
+    selected = [frozen[1]]
+    outputs = {selected[0]["evalID"]: {"valid": True}}
+    frozen_sha256 = canonical_sha256(frozen)
+    artifact_sha256 = "a" * 64
+    variant_manifest = {
+        "frozenEvaluationSHA256": frozen_sha256,
+        "variantManifestSHA256": "b" * 64,
+        "artifact": {"adapterSHA256": artifact_sha256},
+    }
+    monkeypatch.setattr(
+        adapter_evaluation,
+        "_valid_variant_manifest",
+        lambda *_args, **_kwargs: True,
+    )
+
+    report = score_evaluation_suite(
+        selected,
+        outputs,
+        frozen_evaluation_records=frozen,
+        agent="executor",
+        variant="internal_plus_public_optimized",
+        variant_manifest=variant_manifest,
+        artifact_sha256=artifact_sha256,
+    )
+
+    assert report["evaluationSHA256"] == frozen_sha256
+    assert report["variantLineageBound"] is True
+    assert report["promotionEvidenceBound"] is False
+    assert report["caseCount"] == 1
+    assert report["frozenCaseCount"] == 2
+    assert report["completeEvaluation"] is False
+    assert report["passedCaseCount"] == 1
+    assert report["missingOutputCount"] == 0
+    assert report["criticalFailureCount"] == 0
+    assert report["evidenceComplete"] is True
+    assert [case["evalID"] for case in report["caseResults"]] == [
+        selected[0]["evalID"]
+    ]
+
+    full_outputs = {record["evalID"]: {"valid": True} for record in frozen}
+    full_report = score_evaluation_suite(
+        frozen,
+        full_outputs,
+        frozen_evaluation_records=frozen,
+        agent="executor",
+        variant="internal_plus_public_optimized",
+        variant_manifest=variant_manifest,
+        artifact_sha256=artifact_sha256,
+    )
+    assert full_report["variantLineageBound"] is True
+    assert full_report["promotionEvidenceBound"] is True
+    assert full_report["caseCount"] == 2
+    assert full_report["frozenCaseCount"] == 2
+    assert full_report["completeEvaluation"] is True
+
+    mutated = json.loads(json.dumps(selected))
+    mutated[0]["messages"][-1]["content"] = "Score a different frozen case."
+    with pytest.raises(ValueError, match="exact subset of the frozen suite"):
+        score_evaluation_suite(
+            mutated,
+            outputs,
+            frozen_evaluation_records=frozen,
+        )
+
+
+def test_full_suite_scoring_is_unchanged_by_explicit_frozen_records() -> None:
+    records = [
+        upgrade_evaluation_record(
+            _eval("executor", f"full-{index}", [{"type": "json_valid"}])
+        )
+        for index in range(2)
+    ]
+    outputs = {record["evalID"]: {"valid": True} for record in records}
+
+    assert score_evaluation_suite(records, outputs) == score_evaluation_suite(
+        records,
+        outputs,
+        frozen_evaluation_records=records,
+    )
+
+
+def test_cortex_route_contract_scores_complete_record_specific_shapes() -> None:
+    tool_contracts = {
+        "files.read": {
+            "requiresApproval": False,
+            "arguments": [
+                {"name": "name", "type": "string", "required": True},
+            ],
+        },
+        "mail.draft": {
+            "requiresApproval": True,
+            "arguments": [
+                {"name": "to", "type": "string", "required": True},
+                {"name": "body", "type": "string", "required": True},
+            ],
+        },
+    }
+    cases = [
+        (
+            {
+                "type": "cortex_route_contract",
+                "mode": "actionable",
+                "expectedToolID": "files.read",
+                "expectedIntent": "files",
+            },
+            {
+                "selectedToolID": "files.read",
+                "intent": "files",
+                "reasoningSummary": (
+                    "Manifest row files.read has all exact required names supplied: name."
+                ),
+                "actionStep": {
+                    "type": "tool_call",
+                    "toolID": "files.read",
+                    "mustPersistBeforeFinal": True,
+                },
+                "requiresApproval": False,
+                "nextModel": "executor",
+            },
+            {"selectedToolID": "files.read", "actionStep": "anything"},
+        ),
+        (
+            {
+                "type": "cortex_route_contract",
+                "mode": "clarification",
+                "expectedToolID": "files.read",
+                "expectedIntent": "files",
+                "requiredArguments": ["name"],
+            },
+            {
+                "selectedToolID": "files.read",
+                "intent": "files",
+                "reasoningSummary": (
+                    "Manifest row files.read is missing exactly this required subset: name."
+                ),
+                "status": "needs_clarification",
+                "missingArguments": ["name"],
+                "clarification": "Which file should I read?",
+                "requiresApproval": False,
+                "nextModel": "mouth",
+            },
+            {"selectedToolID": "files.read", "status": "needs_clarification"},
+        ),
+        (
+            {
+                "type": "cortex_route_contract",
+                "mode": "selection",
+                "expectedIntent": "emailDraft",
+                "allowedToolIDs": ["mail.draft"],
+            },
+            {
+                "selectedToolID": "mail.draft",
+                "intent": "emailDraft",
+                "reasoningSummary": (
+                    "Manifest row mail.draft is selected for intent emailDraft without actionStep."
+                ),
+                "requiresApproval": True,
+                "nextModel": "approval",
+            },
+            {
+                "intent": "emailDraft",
+                "selectedToolID": "mail.draft",
+                "requiresApproval": True,
+                "nextModel": "approval",
+                "reasoningSummary": "The routing matrix allows mail.draft.",
+                "rejectedToolIDs": ["alarm.list"],
+            },
+        ),
+        (
+            {
+                "type": "cortex_route_contract",
+                "mode": "no_tool_route",
+                "expectedIntent": "chat",
+            },
+            {
+                "selectedToolID": None,
+                "intent": "chat",
+                "reasoningSummary": "No manifest row applies to intent chat.",
+                "status": "no_tool_route",
+                "requiresApproval": False,
+                "nextModel": "mouth",
+            },
+            {"selectedToolID": None},
+        ),
+        (
+            {
+                "type": "cortex_route_contract",
+                "mode": "invalid_tool",
+                "expectedIntent": "unknown",
+            },
+            {
+                "selectedToolID": None,
+                "intent": "unknown",
+                "reasoningSummary": "No manifest row applies to intent unknown.",
+                "status": "invalid_tool",
+                "requiresApproval": False,
+                "nextModel": "mouth",
+            },
+            {
+                "intent": "trigger",
+                "selectedToolID": "files.read",
+                "requiresApproval": False,
+                "nextModel": "executor",
+                "reasoningSummary": "Redirect the request.",
+                "status": "invalid_tool",
+            },
+        ),
+    ]
+
+    for index, (metric, candidate, incomplete) in enumerate(cases):
+        record = upgrade_evaluation_record(
+            _eval("cortex", f"route-contract-{index}", [metric])
+        )
+        passed = score_evaluation_suite(
+            [record],
+            {record["evalID"]: candidate},
+            tool_contracts=tool_contracts,
+        )
+        failed = score_evaluation_suite(
+            [record],
+            {record["evalID"]: incomplete},
+            tool_contracts=tool_contracts,
+        )
+
+        assert passed["weightedScore"] == 1.0
+        assert passed["criticalFailureCount"] == 0
+        assert failed["weightedScore"] == 0.0
+        assert failed["criticalFailureCount"] == 1
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_reason"),
+    [
+        ("intent", "intent_contract_mismatch"),
+        ("summary", "reasoning_summary_contract_mismatch"),
+        ("top_level_order", "route_key_order_invalid"),
+        ("action_order", "route_key_order_invalid"),
+    ],
+)
+def test_independent_cortex_scorer_rejects_intent_summary_and_key_order_drift(
+    mutation: str,
+    expected_reason: str,
+) -> None:
+    metric = {
+        "type": "cortex_route_contract",
+        "mode": "actionable",
+        "expectedToolID": "files.read",
+        "expectedIntent": "files",
+    }
+    candidate = {
+        "selectedToolID": "files.read",
+        "intent": "files",
+        "reasoningSummary": (
+            "Manifest row files.read has all exact required names supplied: name."
+        ),
+        "actionStep": {
+            "type": "tool_call",
+            "toolID": "files.read",
+            "mustPersistBeforeFinal": True,
+        },
+        "requiresApproval": False,
+        "nextModel": "executor",
+    }
+    if mutation == "intent":
+        candidate["intent"] = "garbage"
+    elif mutation == "summary":
+        candidate["reasoningSummary"] = "Garbage summary."
+    elif mutation == "top_level_order":
+        candidate = dict(reversed(tuple(candidate.items())))
+    else:
+        candidate["actionStep"] = dict(
+            reversed(tuple(candidate["actionStep"].items()))
+        )
+    record = upgrade_evaluation_record(
+        _eval("cortex", f"route-contract-{mutation}", [metric])
+    )
+
+    scored = score_evaluation_suite(
+        [record],
+        {record["evalID"]: candidate},
+        tool_contracts={
+            "files.read": {
+                "requiresApproval": False,
+                "arguments": [
+                    {"name": "name", "type": "string", "required": True},
+                ],
+            }
+        },
+    )
+
+    result = scored["caseResults"][0]["metricResults"][0]
+    assert result == {
+        "type": "cortex_route_contract",
+        "passed": False,
+        "reason": expected_reason,
+        "category": "cortex_route_contract",
+    }
+
+
+@pytest.mark.parametrize(
+    ("metric", "candidate"),
+    [
+        (
+            {
+                "type": "cortex_route_contract",
+                "mode": "actionable",
+                "expectedToolID": "files.read",
+                "expectedIntent": "files",
+            },
+            {
+                "intent": "files",
+                "selectedToolID": "files.read",
+                "requiresApproval": False,
+                "nextModel": "executor",
+                "reasoningSummary": "Route the complete file request.",
+                "actionStep": {
+                    "type": "tool_call",
+                    "toolID": "files.read",
+                    "mustPersistBeforeFinal": True,
+                },
+                "handoff": "executor",
+            },
+        ),
+        (
+            {
+                "type": "cortex_route_contract",
+                "mode": "clarification",
+                "expectedToolID": "files.read",
+                "expectedIntent": "files",
+                "requiredArguments": ["name"],
+            },
+            {
+                "intent": "files",
+                "selectedToolID": "files.read",
+                "requiresApproval": False,
+                "nextModel": "mouth",
+                "reasoningSummary": "A file name is required before routing.",
+                "status": "needs_clarification",
+                "missingArguments": ["name"],
+                "clarification": "Which file should I read?",
+                "sourceMap": {},
+            },
+        ),
+    ],
+)
+def test_cortex_route_contract_rejects_extra_top_level_fields(
+    metric: dict[str, object],
+    candidate: dict[str, object],
+) -> None:
+    record = upgrade_evaluation_record(
+        _eval("cortex", "route-extra-field", [metric])
+    )
+    scored = score_evaluation_suite(
+        [record],
+        {record["evalID"]: candidate},
+        tool_contracts={
+            "files.read": {
+                "requiresApproval": False,
+                "arguments": [
+                    {"name": "name", "type": "string", "required": True},
+                ],
+            }
+        },
+    )
+
+    assert scored["weightedScore"] == 0.0
+    assert scored["criticalFailureCount"] == 1
+
+
+def test_cortex_action_persistence_rejects_strings_and_wrong_action_objects() -> None:
+    record = upgrade_evaluation_record(
+        _eval(
+            "cortex",
+            "action-step-shape",
+            [{"type": "action_step_persistence", "agent": "cortex"}],
+        )
+    )
+    valid = {
+        "selectedToolID": "weather.current",
+        "actionStep": {
+            "type": "tool_call",
+            "toolID": "weather.current",
+            "mustPersistBeforeFinal": True,
+        },
+    }
+    invalid_candidates = (
+        {"selectedToolID": "weather.current", "actionStep": "call weather.current"},
+        {
+            "selectedToolID": "weather.current",
+            "actionStep": {
+                "type": "tool_call",
+                "toolID": "weather.alias",
+                "mustPersistBeforeFinal": True,
+            },
+        },
+        {
+            "selectedToolID": "weather.current",
+            "actionStep": {
+                "type": "tool_call",
+                "toolID": "weather.current",
+                "mustPersistBeforeFinal": False,
+            },
+        },
+    )
+
+    passed = score_evaluation_suite([record], {record["evalID"]: valid})
+    assert passed["weightedScore"] == 1.0
+    for candidate in invalid_candidates:
+        failed = score_evaluation_suite(
+            [record],
+            {record["evalID"]: candidate},
+        )
+        assert failed["weightedScore"] == 0.0
+        assert failed["caseResults"][0]["metricResults"][0]["reason"] == (
+            "action_step_missing"
+        )
+
+
+def test_output_permission_key_is_narrow_exact_and_context_permission_stays_context_only() -> None:
+    record = upgrade_evaluation_record(
+        {
+            "messages": [{"role": "user", "content": "Return the permission contract."}],
+            "expected": {"outputPermissionKey": "NSCalendarsFullAccessUsageDescription"},
+            "metadata": {"agent": "cortex", "evalType": "explicit_permission_key_output"},
+        }
+    )
+    assert record["metrics"] == [
+        {
+            "type": "json_field_equals",
+            "candidatePaths": ["permissionKey"],
+            "expected": "NSCalendarsFullAccessUsageDescription",
+        }
+    ]
+
+    exact = score_evaluation_suite(
+        [record],
+        {
+            record["evalID"]: {
+                "permissionKey": "NSCalendarsFullAccessUsageDescription",
+            }
+        },
+    )
+    wrong = score_evaluation_suite(
+        [record],
+        {record["evalID"]: {"permissionKey": "NSContactsUsageDescription"}},
+    )
+    assert exact["weightedScore"] == 1.0
+    assert wrong["weightedScore"] == 0.0
+
+    context_only = upgrade_evaluation_record(
+        {
+            "messages": [{"role": "user", "content": "Preserve scenario context."}],
+            "expected": {
+                "permissionKey": "NSCalendarsFullAccessUsageDescription",
+                "status": "permission_unavailable",
+            },
+            "metadata": {"agent": "executor", "evalType": "permission_boundary"},
+        }
+    )
+    assert context_only["metrics"] == [
+        {
+            "type": "json_field_equals",
+            "candidatePaths": ["status"],
+            "expected": "permission_unavailable",
+        }
+    ]
+
+
 def test_required_nearby_eval_uses_maps_search_and_missing_semantic_tool_fails() -> None:
     manifest = AgentBehaviorManifest(
         tools=[
@@ -271,6 +839,130 @@ def test_required_nearby_eval_uses_maps_search_and_missing_semantic_tool_fails()
     )
     assert nearby["expected"]["selectedToolID"] == "maps.search"
 
+    approval = next(
+        record
+        for record in templates["cortex"]
+        if record["metadata"]["evalType"] == "approval_boundary_routing"
+    )
+    permission = next(
+        record
+        for record in templates["cortex"]
+        if record["metadata"]["evalType"] == "permission_boundary_routing"
+    )
+    for record, tool_id in (
+        (approval, "messages.draft"),
+        (permission, "maps.search"),
+    ):
+        prompt = record["messages"][-1]["content"]
+        assert f"`{tool_id}` action" in prompt
+        assert "Return exactly the five-field selection object" in prompt
+        assert "Do not emit actionStep" in prompt
+        assert "do not construct Executor arguments" in prompt
+        assert record["expected"]["selectedToolID"] == tool_id
+        assert "arguments" not in record["expected"]
+        assert "requiredArguments" not in record["expected"]
+
+    assert approval["expected"] == {
+        "selectedToolID": "messages.draft",
+        "requiresApproval": True,
+    }
+    assert [
+        metric["type"]
+        for metric in upgrade_evaluation_record(approval)["metrics"]
+    ] == ["manifest_tool_call", "approval_boundary"]
+    assert permission["expected"] == {
+        "selectedToolID": "maps.search",
+        "permissionKey": "location",
+    }
+    assert upgrade_evaluation_record(permission)["metrics"] == [
+        {
+            "type": "manifest_tool_call",
+            "candidatePaths": ["selectedToolID", "tool"],
+            "expectedToolID": "maps.search",
+            "validateArguments": False,
+        },
+    ]
+
+    required_args = next(
+        record
+        for record in templates["executor"]
+        if record["metadata"]["evalType"] == "required_args"
+    )
+    assert required_args["expected"] == {
+        "tool": "maps.search",
+        "arguments": {"query": "hardware store nearby"},
+    }
+    assert '"query": "hardware store nearby"' in required_args["messages"][-1]["content"]
+    assert "do not add any other arguments" in required_args["messages"][-1]["content"]
+
+    manifest_only = next(
+        record
+        for record in templates["executor"]
+        if record["metadata"]["evalType"] == "manifest_tool_only"
+    )
+    assert manifest_only["expected"] == {
+        "tool": "messages.draft",
+        "arguments": {},
+    }
+    assert "`messages.draft`" in manifest_only["messages"][-1]["content"]
+    assert "arguments object exactly equal to {}" in manifest_only["messages"][-1]["content"]
+
+    ultra = _ultra_specific_eval_templates(
+        manifest,
+        {"maps.search", "messages.draft"},
+    )
+    phone = next(
+        record
+        for record in ultra["executor"]
+        if record["metadata"]["evalType"] == "ultra_specific_phone_sms_arguments"
+    )
+    assert phone["expected"] == {
+        "tool": "messages.draft",
+        "arguments": {
+            "to": "555-0142",
+            "body": "I will arrive in 10 minutes.",
+        },
+        "mustNotClarify": True,
+    }
+    assert '"body": "I will arrive in 10 minutes."' in phone["messages"][-1]["content"]
+    assert '"to": "555-0142"' in phone["messages"][-1]["content"]
+
+    approval_status = next(
+        record
+        for record in ultra["executor"]
+        if record["metadata"]["evalType"] == "ultra_specific_approval_status"
+    )
+    assert approval_status["expected"] == {
+        "tool": "messages.draft",
+        "arguments": {},
+        "status": "requires_user_approval",
+    }
+    assert "arguments object exactly equal to {}" in approval_status["messages"][-1]["content"]
+
+    permission_status = next(
+        record
+        for record in ultra["executor"]
+        if record["metadata"]["evalType"] == "ultra_specific_permission_status"
+    )
+    assert permission_status["expected"] == {
+        "tool": "maps.search",
+        "arguments": {"query": "hardware store nearby"},
+        "status": "permission_unavailable",
+    }
+    assert '"query": "hardware store nearby"' in permission_status["messages"][-1]["content"]
+
+    outlook_route = next(
+        record
+        for record in ultra["cortex"]
+        if record["metadata"]["evalType"]
+        == "ultra_specific_outlook_latest_attachment_route"
+    )
+    assert outlook_route["expected"] == {
+        "selectedToolID": "outlook.attachments.list",
+    }
+    assert "latest-message-42" in outlook_route["messages"][-1]["content"]
+    assert "without constructing Executor arguments" in outlook_route["messages"][-1]["content"]
+
     with pytest.raises(
         ValueError,
         match=r"required evaluation tool is absent from manifest: maps\.search",
@@ -293,6 +985,163 @@ def test_required_nearby_eval_uses_maps_search_and_missing_semantic_tool_fails()
             ),
             {"alpha.tool"},
         )
+
+
+def test_boundary_routing_metrics_are_satisfiable_by_exact_five_field_selections() -> None:
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="maps.search",
+                permissionKey="location",
+            ),
+            ToolManifest(
+                id="messages.draft",
+                requiresApproval=True,
+            ),
+        ]
+    )
+    templates = _required_eval_templates(
+        manifest,
+        {"maps.search", "messages.draft"},
+    )["cortex"]
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    tool_contracts = {
+        tool.id: {
+            "requiresApproval": tool.requiresApproval,
+            "arguments": [],
+        }
+        for tool in manifest.tools
+    }
+
+    for eval_type in (
+        "approval_boundary_routing",
+        "permission_boundary_routing",
+    ):
+        template = next(
+            record
+            for record in templates
+            if record["metadata"]["evalType"] == eval_type
+        )
+        record = upgrade_evaluation_record(
+            _with_cortex_route_contract_metric(template, manifest)
+        )
+        selected_tool_id = template["expected"]["selectedToolID"]
+        selected_tool = tools_by_id[selected_tool_id]
+        route_metric = next(
+            metric
+            for metric in record["metrics"]
+            if metric["type"] == "cortex_route_contract"
+        )
+        assert route_metric == {
+            "type": "cortex_route_contract",
+            "mode": "selection",
+            "allowedToolIDs": [selected_tool_id],
+            "expectedIntent": "tool",
+        }
+        expected_intent = route_metric["expectedIntent"]
+        candidate = {
+            "selectedToolID": selected_tool_id,
+            "intent": expected_intent,
+            "reasoningSummary": (
+                f"Manifest row {selected_tool_id} is selected for intent "
+                f"{expected_intent} without actionStep."
+            ),
+            "requiresApproval": selected_tool.requiresApproval,
+            "nextModel": (
+                "approval" if selected_tool.requiresApproval else "executor"
+            ),
+        }
+        assert set(candidate) == {
+            "intent",
+            "selectedToolID",
+            "requiresApproval",
+            "nextModel",
+            "reasoningSummary",
+        }
+
+        scored = score_evaluation_suite(
+            [record],
+            {record["evalID"]: candidate},
+            tool_contracts=tool_contracts,
+        )
+        assert scored["weightedScore"] == 1.0
+        assert scored["criticalFailureCount"] == 0
+        assert all(
+            result["passed"]
+            for result in scored["caseResults"][0]["metricResults"]
+        )
+
+
+def test_generated_cortex_route_contracts_bind_expected_intent_for_every_mode() -> None:
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="files.read",
+                arguments=[
+                    ToolArgumentManifest(
+                        name="name",
+                        type="string",
+                        required=True,
+                    )
+                ],
+            )
+        ]
+    )
+    cases = [
+        (
+            "actionable",
+            {
+                "selectedToolID": "files.read",
+            },
+            {"evalType": "tool_runtime_scenario_selection", "name": "action"},
+            "tool",
+        ),
+        (
+            "clarification",
+            {
+                "selectedToolID": "files.read",
+                "status": "needs_clarification",
+                "missingArguments": ["name"],
+            },
+            {"evalType": "tool_runtime_scenario_selection", "name": "clarify"},
+            "tool",
+        ),
+        (
+            "selection",
+            {"selectedToolID": "files.read"},
+            {"evalType": "approval_boundary_routing", "name": "boundary"},
+            "tool",
+        ),
+        (
+            "no_tool_route",
+            {"allowedToolIDs": []},
+            {"evalType": "routing_matrix_adherence", "name": "route-chat"},
+            "chat",
+        ),
+        (
+            "invalid_tool",
+            {"mustReject": "missing.tool"},
+            {"evalType": "hallucinated_tool_rejection", "name": "invalid"},
+            "unknown",
+        ),
+    ]
+
+    for expected_mode, expected, metadata, expected_intent in cases:
+        record = _with_cortex_route_contract_metric(
+            {
+                "messages": [{"role": "user", "content": "Route this."}],
+                "expected": expected,
+                "metadata": {"agent": "cortex", **metadata},
+            },
+            manifest,
+        )
+        route_metric = next(
+            metric
+            for metric in record["metrics"]
+            if metric["type"] == "cortex_route_contract"
+        )
+        assert route_metric["mode"] == expected_mode
+        assert route_metric["expectedIntent"] == expected_intent
 
 
 def test_required_fleet_boundary_eval_resolves_execution_slot_by_role() -> None:
@@ -558,9 +1407,51 @@ def test_empty_negative_only_outputs_and_non_standard_json_fail_closed() -> None
     assert empty["caseResults"][0]["metricResults"][0]["reason"] == "empty_candidate_output"
 
     strict = upgrade_evaluation_record(_eval("executor", "strict", [{"type": "json_valid"}]))
-    for invalid in ("NaN", "Infinity", '{"temperature":NaN}', {"temperature": float("inf")}):
+    for invalid in (
+        "NaN",
+        "Infinity",
+        '{"temperature":NaN}',
+        '{"selectedToolID":"weather","selectedToolID":"web.search"}',
+        {"temperature": float("inf")},
+    ):
         report = score_evaluation_suite([strict], {strict["evalID"]: invalid})
         assert report["weightedScore"] == 0.0
+
+
+@pytest.mark.parametrize(("candidate", "expected_error"), _STRICT_JSON_EDGE_CASES)
+def test_strict_json_depth_and_unicode_fail_closed(
+    candidate: str,
+    expected_error: str,
+) -> None:
+    strict = upgrade_evaluation_record(
+        _eval("executor", "strict-edge", [{"type": "json_valid"}])
+    )
+
+    report = score_evaluation_suite(
+        [strict],
+        {strict["evalID"]: candidate},
+    )
+
+    assert report["weightedScore"] == 0.0
+    assert report["caseResults"][0]["metricResults"][0] == {
+        "type": "json_valid",
+        "passed": False,
+        "reason": expected_error,
+        "category": "json_valid",
+    }
+
+
+def test_strict_json_accepts_a_valid_unicode_surrogate_pair() -> None:
+    strict = upgrade_evaluation_record(
+        _eval("executor", "strict-unicode", [{"type": "json_valid"}])
+    )
+
+    report = score_evaluation_suite(
+        [strict],
+        {strict["evalID"]: '{"value":"\\ud83d\\ude00"}'},
+    )
+
+    assert report["weightedScore"] == 1.0
 
 
 def test_observation_repair_and_fixed_slot_metrics_are_executable() -> None:
@@ -767,6 +1658,217 @@ def test_contamination_report_keeps_unrelated_training_clean() -> None:
     report = build_contamination_report(training, evaluation)
     assert report["contaminated"] is False
     assert report["matchCount"] == 0
+
+
+def test_contamination_report_detects_wrapped_short_frozen_prompt() -> None:
+    frozen = "What is on my calendar today?"
+    evaluation = [
+        _eval(
+            "cortex",
+            "heldout-short",
+            [{"type": "json_valid"}],
+            prompt=frozen,
+        )
+    ]
+    training = [
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Route: {frozen}",
+                }
+            ]
+        }
+    ]
+
+    report = build_contamination_report(training, evaluation)
+
+    assert report["contaminated"] is True
+    assert report["matchCount"] == 1
+    assert report["matches"][0]["matchKind"] == "short_window_containment"
+    assert frozen not in json.dumps(report)
+
+
+@pytest.mark.parametrize(
+    "training",
+    [
+        {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Leaked benchmark prompt: What is on my calendar today?"
+                    ),
+                }
+            ]
+        },
+        {
+            "prompt": [
+                {"role": "system", "content": "training only"},
+                {"role": "user", "content": "Use the held-out benchmark prompt."},
+            ],
+            "chosen": {
+                "role": "assistant",
+                "content": (
+                    "Quoted prompt: What is on my calendar today?"
+                ),
+            },
+            "rejected": {"role": "assistant", "content": "Do not quote it."},
+        },
+    ],
+)
+def test_contamination_report_detects_short_prompt_in_non_system_training_content(
+    training: dict,
+) -> None:
+    frozen = "What is on my calendar today?"
+    evaluation = [
+        _eval(
+            "cortex",
+            "heldout-short",
+            [{"type": "json_valid"}],
+            prompt=frozen,
+        )
+    ]
+
+    report = build_contamination_report([training], evaluation)
+
+    assert report["contaminated"] is True
+    assert report["matchCount"] == 1
+    assert report["matches"][0]["matchKind"] == "short_window_containment"
+    assert frozen not in json.dumps(report)
+
+
+def test_contamination_report_ignores_short_prompt_in_system_content() -> None:
+    frozen = "What is on my calendar today?"
+    evaluation = [
+        _eval(
+            "cortex",
+            "heldout-short",
+            [{"type": "json_valid"}],
+            prompt=frozen,
+        )
+    ]
+    training = [
+        {
+            "messages": [
+                {"role": "system", "content": f"Benchmark inventory: {frozen}"},
+                {"role": "user", "content": "Route a distinct weather request."},
+            ]
+        }
+    ]
+
+    report = build_contamination_report(training, evaluation)
+
+    assert report["contaminated"] is False
+    assert report["matchCount"] == 0
+
+
+@pytest.mark.parametrize("fragment", ["tool", "a tool", "choose a tool"])
+def test_contamination_report_ignores_common_one_to_three_token_fragments(
+    fragment: str,
+) -> None:
+    evaluation = [
+        _eval(
+            "cortex",
+            "heldout-tiny",
+            [{"type": "json_valid"}],
+            prompt=fragment,
+        )
+    ]
+    training = [
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"{fragment} for a distinct weather request",
+                }
+            ]
+        }
+    ]
+
+    report = build_contamination_report(training, evaluation)
+
+    assert report["contaminated"] is False
+    assert report["matchCount"] == 0
+
+
+def test_contamination_report_validation_rejects_privacy_and_aggregate_tampering() -> None:
+    evaluation = [
+        _eval(
+            "cortex",
+            "heldout-short",
+            [{"type": "json_valid"}],
+            prompt="What is on my calendar today?",
+        )
+    ]
+    clean = build_contamination_report(
+        [
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Route a distinct local weather request.",
+                    }
+                ]
+            }
+        ],
+        evaluation,
+    )
+    contaminated = build_contamination_report(
+        [
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Route: What is on my calendar today?",
+                    }
+                ]
+            }
+        ],
+        evaluation,
+    )
+    assert adapter_evaluation._valid_contamination_report(clean)
+    assert adapter_evaluation._valid_contamination_report(contaminated)
+
+    tampered_reports = [
+        {**clean, "hashOnly": False},
+        {**clean, "rawEvaluationText": "What is on my calendar today?"},
+        {**clean, "matchCount": 1},
+        {**clean, "contaminated": True},
+        {**clean, "trainingRecordCount": -1},
+        {**clean, "threshold": 10**400},
+        {
+            **contaminated,
+            "matches": [
+                {
+                    **contaminated["matches"][0],
+                    "rawEvaluationText": "What is on my calendar today?",
+                }
+            ],
+        },
+        {
+            **contaminated,
+            "matches": [
+                {
+                    **contaminated["matches"][0],
+                    "matchKind": "unversioned_match_kind",
+                }
+            ],
+        },
+        {
+            **contaminated,
+            "matches": [
+                {
+                    **contaminated["matches"][0],
+                    "similarity": 10**400,
+                }
+            ],
+        },
+    ]
+    for tampered in tampered_reports:
+        tampered.pop("reportSHA256", None)
+        tampered["reportSHA256"] = canonical_sha256(tampered)
+        assert not adapter_evaluation._valid_contamination_report(tampered)
 
 
 def test_contamination_report_detects_hash_only_public_evaluation_leakage(
@@ -1529,8 +2631,9 @@ def test_finalizer_rejects_incomplete_or_substituted_sft_parent_lineage() -> Non
 def test_runtime_source_audit_is_bound_to_variant_artifact_and_evaluation() -> None:
     evaluation = [
         upgrade_evaluation_record(
-            _eval("executor", "json", [{"type": "json_valid"}])
+            _eval("executor", f"json-{index}", [{"type": "json_valid"}])
         )
+        for index in range(2)
     ]
     pending = build_experiment_variant_manifest(
         agent="executor",
@@ -1550,7 +2653,7 @@ def test_runtime_source_audit_is_bound_to_variant_artifact_and_evaluation() -> N
         adapter_artifact_manifest=artifact,
         training_environment=_training_environment(pending),
     )
-    output = {evaluation[0]["evalID"]: {"status": "ok"}}
+    output = {record["evalID"]: {"status": "ok"} for record in evaluation}
     report = score_evaluation_suite(
         evaluation,
         output,
@@ -1573,6 +2676,32 @@ def test_runtime_source_audit_is_bound_to_variant_artifact_and_evaluation() -> N
     assert all(
         report[field] == finalized[field]
         for field in adapter_evaluation.RUNTIME_SOURCE_AUDIT_FIELDS
+    )
+
+    smoke_report = score_evaluation_suite(
+        evaluation[:1],
+        {evaluation[0]["evalID"]: {"status": "ok"}},
+        frozen_evaluation_records=evaluation,
+        agent="executor",
+        variant="internal_only",
+        variant_manifest=finalized,
+        artifact_sha256=artifact["adapterSHA256"],
+    )
+    assert smoke_report["variantLineageBound"] is True
+    assert smoke_report["promotionEvidenceBound"] is False
+    assert smoke_report["completeEvaluation"] is False
+    assert smoke_report["caseCount"] == 1
+    assert smoke_report["frozenCaseCount"] == 2
+    assert smoke_report["passedCaseCount"] == smoke_report["caseCount"]
+    assert not adapter_evaluation._valid_evaluation_report(
+        smoke_report,
+        agent="executor",
+        expected_variant="internal_only",
+    )
+    assert not adapter_evaluation._report_matches_variant(
+        smoke_report,
+        finalized,
+        artifact["adapterSHA256"],
     )
 
     tampered_report = dict(report)
@@ -2334,6 +3463,76 @@ def test_frozen_evaluation_segments_are_removed_from_sft_and_dpo_training() -> N
 
     filtered = _exclude_evaluation_segment_matches(training, evaluation)
     assert filtered == [training[1]]
+
+
+def test_wrapped_short_frozen_prompts_are_removed_but_tiny_fragments_are_not() -> None:
+    evaluation = [
+        {
+            "messages": [
+                {"role": "system", "content": "shared"},
+                {"role": "user", "content": "What is on my calendar today?"},
+            ]
+        },
+        {
+            "messages": [
+                {"role": "system", "content": "shared"},
+                {"role": "user", "content": "choose a tool"},
+            ]
+        },
+    ]
+    wrapped = {
+        "prompt": [
+            {"role": "system", "content": "train"},
+            {"role": "user", "content": "Route: What is on my calendar today?"},
+        ],
+        "chosen": {"role": "assistant", "content": "chosen"},
+        "rejected": {"role": "assistant", "content": "rejected"},
+    }
+    tiny_only = {
+        "prompt": [
+            {"role": "system", "content": "train"},
+            {
+                "role": "user",
+                "content": "choose a tool for a distinct weather request",
+            },
+        ],
+        "chosen": {"role": "assistant", "content": "chosen"},
+        "rejected": {"role": "assistant", "content": "rejected"},
+    }
+    assistant_leak = {
+        "messages": [
+            {"role": "system", "content": "train"},
+            {"role": "user", "content": "Use one benchmark prompt."},
+            {
+                "role": "assistant",
+                "content": "Leaked prompt: What is on my calendar today?",
+            },
+        ]
+    }
+    chosen_leak = {
+        "prompt": [
+            {"role": "system", "content": "train"},
+            {"role": "user", "content": "Use another benchmark prompt."},
+        ],
+        "chosen": {
+            "role": "assistant",
+            "content": "Quoted prompt: What is on my calendar today?",
+        },
+        "rejected": {"role": "assistant", "content": "rejected"},
+    }
+    system_only = {
+        "messages": [
+            {
+                "role": "system",
+                "content": "Benchmark inventory: What is on my calendar today?",
+            },
+            {"role": "user", "content": "Route a distinct weather request."},
+        ]
+    }
+
+    assert _exclude_evaluation_segment_matches(
+        [wrapped, tiny_only, assistant_leak, chosen_leak, system_only], evaluation
+    ) == [tiny_only, system_only]
 
 
 def test_native_fleet_boundary_eval_rejects_tampered_event_payloads() -> None:

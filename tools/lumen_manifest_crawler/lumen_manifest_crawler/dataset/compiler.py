@@ -85,7 +85,7 @@ TOOL_SCENARIO_PROMPTS: dict[str, list[str]] = {
     "calendar.create": [
         "Create a calendar event for a meeting in 10 minutes.",
         "Add a dentist appointment tomorrow at 2 PM.",
-        "Schedule a job-site visit next Friday morning.",
+        "Create a calendar entry named Ridgeview permit review.",
     ],
     "calendar.list": [
         "What is on my calendar today?",
@@ -133,12 +133,12 @@ TOOL_SCENARIO_PROMPTS: dict[str, list[str]] = {
         "Search maps for coffee near me.",
     ],
     "memory.recall": [
-        "What do you remember about my Lumen project?",
+        "Search stored memory for the Aurora rollback checklist.",
         "Recall what I said about the app architecture.",
         "Find my saved memory about model loading.",
     ],
     "memory.save": [
-        "Remember that I prefer direct technical answers.",
+        "Store this as a preference: lead with observed error codes before suggesting fixes.",
         "Save this as a project note.",
         "Store this preference in memory.",
     ],
@@ -254,7 +254,9 @@ TOOL_SCENARIO_PROMPTS: dict[str, list[str]] = {
     ],
     "outlook.mail.send": [
         "Send this Outlook email to Antoine.",
-        "Email the supplier with this update.",
+        # This provider-neutral case replaces a Pilot 19 prompt that informed a
+        # curriculum repair and therefore can no longer serve as unseen evidence.
+        "Email Jordan Patel directly.",
         "Send a Microsoft Graph mail message.",
     ],
     "outlook.message.mark_read": [
@@ -297,6 +299,204 @@ TOOL_SCENARIO_PROMPTS: dict[str, list[str]] = {
         "Send the selected Outlook message to someone else.",
         "Forward this message with a note.",
     ],
+}
+
+# Required-argument coverage for curated natural prompts is intentionally
+# explicit. A prompt may cover only part of a tool contract; runtime evals then
+# require clarification for the remaining arguments. Deictic references such
+# as "this message" or "the selected alarm" are not concrete manifest values.
+# Tools without required arguments need no entry here.
+TOOL_SCENARIO_ARGUMENT_COVERAGE: dict[str, dict[str, tuple[str, ...]]] = {
+    "alarm.schedule": {
+        "Set an alarm for 7 tomorrow morning.": ("inMinutes",),
+        "Schedule a wake-up alarm at 6:30 AM.": ("title", "inMinutes"),
+        "Create an alarm called work shift for tomorrow morning.": ("title",),
+    },
+    "alarm.countdown": {
+        "Start a 10 minute countdown alarm.": ("durationSeconds",),
+        "Set a timer-style alarm for 45 minutes.": ("durationSeconds",),
+        "Count down 5 minutes and alert me.": ("durationSeconds",),
+    },
+    "alarm.pause": {
+        "Pause this alarm.": (),
+        "Temporarily pause the selected alarm.": (),
+        "Stop this alarm for now without deleting it.": (),
+    },
+    "alarm.resume": {
+        "Resume the paused alarm.": (),
+        "Turn that paused alarm back on.": (),
+        "Continue the alarm I paused earlier.": (),
+    },
+    "alarm.stop": {
+        "Stop the ringing alarm.": (),
+        "Turn off the current alarm.": (),
+        "Silence this alarm now.": (),
+    },
+    "alarm.snooze": {
+        "Snooze this alarm.": (),
+        "Give me a few more minutes on this alarm.": (),
+        "Snooze the current alarm for later.": (),
+    },
+    "alarm.cancel": {
+        "Cancel my 7 AM alarm.": (),
+        "Delete the alarm named work shift.": (),
+        "Remove this scheduled alarm.": (),
+    },
+    "calendar.create": {
+        "Create a calendar event for a meeting in 10 minutes.": ("title", "startsInMinutes"),
+        "Add a dentist appointment tomorrow at 2 PM.": ("title", "startsInMinutes"),
+        "Create a calendar entry named Ridgeview permit review.": ("title",),
+    },
+    "contacts.search": {
+        "Find Antoine in my contacts.": ("query",),
+        "Search contacts for Marc.": ("query",),
+        "Look up the phone number for Dalia.": ("query",),
+    },
+    "files.read": {
+        "Read the imported project notes file.": ("name",),
+        "Open the document I imported.": (),
+        "Summarize the local file named build-plan.": ("name",),
+    },
+    "mail.draft": {
+        "Draft an email to Antoine about the show.": ("to", "body"),
+        "Write an email draft for the supplier.": ("to",),
+        "Prepare a mail draft with this update.": (),
+    },
+    "maps.directions": {
+        "Give me directions to the nearest hardware store.": ("destination",),
+        "Navigate to the airport.": ("destination",),
+        "Find a route to Trois-Rivières.": ("destination",),
+    },
+    "maps.search": {
+        "Show me on map.": (),
+        "Find a hardware store nearby.": ("query",),
+        "Search maps for coffee near me.": ("query",),
+    },
+    "memory.recall": {
+        "Search stored memory for the Aurora rollback checklist.": ("query",),
+        "Recall what I said about the app architecture.": ("query",),
+        "Find my saved memory about model loading.": ("query",),
+    },
+    "memory.save": {
+        "Store this as a preference: lead with observed error codes before suggesting fixes.": ("content", "kind"),
+        "Save this as a project note.": ("kind",),
+        "Store this preference in memory.": ("kind",),
+    },
+    "messages.draft": {
+        "Draft a message to Sylvie.": ("to",),
+        "Write a text message saying I will be late.": ("body",),
+        "Prepare an SMS to my son.": ("to",),
+    },
+    "outlook.messages.search": {
+        "Search Outlook for emails from Antoine.": ("query",),
+        "Find emails about the invoice.": ("query",),
+        "Search my mailbox for Core ML.": ("query",),
+    },
+    "outlook.message.read": {
+        "Read the latest email.": (),
+        "Open this Outlook message.": (),
+        "Show the full email body for this message.": (),
+    },
+    "outlook.attachments.list": {
+        "List attachments on this email.": (),
+        "Show files attached to the selected message.": (),
+        "Does this Outlook message have attachments?": (),
+    },
+    "outlook.draft.create": {
+        "Draft an Outlook email to Antoine.": ("to",),
+        "Create a mail draft but do not send it.": (),
+        "Prepare an email reply as a draft.": (),
+    },
+    "outlook.mail.send": {
+        "Send this Outlook email to Antoine.": ("to",),
+        "Email Jordan Patel directly.": ("to",),
+        "Send a Microsoft Graph mail message.": (),
+    },
+    "outlook.message.mark_read": {
+        "Mark this email as read.": (),
+        "Set the selected Outlook message to read.": (),
+        "Mark the current message read.": (),
+    },
+    "outlook.message.mark_unread": {
+        "Mark this email as unread.": (),
+        "Set the selected Outlook message to unread.": (),
+        "Keep this Outlook message unread.": (),
+    },
+    "outlook.message.move": {
+        "Move this email to the project folder.": ("destination",),
+        "Move the selected Outlook message.": (),
+        "File this email in another folder.": (),
+    },
+    "outlook.message.archive": {
+        "Archive this email.": (),
+        "Move the selected Outlook message to archive.": (),
+        "Archive the current message.": (),
+    },
+    "outlook.message.delete": {
+        "Delete this email.": (),
+        "Move the selected Outlook message to trash.": (),
+        "Remove this Outlook message.": (),
+    },
+    "outlook.message.reply": {
+        "Reply to this email.": (),
+        "Send a reply to the selected Outlook message.": (),
+        "Answer this message with a short note.": (),
+    },
+    "outlook.message.reply_all": {
+        "Reply all to this email.": (),
+        "Send this response to everyone on the thread.": (),
+        "Reply to all recipients on the selected Outlook message.": (),
+    },
+    "outlook.message.forward": {
+        "Forward this email to Antoine.": ("to",),
+        "Send the selected Outlook message to someone else.": (),
+        "Forward this message with a note.": (),
+    },
+    "phone.call": {
+        "Call Antoine.": (),
+        "Dial this phone number.": (),
+        "Start a phone call to my contact.": (),
+    },
+    "photos.search": {
+        "Find photos of my cabin plan.": ("query",),
+        "Search my photos from last week.": ("query",),
+        "Show pictures of the job site.": ("query",),
+    },
+    "rag.index_photos": {
+        "Index recent photos for visual recall.": (),
+        "Add my photos to the RAG index.": (),
+        "Process the last six months of photos for retrieval.": ("months",),
+    },
+    "rag.search": {
+        "Search my knowledge base for build notes.": ("query",),
+        "Find relevant RAG chunks about Core ML.": ("query",),
+        "Look through indexed files for model loading.": ("query",),
+    },
+    "reminders.create": {
+        "Remind me to charge the scooter battery.": ("title",),
+        "Create a reminder to call the supplier.": ("title",),
+        "Add a reminder for tomorrow morning.": (),
+    },
+    "trigger.create": {
+        "Create an automation to check this every morning.": (),
+        "Set up a trigger for this task.": (),
+        "Run this workflow whenever the condition is met.": (),
+    },
+    "trigger.cancel": {
+        "Cancel that trigger.": (),
+        "Disable the morning automation.": (),
+        "Remove this scheduled workflow.": (),
+    },
+    "web.fetch": {
+        "Open and read this URL.": (),
+        "Fetch the webpage content.": (),
+        "Read the documentation page at this link.": (),
+    },
+    "web.search": {
+        "Search the web for Core ML conversion tips.": ("query",),
+        "Look up current Swift concurrency warnings.": ("query",),
+        "Find recent documentation about Xcode build phases.": ("query",),
+    },
 }
 
 
@@ -629,6 +829,41 @@ def _stable_split(records: list[dict[str, Any]], config: DatasetCompilerConfig) 
     return train, validation
 
 
+def _sample_argument_value(argument: Any) -> Any:
+    allowed_values = [
+        value
+        for value in (getattr(argument, "allowedValues", None) or [])
+        if isinstance(value, str) and value
+    ]
+    if allowed_values:
+        return allowed_values[0]
+    arg_name = str(getattr(argument, "name", "value"))
+    normalized = str(getattr(argument, "type", "string")).strip().lower()
+    if normalized in {"string", "str"}:
+        return f"example {arg_name.replace('_', ' ')}"
+    if normalized in {"number", "float", "double"}:
+        return 1.0
+    if normalized in {"integer", "int"}:
+        return 1
+    if normalized in {"boolean", "bool"}:
+        return True
+    if normalized == "array":
+        return []
+    if normalized in {"object", "dict", "map"}:
+        return {}
+    if normalized in {"null", "none"}:
+        return None
+    return f"example {arg_name.replace('_', ' ')}"
+
+
+def _required_argument_values(tool: Any) -> dict[str, Any]:
+    return {
+        argument.name: _sample_argument_value(argument)
+        for argument in getattr(tool, "arguments", [])
+        if getattr(argument, "required", False)
+    }
+
+
 def _build_eval_records(manifest: AgentBehaviorManifest, config: DatasetCompilerConfig) -> list[dict[str, Any]]:
     evals: list[dict[str, Any]] = []
     known_tools = sorted(tool.id for tool in manifest.tools)
@@ -646,35 +881,57 @@ def _build_eval_records(manifest: AgentBehaviorManifest, config: DatasetCompiler
         ))
 
     for tool in manifest.tools:
+        required_argument_values = _required_argument_values(tool)
+        supplied_arguments = json.dumps(required_argument_values, ensure_ascii=False, sort_keys=True)
         evals.append(_eval_record(
             name=f"schema-{tool.id}",
             task="tool_schema_adherence",
-            prompt=f"Generate a Tool Executor JSON call for `{tool.id}` using only required arguments from the manifest.",
+            prompt=(
+                f"Generate a Tool Executor JSON call for `{tool.id}` with the arguments object "
+                f"exactly equal to {supplied_arguments}; do not add any other arguments."
+            ),
             expected={
                 "tool": tool.id,
-                "requiredArguments": [arg.name for arg in tool.arguments if arg.required],
-                "requiresApproval": tool.requiresApproval,
-                "permissionKey": tool.permissionKey,
+                "arguments": required_argument_values,
             },
             config=config,
         ))
         for index, scenario in enumerate(_tool_eval_scenarios(tool), start=1):
             prompt = scenario["prompt"]
             scenario_kind = scenario["scenarioKind"]
+            # Runtime scenario selection is Cortex-owned. Cortex selects and
+            # persists the route; Executor-owned schema evals validate concrete
+            # argument construction separately.
+            required_arguments = list(required_argument_values)
+            covered_arguments = {
+                argument
+                for argument in scenario.get("argumentCoverage", [])
+                if isinstance(argument, str)
+            }
+            missing_arguments = [
+                argument
+                for argument in required_arguments
+                if argument not in covered_arguments
+            ]
+            expected = {
+                "selectedToolID": tool.id,
+                "mustUseManifestToolIDsOnly": True,
+                "scenarioKind": scenario_kind,
+            }
+            if missing_arguments:
+                expected["status"] = "needs_clarification"
+                expected["missingArguments"] = missing_arguments
+            else:
+                expected.update({
+                    "requiresApproval": tool.requiresApproval,
+                    "permissionKey": tool.permissionKey,
+                    "mustPersistActionStep": True,
+                })
             evals.append(_eval_record(
                 name=f"tool-scenario-{tool.id}-{index}",
                 task="tool_runtime_scenario_selection",
                 prompt=prompt,
-                expected={
-                    "tool": tool.id,
-                    "selectedToolID": tool.id,
-                    "requiredArguments": [arg.name for arg in tool.arguments if arg.required],
-                    "requiresApproval": tool.requiresApproval,
-                    "permissionKey": tool.permissionKey,
-                    "mustPersistActionStep": True,
-                    "mustUseManifestToolIDsOnly": True,
-                    "scenarioKind": scenario_kind,
-                },
+                expected=expected,
                 config=config,
                 metadata={
                     "scenarioKind": scenario_kind,
@@ -734,37 +991,81 @@ def _humanize_tool_phrase(tool: Any) -> str:
     return " ".join(words) if words else "this app action"
 
 
+def _curated_tool_argument_coverage(tool: Any, prompts: list[str]) -> dict[str, tuple[str, ...]]:
+    if not prompts:
+        return {}
+    if len(prompts) != len(set(prompts)):
+        raise ValueError(f"Curated tool prompts must be unique for {tool.id}")
+
+    required_arguments = {
+        argument.name
+        for argument in getattr(tool, "arguments", [])
+        if getattr(argument, "required", False)
+    }
+    audited_coverage = TOOL_SCENARIO_ARGUMENT_COVERAGE.get(str(tool.id))
+    if not required_arguments:
+        return {prompt: () for prompt in prompts}
+    if audited_coverage is None:
+        raise ValueError(f"Curated required-argument coverage is missing for {tool.id}")
+
+    prompt_set = set(prompts)
+    audited_prompt_set = set(audited_coverage)
+    if prompt_set != audited_prompt_set:
+        missing = sorted(prompt_set.difference(audited_prompt_set))
+        stale = sorted(audited_prompt_set.difference(prompt_set))
+        raise ValueError(f"Curated coverage prompt mismatch for {tool.id}: missing={missing}, stale={stale}")
+
+    projected_coverage: dict[str, tuple[str, ...]] = {}
+    for prompt, covered_arguments in audited_coverage.items():
+        if len(covered_arguments) != len(set(covered_arguments)):
+            raise ValueError(f"Curated coverage for {tool.id} prompt {prompt!r} contains duplicates")
+        # Unit-test and downstream callers may compile a deliberately reduced
+        # manifest fixture under a production tool ID. Project the production
+        # audit onto that fixture's declared contract; the repository-manifest
+        # invariant test independently rejects stale production coverage names.
+        projected_coverage[prompt] = tuple(
+            argument for argument in covered_arguments if argument in required_arguments
+        )
+    return projected_coverage
+
+
 def _tool_eval_scenarios(tool: Any) -> list[dict[str, Any]]:  # NOSONAR
     required_args = [arg.name for arg in getattr(tool, "arguments", []) if getattr(arg, "required", False)]
-    optional_args = [arg.name for arg in getattr(tool, "arguments", []) if not getattr(arg, "required", False)]
+    supplied_arguments = json.dumps(_required_argument_values(tool), ensure_ascii=False, sort_keys=True)
     phrase = _humanize_tool_phrase(tool)
     curated = TOOL_SCENARIO_PROMPTS.get(tool.id, [])
+    curated_coverage = _curated_tool_argument_coverage(tool, curated)
 
     scenarios: list[dict[str, Any]] = [
-        {"prompt": f"Generate a manifest-valid action step for `{tool.id}`.", "scenarioKind": "explicit_tool_schema", "toolIDVisibleInPrompt": True, "argumentCoverage": [], "approvalCoverage": False, "permissionCoverage": False},
+        {"prompt": f"Generate a manifest-valid action step for `{tool.id}` using these supplied required-argument values exactly: {supplied_arguments}.", "scenarioKind": "explicit_tool_schema", "toolIDVisibleInPrompt": True, "argumentCoverage": required_args, "approvalCoverage": False, "permissionCoverage": False},
     ]
     for prompt in curated[:2]:
-        scenarios.append({"prompt": prompt, "scenarioKind": "natural_intent", "toolIDVisibleInPrompt": False, "argumentCoverage": [], "approvalCoverage": False, "permissionCoverage": False})
+        argument_coverage = list(curated_coverage[prompt])
+        scenarios.append({"prompt": prompt, "scenarioKind": "natural_intent", "toolIDVisibleInPrompt": False, "argumentCoverage": argument_coverage, "approvalCoverage": False, "permissionCoverage": False})
 
     if required_args:
-        arg_text = ", ".join(required_args)
-        scenarios.append({"prompt": f"Use {phrase} with these details: {arg_text} = sample value.", "scenarioKind": "argument_completion", "toolIDVisibleInPrompt": False, "argumentCoverage": required_args, "approvalCoverage": False, "permissionCoverage": False})
+        scenarios.append({"prompt": f"Use {phrase} with these supplied required-argument values exactly: {supplied_arguments}.", "scenarioKind": "argument_completion", "toolIDVisibleInPrompt": False, "argumentCoverage": required_args, "approvalCoverage": False, "permissionCoverage": False})
     else:
-        arg_hint = optional_args[:2]
-        detail = f" and include {', '.join(arg_hint)}" if arg_hint else ""
-        scenarios.append({"prompt": f"Help me with {phrase}{detail}.", "scenarioKind": "argument_completion", "toolIDVisibleInPrompt": False, "argumentCoverage": arg_hint, "approvalCoverage": False, "permissionCoverage": False})
+        scenarios.append({"prompt": f"Help me with {phrase}.", "scenarioKind": "argument_completion", "toolIDVisibleInPrompt": False, "argumentCoverage": [], "approvalCoverage": False, "permissionCoverage": False})
 
     if getattr(tool, "requiresApproval", False):
-        scenarios.append({"prompt": f"Prepare to {phrase}, but ask for my approval before executing.", "scenarioKind": "approval_boundary", "toolIDVisibleInPrompt": False, "argumentCoverage": [], "approvalCoverage": True, "permissionCoverage": False})
+        scenarios.append({"prompt": f"Prepare to {phrase} using these supplied required-argument values exactly: {supplied_arguments}, but ask for my approval before executing.", "scenarioKind": "approval_boundary", "toolIDVisibleInPrompt": False, "argumentCoverage": required_args, "approvalCoverage": True, "permissionCoverage": False})
     if getattr(tool, "permissionKey", None):
-        scenarios.append({"prompt": f"Before {phrase}, confirm required permissions or sign-in access.", "scenarioKind": "permission_boundary", "toolIDVisibleInPrompt": False, "argumentCoverage": [], "approvalCoverage": False, "permissionCoverage": True})
+        scenarios.append({"prompt": f"Before {phrase} using these supplied required-argument values exactly: {supplied_arguments}, confirm required permissions or sign-in access.", "scenarioKind": "permission_boundary", "toolIDVisibleInPrompt": False, "argumentCoverage": required_args, "approvalCoverage": False, "permissionCoverage": True})
 
     fallback_natural = [
         f"Please help me {phrase}.",
-        f"I need assistance with {phrase} right now.",
+        (
+            "Fetch all unresolved reminder entries."
+            if tool.id == "reminders.list"
+            else f"I need assistance with {phrase} right now."
+        ),
         f"Can you handle this app action: {phrase}?",
     ]
-    for prompt in curated[2:] + fallback_natural:
+    for prompt in curated[2:]:
+        argument_coverage = list(curated_coverage[prompt])
+        scenarios.append({"prompt": prompt, "scenarioKind": "natural_intent", "toolIDVisibleInPrompt": False, "argumentCoverage": argument_coverage, "approvalCoverage": False, "permissionCoverage": False})
+    for prompt in fallback_natural:
         scenarios.append({"prompt": prompt, "scenarioKind": "natural_intent", "toolIDVisibleInPrompt": False, "argumentCoverage": [], "approvalCoverage": False, "permissionCoverage": False})
 
     deduped: list[dict[str, Any]] = []
@@ -847,28 +1148,6 @@ def _build_dpo_records(role_records: dict[str, list[dict[str, Any]]], config: Da
 
 
 def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetCompilerConfig) -> list[dict[str, Any]]:
-    def _sample_argument_value(argument: Any) -> Any:
-        allowed_values = [value for value in (argument.allowedValues or []) if isinstance(value, str) and value]
-        if allowed_values:
-            return allowed_values[0]
-        arg_name = argument.name
-        normalized = argument.type.strip().lower()
-        if normalized in {"string", "str"}:
-            return f"example {arg_name.replace('_', ' ')}"
-        if normalized in {"number", "float", "double"}:
-            return 1.0
-        if normalized in {"integer", "int"}:
-            return 1
-        if normalized in {"boolean", "bool"}:
-            return True
-        if normalized == "array":
-            return []
-        if normalized in {"object", "dict", "map"}:
-            return {}
-        if normalized in {"null", "none"}:
-            return None
-        return f"example {arg_name.replace('_', ' ')}"
-
     records: list[dict[str, Any]] = []
     for tool in manifest.tools:
         payload = {
@@ -902,13 +1181,10 @@ def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetC
             },
         })
         if required_args:
+            supplied_required_arguments = _required_argument_values(tool)
             required_payload = {
                 "tool": tool.id,
-                "arguments": {
-                    arg.name: _sample_argument_value(arg)
-                    for arg in tool.arguments
-                    if arg.required
-                },
+                "arguments": supplied_required_arguments,
             }
             required_record_id = _stable_id({"tool": tool.id, "required": required_args})
             records.append({
@@ -918,7 +1194,7 @@ def _build_tool_schema_records(manifest: AgentBehaviorManifest, config: DatasetC
                 "toolID": tool.id,
                 "messages": [
                     {"role": "system", "content": "Return manifest-valid executor JSON and include every required argument."},
-                    {"role": "user", "content": f"For `{tool.id}`, produce a sample call that includes all required arguments and no unmanifested keys."},
+                    {"role": "user", "content": f"For `{tool.id}`, return a call using these supplied required-argument values exactly and no unmanifested keys: {json.dumps(supplied_required_arguments, ensure_ascii=False, sort_keys=True)}."},
                     {"role": "assistant", "content": _content_to_string(required_payload)},
                 ],
                 "metadata": {

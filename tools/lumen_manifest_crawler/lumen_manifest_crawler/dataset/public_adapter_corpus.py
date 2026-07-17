@@ -975,9 +975,29 @@ def _transform_massive(
             continue
         opaque_key = _opaque_group_hash(source["id"], str(row.get("id")), utterance)
         source_content_hash = _source_content_sha256(row)
-        cortex_target = _massive_cortex_target(upstream_intent, lumen_intent, contract)
+        same_row_tool_call = _massive_lumen_tool_call(row)
+        cortex_target = _massive_cortex_target(
+            upstream_intent,
+            lumen_intent,
+            contract,
+            same_row_tool_call=same_row_tool_call,
+        )
         if cortex_target is not None:
             selected_tool_id = cortex_target.get("selectedToolID")
+            cortex_quality = {
+                "expertAnnotated": False,
+                "humanAnnotated": True,
+                "humanReviewed": False,
+                "synthetic": False,
+                "lumenManifestValidated": True,
+            }
+            selected_tool = (
+                contract.tools.get(selected_tool_id)
+                if isinstance(selected_tool_id, str)
+                else None
+            )
+            if isinstance(selected_tool, dict) and _required_tool_argument_names(selected_tool):
+                cortex_quality["sameRowArgumentCoverageAudited"] = True
             cortex = _make_record(
                 source,
                 policy_version,
@@ -991,7 +1011,7 @@ def _transform_massive(
                 source_path=source["artifactMember"],
                 stratum=upstream_intent,
                 language="en",
-                quality={"expertAnnotated": False, "humanAnnotated": True, "humanReviewed": False, "synthetic": False},
+                quality=cortex_quality,
                 tool_ids=[selected_tool_id] if isinstance(selected_tool_id, str) else [],
             )
             if cortex:
@@ -1021,7 +1041,7 @@ def _transform_massive(
         )
         if fleet:
             fleet_candidates.append(fleet)
-        tool_call = _massive_lumen_tool_call(row)
+        tool_call = same_row_tool_call
         if tool_call is not None and _validate_tool_call(tool_call, contract.tools):
             executor = _make_record(
                 source,
@@ -1048,6 +1068,8 @@ def _massive_cortex_target(
     upstream_intent: str,
     lumen_intent: str,
     contract: LumenContract,
+    *,
+    same_row_tool_call: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     intent_contract = contract.intents.get(lumen_intent)
     if not isinstance(intent_contract, dict):
@@ -1062,6 +1084,7 @@ def _massive_cortex_target(
             "selectedToolID": None,
             "requiresApproval": False,
             "nextModel": "mouth",
+            "status": "no_tool_route",
             "reasoningSummary": "The manifest routes this request as chat without a native tool action.",
         }
     else:
@@ -1069,22 +1092,82 @@ def _massive_cortex_target(
         tool = contract.tools.get(selected_tool_id) if selected_tool_id is not None else None
         if tool is None or selected_tool_id not in allowed_tool_ids:
             return None
-        requires_approval = tool.get("requiresApproval") is True
-        target = {
-            "intent": lumen_intent,
-            "selectedToolID": selected_tool_id,
-            "requiresApproval": requires_approval,
-            "nextModel": "approval" if requires_approval else "executor",
-            "reasoningSummary": (
-                f"The manifest allows {selected_tool_id} for {lumen_intent}; persist the tool action before finalization."
-            ),
-            "actionStep": {
-                "type": "tool_call",
-                "toolID": selected_tool_id,
-                "mustPersistBeforeFinal": True,
-            },
-        }
+        target = _cortex_tool_target_from_audited_coverage(
+            lumen_intent,
+            selected_tool_id,
+            contract,
+            same_row_tool_call=same_row_tool_call,
+        )
+        if target is None:
+            return None
     return target if _validate_cortex_target(target, contract) else None
+
+
+def _cortex_tool_target_from_audited_coverage(
+    intent: str,
+    tool_id: str,
+    contract: LumenContract,
+    *,
+    same_row_tool_call: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    intent_contract = contract.intents.get(intent)
+    tool = contract.tools.get(tool_id)
+    if (
+        not isinstance(intent_contract, dict)
+        or not isinstance(tool, dict)
+        or tool_id not in (intent_contract.get("allowedToolIDs") or [])
+    ):
+        return None
+    required_arguments = _required_tool_argument_names(tool)
+    if required_arguments is None:
+        return None
+    missing_arguments: tuple[str, ...] = ()
+    if required_arguments:
+        audited_missing = _audited_missing_required_arguments(
+            same_row_tool_call,
+            expected_tool_id=tool_id,
+            tools=contract.tools,
+        )
+        if audited_missing is None:
+            return None
+        missing_arguments = audited_missing
+    elif same_row_tool_call is not None and _audited_missing_required_arguments(
+        same_row_tool_call,
+        expected_tool_id=tool_id,
+        tools=contract.tools,
+    ) is None:
+        return None
+
+    requires_approval = tool.get("requiresApproval") is True
+    base_target = {
+        "intent": intent,
+        "selectedToolID": tool_id,
+        "requiresApproval": requires_approval,
+        "nextModel": "approval" if requires_approval else "executor",
+        "reasoningSummary": (
+            f"The manifest allows {tool_id} for {intent}; persist the tool action before finalization."
+        ),
+    }
+    if missing_arguments:
+        missing = list(missing_arguments)
+        return {
+            **base_target,
+            "nextModel": "mouth",
+            "status": "needs_clarification",
+            "missingArguments": missing,
+            "clarification": _cortex_clarification(tool, missing),
+            "reasoningSummary": (
+                f"{tool_id} requires {_natural_language_list(missing)} before one action can be persisted."
+            ),
+        }
+    return {
+        **base_target,
+        "actionStep": {
+            "type": "tool_call",
+            "toolID": tool_id,
+            "mustPersistBeforeFinal": True,
+        },
+    }
 
 
 def _validate_cortex_target(target: Any, contract: LumenContract) -> bool:
@@ -1106,16 +1189,53 @@ def _validate_cortex_target(target: Any, contract: LumenContract) -> bool:
             intent == "chat"
             and target["requiresApproval"] is False
             and target["nextModel"] == "mouth"
+            and target.get("status") == "no_tool_route"
             and "actionStep" not in target
+            and set(target) == set(contract.cortex_required_fields) | {"status"}
         )
     tool = contract.tools.get(selected_tool_id) if isinstance(selected_tool_id, str) else None
-    action_step = target.get("actionStep")
     expected_requires_approval = tool.get("requiresApproval") is True if tool is not None else False
+    if (
+        tool is None
+        or selected_tool_id not in allowed_tool_ids
+        or target["requiresApproval"] is not expected_requires_approval
+    ):
+        return False
+    required_arguments = _required_tool_argument_names(tool)
+    if required_arguments is None:
+        return False
+    if target.get("status") == "needs_clarification":
+        missing_arguments = target.get("missingArguments")
+        if (
+            not isinstance(missing_arguments, list)
+            or not missing_arguments
+            or any(not isinstance(name, str) for name in missing_arguments)
+        ):
+            return False
+        missing_set = set(missing_arguments)
+        expected_missing_order = [
+            name for name in required_arguments if name in missing_set
+        ]
+        return (
+            len(missing_set) == len(missing_arguments)
+            and missing_arguments == expected_missing_order
+            and target["nextModel"] == "mouth"
+            and "actionStep" not in target
+            and set(target)
+            == set(contract.cortex_required_fields)
+            | {"status", "missingArguments", "clarification"}
+            and target.get("clarification") == _cortex_clarification(tool, missing_arguments)
+            and target.get("reasoningSummary")
+            == (
+                f"{selected_tool_id} requires {_natural_language_list(missing_arguments)} "
+                "before one action can be persisted."
+            )
+        )
+    action_step = target.get("actionStep")
     return (
-        tool is not None
-        and selected_tool_id in allowed_tool_ids
-        and target["requiresApproval"] is expected_requires_approval
-        and target["nextModel"] == ("approval" if expected_requires_approval else "executor")
+        target["nextModel"] == ("approval" if expected_requires_approval else "executor")
+        and not set(target).intersection({"status", "missingArguments", "clarification"})
+        and set(target) == set(contract.cortex_required_fields) | {"actionStep"}
         and isinstance(action_step, dict)
         and action_step.get("type") == "tool_call"
         and action_step.get("toolID") == selected_tool_id
@@ -1210,29 +1330,89 @@ def _massive_slots(annotated: str) -> dict[str, list[str]]:
 
 
 def _validate_tool_call(call: Any, tools: Mapping[str, dict[str, Any]]) -> bool:
-    if not isinstance(call, dict) or set(call) != {"tool", "arguments"}:
+    if not isinstance(call, Mapping):
         return False
+    tool_id = call.get("tool")
+    if not isinstance(tool_id, str):
+        return False
+    return _audited_missing_required_arguments(
+        call,
+        expected_tool_id=tool_id,
+        tools=tools,
+    ) == ()
+
+
+def _audited_missing_required_arguments(
+    call: Mapping[str, Any] | None,
+    *,
+    expected_tool_id: str,
+    tools: Mapping[str, dict[str, Any]],
+) -> tuple[str, ...] | None:
+    if not isinstance(call, dict) or set(call) != {"tool", "arguments"}:
+        return None
     tool_id = call.get("tool")
     arguments = call.get("arguments")
     tool = tools.get(tool_id) if isinstance(tool_id, str) else None
-    if tool is None or not isinstance(arguments, dict):
-        return False
+    if tool_id != expected_tool_id or tool is None or not isinstance(arguments, dict):
+        return None
     definitions = tool.get("arguments")
     if not isinstance(definitions, list):
-        return False
-    by_name = {item.get("name"): item for item in definitions if isinstance(item, dict) and isinstance(item.get("name"), str)}
+        return None
+    by_name = {
+        item.get("name"): item
+        for item in definitions
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    if len(by_name) != len(definitions):
+        return None
     if any(name not in by_name for name in arguments):
-        return False
-    if any(item.get("required") is True and name not in arguments for name, item in by_name.items()):
-        return False
+        return None
     for name, value in arguments.items():
         definition = by_name[name]
         if not _matches_manifest_type(value, str(definition.get("type") or "")):
-            return False
+            return None
         allowed = definition.get("allowedValues")
         if isinstance(allowed, list) and allowed and value not in allowed:
-            return False
-    return True
+            return None
+    required_arguments = _required_tool_argument_names(tool)
+    if required_arguments is None:
+        return None
+    return tuple(name for name in required_arguments if name not in arguments)
+
+
+def _required_tool_argument_names(tool: Mapping[str, Any]) -> tuple[str, ...] | None:
+    definitions = tool.get("arguments")
+    if not isinstance(definitions, list):
+        return None
+    names: list[str] = []
+    seen: set[str] = set()
+    for definition in definitions:
+        if not isinstance(definition, dict):
+            return None
+        name = definition.get("name")
+        if not isinstance(name, str) or not name or name in seen:
+            return None
+        seen.add(name)
+        if definition.get("required") is not False:
+            names.append(name)
+    return tuple(names)
+
+
+def _cortex_clarification(tool: Mapping[str, Any], missing_arguments: Sequence[str]) -> str:
+    display_name = tool.get("displayName")
+    tool_name = display_name.strip() if isinstance(display_name, str) and display_name.strip() else tool["id"]
+    return (
+        f"What should I use for {_natural_language_list(missing_arguments)} "
+        f"in {tool_name}?"
+    )
+
+
+def _natural_language_list(values: Sequence[str]) -> str:
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return f"{', '.join(values[:-1])}, and {values[-1]}"
 
 
 def _matches_manifest_type(value: Any, declared: str) -> bool:
@@ -1849,7 +2029,12 @@ def _transform_apigen_xlam(
             if executor is not None:
                 candidates.append(executor)
         if "cortex" in source["targetAdapters"]:
-            cortex_target = _toolace_cortex_target(mapping["intent"], mapping["toolID"], contract)
+            cortex_target = _toolace_cortex_target(
+                mapping["intent"],
+                mapping["toolID"],
+                contract,
+                same_row_tool_call=lumen_call,
+            )
             if cortex_target is None:
                 continue
             cortex = _make_record(
@@ -1865,7 +2050,7 @@ def _transform_apigen_xlam(
                 source_path=source["artifactPath"],
                 stratum=str(mapping["intent"]),
                 language="en",
-                quality=shared_quality,
+                quality={**shared_quality, "sameRowArgumentCoverageAudited": True},
                 tool_ids=[mapping["toolID"]],
             )
             if cortex is not None:
@@ -2069,7 +2254,12 @@ def _transform_toolace(
                 if executor is not None:
                     candidates.append(executor)
 
-                cortex_target = _toolace_cortex_target(lumen_intent, lumen_call["tool"], contract)
+                cortex_target = _toolace_cortex_target(
+                    lumen_intent,
+                    lumen_call["tool"],
+                    contract,
+                    same_row_tool_call=lumen_call,
+                )
                 if cortex_target is not None:
                     cortex = _make_record(
                         source,
@@ -2084,7 +2274,7 @@ def _transform_toolace(
                         source_path=source["artifactPath"],
                         stratum=lumen_intent,
                         language="en",
-                        quality=shared_quality,
+                        quality={**shared_quality, "sameRowArgumentCoverageAudited": True},
                         tool_ids=[lumen_call["tool"]],
                     )
                     if cortex is not None:
@@ -2283,29 +2473,20 @@ def _toolace_lumen_call(
 
 
 def _toolace_cortex_target(
-    intent: str, tool_id: str, contract: LumenContract
+    intent: str,
+    tool_id: str,
+    contract: LumenContract,
+    *,
+    same_row_tool_call: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    intent_contract = contract.intents.get(intent)
-    tool = contract.tools.get(tool_id)
-    if (
-        not isinstance(intent_contract, dict)
-        or not isinstance(tool, dict)
-        or tool_id not in (intent_contract.get("allowedToolIDs") or [])
-    ):
+    target = _cortex_tool_target_from_audited_coverage(
+        intent,
+        tool_id,
+        contract,
+        same_row_tool_call=same_row_tool_call,
+    )
+    if target is None:
         return None
-    requires_approval = tool.get("requiresApproval") is True
-    target = {
-        "intent": intent,
-        "selectedToolID": tool_id,
-        "requiresApproval": requires_approval,
-        "nextModel": "approval" if requires_approval else "executor",
-        "reasoningSummary": f"The manifest allows {tool_id} for {intent}; persist the action before finalization.",
-        "actionStep": {
-            "type": "tool_call",
-            "toolID": tool_id,
-            "mustPersistBeforeFinal": True,
-        },
-    }
     return target if _validate_cortex_target(target, contract) else None
 
 

@@ -169,3 +169,77 @@ def test_reranker_inherits_held_out_queries_and_never_uses_false_negatives() -> 
             if candidate["relevance"] == 0.0
         }
         assert negative_ids.isdisjoint(known_positives[query])
+
+
+def test_reranker_fallback_never_reintroduces_evaluation_only_documents() -> None:
+    datasets = {
+        "embedding_corpus": [
+            {
+                "id": "positive-document",
+                "objectType": "shared_type",
+                "title": "Positive",
+                "text": "The positive training document.",
+                "metadata": {},
+            },
+            {
+                "id": "evaluation-only-document",
+                "objectType": "shared_type",
+                "title": "Reserved",
+                "text": "Email Jordan Patel directly.",
+                "metadata": {"evaluationOnly": True},
+            },
+            {
+                "id": "safe-fallback-document",
+                "objectType": "different_type",
+                "title": "Safe fallback",
+                "text": "A safe training negative.",
+                "metadata": {},
+            },
+        ],
+        "embedding_train_pairs": [
+            {
+                "id": "train-pair",
+                "query": "Find the positive training document.",
+                "documentID": "positive-document",
+                "family": "synthetic_retrieval",
+                "split": "train",
+                "groupID": "train-group",
+                "metadata": {},
+            }
+        ],
+        "embedding_val_pairs": [],
+        "embedding_hard_negatives": [
+            {
+                "id": "unsafe-upstream-negative",
+                "query": "Find the positive training document.",
+                "positiveDocumentID": "positive-document",
+                "negativeDocumentID": "evaluation-only-document",
+                "family": "synthetic_retrieval",
+                "split": "train",
+                "groupID": "train-group",
+                "metadata": {},
+            }
+        ],
+        "embedding_eval_retrieval": [],
+    }
+
+    compiled = compile_reranker_datasets(datasets)
+
+    assert len(compiled.train_pairs) == 1
+    assert compiled.train_pairs[0]["negativeDocumentID"] == "safe-fallback-document"
+    assert compiled.hard_negative_pairs == []
+    assert compiled.dataset_card["evaluationIsolation"] == {
+        "policy": "exclude_evaluation_only_documents_from_all_training_candidates",
+    }
+
+    training_blob = json.dumps(
+        [
+            *compiled.train_pairs,
+            *compiled.val_pairs,
+            *compiled.hard_negative_pairs,
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    assert "evaluation-only-document" not in training_blob
+    assert "Email Jordan Patel directly." not in training_blob

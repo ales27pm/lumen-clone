@@ -130,8 +130,7 @@ def _portable_manifest_path(value: str | Path) -> str:
         return path.as_posix()
 
 
-def load_config(path: Path) -> dict[str, Any]:
-    cfg = json.loads(path.read_text(encoding="utf-8"))
+def _validate_config(cfg: dict[str, Any], *, path: Path) -> dict[str, Any]:
     required = {
         "agent",
         "base_model_name",
@@ -162,6 +161,13 @@ def load_config(path: Path) -> dict[str, Any]:
     if cfg.get("release_bake_enabled_by_default") is not False:
         raise ValueError(f"{path} must set release_bake_enabled_by_default=false")
     return cfg
+
+
+def load_config(path: Path) -> dict[str, Any]:
+    cfg = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(cfg, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return _validate_config(cfg, path=path)
 
 
 def gather_configs(config_paths: list[str], config_dir: str, selected_agents: list[str]) -> list[dict[str, Any]]:
@@ -438,6 +444,7 @@ def export_agent_gguf(
         revision=cfg["baseModelRevision"],
         max_seq_length=int(cfg["max_seq_length"]),
         load_in_4bit=True,
+        use_exact_model_name=True,
     )
     model = PeftModel.from_pretrained(model, str(adapter_dir), is_trainable=False)
     if not hasattr(model, "save_pretrained_gguf"):

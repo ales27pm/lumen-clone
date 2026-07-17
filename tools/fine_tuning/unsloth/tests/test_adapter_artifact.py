@@ -105,6 +105,47 @@ def test_dpo_artifact_binds_parent_sft_digest(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "payload,error",
+    [
+        ('{"schemaVersion":"first","schemaVersion":"second"}', "strict JSON"),
+        ('{"adapterSHA256":NaN}', "strict JSON"),
+        ('{"adapterSHA256":Infinity}', "strict JSON"),
+        ('{"adapterSHA256":-Infinity}', "strict JSON"),
+        ('{"adapterSHA256":1e400}', "strict JSON"),
+    ],
+)
+def test_adapter_artifact_manifest_requires_strict_json(
+    tmp_path: Path,
+    payload: str,
+    error: str,
+) -> None:
+    adapter = tmp_path / "adapter"
+    _write_adapter(adapter)
+    write_adapter_artifact_manifest(adapter, training_phase="sft")
+    (adapter / "adapter_artifact_manifest.json").write_text(
+        payload,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=error):
+        verify_adapter_artifact(adapter)
+
+
+def test_adapter_artifact_manifest_must_not_be_a_symlink(tmp_path: Path) -> None:
+    adapter = tmp_path / "adapter"
+    _write_adapter(adapter)
+    write_adapter_artifact_manifest(adapter, training_phase="sft")
+    manifest_path = adapter / "adapter_artifact_manifest.json"
+    manifest_copy = tmp_path / "manifest.json"
+    manifest_copy.write_bytes(manifest_path.read_bytes())
+    manifest_path.unlink()
+    manifest_path.symlink_to(manifest_copy)
+
+    with pytest.raises(ValueError, match="regular file"):
+        verify_adapter_artifact(adapter)
+
+
+@pytest.mark.parametrize(
     "weights,error",
     [
         (b"", "truncated or empty"),

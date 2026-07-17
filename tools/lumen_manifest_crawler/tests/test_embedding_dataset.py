@@ -240,6 +240,154 @@ def test_embedding_train_validation_and_eval_are_held_out_by_query_and_document(
     assert train_val_pairs.isdisjoint(eval_pairs)
 
 
+def test_eval_scenario_documents_and_connected_queries_are_evaluation_only() -> None:
+    manifest = generate_manifest(_repo_root())
+    datasets = generate_all_datasets(manifest)
+
+    eval_scenario_document_ids = {
+        record["id"]
+        for record in datasets["embedding_corpus"]
+        if record["objectType"] == "eval_scenario"
+    }
+    assert eval_scenario_document_ids
+
+    for record in datasets["embedding_train_pairs"] + datasets["embedding_val_pairs"]:
+        assert record["documentID"] not in eval_scenario_document_ids
+        assert record.get("metadata", {}).get("sourceFamily") != "eval_scenarios"
+
+    for record in datasets["embedding_train_triplets"] + datasets["embedding_val_triplets"]:
+        assert record["positiveDocumentID"] not in eval_scenario_document_ids
+        assert record["negativeDocumentID"] not in eval_scenario_document_ids
+
+    for record in datasets["embedding_hard_negatives"]:
+        assert record["positiveDocumentID"] not in eval_scenario_document_ids
+        assert record["negativeDocumentID"] not in eval_scenario_document_ids
+
+    eval_scenario_retrieval = [
+        record
+        for record in datasets["embedding_eval_retrieval"]
+        if record["family"] == "eval_scenarios_retrieval"
+    ]
+    assert eval_scenario_retrieval
+    assert all(
+        set(record["positiveDocumentIDs"]) & eval_scenario_document_ids
+        for record in eval_scenario_retrieval
+    )
+
+    eval_queries = {
+        _normalized_query(record["query"])
+        for record in eval_scenario_retrieval
+    }
+    train_validation_queries = {
+        _normalized_query(record["query"])
+        for record in datasets["embedding_train_pairs"] + datasets["embedding_val_pairs"]
+    }
+    assert eval_queries.isdisjoint(train_validation_queries)
+
+    card = datasets["embedding_dataset_card"][0]
+    assert card["evaluationIsolation"] == {
+        "sourceFamilies": ["eval_scenarios"],
+        "policy": "evaluation_only_with_connected_query_groups",
+        "contentPolicy": "normalized_eval_user_segment_documents_are_evaluation_only",
+    }
+
+
+def test_eval_scenario_query_collision_reserves_the_entire_connected_group() -> None:
+    manifest = generate_manifest(_repo_root())
+    shared_query = "Find the deliberately reserved collision record."
+    compiled = compile_embedding_datasets(
+        manifest,
+        {
+            "tool_schema_cards": [
+                {
+                    "id": "ordinary-source-record",
+                    "query": shared_query,
+                    "summary": "An otherwise trainable source record.",
+                }
+            ],
+            "eval_scenarios": [
+                {
+                    "id": "reserved-evaluation-record",
+                    "messages": [{"role": "user", "content": shared_query}],
+                }
+            ],
+        },
+    )
+    datasets = compiled.as_dataset_families()
+
+    training_queries = {
+        _normalized_query(record["query"])
+        for record in datasets["embedding_train_pairs"] + datasets["embedding_val_pairs"]
+    }
+    assert _normalized_query(shared_query) not in training_queries
+
+    matching_eval = next(
+        record
+        for record in datasets["embedding_eval_retrieval"]
+        if _normalized_query(record["query"]) == _normalized_query(shared_query)
+    )
+    positive_documents = set(matching_eval["positiveDocumentIDs"])
+    source_families = {
+        record["metadata"].get("sourceFamily")
+        for record in datasets["embedding_corpus"]
+        if record["id"] in positive_documents
+    }
+    assert source_families == {"tool_schema_cards", "eval_scenarios"}
+
+
+def test_eval_prompt_inside_source_document_is_never_used_for_training() -> None:
+    manifest = generate_manifest(_repo_root())
+    heldout_prompt = "Email Jordan Patel directly."
+    compiled = compile_embedding_datasets(
+        manifest,
+        {
+            "eval_scenarios": [
+                {
+                    "id": "reserved-evaluation-record",
+                    "messages": [{"role": "user", "content": heldout_prompt}],
+                }
+            ],
+            "codebase_home_chunks": [
+                {
+                    "id": "source-containing-heldout-text",
+                    "path": "tests/eval_definitions.py",
+                    "module": "tests",
+                    "language": "python",
+                    "sha256": "source-sha",
+                    "chunkSHA256": "chunk-sha",
+                    "lineStart": 1,
+                    "lineEnd": 2,
+                    "text": f'PROMPT = "{heldout_prompt}"',
+                }
+            ],
+        },
+    )
+    datasets = compiled.as_dataset_families()
+    source_document = next(
+        record
+        for record in datasets["embedding_corpus"]
+        if record["objectID"] == "source-containing-heldout-text"
+    )
+    assert source_document["metadata"]["evaluationOnly"] is True
+
+    training_document_ids = {
+        record["documentID"]
+        for record in datasets["embedding_train_pairs"] + datasets["embedding_val_pairs"]
+    }
+    training_document_ids.update(
+        record["negativeDocumentID"]
+        for record in datasets["embedding_hard_negatives"]
+    )
+    assert source_document["id"] not in training_document_ids
+
+    evaluation_document_ids = {
+        document_id
+        for record in datasets["embedding_eval_retrieval"]
+        for document_id in record["positiveDocumentIDs"]
+    }
+    assert source_document["id"] in evaluation_document_ids
+
+
 def test_embedding_never_labels_a_known_query_positive_as_a_hard_negative() -> None:
     manifest = generate_manifest(_repo_root())
     compiled = compile_embedding_datasets(

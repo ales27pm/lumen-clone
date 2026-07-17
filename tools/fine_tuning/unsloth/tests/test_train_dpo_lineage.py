@@ -305,10 +305,20 @@ def test_verified_sft_parent_rejects_invalid_artifact_lineage(
         )
 
 
-def test_verified_sft_parent_rejects_adapter_base_model_mismatch(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "adapter_base_model_name",
+    (
+        "unsloth/qwen3-1.7b-unsloth-bnb-4bit",
+        "Qwen/Another-Model",
+    ),
+)
+def test_verified_sft_parent_rejects_adapter_base_model_mismatch(
+    tmp_path: Path,
+    adapter_base_model_name: str,
+) -> None:
     adapter, finalized, cfg, _ = _sft_parent_fixture(
         tmp_path,
-        adapter_base_model_name="Qwen/Another-Model",
+        adapter_base_model_name=adapter_base_model_name,
     )
     with pytest.raises(RuntimeError, match="adapter base model"):
         train_dpo._verified_sft_parent(
@@ -565,9 +575,12 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
         "batch_size": 1,
         "gradient_accumulation_steps": 2,
         "learning_rate": 1e-5,
+        "dpo_learning_rate": 2e-6,
         "num_train_epochs": 1,
+        "dpo_num_train_epochs": 0.5,
         "warmup_steps": 0,
         "max_seq_length": 512,
+        "max_prompt_length": 384,
     }
     common = {
         "seed": 42,
@@ -591,13 +604,47 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
     assert dpo_args.kwargs["seed"] == dpo_args.kwargs["data_seed"] == 42
     assert dpo_args.kwargs["eval_strategy"] == "no"
     assert dpo_args.kwargs["save_strategy"] == "epoch"
+    assert dpo_args.kwargs["learning_rate"] == 2e-6
+    assert dpo_args.kwargs["num_train_epochs"] == 0.5
+    assert dpo_args.kwargs["max_prompt_length"] == 384
+    assert dpo_args.kwargs["use_logits_to_keep"] is True
+    assert dpo_args.kwargs["precompute_ref_log_probs"] is True
+    assert dpo_args.kwargs["precompute_ref_batch_size"] == 1
+    assert dpo_args.kwargs["gradient_checkpointing"] is True
 
     orpo_trainer, orpo_args = train_dpo._build_preference_trainer(
         cfg, preference_trainer="orpo", **common
     )
     assert isinstance(orpo_trainer, ORPOTrainerProbe)
     assert "model_adapter_name" not in orpo_args.kwargs
+    assert "use_logits_to_keep" not in orpo_args.kwargs
+    assert "precompute_ref_log_probs" not in orpo_args.kwargs
+    assert "precompute_ref_batch_size" not in orpo_args.kwargs
     assert orpo_args.kwargs["seed"] == orpo_args.kwargs["data_seed"] == 42
+    assert orpo_args.kwargs["learning_rate"] == 2e-6
+
+    cfg["precompute_ref_batch_size"] = 0
+    with pytest.raises(ValueError, match="precompute_ref_batch_size"):
+        train_dpo._build_preference_trainer(
+            cfg, preference_trainer="dpo", **common
+        )
+    cfg.pop("precompute_ref_batch_size")
+    for field, invalid, message in (
+        ("gradient_checkpointing", "true", "gradient_checkpointing"),
+        ("gradient_checkpointing", False, "gradient_checkpointing=true"),
+        ("use_logits_to_keep", "false", "use_logits_to_keep=true"),
+        ("use_logits_to_keep", False, "use_logits_to_keep=true"),
+        ("precompute_ref_log_probs", "false", "precompute_ref_log_probs=true"),
+        ("precompute_ref_log_probs", False, "precompute_ref_log_probs=true"),
+        ("precompute_ref_batch_size", True, "precompute_ref_batch_size"),
+        ("precompute_ref_batch_size", 1.5, "precompute_ref_batch_size"),
+    ):
+        cfg[field] = invalid
+        with pytest.raises(ValueError, match=message):
+            train_dpo._build_preference_trainer(
+                cfg, preference_trainer="dpo", **common
+            )
+        cfg.pop(field)
 
 
 @pytest.mark.e2e
@@ -656,8 +703,92 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
     assert isinstance(orpo_args, trl.ORPOConfig)
     assert dpo_args.model_adapter_name == train_dpo.POLICY_ADAPTER_NAME
     assert dpo_args.ref_adapter_name == train_dpo.REFERENCE_ADAPTER_NAME
+    assert dpo_args.use_logits_to_keep is True
+    assert dpo_args.precompute_ref_log_probs is True
+    assert dpo_args.precompute_ref_batch_size == 1
+    assert dpo_args.gradient_checkpointing is True
     assert dpo_args.seed == dpo_args.data_seed == 42
     assert orpo_args.seed == orpo_args.data_seed == 42
+
+
+def test_reference_logps_precompute_before_checkpoint_graph_initialization() -> None:
+    events: list[object] = []
+
+    class Model:
+        def gradient_checkpointing_disable(self) -> None:
+            events.append("disable")
+
+        def gradient_checkpointing_enable(self, **kwargs: object) -> None:
+            events.append(("enable", kwargs))
+
+    class Trainer:
+        model = Model()
+        _precomputed_train_ref_log_probs = False
+        _precomputed_eval_ref_log_probs = False
+
+        def get_train_dataloader(self) -> object:
+            events.append("precompute_train")
+            self._precomputed_train_ref_log_probs = True
+            return object()
+
+        def get_eval_dataloader(self) -> object:
+            events.append("precompute_eval")
+            self._precomputed_eval_ref_log_probs = True
+            return object()
+
+    class Args:
+        precompute_ref_log_probs = True
+        gradient_checkpointing = True
+        gradient_checkpointing_kwargs = {"use_reentrant": False}
+
+    result = train_dpo._precompute_reference_log_probs_before_training(
+        Trainer(),
+        Args(),
+        has_eval_dataset=True,
+    )
+
+    assert result == {"train": True, "evaluation": True}
+    assert events == [
+        "disable",
+        "precompute_train",
+        "precompute_eval",
+        (
+            "enable",
+            {
+                "gradient_checkpointing_kwargs": {
+                    "use_reentrant": False
+                }
+            },
+        ),
+    ]
+
+
+def test_reference_logps_precompute_fails_if_trainer_does_not_bind_columns() -> None:
+    class Model:
+        def gradient_checkpointing_disable(self) -> None:
+            pass
+
+        def gradient_checkpointing_enable(self, **_kwargs: object) -> None:
+            pass
+
+    class Trainer:
+        model = Model()
+        _precomputed_train_ref_log_probs = False
+
+        def get_train_dataloader(self) -> object:
+            return object()
+
+    class Args:
+        precompute_ref_log_probs = True
+        gradient_checkpointing = True
+        gradient_checkpointing_kwargs = None
+
+    with pytest.raises(RuntimeError, match="did not bind"):
+        train_dpo._precompute_reference_log_probs_before_training(
+            Trainer(),
+            Args(),
+            has_eval_dataset=False,
+        )
 
 
 def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) -> None:

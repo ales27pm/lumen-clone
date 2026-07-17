@@ -85,6 +85,7 @@ esac
 [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$ ]] || die "unsafe run ID: $RUN_ID"
 [[ ! -L "$RUN_ROOT" ]] || die "run root must not be a symlink: $RUN_ROOT"
 [[ "$AGENTS_CSV" =~ ^[a-z]+(,[a-z]+)*$ ]] || die "agents must be a lowercase comma-separated list"
+IFS=',' read -r -a AGENTS <<< "$AGENTS_CSV"
 if [[ -n "$EVAL_MAX_EXAMPLES" ]]; then
   [[ "$EVAL_MAX_EXAMPLES" =~ ^[1-9][0-9]*$ ]] || die "LUMEN_AIO_EVAL_MAX_EXAMPLES must be positive"
 fi
@@ -240,6 +241,52 @@ if [[ "$PREPARE_ONLY" == "1" ]]; then
   exit 0
 fi
 
+CONVERTER_REPO=""
+CONVERTER=""
+GGUF_READER=""
+if [[ "$CONVERT_GGUF" == "1" ]]; then
+  LLAMA_CPP_REVISION="$(
+    cd "$ROOT"
+    "$TRAIN_PY" - <<'PY'
+from tools.fine_tuning.unsloth.training_lineage import DEFAULT_LLAMA_CPP_REVISION
+
+print(DEFAULT_LLAMA_CPP_REVISION)
+PY
+  )"
+  [[ "$LLAMA_CPP_REVISION" =~ ^[0-9a-f]{40}$ ]] \
+    || die "training_lineage supplied an invalid llama.cpp revision"
+  CONVERTER_REPO="$RUN_ROOT/llama.cpp"
+  CONVERTER="$CONVERTER_REPO/convert_lora_to_gguf.py"
+  GGUF_READER="$CONVERTER_REPO/gguf-py/gguf/scripts/gguf_dump.py"
+  [[ ! -L "$CONVERTER_REPO" ]] \
+    || die "converter checkout path is unsafe: $CONVERTER_REPO"
+  if [[ -e "$CONVERTER_REPO" && ! -d "$CONVERTER_REPO" ]]; then
+    die "converter checkout path is not a directory: $CONVERTER_REPO"
+  fi
+  if [[ ! -d "$CONVERTER_REPO" ]]; then
+    log "fetching the pinned llama.cpp LoRA converter"
+    git init "$CONVERTER_REPO"
+    git -C "$CONVERTER_REPO" remote add origin https://github.com/ggml-org/llama.cpp
+    git -C "$CONVERTER_REPO" fetch --depth 1 origin "$LLAMA_CPP_REVISION"
+    git -C "$CONVERTER_REPO" checkout --detach FETCH_HEAD
+  fi
+  [[ -f "$CONVERTER" && ! -L "$CONVERTER" ]] \
+    || die "missing regular convert_lora_to_gguf.py"
+  [[ -f "$GGUF_READER" && ! -L "$GGUF_READER" ]] \
+    || die "missing regular pinned llama.cpp GGUF reader"
+  [[ "$(git -C "$CONVERTER_REPO" rev-parse HEAD)" == "$LLAMA_CPP_REVISION" ]] \
+    || die "llama.cpp converter revision does not match the controlled environment"
+  [[ -z "$(git -C "$CONVERTER_REPO" status --porcelain=v1 --untracked-files=all)" ]] \
+    || die "llama.cpp converter checkout is dirty"
+  [[ "$(git -C "$CONVERTER_REPO" hash-object "$CONVERTER")" == \
+      "$(git -C "$CONVERTER_REPO" rev-parse "HEAD:convert_lora_to_gguf.py")" ]] \
+    || die "llama.cpp converter file drifted from the pinned revision"
+  log "preflighting the pinned llama.cpp LoRA converter"
+  "$TRAIN_PY" "$CONVERTER" --help >/dev/null
+  log "preflighting the pinned llama.cpp GGUF reader"
+  "$TRAIN_PY" "$GGUF_READER" --help >/dev/null
+fi
+
 verify_phase() {
   local agent="$1"
   local phase="$2"
@@ -265,7 +312,7 @@ if [[ "$ASSISTANT_ONLY_LOSS" == "1" ]]; then
   TRAIN_ARGS+=(--assistant-only-loss)
 fi
 
-while IFS= read -r agent; do
+for agent in "${AGENTS[@]}"; do
   [[ -n "$agent" ]] || continue
   if [[ "$RESUME" == "1" ]] && verify_phase "$agent" sft >/dev/null 2>&1; then
     log "verified existing SFT phase: $agent"
@@ -303,10 +350,10 @@ while IFS= read -r agent; do
       verify_phase "$agent" preference
     fi
   fi
-done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
+done
 
 if [[ "$EVALUATE" == "1" ]]; then
-  while IFS= read -r agent; do
+  for agent in "${AGENTS[@]}"; do
     [[ -n "$agent" ]] || continue
     log "preparing frozen evaluation lineage: $agent"
     (
@@ -332,32 +379,11 @@ if [[ "$EVALUATE" == "1" ]]; then
       cd "$ROOT"
       "$TRAIN_PY" -m tools.fine_tuning.unsloth.evaluate_adapter "${eval_args[@]}"
     ) 2>&1 | tee "$RUN_ROOT/logs/evaluate_$agent.log"
-  done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
+  done
 fi
 
 if [[ "$CONVERT_GGUF" == "1" ]]; then
-  LLAMA_CPP_REVISION="34558825a27f4d74dcfd7a91bfde4464baa2a30a"
-  CONVERTER_REPO="$RUN_ROOT/llama.cpp"
-  CONVERTER="$CONVERTER_REPO/convert_lora_to_gguf.py"
-  if [[ ! -d "$CONVERTER_REPO" ]]; then
-    [[ ! -e "$CONVERTER_REPO" && ! -L "$CONVERTER_REPO" ]] \
-      || die "converter checkout path is unsafe: $CONVERTER_REPO"
-    log "fetching the pinned llama.cpp LoRA converter"
-    git init "$CONVERTER_REPO"
-    git -C "$CONVERTER_REPO" remote add origin https://github.com/ggml-org/llama.cpp
-    git -C "$CONVERTER_REPO" fetch --depth 1 origin "$LLAMA_CPP_REVISION"
-    git -C "$CONVERTER_REPO" checkout --detach FETCH_HEAD
-  fi
-  [[ -f "$CONVERTER" && ! -L "$CONVERTER" ]] || die "missing regular convert_lora_to_gguf.py"
-  [[ "$(git -C "$CONVERTER_REPO" rev-parse HEAD)" == "$LLAMA_CPP_REVISION" ]] \
-    || die "llama.cpp converter revision does not match the controlled environment"
-  [[ -z "$(git -C "$CONVERTER_REPO" status --porcelain=v1 --untracked-files=all)" ]] \
-    || die "llama.cpp converter checkout is dirty"
-  [[ "$(git -C "$CONVERTER_REPO" hash-object "$CONVERTER")" == \
-      "$(git -C "$CONVERTER_REPO" rev-parse "HEAD:convert_lora_to_gguf.py")" ]] \
-    || die "llama.cpp converter file drifted from the pinned revision"
-
-  while IFS= read -r agent; do
+  for agent in "${AGENTS[@]}"; do
     [[ -n "$agent" ]] || continue
     outfile="$RUN_ROOT/models/lora_qwen3_gguf/lumen-$agent-lora.gguf"
     if [[ "$RESUME" == "1" ]] && (
@@ -417,8 +443,12 @@ PY
       --outfile "$outfile" \
       --base "$base_model" \
       2>&1 | tee "$RUN_ROOT/logs/convert_$agent.log"
-    [[ -s "$outfile" ]] || die "converter did not produce a nonempty GGUF: $outfile"
-  done < <(printf '%s' "$AGENTS_CSV" | tr ',' '\n')
+    (
+      cd "$ROOT"
+      "$TRAIN_PY" -m tools.fine_tuning.unsloth.ubuntu_pipeline \
+        verify-gguf-file --run-root "$RUN_ROOT" --path "$outfile"
+    )
+  done
 fi
 
 summary_args=(

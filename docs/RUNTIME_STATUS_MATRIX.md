@@ -2,6 +2,8 @@
 
 This matrix describes the Release product surface. A feature is either shipped, excluded from Release, or available only in DEBUG diagnostics. Historical PR notes may describe older migration states; this file is the current shipping reference.
 
+Offline adapter qualification does not redefine this Release surface. Cortex's five-field route and `actionStep` JSON are training/evaluation shapes, whereas shipped structured turns use the current constrained `action` or `final` JSON wire contract and leave routing, clarification, manifest validation, approval, and persistence to the native runtime. Offline adapter/GGUF results, including any future verified `599/599` aggregate, do not establish that newly trained artifacts are installed or selected in iOS and do not substitute for device or TestFlight evidence.
+
 | Surface | Release status | Runtime owner | User-visible behavior |
 | --- | --- | --- | --- |
 | Foreground chat, text turns | Shipped | `AssistantKernel.run(...)` with `LlamaRuntimeAdapter.live(...)` backed by `AppLlamaService` | Uses the local SwiftLlama/AppLlamaService path when a chat model is loaded. Missing or failed models surface typed runtime errors instead of deterministic assistant text. |

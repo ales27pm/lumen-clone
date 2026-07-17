@@ -48,6 +48,20 @@ def _split_command(value: Optional[str]) -> tuple[str, ...]:
     return tuple(shlex.split(value))
 
 
+def _should_generate_full_fleet_artifacts(
+    *,
+    generate_system_prompts: bool,
+    cross_model_train_dir: Optional[Path],
+    generate_agent_fine_tuning: bool,
+) -> bool:
+    """Return whether downstream outputs require the complete Fleet corpus."""
+    return (
+        generate_system_prompts
+        or cross_model_train_dir is not None
+        or generate_agent_fine_tuning
+    )
+
+
 @generate_app.callback()
 def generate(
     root: Path = typer.Option(Path("."), "--root", help="Repository root to scan."),
@@ -84,9 +98,17 @@ def generate(
     runtime_audit_reports = load_runtime_audit_reports(runtime_audit)
     datasets = generate_all_datasets(manifest, root=root, runtime_audit_paths=runtime_audit, deterministic=deterministic)
     report = validate_manifest(manifest, datasets, strict=strict)
-    should_generate_full_fleet_artifacts = generate_system_prompts or cross_model_train_dir is not None
+    should_generate_full_fleet_artifacts = _should_generate_full_fleet_artifacts(
+        generate_system_prompts=generate_system_prompts,
+        cross_model_train_dir=cross_model_train_dir,
+        generate_agent_fine_tuning=generate_agent_fine_tuning,
+    )
+    should_write_full_fleet_artifacts = (
+        generate_system_prompts or cross_model_train_dir is not None
+    )
     fleet_artifacts = generate_fleet_artifacts(manifest) if should_generate_full_fleet_artifacts else None
-    manifest_markdown = None if fleet_artifacts else (generate_manifest_markdown(manifest) if export_md else None)
+    output_fleet_artifacts = fleet_artifacts if should_write_full_fleet_artifacts else None
+    manifest_markdown = None if output_fleet_artifacts else (generate_manifest_markdown(manifest) if export_md else None)
 
     fine_tuning_datasets = None
     if generate_agent_fine_tuning:
@@ -120,7 +142,7 @@ def generate(
         report,
         datasets,
         pretty=pretty,
-        fleet_artifacts=fleet_artifacts,
+        fleet_artifacts=output_fleet_artifacts,
         manifest_markdown=manifest_markdown,
         cross_model_train_dir=target_cross_dir,
         incremental_fingerprint=manifest_fingerprint,

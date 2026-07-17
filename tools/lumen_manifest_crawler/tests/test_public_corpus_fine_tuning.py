@@ -339,7 +339,7 @@ def test_fleet_routing_uses_structured_ownership_without_bypassing_role_locks() 
             for record in _all_sft(compiled[target])
             if record["metadata"].get("taskType") == "peer_role_contract"
         ]
-        assert len(peer_samples) == (1 if target == "cortex" else 0)
+        assert len(peer_samples) == (len(peer_records) if target == "fleet" else 0)
     assert not [
         record
         for agent in AGENTS

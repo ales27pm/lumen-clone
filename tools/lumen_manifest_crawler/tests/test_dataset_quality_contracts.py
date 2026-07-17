@@ -87,7 +87,10 @@ def test_approval_ambiguity_requires_a_missing_required_argument() -> None:
 def test_cross_model_provenance_cannot_bypass_role_locks() -> None:
     record = {
         "taskType": "fleet_private_state_boundary",
-        "metadata": {"agentRole": "executor"},
+        "metadata": {
+            "agentRole": "executor",
+            "publicCorpus": {"targetAdapter": "executor"},
+        },
         "prompt": [{"role": "user", "content": "Inspect a private fleet cache."}],
         "chosen": {"role": "assistant", "content": "I cannot inspect private runtime state."},
         "rejected": {"role": "assistant", "content": "Here is fabricated private state."},
@@ -101,8 +104,7 @@ def test_cross_model_provenance_cannot_bypass_role_locks() -> None:
         slot_roles={"tool_executor"},
     )
 
-    assert "executor" not in routed
-    assert routed == []
+    assert routed == ["fleet"]
 
     manifest = AgentBehaviorManifest(tools=[_tool("alarm.cancel", "Cancel Alarm")])
     dpo = _build_agent_dpo_records(
@@ -111,10 +113,16 @@ def test_cross_model_provenance_cannot_bypass_role_locks() -> None:
         FineTuningDatasetConfig(),
         {"alarm.cancel"},
     )
-    assert all(
-        (item.get("metadata") or {}).get("sourceFamily") != "cross_model_training"
-        for item in dpo["executor"]
+    assert any(
+        (item.get("metadata") or {}).get("sourceFamily") == "cross_model_training"
+        for item in dpo["fleet"]
     )
+    for role_locked_agent in ("cortex", "executor"):
+        assert all(
+            (item.get("metadata") or {}).get("sourceFamily")
+            != "cross_model_training"
+            for item in dpo[role_locked_agent]
+        )
     assert all("tool" in json.loads(item["chosen"]["content"]) for item in dpo["executor"])
 
 

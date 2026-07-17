@@ -5,6 +5,7 @@ from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
 from lumen_manifest_crawler.fleet_artifacts import generate_fleet_artifacts
 from lumen_manifest_crawler.output.writer import _write_fleet_artifacts
+from lumen_manifest_crawler.validators import validate_agent_fine_tuning_datasets
 
 
 def test_fleet_artifacts_include_source_code_map_and_whole_system_records():
@@ -45,6 +46,81 @@ def test_fleet_records_teach_peer_source_awareness_and_private_boundaries():
     serialized = "\n".join(str(record) for record in artifacts.cross_model_training)
     assert "single logical agent" in serialized or "one logical agent" in serialized
     assert "must not claim direct access" in serialized or "cannot inspect" in serialized
+
+
+def test_production_cross_model_training_is_fleet_owned():
+    manifest = generate_manifest(Path(".").resolve())
+    artifacts = generate_fleet_artifacts(manifest)
+    compiled = compile_agent_fine_tuning_datasets(
+        manifest,
+        {},
+        fleet_artifacts=artifacts,
+    )
+    expected_sft_task_types = {
+        "fleet_delegation",
+        "fleet_peer_source_knowledge",
+        "source_code_self_knowledge",
+    }
+    expected_dpo_task_types = {
+        "fleet_delegation_preference",
+        "fleet_private_state_boundary",
+    }
+
+    fleet_sft_task_types = {
+        record["metadata"]["taskType"]
+        for record in [*compiled["fleet"].train_sft, *compiled["fleet"].val_sft]
+        if record["metadata"].get("sourceFamily") == "cross_model_training"
+    }
+    fleet_dpo_task_types = {
+        record["metadata"]["taskType"]
+        for record in [*compiled["fleet"].train_dpo, *compiled["fleet"].val_dpo]
+        if record["metadata"].get("sourceFamily") == "cross_model_training"
+    }
+
+    assert expected_sft_task_types <= fleet_sft_task_types
+    assert expected_dpo_task_types <= fleet_dpo_task_types
+
+    for role_locked_agent in ("cortex", "executor"):
+        role_locked_records = [
+            *compiled[role_locked_agent].train_sft,
+            *compiled[role_locked_agent].val_sft,
+            *compiled[role_locked_agent].train_dpo,
+            *compiled[role_locked_agent].val_dpo,
+        ]
+        assert not [
+            record
+            for record in role_locked_records
+            if record["metadata"].get("sourceFamily") == "cross_model_training"
+        ]
+
+
+def test_cortex_private_state_preferences_use_matched_json_envelopes():
+    manifest = generate_manifest(Path(".").resolve())
+    artifacts = generate_fleet_artifacts(manifest)
+    records = [
+        record
+        for record in artifacts.cross_model_training
+        if record.get("taskType") == "fleet_private_state_boundary"
+        and record.get("agentRole") == "orchestrator"
+    ]
+    required_fields = {
+        "intent",
+        "selectedToolID",
+        "requiresApproval",
+        "nextModel",
+        "reasoningSummary",
+    }
+
+    assert records
+    for record in records:
+        chosen = json.loads(record["chosen"]["content"])
+        rejected = json.loads(record["rejected"]["content"])
+        assert set(chosen) == set(rejected) == required_fields
+        assert chosen["selectedToolID"] is None
+        assert chosen["requiresApproval"] is False
+        assert "unavailable" in chosen["reasoningSummary"]
+        assert "fabricated_internal_state" in rejected["reasoningSummary"]
+        assert "Return exactly one valid JSON object and nothing else." in record["prompt"][0]["content"]
 
 
 def test_native_fleet_orchestration_covers_event_graph_boundaries_and_eval_contracts():
@@ -200,6 +276,35 @@ def test_native_orchestration_training_routes_only_to_fleet_adapter():
     artifacts = generate_fleet_artifacts(manifest)
 
     compiled = compile_agent_fine_tuning_datasets(manifest, {}, fleet_artifacts=artifacts)
+    fleet_orchestration_eval_scenarios = {
+        record["metadata"]["scenarioID"]
+        for record in compiled["fleet"].eval
+        if record.get("metadata", {}).get("evalType")
+        == "fleet_orchestration_event_graph_eval"
+    }
+    assert len(compiled["fleet"].eval) == 15
+    assert fleet_orchestration_eval_scenarios == {
+        "no-delegation",
+        "sequential-dependencies",
+        "parallel-dependencies",
+        "context-handoff",
+        "duplicate-suppression",
+        "aggregation-owner",
+        "approval-boundary",
+        "unavailable-boundary",
+        "nonexistent-slot-negative",
+    }
+    complete_failures = validate_agent_fine_tuning_datasets(manifest, compiled)
+    assert "fleet_orchestration_eval_coverage_missing" not in {
+        failure.code for failure in complete_failures
+    }
+
+    truncated = compile_agent_fine_tuning_datasets(manifest, {})
+    truncated_failures = validate_agent_fine_tuning_datasets(manifest, truncated)
+    assert "fleet_orchestration_eval_coverage_missing" in {
+        failure.code for failure in truncated_failures
+    }
+
     for agent, dataset in compiled.items():
         sft = [*dataset.train_sft, *dataset.val_sft]
         dpo = [*dataset.train_dpo, *dataset.val_dpo]

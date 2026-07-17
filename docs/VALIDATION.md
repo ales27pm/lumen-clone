@@ -31,6 +31,13 @@ python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent
 - **Model-backed training pacing** checks runtime budget and CPU watchdog state before generation. If degraded before a valid generation begins, emit one non-actionable runtime-preflight result with `trainingSignal=false` instead of entering agent-json and accumulating trainable failures.
 - **Training/HF validation** is opt-in and never runs by default.
 
+## Offline Adapter Qualification Boundaries
+
+- Cortex's five-field route and `actionStep` JSON shapes are training and frozen-evaluation contracts, not the shipped iOS response wire. Release iOS continues to use its current constrained `action` or `final` JSON contract, and the runtime owns routing, clarification, canonical manifest validation, approval, and action persistence.
+- Schema 1.1 contamination evidence is hash-only. It checks exact record or segment fingerprints, 13-token near-overlap shingles, and 4-token short-window containment over non-system content; raw held-out text is not written into the report. Validation also verifies the report self-hash, training/evaluation corpus hashes and counts, the public-evaluation fingerprint bundle SHA/count, variant-manifest bindings, and zero contamination matches.
+- Smoke accounting keeps `fullCaseCount` and `generatedCaseCount` separate. The scored report covers only the generated cohort: report generated passes as `passedCaseCount`, generated failures as `generatedCaseCount - passedCaseCount`, and missing generated outputs as `missingOutputCount`. Ungenerated cases are `fullCaseCount - generatedCaseCount` and are not inserted into the scored report. `criticalFailureCount` counts critical failures within the generated cohort, not all generated failures. `smoke_complete` is not a full-suite quality-gate pass.
+- A future independently verified `599/599` aggregate would prove the offline six-adapter evaluation and bound artifact lineage only. It would not prove that those artifacts are installed or selected by iOS, and it would not replace signed-build, real-device, TestFlight, or live-runtime validation.
+
 ## Feature-Complete Release Gate
 
 Run these commands before claiming a Release hardening pass:
