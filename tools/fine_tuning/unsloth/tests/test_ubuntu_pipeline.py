@@ -13,7 +13,11 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from lumen_manifest_crawler.dataset import adapter_evaluation
-from tools.fine_tuning.unsloth import evaluate_adapter, ubuntu_pipeline
+from tools.fine_tuning.unsloth import (
+    evaluate_adapter,
+    ubuntu_pipeline,
+    ubuntu_source_integrity,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -33,6 +37,30 @@ def _test_execution_plan(
         evaluation_max_examples=evaluation_max_examples,
         gguf_requested=gguf_requested,
     )
+
+
+def _source_integrity_fixture() -> dict:
+    orchestration = {
+        "schemaVersion": "lumen.ubuntu-orchestration-code/1.0.0",
+        "files": [
+            {"path": path, "size": 1, "sha256": "4" * 64}
+            for path in sorted(
+                ubuntu_source_integrity.REQUIRED_ORCHESTRATION_PATHS
+            )
+        ],
+    }
+    record = {
+        "schema": "lumen.ubuntu-source-integrity/1.0.0",
+        "baseCommit": "5" * 40,
+        "workingTreeDigest": "1" * 64,
+        "dirtyState": False,
+        "ubuntuOrchestrationCodeSHA256": ubuntu_pipeline.canonical_sha256(
+            orchestration
+        ),
+        "orchestrationManifest": orchestration,
+    }
+    record["sourceIntegritySHA256"] = ubuntu_pipeline.canonical_sha256(record)
+    return ubuntu_pipeline.source_integrity_fields(record)
 
 
 def _gguf_bytes(
@@ -277,6 +305,7 @@ def _write_evaluation_evidence(
     full_case_count: int = 1,
     generated_case_count: int | None = None,
     evaluation_records: list[dict] | None = None,
+    attested_source: bool = False,
 ) -> Path:
     variant = "internal_plus_public_optimized"
     (run_root / "models" / "lora_qwen3_gguf").mkdir(
@@ -461,6 +490,21 @@ def _write_evaluation_evidence(
     )
     finalized_path.parent.mkdir(parents=True, exist_ok=True)
     source_variant_sha256 = "a" * 64
+    runtime_source = {field: "c" * 40 for field in ubuntu_pipeline.RUNTIME_SOURCE_FIELDS}
+    source_fields: dict = {}
+    if attested_source:
+        source_fields = _source_integrity_fixture()
+        runtime_source = {
+            "runtimeSourceKind": "git",
+            "runtimeSourceRevision": "5" * 40,
+            "expectedRuntimeSourceRevision": "5" * 40,
+            "observedRepositoryRevision": "5" * 40,
+            "observedRuntimeRevision": "5" * 40,
+            "runtimeSourceBindingStatus": "verified_clean_snapshot",
+            "runtimeSourceBindingMethod": (
+                "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+            ),
+        }
     finalized = {
         "agent": agent,
         "variant": variant,
@@ -478,7 +522,7 @@ def _write_evaluation_evidence(
             "preferenceTrainer": "dpo",
             "adapterSHA256": "b" * 64,
         },
-        **{field: "c" * 40 for field in ubuntu_pipeline.RUNTIME_SOURCE_FIELDS},
+        **runtime_source,
     }
     finalized["variantManifestSHA256"] = evaluate_adapter._canonical_sha256(
         finalized
@@ -517,6 +561,7 @@ def _write_evaluation_evidence(
             "adapterDirectory": "bootstrap",
             "adapterGGUFArtifact": "pending",
         },
+        **source_fields,
     }
     base_config_path = run_root / "configs" / f"{agent}.json"
     ubuntu_pipeline.write_object(base_config_path, base_config)
@@ -625,6 +670,7 @@ def _write_evaluation_evidence(
         ),
         "criticalFailureCount": report["criticalFailureCount"],
         "qualityGatePassed": quality_gate_passed,
+        **source_fields,
         "generation": generation,
     }
     run_manifest["runManifestSHA256"] = ubuntu_pipeline.canonical_sha256(
@@ -642,6 +688,7 @@ def _write_evaluation_evidence(
             "behaviorManifest": str(behavior_path.resolve()),
             "behaviorManifestFileSHA256": prepared_behavior_sha256,
             "executionPlan": _test_execution_plan(gguf_requested=False),
+            **source_fields,
             "agents": [
                 {
                     "agent": agent,
@@ -698,6 +745,12 @@ def _write_completed_summary_evidence(
         "finalizedVariantManifestSHA256": "f" * 64,
     }
     evaluation = {"status": "quality_gate_passed", "qualityGatePassed": True}
+    source_fields = {
+        "workingTreeDigest": "1" * 64,
+        "ubuntuOrchestrationCodeSHA256": "2" * 64,
+        "ubuntuSourceIntegritySHA256": "3" * 64,
+        "ubuntuSourceIntegrity": {"testFixture": True},
+    }
     gguf = (
         run_root
         / "models"
@@ -719,6 +772,7 @@ def _write_completed_summary_evidence(
             "variant": variant,
             "executionPlan": _test_execution_plan(),
             "agents": [{"agent": agent}],
+            **source_fields,
         },
     )
     monkeypatch.setattr(ubuntu_pipeline, "verify_sft", lambda *_args: sft)
@@ -749,6 +803,7 @@ def _write_completed_summary_evidence(
         "variant": variant,
         "runRoot": str(run_root),
         "preferenceTraining": True,
+        **source_fields,
         "agents": {
             agent: {
                 "sft": sft,
@@ -788,16 +843,16 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
     assert "setpriv --reuid=nobody --regid=nogroup --init-groups python" in dockerfile
     assert "lineage.build_resolved_training_environment_snapshot()" in dockerfile
     assert "lineage.verify_resolved_training_environment(environment)" in dockerfile
-    assert dockerignore == [
-        "**",
-        "!tools/",
-        "!tools/fine_tuning/",
-        "!tools/fine_tuning/unsloth/",
-        "!tools/fine_tuning/unsloth/training_lineage.py",
-        "!tools/hf_zerogpu/",
-        "!tools/hf_zerogpu/space_template/",
-        "!tools/hf_zerogpu/space_template/requirements.txt",
-    ]
+    assert dockerignore[0] == "**"
+    assert {
+        "!scripts/ubuntu_train_lumen_full_pipeline.sh",
+        "!scripts/ubuntu_train_lumen_adapters_aio.sh",
+        "!tools/fine_tuning/unsloth/**",
+        "!tools/lumen_manifest_crawler/lumen_manifest_crawler/**",
+        "!tools/hf_zerogpu/space_template/**",
+        "!generated/fine_tuning/**",
+        "!generated/agent_manifest/AgentBehaviorManifest.json",
+    }.issubset(dockerignore)
     assert (
         "COPY tools/hf_zerogpu/space_template/requirements.txt "
         "/tmp/lumen-requirements.txt"
@@ -807,10 +862,36 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
         for line in dockerfile.splitlines()
         if line.startswith("COPY ")
     }
-    assert copy_sources == {
+    assert {
         "tools/fine_tuning/unsloth/training_lineage.py",
         "tools/hf_zerogpu/space_template/requirements.txt",
-    }
+        "scripts/ubuntu_train_lumen_full_pipeline.sh",
+        "scripts/ubuntu_train_lumen_adapters_aio.sh",
+        "tools/fine_tuning/unsloth",
+        "tools/lumen_manifest_crawler/lumen_manifest_crawler",
+        "tools/hf_zerogpu/space_template",
+        "generated/fine_tuning",
+        "generated/agent_manifest/AgentBehaviorManifest.json",
+    }.issubset(copy_sources)
+
+
+def test_credential_uploader_uses_only_the_verified_image_copy() -> None:
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+
+    assert '$ROOT:/workspace' not in launcher
+    assert "PYTHONPATH=" not in launcher
+    assert (
+        '"$IMAGE_SOURCE_ROOT/tools/fine_tuning/unsloth/ubuntu_uploader.py"'
+        in launcher
+    )
+    assert '-v "$host_run_root:$container_run_root:ro"' in launcher
+    assert '-v "$receipt_staging:/receipts:rw"' in launcher
+    assert "--read-only" in launcher
+    assert "--cap-drop ALL" in launcher
+    assert "--security-opt no-new-privileges" in launcher
+    assert "--source-integrity-digest" in launcher
 
 
 def test_ubuntu_image_maps_the_invoking_non_root_identity() -> None:
@@ -865,6 +946,15 @@ esac
         "nvidia-smi": """#!/bin/sh
 exit 0
 """,
+        "python3": f"""#!/bin/sh
+case "$*" in
+  *'ubuntu_source_integrity.py attest-host'*)
+    printf '%s\n' '{{"baseCommit":"{'a' * 40}","workingTreeDigest":"{'b' * 64}","ubuntuOrchestrationCodeSHA256":"{'c' * 64}","sourceIntegritySHA256":"{'d' * 64}"}}'
+    exit 0
+    ;;
+esac
+exec {sys.executable} "$@"
+""",
         "docker": f"""#!/bin/sh
 set -eu
 printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
@@ -873,6 +963,7 @@ if [ "${{1:-}}" = image ] && [ "${{2:-}}" = inspect ]; then
   exit 0
 fi
 case "$*" in
+  *'verify-image'*) exit 0 ;;
   *'/opt/lumen-venv/bin/python'*) exit 23 ;;
 esac
 exit 0
@@ -1270,6 +1361,12 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
         "_runtime_lineage",
         lambda **_kwargs: (lineage, environment),
     )
+    source_integrity = _source_integrity_fixture()["ubuntuSourceIntegrity"]
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "current_source_integrity",
+        lambda *_args, **_kwargs: source_integrity,
+    )
     monkeypatch.setattr(
         train_sft,
         "_training_environment",
@@ -1293,7 +1390,7 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
     config = json.loads(
         (run_root / "configs" / "cortex.json").read_text(encoding="utf-8")
     )
-    manifest = ubuntu_pipeline.read_object(run_root / "aio_run_manifest.json")
+    run_manifest = ubuntu_pipeline.read_object(run_root / "aio_run_manifest.json")
     expected_plan = _test_execution_plan(
         evaluation_scope="smoke",
         evaluation_max_examples=7,
@@ -1306,10 +1403,18 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
         "resolvedTrainingEnvironment"
     ]
     assert config["runExecutionPlan"] == expected_plan
-    assert manifest["executionPlan"] == expected_plan
+    assert run_manifest["executionPlan"] == expected_plan
     assert (
         run_root / "generated" / "agent_manifest" / "AgentBehaviorManifest.json"
     ).is_file()
+    for field in ubuntu_pipeline.UBUNTU_SOURCE_INTEGRITY_FIELDS:
+        assert config[field] == run_manifest[field]
+        assert config["variantAttestation"][field] == run_manifest[field]
+    ubuntu_pipeline.verify_embedded_source_integrity(run_manifest)
+
+    config["workingTreeDigest"] = "0" * 64
+    with pytest.raises(RuntimeError, match="digest fields drifted"):
+        ubuntu_pipeline.verify_embedded_source_integrity(config)
 
     with pytest.raises(RuntimeError, match="Resume request"):
         ubuntu_pipeline.validate_prepared_runtime(
@@ -1406,6 +1511,7 @@ def test_summary_rejects_failed_full_evaluation(
         monkeypatch=monkeypatch,
         status="quality_gate_failed",
         quality_gate_passed=False,
+        attested_source=True,
         completion=(
             '{"selectedToolID":"files.read","intent":"files",'
             '"reasoningSummary":"Manifest row files.read is selected for intent '
@@ -1449,6 +1555,7 @@ def test_full_quality_summary_without_gguf_is_complete_and_upload_qualified(
 ) -> None:
     agent = "cortex"
     plan = _test_execution_plan(gguf_requested=False)
+    source_fields = _source_integrity_fixture()
     (tmp_path / "models" / "lora_qwen3_gguf").mkdir(parents=True)
     evaluation_dir = tmp_path / "evaluation" / agent
     evaluation_dir.mkdir(parents=True)
@@ -1474,6 +1581,7 @@ def test_full_quality_summary_without_gguf_is_complete_and_upload_qualified(
             "variant": OPTIMIZED_VARIANT,
             "executionPlan": plan,
             "agents": [{"agent": agent}],
+            **source_fields,
         },
     )
     monkeypatch.setattr(ubuntu_pipeline, "verify_sft", lambda *_args: sft)
@@ -1852,6 +1960,43 @@ def test_evaluation_summary_verifier_rejects_controlled_evidence_drift(
     ubuntu_pipeline.write_object(run_path, manifest)
 
     with pytest.raises(RuntimeError):
+        ubuntu_pipeline._verify_evaluation_outputs(
+            tmp_path,
+            "cortex",
+            final_phase=final_phase,
+        )
+
+
+def test_evaluation_verifier_binds_image_source_attestation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_path = _write_evaluation_evidence(
+        tmp_path,
+        monkeypatch=monkeypatch,
+        attested_source=True,
+    )
+    final_phase = {
+        "adapterSHA256": "b" * 64,
+        "finalizedVariantManifestSHA256": ubuntu_pipeline.read_object(
+            tmp_path
+            / "training/cortex/dpo/finalized_variant_manifest.json"
+        )["variantManifestSHA256"],
+        "parentSFTAdapterSHA256": "9" * 64,
+        "phase": "dpo",
+    }
+    ubuntu_pipeline._verify_evaluation_outputs(
+        tmp_path,
+        "cortex",
+        final_phase=final_phase,
+    )
+
+    manifest = ubuntu_pipeline.read_object(run_path)
+    manifest["workingTreeDigest"] = "0" * 64
+    manifest.pop("runManifestSHA256", None)
+    manifest["runManifestSHA256"] = ubuntu_pipeline.canonical_sha256(manifest)
+    ubuntu_pipeline.write_object(run_path, manifest)
+    with pytest.raises(RuntimeError, match="lineage failed"):
         ubuntu_pipeline._verify_evaluation_outputs(
             tmp_path,
             "cortex",
@@ -2357,6 +2502,7 @@ def test_evaluation_verifier_rejects_managed_ancestor_symlink(
         "missing_gguf",
         "gguf_path",
         "evaluation_report_path",
+        "source_integrity",
     ),
 )
 def test_completed_summary_rejects_rehashed_canonical_evidence_drift(
@@ -2388,6 +2534,8 @@ def test_completed_summary_rejects_rehashed_canonical_evidence_drift(
         item["adapterGGUF"] = str(tmp_path / "other.gguf")
     elif mutation == "evaluation_report_path":
         item["evaluationReport"] = str(tmp_path / "other-report.json")
+    elif mutation == "source_integrity":
+        summary["ubuntuSourceIntegritySHA256"] = "0" * 64
     else:  # pragma: no cover - parametrization is closed above.
         raise AssertionError(mutation)
     summary.pop("summarySHA256", None)
@@ -2845,6 +2993,148 @@ def test_resume_gguf_reuse_requires_every_prepared_agent_in_summary(
         ubuntu_pipeline.verify_gguf(tmp_path, "cortex")
 
 
+def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = "cortex"
+    run_id = "run-one"
+    source_fields = _source_integrity_fixture()
+    source_record = source_fields["ubuntuSourceIntegrity"]
+    training_environment = {"trainingEnvironmentSHA256": "e" * 64}
+    runtime_manifest_path = (
+        tmp_path / "generated/fine_tuning/adapter_runtime_manifest.json"
+    )
+    runtime_manifest_path.parent.mkdir(parents=True)
+    ubuntu_pipeline.write_object(
+        runtime_manifest_path,
+        {"adapterRepoID": "owner/lumen-adapters"},
+    )
+    run_manifest = {
+        "runID": run_id,
+        "adapterRepoID": "owner/lumen-adapters",
+        "adapterRuntimeManifestFileSHA256": ubuntu_pipeline.file_sha256(
+            runtime_manifest_path
+        ),
+        "trainingEnvironment": training_environment,
+        "agents": [{"agent": agent}],
+        **source_fields,
+    }
+    ubuntu_pipeline.write_object(
+        tmp_path / "training_environment.json",
+        training_environment,
+    )
+    adapter_dir = tmp_path / "models/lora_qwen3_dpo/cortex"
+    adapter_dir.mkdir(parents=True)
+    adapter_file = adapter_dir / "adapter_model.safetensors"
+    adapter_file.write_bytes(b"adapter")
+    adapter_sha = "a" * 64
+    ubuntu_pipeline.write_object(
+        adapter_dir / "adapter_artifact_manifest.json",
+        {
+            "adapterSHA256": adapter_sha,
+            "files": [{"path": adapter_file.name}],
+        },
+    )
+    finalized = tmp_path / "training/cortex/dpo/finalized_variant_manifest.json"
+    finalized.parent.mkdir(parents=True)
+    finalized.write_text("{}\n", encoding="utf-8")
+    summary = {
+        "status": "complete_without_gguf",
+        "evaluationStatus": "quality_gate_passed",
+        "evaluationScope": "full",
+        "ggufStatus": "skipped_by_operator",
+        "qualification": "quality_gate_passed",
+        "promotionEligible": True,
+        "agents": {
+            agent: {
+                "evaluation": None,
+                "adapterGGUFExists": False,
+            }
+        }
+    }
+    ubuntu_pipeline.write_object(
+        tmp_path / "aio_run_manifest.json",
+        run_manifest,
+    )
+    ubuntu_pipeline.write_object(tmp_path / "aio_summary.json", summary)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_run_manifest",
+        lambda *_args: run_manifest,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_completed_summary",
+        lambda *_args: summary,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "current_source_integrity",
+        lambda *_args: source_record,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_preference",
+        lambda *_args: {"adapterSHA256": adapter_sha},
+    )
+
+    class _Info:
+        private = True
+        sha = "b" * 40
+
+    class _Commit:
+        oid = "b" * 40
+
+    class _API:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def whoami(self) -> dict:
+            return {"name": "lumen-test"}
+
+        def create_repo(self, **_kwargs) -> None:
+            return None
+
+        def repo_info(self, **_kwargs) -> _Info:
+            return _Info()
+
+        def list_repo_files(self, **_kwargs) -> list[str]:
+            return []
+
+        def create_commit(self, **_kwargs) -> _Commit:
+            return _Commit()
+
+    class _Operation:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+    hub = ModuleType("huggingface_hub")
+    hub.HfApi = _API
+    hub.CommitOperationAdd = _Operation
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    token = tmp_path / "token"
+    token.write_text("hf_test_token\n", encoding="utf-8")
+    receipt_dir = tmp_path / "receipts"
+    receipt_dir.mkdir()
+    receipt_path = receipt_dir / "upload.json"
+
+    receipt = ubuntu_pipeline.upload_run(
+        run_root=tmp_path,
+        agents=(agent,),
+        run_id=run_id,
+        private=True,
+        include_gguf=False,
+        token_file=token,
+        receipt_path=receipt_path,
+    )
+
+    assert receipt_path.is_file()
+    assert not (tmp_path / "upload_receipts.json").exists()
+    for field, expected in source_fields.items():
+        assert receipt[field] == expected
+
+
 def test_upload_cli_is_private_unless_public_is_explicit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2883,6 +3173,8 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
     agent = "cortex"
     run_id = "diagnostic-run"
     repo_id = "lumen-owner/lumen-adapters"
+    source_fields = _source_integrity_fixture()
+    source_record = source_fields["ubuntuSourceIntegrity"]
     runtime_manifest = (
         tmp_path / "generated" / "fine_tuning" / "adapter_runtime_manifest.json"
     )
@@ -2928,6 +3220,7 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
                 runtime_manifest
             ),
             "trainingEnvironment": {},
+            **source_fields,
         },
     )
     monkeypatch.setattr(
@@ -2939,6 +3232,11 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
         ubuntu_pipeline,
         "verify_preference",
         lambda *_args: {"adapterSHA256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "current_source_integrity",
+        lambda *_args: source_record,
     )
 
     class FakeCommitOperationAdd:

@@ -1227,15 +1227,39 @@ def _training_runtime_lineage(
             raise RuntimeError(
                 "Local Git runtime source requires execution from the repository checkout"
             )
-        try:
-            observed_local_revision = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"],
-                cwd=local_repository_root,
-                stderr=subprocess.DEVNULL,
-                text=True,
-            ).strip()
-        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
-            raise RuntimeError("Unable to observe the local Git runtime source") from exc
+        if cfg.get("runtimeSourceBindingMethod") == (
+            "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+        ):
+            from tools.fine_tuning.unsloth.ubuntu_source_integrity import (
+                load_verified_attestation,
+            )
+
+            source_integrity = load_verified_attestation(local_repository_root)
+            expected_integrity = cfg.get("ubuntuSourceIntegrity")
+            if (
+                not isinstance(expected_integrity, Mapping)
+                or dict(expected_integrity) != source_integrity
+                or cfg.get("workingTreeDigest")
+                != source_integrity["workingTreeDigest"]
+                or cfg.get("ubuntuOrchestrationCodeSHA256")
+                != source_integrity["ubuntuOrchestrationCodeSHA256"]
+                or cfg.get("ubuntuSourceIntegritySHA256")
+                != source_integrity["sourceIntegritySHA256"]
+            ):
+                raise RuntimeError(
+                    "Training config does not match the verified image source attestation"
+                )
+            observed_local_revision = source_integrity["baseCommit"]
+        else:
+            try:
+                observed_local_revision = subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=local_repository_root,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                ).strip()
+            except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+                raise RuntimeError("Unable to observe the local Git runtime source") from exc
     try:
         runtime_source = validate_runtime_source_audit(
             cfg,

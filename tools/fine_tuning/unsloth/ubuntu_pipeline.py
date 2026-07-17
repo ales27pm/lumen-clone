@@ -19,6 +19,12 @@ from typing import Any, BinaryIO
 from tools.fine_tuning.unsloth.training_lineage import (
     DEFAULT_LLAMA_CPP_REVISION,
 )
+from tools.fine_tuning.unsloth.ubuntu_source_integrity import (
+    SOURCE_INTEGRITY_ENV,
+    attest_repository,
+    load_verified_attestation,
+    validate_attestation_record,
+)
 
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
@@ -42,6 +48,12 @@ RUNTIME_SOURCE_FIELDS = (
     "runtimeSourceBindingStatus",
     "runtimeSourceBindingMethod",
 )
+UBUNTU_SOURCE_INTEGRITY_FIELDS = (
+    "workingTreeDigest",
+    "ubuntuOrchestrationCodeSHA256",
+    "ubuntuSourceIntegritySHA256",
+    "ubuntuSourceIntegrity",
+)
 RUNTIME_CONFIG_FIELDS = {
     "trainingContainerImageDigest",
     "trainingContainerImageDigestSource",
@@ -57,6 +69,7 @@ RUNTIME_CONFIG_FIELDS = {
     "zeroGPUDurationSeconds",
     "observedAccelerator",
     *RUNTIME_SOURCE_FIELDS,
+    *UBUNTU_SOURCE_INTEGRITY_FIELDS,
 }
 NON_CONTROLLED_CONFIG_FIELDS = {
     "adapterExport",
@@ -627,16 +640,60 @@ def git_head(root: Path) -> str:
     return value
 
 
-def local_runtime_source(root: Path) -> dict[str, Any]:
-    revision = git_head(root)
+def current_source_integrity(root: Path) -> dict[str, Any]:
+    if SOURCE_INTEGRITY_ENV in os.environ:
+        return load_verified_attestation(
+            root,
+            Path(os.environ[SOURCE_INTEGRITY_ENV]),
+        )
+    return attest_repository(root)
+
+
+def source_integrity_fields(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "workingTreeDigest": record["workingTreeDigest"],
+        "ubuntuOrchestrationCodeSHA256": record[
+            "ubuntuOrchestrationCodeSHA256"
+        ],
+        "ubuntuSourceIntegritySHA256": record["sourceIntegritySHA256"],
+        "ubuntuSourceIntegrity": dict(record),
+    }
+
+
+def verify_embedded_source_integrity(value: Mapping[str, Any]) -> dict[str, Any]:
+    record = value.get("ubuntuSourceIntegrity")
+    if not isinstance(record, Mapping):
+        raise RuntimeError("Ubuntu source-integrity record is missing")
+    verified = validate_attestation_record(record)
+    if any(
+        value.get(field) != expected
+        for field, expected in source_integrity_fields(verified).items()
+    ):
+        raise RuntimeError("Ubuntu source-integrity digest fields drifted")
+    return verified
+
+
+def local_runtime_source(
+    root: Path,
+    *,
+    source_integrity: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    integrity = (
+        dict(source_integrity)
+        if source_integrity is not None
+        else current_source_integrity(root)
+    )
+    revision = str(integrity["baseCommit"])
     return {
         "runtimeSourceKind": "git",
         "runtimeSourceRevision": revision,
         "expectedRuntimeSourceRevision": revision,
         "observedRepositoryRevision": revision,
         "observedRuntimeRevision": revision,
-        "runtimeSourceBindingStatus": "local_checkout_observed",
-        "runtimeSourceBindingMethod": "git_head_plus_training_code_manifest",
+        "runtimeSourceBindingStatus": "verified_clean_snapshot",
+        "runtimeSourceBindingMethod": (
+            "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+        ),
     }
 
 
@@ -977,14 +1034,21 @@ def _runtime_lineage(
     root: Path,
     source_config: Mapping[str, Any],
     container_digest: str,
+    source_integrity: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     from tools.fine_tuning.unsloth.train_sft import (
         _training_environment,
         _training_runtime_lineage,
     )
 
+    integrity = (
+        dict(source_integrity)
+        if source_integrity is not None
+        else current_source_integrity(root)
+    )
     config = dict(source_config)
-    config.update(local_runtime_source(root))
+    config.update(local_runtime_source(root, source_integrity=integrity))
+    config.update(source_integrity_fields(integrity))
     config["trainingContainerImageDigest"] = container_digest
     config["trainingContainerImageDigestSource"] = "operator_declared"
     config["trainingRuntimeImageBindingStatus"] = "manual_validation_required"
@@ -1107,6 +1171,7 @@ def _training_attestation(
             "trainingRuntimeImageBindingVerified"
         ],
         **{field: config[field] for field in RUNTIME_SOURCE_FIELDS},
+        **{field: config[field] for field in UBUNTU_SOURCE_INTEGRITY_FIELDS},
     }
 
 
@@ -1133,10 +1198,12 @@ def prepare_run(
         seed=seed,
         base_model_override=base_model_override,
     )
+    source_integrity = current_source_integrity(root)
     runtime_lineage, runtime_environment = _runtime_lineage(
         root=root,
         source_config=source_config,
         container_digest=container_digest,
+        source_integrity=source_integrity,
     )
     prepared_execution_plan = execution_plan(
         evaluation_scope=evaluation_scope,
@@ -1179,7 +1246,11 @@ def prepare_run(
         if isinstance(item, Mapping) and isinstance(item.get("agent"), str)
     }
     prepared: list[dict[str, Any]] = []
-    runtime_source = local_runtime_source(root)
+    runtime_source = local_runtime_source(
+        root,
+        source_integrity=source_integrity,
+    )
+    integrity_fields = source_integrity_fields(source_integrity)
     for agent in agents:
         config, manifest, variant_root = validate_variant(
             snapshot_root,
@@ -1215,6 +1286,7 @@ def prepare_run(
         config["trainingRuntimeImageBindingVerified"] = False
         config["runExecutionPlan"] = prepared_execution_plan
         config.update(runtime_source)
+        config.update(integrity_fields)
         for key in (
             "resolvedTrainingEnvironment",
             "resolvedTrainingEnvironmentSHA256",
@@ -1307,6 +1379,7 @@ def prepare_run(
         "trainingEnvironment": runtime_environment,
         "executionPlan": prepared_execution_plan,
         **runtime_source,
+        **integrity_fields,
         "agents": prepared,
     }
     run_manifest["runManifestSHA256"] = canonical_sha256(run_manifest)
@@ -1325,6 +1398,7 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
     unsigned.pop("runManifestSHA256", None)
     if canonical_sha256(unsigned) != declared:
         raise RuntimeError("Prepared run manifest integrity check failed")
+    verify_embedded_source_integrity(manifest)
     manifest_agents = manifest.get("agents")
     _verified_execution_plan(manifest.get("executionPlan"))
     if (
@@ -1476,10 +1550,18 @@ def validate_prepared_runtime(
     ):
         raise RuntimeError("Resume request does not match the prepared run manifest")
     prepared_by_agent = {str(item["agent"]): item for item in manifest_agents}
-    current_runtime_source = local_runtime_source(root)
+    current_integrity = current_source_integrity(root)
+    current_runtime_source = local_runtime_source(
+        root,
+        source_integrity=current_integrity,
+    )
+    current_integrity_fields = source_integrity_fields(current_integrity)
     if any(
         manifest.get(field) != current_runtime_source[field]
         for field in RUNTIME_SOURCE_FIELDS
+    ) or any(
+        manifest.get(field) != current_integrity_fields[field]
+        for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
     ):
         raise RuntimeError("Resume source revision drifted from the prepared run")
     snapshot_root = run_root / "generated" / "fine_tuning"
@@ -1515,6 +1597,7 @@ def validate_prepared_runtime(
         ):
             raise RuntimeError(f"Prepared config integrity check failed for {agent}")
         prepared_config = read_object(config_path)
+        verify_embedded_source_integrity(prepared_config)
         _, pending_manifest, variant_root = validate_variant(
             snapshot_root,
             agent=agent,
@@ -1572,6 +1655,10 @@ def validate_prepared_runtime(
                 prepared_config.get(field) != current_runtime_source[field]
                 for field in RUNTIME_SOURCE_FIELDS
             )
+            or any(
+                prepared_config.get(field) != current_integrity_fields[field]
+                for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
+            )
             or path_drift
         ):
             detail = f": {', '.join(path_drift)}" if path_drift else ""
@@ -1583,6 +1670,7 @@ def validate_prepared_runtime(
         root=root,
         source_config=config,
         container_digest=container_digest,
+        source_integrity=current_integrity,
     )
     if environment["trainingEnvironmentSHA256"] != config.get(
         "trainingEnvironmentSHA256"
@@ -2315,7 +2403,14 @@ def _verify_evaluation_outputs(
         "generation",
         "runManifestSHA256",
     }
-    if set(evaluation_run) != expected_run_keys:
+    source_evidence_keys = set(UBUNTU_SOURCE_INTEGRITY_FIELDS)
+    has_source_evidence = set(evaluation_run) == (
+        expected_run_keys | source_evidence_keys
+    )
+    if frozenset(evaluation_run) not in {
+        frozenset(expected_run_keys),
+        frozenset(expected_run_keys | source_evidence_keys),
+    }:
         raise RuntimeError(
             f"Evaluation run manifest has an unexpected evidence schema: {run_path}"
         )
@@ -2385,6 +2480,18 @@ def _verify_evaluation_outputs(
         if base_config_path.is_symlink() or not base_config_path.is_file():
             raise ValueError("Prepared base config is not a regular file")
         base_config = read_object(base_config_path)
+        source_evidence_required = config.get("runtimeSourceBindingMethod") == (
+            "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+        )
+        if has_source_evidence is not source_evidence_required:
+            raise ValueError("Evaluation source-integrity evidence is incomplete")
+        if source_evidence_required:
+            verify_embedded_source_integrity(config)
+            if any(
+                evaluation_run.get(field) != config.get(field)
+                for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
+            ):
+                raise ValueError("Evaluation source-integrity evidence drifted")
         evaluation_records, evaluation_sha256 = evaluate_adapter.load_evaluation_records(
             evaluation_path,
             agent=agent,
@@ -2433,6 +2540,13 @@ def _verify_evaluation_outputs(
         != file_sha256(behavior_path)
         or prepared_agent.get("config") != str(base_config_path.resolve())
         or prepared_agent.get("configSHA256") != file_sha256(base_config_path)
+        or (
+            source_evidence_required
+            and any(
+                evaluation_run.get(field) != prepared_run.get(field)
+                for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
+            )
+        )
     ):
         raise RuntimeError(
             f"Evaluation inputs drifted from the exact prepared run: {run_root}"
@@ -2842,6 +2956,10 @@ def write_summary(
         "variant": variant,
         "runRoot": str(run_root),
         "preferenceTraining": preference,
+        **{
+            field: run_manifest[field]
+            for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
+        },
         "agents": {},
     }
     for agent in agents:
@@ -2946,6 +3064,7 @@ def _verified_completed_summary(
             "variant",
             "runRoot",
             "preferenceTraining",
+            *UBUNTU_SOURCE_INTEGRITY_FIELDS,
             "agents",
             "summarySHA256",
         }
@@ -2953,6 +3072,10 @@ def _verified_completed_summary(
         or summary.get("runRoot") != str(run_root)
         or summary.get("variant") != run_manifest.get("variant")
         or summary.get("preferenceTraining") is not True
+        or any(
+            summary.get(field) != run_manifest.get(field)
+            for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
+        )
         or summary.get("status")
         not in {
             "complete",
@@ -3130,6 +3253,7 @@ def upload_run(
     include_gguf: bool,
     token_file: Path,
     allow_diagnostic_upload: bool = False,
+    receipt_path: Path | None = None,
 ) -> dict[str, Any]:
     try:
         from huggingface_hub import CommitOperationAdd, HfApi
@@ -3138,6 +3262,15 @@ def upload_run(
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,255}", run_id) is None:
         raise RuntimeError("Upload run ID is unsafe")
     run_manifest = _verified_run_manifest(run_root)
+    image_source_integrity = current_source_integrity(
+        Path(__file__).resolve().parents[3]
+    )
+    image_source_fields = source_integrity_fields(image_source_integrity)
+    if any(
+        run_manifest.get(field) != image_source_fields[field]
+        for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
+    ):
+        raise RuntimeError("Upload source does not match the prepared run attestation")
     if run_manifest.get("runID") != run_id:
         raise RuntimeError("Upload run ID does not match the prepared run")
     manifest_agents = run_manifest.get("agents")
@@ -3241,7 +3374,13 @@ def upload_run(
     for local_path, _ in local_files:
         if local_path.is_symlink() or not local_path.is_file():
             raise RuntimeError(f"Upload input is not a regular verified file: {local_path}")
-    receipt_path = run_root / "upload_receipts.json"
+    receipt_path = (
+        receipt_path.resolve()
+        if receipt_path is not None
+        else run_root / "upload_receipts.json"
+    )
+    if receipt_path.parent.is_symlink() or not receipt_path.parent.is_dir():
+        raise RuntimeError("Upload receipt parent must be a regular directory")
     if receipt_path.exists() or receipt_path.is_symlink():
         raise RuntimeError(f"Upload receipt path already exists: {receipt_path}")
 
@@ -3302,6 +3441,7 @@ def upload_run(
         "uploadedFileCount": len(local_files),
         "uploadedPaths": remote_paths,
         "commitOID": commit_oid,
+        **image_source_fields,
     }
     result["uploadSHA256"] = canonical_sha256(result)
     write_object(receipt_path, result)
@@ -3388,6 +3528,7 @@ def parse_args() -> argparse.Namespace:
     upload.add_argument("--include-gguf", action="store_true")
     upload.add_argument("--allow-diagnostic-upload", action="store_true")
     upload.add_argument("--token-file", type=Path, required=True)
+    upload.add_argument("--receipt-path", type=Path)
     return parser.parse_args()
 
 
@@ -3490,6 +3631,7 @@ def main() -> None:
             include_gguf=args.include_gguf,
             token_file=args.token_file,
             allow_diagnostic_upload=args.allow_diagnostic_upload,
+            receipt_path=args.receipt_path,
         )
     else:  # pragma: no cover - argparse enforces the command set.
         raise RuntimeError(f"Unsupported command: {args.command}")

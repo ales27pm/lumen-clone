@@ -6,6 +6,7 @@ IFS=$'\n\t'
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 DOCKERFILE="$ROOT/tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128"
+SOURCE_ATTESTOR="$ROOT/tools/fine_tuning/unsloth/ubuntu_source_integrity.py"
 SAFE_REPO_OUTPUT_ROOT="$ROOT/.local/ubuntu_finetune_runs"
 
 IMAGE_TAG="${LUMEN_UBUNTU_IMAGE_TAG:-lumen-training:cu128-py310}"
@@ -30,6 +31,8 @@ EVAL_MAX_EXAMPLES="${LUMEN_UBUNTU_EVAL_MAX_EXAMPLES:-}"
 NO_EVALUATE_OPTION_SEEN=0
 EVAL_SMOKE_OPTION_SEEN=0
 RUNTIME_HOME="/home/lumen-runtime"
+IMAGE_SOURCE_ROOT="/opt/lumen/source"
+IMAGE_SOURCE_ATTESTATION="/opt/lumen/ubuntu-source-integrity.json"
 
 log() {
   printf '[lumen-ubuntu] %s\n' "$*"
@@ -211,6 +214,7 @@ done
 
 [[ "$(uname -s)" == "Linux" ]] || die "this launcher must run on Linux; copy the repository to the Ubuntu GPU host first"
 [[ -f "$DOCKERFILE" ]] || die "missing training Dockerfile: $DOCKERFILE"
+[[ -f "$SOURCE_ATTESTOR" ]] || die "missing source-integrity helper: $SOURCE_ATTESTOR"
 RUNTIME_UID="$(id -u)"
 RUNTIME_GID="$(id -g)"
 [[ "$RUNTIME_UID" =~ ^[1-9][0-9]*$ ]] \
@@ -262,9 +266,37 @@ case "$VARIANT_SELECTOR" in
     ;;
 esac
 
+command -v git >/dev/null 2>&1 || die "git not found"
+command -v python3 >/dev/null 2>&1 || die "python3 not found"
 command -v docker >/dev/null 2>&1 || die "docker not found; install Docker Engine before running this script"
 command -v nvidia-smi >/dev/null 2>&1 || die "nvidia-smi not found; install a compatible NVIDIA driver before running this script"
 docker info >/dev/null 2>&1 || die "Docker daemon is unavailable for the current user"
+
+read_source_attestation_fields() {
+  python3 -I "$SOURCE_ATTESTOR" attest-host --root "$ROOT" \
+    | python3 -I -c 'import json, sys; value = json.load(sys.stdin); print(value["baseCommit"]); print(value["workingTreeDigest"]); print(value["ubuntuOrchestrationCodeSHA256"]); print(value["sourceIntegritySHA256"])'
+}
+
+mapfile -t SOURCE_ATTESTATION_FIELDS < <(read_source_attestation_fields) \
+  || die "unable to attest the clean Ubuntu pipeline source"
+[[ "${#SOURCE_ATTESTATION_FIELDS[@]}" == "4" ]] \
+  || die "source-integrity helper returned an incomplete attestation"
+SOURCE_BASE_COMMIT="${SOURCE_ATTESTATION_FIELDS[0]}"
+SOURCE_WORKING_TREE_DIGEST="${SOURCE_ATTESTATION_FIELDS[1]}"
+SOURCE_ORCHESTRATION_DIGEST="${SOURCE_ATTESTATION_FIELDS[2]}"
+SOURCE_INTEGRITY_DIGEST="${SOURCE_ATTESTATION_FIELDS[3]}"
+
+verify_clean_source_unchanged() {
+  local -a current=()
+  mapfile -t current < <(read_source_attestation_fields) \
+    || die "Ubuntu pipeline source is no longer a clean checkout"
+  [[ "${#current[@]}" == "4" \
+      && "${current[0]}" == "$SOURCE_BASE_COMMIT" \
+      && "${current[1]}" == "$SOURCE_WORKING_TREE_DIGEST" \
+      && "${current[2]}" == "$SOURCE_ORCHESTRATION_DIGEST" \
+      && "${current[3]}" == "$SOURCE_INTEGRITY_DIGEST" ]] \
+    || die "Ubuntu pipeline source changed after its initial attestation"
+}
 
 path_contains() {
   local parent="$1"
@@ -356,6 +388,7 @@ for variant in "${variants[@]}"; do
   fi
 done
 
+verify_clean_source_unchanged
 if [[ "$BUILD_IMAGE" == "1" ]]; then
   build_args=(
     docker build
@@ -363,6 +396,9 @@ if [[ "$BUILD_IMAGE" == "1" ]]; then
     --tag "$IMAGE_TAG"
     --build-arg "LUMEN_RUNTIME_UID=$RUNTIME_UID"
     --build-arg "LUMEN_RUNTIME_GID=$RUNTIME_GID"
+    --build-arg "LUMEN_SOURCE_BASE_COMMIT=$SOURCE_BASE_COMMIT"
+    --build-arg "LUMEN_WORKING_TREE_DIGEST=$SOURCE_WORKING_TREE_DIGEST"
+    --build-arg "LUMEN_UBUNTU_ORCHESTRATION_SHA256=$SOURCE_ORCHESTRATION_DIGEST"
   )
   if [[ "$PULL_BASE" == "1" ]]; then
     build_args+=(--pull)
@@ -377,8 +413,28 @@ fi
 IMAGE_DIGEST="$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG" 2>/dev/null)" || die "local image not found: $IMAGE_TAG"
 [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || die "Docker returned an invalid local image ID for $IMAGE_TAG: $IMAGE_DIGEST"
 
+verify_clean_source_unchanged
+log "verifying the image-baked Ubuntu execution closure"
+docker run --rm \
+  --network none \
+  --read-only \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --entrypoint /opt/lumen-venv/bin/python \
+  "$IMAGE_DIGEST" \
+  -I "$IMAGE_SOURCE_ROOT/tools/fine_tuning/unsloth/ubuntu_source_integrity.py" \
+  verify-image \
+  --root "$IMAGE_SOURCE_ROOT" \
+  --record "$IMAGE_SOURCE_ATTESTATION" \
+  --base-commit "$SOURCE_BASE_COMMIT" \
+  --working-tree-digest "$SOURCE_WORKING_TREE_DIGEST" \
+  --orchestration-digest "$SOURCE_ORCHESTRATION_DIGEST" \
+  --source-integrity-digest "$SOURCE_INTEGRITY_DIGEST" >/dev/null \
+  || die "training image source attestation does not match the clean host checkout"
+
 log "checking container runtime identity"
 docker run --rm \
+  --network none \
   --user "$RUNTIME_UID:$RUNTIME_GID" \
   -e "HOME=$RUNTIME_HOME" \
   --entrypoint /opt/lumen-venv/bin/python \
@@ -388,6 +444,7 @@ docker run --rm \
 
 log "checking NVIDIA Container Toolkit access"
 docker run --rm --gpus all --user "$RUNTIME_UID:$RUNTIME_GID" \
+  --network none \
   --entrypoint /bin/bash "$IMAGE_DIGEST" -c 'exec nvidia-smi' >/dev/null \
   || die "Docker cannot access the NVIDIA GPU; install/configure NVIDIA Container Toolkit"
 
@@ -411,12 +468,12 @@ for variant in "${variants[@]}"; do
   elif [[ "$RESUME" == "1" ]]; then
     log "no prior run for $variant; preparing it as a fresh variant"
   fi
+  verify_clean_source_unchanged
   log "starting full pipeline for $variant"
   docker_args=(
     docker run --rm --init --gpus all --shm-size "$SHM_SIZE"
     --entrypoint /bin/bash
     --user "$RUNTIME_UID:$RUNTIME_GID"
-    -v "$ROOT:/workspace:ro"
     -v "$OUTPUT_ROOT:/outputs:rw"
     "${cache_mounts[@]}"
     -e "HOME=$RUNTIME_HOME"
@@ -425,7 +482,7 @@ for variant in "${variants[@]}"; do
     -e HF_HUB_ENABLE_HF_TRANSFER=1
     -e HF_HUB_DISABLE_IMPLICIT_TOKEN=1
     -e PYTHONDONTWRITEBYTECODE=1
-    -e PYTHONPATH=/workspace
+    -e "LUMEN_UBUNTU_SOURCE_ATTESTATION_PATH=$IMAGE_SOURCE_ATTESTATION"
     -e TOKENIZERS_PARALLELISM=false
     -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     -e "LUMEN_AIO_EXPERIMENT_VARIANT=$variant"
@@ -450,7 +507,7 @@ for variant in "${variants[@]}"; do
     -e "LUMEN_AIO_EVALUATE=$EVALUATE"
     -e "LUMEN_AIO_EVAL_MAX_EXAMPLES=$EVAL_MAX_EXAMPLES"
     "$IMAGE_DIGEST"
-    /workspace/scripts/ubuntu_train_lumen_adapters_aio.sh
+    "$IMAGE_SOURCE_ROOT/scripts/ubuntu_train_lumen_adapters_aio.sh"
   )
   "${docker_args[@]}"
   if [[ "$UPLOAD" == "1" ]]; then
@@ -464,25 +521,44 @@ for variant in "${variants[@]}"; do
     if [[ "$ALLOW_DIAGNOSTIC_UPLOAD" == "1" ]]; then
       upload_flags+=(--allow-diagnostic-upload)
     fi
+    verify_clean_source_unchanged
+    receipt_staging="$OUTPUT_ROOT/.lumen-upload-receipt-$RUN_ID-$variant"
+    receipt_path="$receipt_staging/upload_receipts.json"
+    final_receipt_path="$host_run_root/upload_receipts.json"
+    [[ ! -e "$receipt_staging" && ! -L "$receipt_staging" ]] \
+      || die "upload receipt staging path already exists: $receipt_staging"
+    [[ ! -e "$final_receipt_path" && ! -L "$final_receipt_path" ]] \
+      || die "upload receipt already exists: $final_receipt_path"
+    mkdir -m 700 -- "$receipt_staging"
     log "uploading verified outputs in an isolated credential-scoped container"
     docker run --rm --init \
-      --entrypoint /bin/bash \
+      --read-only \
+      --cap-drop ALL \
+      --security-opt no-new-privileges \
+      --tmpfs /tmp:rw,noexec,nosuid,nodev,mode=700 \
+      --entrypoint /opt/lumen-venv/bin/python \
       --user "$RUNTIME_UID:$RUNTIME_GID" \
-      -v "$ROOT:/workspace:ro" \
-      -v "$host_run_root:$container_run_root:rw" \
+      -v "$host_run_root:$container_run_root:ro" \
+      -v "$receipt_staging:/receipts:rw" \
       "${upload_token_mount[@]}" \
       -e "HOME=$RUNTIME_HOME" \
+      -e HF_HOME=/tmp/huggingface \
+      -e XDG_CACHE_HOME=/tmp/cache \
       -e PYTHONDONTWRITEBYTECODE=1 \
-      -e PYTHONPATH=/workspace \
+      -e "LUMEN_UBUNTU_SOURCE_ATTESTATION_PATH=$IMAGE_SOURCE_ATTESTATION" \
       "$IMAGE_DIGEST" \
-      -Eeuo pipefail -c \
-      'exec /opt/lumen-venv/bin/python -m tools.fine_tuning.unsloth.ubuntu_pipeline "$@"' \
-      lumen-upload upload \
+      -I "$IMAGE_SOURCE_ROOT/tools/fine_tuning/unsloth/ubuntu_uploader.py" \
+      upload \
       --run-root "$container_run_root" \
       --agents "$AGENTS_CSV" \
       --run-id "$RUN_ID-$variant" \
       --token-file /run/secrets/hf_token \
+      --receipt-path /receipts/upload_receipts.json \
       "${upload_flags[@]}"
+    [[ -f "$receipt_path" && ! -L "$receipt_path" ]] \
+      || die "credential-scoped upload did not produce a regular receipt"
+    mv -- "$receipt_path" "$final_receipt_path"
+    rmdir -- "$receipt_staging"
   fi
   log "completed $variant: $host_run_root"
 done

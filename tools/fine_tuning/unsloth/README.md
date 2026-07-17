@@ -19,7 +19,9 @@ layout, and upload safety. The default is the optimized variant, all six roles,
 full frozen evaluation, no upload, private visibility, and no runtime promotion.
 Run it as a regular non-root user: the image maps that account's UID/GID to a
 real container passwd/group entry and validates its writable home before model
-training.
+training. The launcher requires a clean Git worktree, hashes the full Ubuntu
+orchestration closure, and bakes the verified source and frozen inputs into the
+image. Neither the training nor credential container mounts the host checkout.
 
 The commands below describe the individual components. Use them for inspection
 and targeted development; the full Ubuntu launcher is the canonical operator
@@ -40,7 +42,8 @@ python -m lumen_manifest_crawler generate \
 
 3. Train SFT with a run-scoped config that binds the explicit experiment variant, base-model
 lineage, phase-specific training-code digest, dependency lock, source Git commit, and observed
-container environment. The full Ubuntu host launcher builds the controlled image, derives its
+container environment. The source contract also binds the canonical working-tree and Ubuntu
+orchestration digests. The full Ubuntu host launcher builds the controlled image, derives its
 local image ID, and prepares those configs. The inner launcher handles one experiment variant at a
 time; `baseline-and-optimized` and `all` are expanded into isolated fail-fast variant batches by
 the host wrapper and do not themselves make a comparison/promotion decision. Direct
@@ -79,6 +82,9 @@ the allowlisted evidence, and requires `--public` for public visibility. Ordinar
 a full quality-passed evaluation. A full pass with conversion disabled remains qualified as
 `complete_without_gguf`; smoke or unevaluated publication additionally requires
 `--allow-diagnostic-upload`, uses `diagnostic-runs/`, and records `promotionEligible=false`.
+The uploader executes only the attested image copy under isolated Python, with no host source
+mount or repository `PYTHONPATH`; run artifacts are read-only and only the receipt path is
+writable.
 
 7. Evaluate the final preference adapter. The Ubuntu launcher creates the
 final lineage config and runs this for every selected role automatically:

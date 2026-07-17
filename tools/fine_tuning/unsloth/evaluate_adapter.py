@@ -35,6 +35,12 @@ except ImportError:
 
 
 EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.2.0"
+UBUNTU_SOURCE_INTEGRITY_FIELDS = (
+    "workingTreeDigest",
+    "ubuntuOrchestrationCodeSHA256",
+    "ubuntuSourceIntegritySHA256",
+    "ubuntuSourceIntegrity",
+)
 CANDIDATE_OUTPUT_SCHEMA_VERSION = "lumen.adapter-eval-candidate/1.1.0"
 GENERATION_ATTEMPT_SCHEMA_VERSION = "lumen.adapter-eval-generation-attempt/1.0.0"
 STRUCTURED_OUTPUT_CONTRACT_VERSION = "lumen.adapter-eval-json-object-contract/1.1.0"
@@ -1969,6 +1975,30 @@ def run(args: argparse.Namespace) -> int:
 
     config_path = Path(args.config).resolve()
     cfg, config_file_sha256 = _load_evaluation_config_snapshot(config_path)
+    from tools.fine_tuning.unsloth.ubuntu_source_integrity import (
+        validate_attestation_record,
+    )
+
+    expected_source_fields: dict[str, Any] = {}
+    if cfg.get("runtimeSourceBindingMethod") == (
+        "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+    ):
+        source_integrity = cfg.get("ubuntuSourceIntegrity")
+        if not isinstance(source_integrity, Mapping):
+            raise ValueError("Evaluation config is missing Ubuntu source integrity")
+        verified_source_integrity = validate_attestation_record(source_integrity)
+        expected_source_fields = {
+            "workingTreeDigest": verified_source_integrity["workingTreeDigest"],
+            "ubuntuOrchestrationCodeSHA256": verified_source_integrity[
+                "ubuntuOrchestrationCodeSHA256"
+            ],
+            "ubuntuSourceIntegritySHA256": verified_source_integrity[
+                "sourceIntegritySHA256"
+            ],
+            "ubuntuSourceIntegrity": verified_source_integrity,
+        }
+        if any(cfg.get(key) != value for key, value in expected_source_fields.items()):
+            raise ValueError("Evaluation config Ubuntu source-integrity fields drifted")
     agent = str(cfg["agent"]).strip().lower()
     if agent not in SUPPORTED_AGENTS:
         raise ValueError(f"Unsupported evaluation agent: {agent}")
@@ -2119,6 +2149,7 @@ def run(args: argparse.Namespace) -> int:
         "formatFailureCount": format_failure_count,
         "criticalFailureCount": report["criticalFailureCount"],
         "qualityGatePassed": quality_gate_passed,
+        **expected_source_fields,
         "generation": {
             "doSample": False,
             "numBeams": 1,

@@ -29,7 +29,7 @@ Install and verify:
 2. [Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
 3. The [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html),
    configured for Docker.
-4. Git and enough free local storage for the repository, container layers,
+4. Git, Python 3, and enough free local storage for the repository, container layers,
    Hugging Face cache, checkpoints, and run artifacts.
 5. Outbound HTTPS access to GitHub, Hugging Face, the PyTorch wheel index, and
    Python package indexes while the image and model cache are populated.
@@ -92,6 +92,22 @@ The image is specific to the invoking host UID/GID. Reusing it with
 of allowing a later `getpwuid` crash. Runtime compiler caches live below the
 owned container home and remain isolated from the repository and output tree.
 
+The host launcher also requires an exact clean Git worktree before image build,
+fresh training, resume, or upload. Staged, unstaged, and untracked files, dirty
+or mismatched submodules, and ignored files inside the Ubuntu execution closure
+fail closed. The recorded source contract includes the base commit, canonical
+working-tree digest, `dirtyState=false`, the complete Ubuntu orchestration-file
+manifest, and `ubuntuOrchestrationCodeSHA256`. That closure covers both
+launchers, the container recipe and Docker ignore policy, trainers, evaluator,
+GGUF helper, uploader, imported crawler package, and ZeroGPU runtime sources.
+
+Docker bakes the verified closure and frozen generated inputs under
+`/opt/lumen/source`; the host checkout is not mounted into the GPU or upload
+container. The built image reconstructs the orchestration digest before it is
+accepted, and `--no-build` still requires its source record to equal the current
+clean checkout. Run manifests, prepared configs, resume verification,
+evaluation evidence, summaries, and upload receipts retain that source record.
+
 The CUDA base is version-tagged rather than OCI-digest-pinned, and Python wheel
 artifacts are version-pinned but not installed from a hash-locked wheelhouse.
 For that reason, runtime-image promotion remains prohibited. Credential-scoped
@@ -129,8 +145,9 @@ bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
 
 The launcher builds the pinned image, checks Docker GPU access, derives the
-actual local image ID, mounts the checkout and a persistent Hugging Face cache,
-and creates a fresh run directory. Each selected role completes this order:
+actual local image ID, verifies the image-baked source closure, mounts only the
+output tree and credential-free persistent Hugging Face cache for training, and
+creates a fresh run directory. Each selected role completes this order:
 
 ```text
 prepare and verify isolated dataset/config snapshot
@@ -239,10 +256,10 @@ bash scripts/ubuntu_train_lumen_full_pipeline.sh \
   --run-id 20260714T120000Z
 ```
 
-`--no-build` is an optimization for an image already built from the same
-checkout and the same host UID/GID. A matching tag alone is not proof that its
-contents match the current source; the pipeline's identity, environment, and
-source-lineage checks remain authoritative.
+`--no-build` is an optimization for an image already built from the same clean
+checkout and the same host UID/GID. A matching tag alone is rejected unless the
+image-baked source record, working-tree digest, and orchestration digest match
+the current checkout; the identity and environment checks must also pass.
 
 ## Outputs And Retention
 
@@ -306,10 +323,13 @@ bash scripts/ubuntu_train_lumen_full_pipeline.sh \
   --token-file /secure/path/lumen-hf-token
 ```
 
-The repository bound into the immutable run manifest is used. Immediately
-before remote mutation, the upload helper re-verifies adapter bytes, finalized
+The verified image copy bound into the immutable run manifest is used.
+Immediately before remote mutation, the upload helper re-verifies adapter bytes, finalized
 manifests, evaluation file hashes, GGUF digests, run/summary evidence, and the
-exact allowlist. It creates one atomic commit guarded by the observed remote
+exact allowlist. The upload process runs with isolated Python, no host source
+mount or repository `PYTHONPATH`, a read-only root filesystem, read-only run
+artifacts, and a separate receipt-only writable mount. The HF token is its only
+credential mount. It creates one atomic commit guarded by the observed remote
 parent and refuses an existing run prefix. The default is private. Public
 visibility requires both `--upload` and `--public`:
 
@@ -388,6 +408,9 @@ evidence owned by the release workflow even when the frozen evaluation passes.
   command above.
 - **Python or CUDA lock mismatch:** rebuild without `--no-build`; do not bypass
   the environment gate.
+- **Source-integrity or clean-checkout failure:** preserve or commit intended
+  source changes and remove unintended untracked execution files. Do not bypass
+  the gate or upload from an image built from another source digest.
 - **`KeyError: 'getpwuid(): uid not found'`:** pull the current launcher and
   rebuild without `--no-build`. Do not use `sudo`, bind-mount the host
   `/etc/passwd`, or set a fake `USER` value. Because the repaired image and

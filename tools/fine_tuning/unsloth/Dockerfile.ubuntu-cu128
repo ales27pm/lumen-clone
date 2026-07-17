@@ -3,6 +3,9 @@ FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
 ARG DEBIAN_FRONTEND=noninteractive
 ARG LUMEN_RUNTIME_UID=1000
 ARG LUMEN_RUNTIME_GID=1000
+ARG LUMEN_SOURCE_BASE_COMMIT
+ARG LUMEN_WORKING_TREE_DIGEST
+ARG LUMEN_UBUNTU_ORCHESTRATION_SHA256
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -11,7 +14,8 @@ ENV LANG=C.UTF-8 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     VIRTUAL_ENV=/opt/lumen-venv \
-    PATH=/opt/lumen-venv/bin:${PATH}
+    PATH=/opt/lumen-venv/bin:${PATH} \
+    LUMEN_UBUNTU_SOURCE_ATTESTATION_PATH=/opt/lumen/ubuntu-source-integrity.json
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
@@ -147,6 +151,27 @@ ENV HOME=/home/lumen-runtime \
     TORCHINDUCTOR_CACHE_DIR=/home/lumen-runtime/.cache/torch/inductor \
     TRITON_CACHE_DIR=/home/lumen-runtime/.cache/triton
 
+# Bake the exact clean execution closure and frozen inputs into the image. The
+# host checkout is never mounted into either the GPU or credential container.
+COPY scripts/ubuntu_train_lumen_full_pipeline.sh /opt/lumen/source/scripts/ubuntu_train_lumen_full_pipeline.sh
+COPY scripts/ubuntu_train_lumen_adapters_aio.sh /opt/lumen/source/scripts/ubuntu_train_lumen_adapters_aio.sh
+COPY tools/fine_tuning/unsloth /opt/lumen/source/tools/fine_tuning/unsloth
+COPY tools/lumen_manifest_crawler/lumen_manifest_crawler /opt/lumen/source/tools/lumen_manifest_crawler/lumen_manifest_crawler
+COPY tools/hf_zerogpu/space_template /opt/lumen/source/tools/hf_zerogpu/space_template
+COPY generated/fine_tuning /opt/lumen/source/generated/fine_tuning
+COPY generated/agent_manifest/AgentBehaviorManifest.json /opt/lumen/source/generated/agent_manifest/AgentBehaviorManifest.json
+
+RUN python -I \
+        /opt/lumen/source/tools/fine_tuning/unsloth/ubuntu_source_integrity.py \
+        build-image-record \
+        --root /opt/lumen/source \
+        --base-commit "${LUMEN_SOURCE_BASE_COMMIT}" \
+        --working-tree-digest "${LUMEN_WORKING_TREE_DIGEST}" \
+        --orchestration-digest "${LUMEN_UBUNTU_ORCHESTRATION_SHA256}" \
+        --output "${LUMEN_UBUNTU_SOURCE_ATTESTATION_PATH}" \
+    && chmod -R a-w /opt/lumen/source \
+    && chmod a-w "${LUMEN_UBUNTU_SOURCE_ATTESTATION_PATH}"
+
 # Exercise Python's passwd fallback and cache writes under the exact runtime
 # UID/GID. This catches the getpwuid failure during image construction.
 RUN setpriv \
@@ -173,7 +198,7 @@ tempfile.TemporaryFile(dir=home).close()
 tempfile.TemporaryFile(dir=Path(os.environ["TORCHINDUCTOR_CACHE_DIR"])).close()
 PY
 
-WORKDIR /workspace
+WORKDIR /opt/lumen/source
 
 USER ${LUMEN_RUNTIME_UID}:${LUMEN_RUNTIME_GID}
 

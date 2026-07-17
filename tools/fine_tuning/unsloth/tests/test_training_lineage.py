@@ -1022,10 +1022,36 @@ def test_ubuntu_launcher_records_complete_local_git_source_audit() -> None:
     assert '"expectedRuntimeSourceRevision": revision' in launcher
     assert '"observedRepositoryRevision": revision' in launcher
     assert '"observedRuntimeRevision": revision' in launcher
-    assert '"runtimeSourceBindingStatus": "local_checkout_observed"' in launcher
+    assert '"runtimeSourceBindingStatus": "verified_clean_snapshot"' in launcher
     assert (
-        '"runtimeSourceBindingMethod": "git_head_plus_training_code_manifest"'
+        '"git_clean_worktree_plus_ubuntu_orchestration_manifest"'
         in launcher
     )
     assert "config.update(runtime_source)" in launcher
     assert "**runtime_source" in launcher
+
+
+def test_attested_local_runtime_source_accepts_only_the_exact_binding_pair() -> None:
+    revision = "e" * 40
+    audit = {
+        "runtimeSourceKind": "git",
+        "runtimeSourceRevision": revision,
+        "expectedRuntimeSourceRevision": revision,
+        "observedRepositoryRevision": revision,
+        "observedRuntimeRevision": revision,
+        "runtimeSourceBindingStatus": "verified_clean_snapshot",
+        "runtimeSourceBindingMethod": (
+            "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+        ),
+    }
+
+    assert training_lineage.validate_runtime_source_audit(
+        audit,
+        observed_local_revision=revision,
+    ) == audit
+    audit["runtimeSourceBindingMethod"] = "git_head_plus_training_code_manifest"
+    with pytest.raises(ValueError):
+        training_lineage.validate_runtime_source_audit(
+            audit,
+            observed_local_revision=revision,
+        )
