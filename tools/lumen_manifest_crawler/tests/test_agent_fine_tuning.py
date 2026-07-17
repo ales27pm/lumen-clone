@@ -1619,8 +1619,8 @@ def test_every_cortex_eval_has_one_record_aware_route_contract(
 
     assert modes == Counter(
         {
-            "actionable": 283,
-            "clarification": 196,
+            "actionable": 284,
+            "clarification": 195,
             "selection": 22,
             "no_tool_route": 2,
             "invalid_tool": 1,
@@ -1804,7 +1804,7 @@ def test_cortex_strict_retry_sft_matches_runtime_failure_code_form(
     }
 
     assert len(zero_required_tool_ids) == 15
-    assert len(records) == 40
+    assert len(records) == 42
     assert len(systematic_records) == 30
     assert Counter(
         (
@@ -1849,6 +1849,12 @@ def test_cortex_strict_retry_sft_matches_runtime_failure_code_form(
         "retry_action_persistence_literal_true": (
             "Find skyline photographs from last month in my photo library."
         ),
+        "retry_outlook_latest_read_exact_catalog_reselection": (
+            "Please open latest correspondence delivered through Microsoft 365."
+        ),
+        "retry_files_read_clarification_reselection": (
+            "Load an unidentified document from local imports."
+        ),
         "retry_calendar_event_exact_catalog_reselection": (
             "Arrange a compliance workshop on my calendar during an "
             "unspecified afternoon."
@@ -1858,6 +1864,8 @@ def test_cortex_strict_retry_sft_matches_runtime_failure_code_form(
         "retry_unknown_tool_exact_catalog_reselection",
         "retry_invalid_json_without_trusted_row",
         "retry_protocol_fields_without_trusted_row",
+        "retry_outlook_latest_read_exact_catalog_reselection",
+        "retry_files_read_clarification_reselection",
         "retry_calendar_event_exact_catalog_reselection",
     }
     assert {
@@ -1956,6 +1964,43 @@ def test_cortex_strict_retry_sft_matches_runtime_failure_code_form(
             assert "missingArguments" not in payload
             assert "clarification" not in payload
     assert trusted_row_prompts == 36
+
+    cross_domain_retry_expectations = {
+        "retry_outlook_latest_read_exact_catalog_reselection": (
+            "outlook.message.read",
+            None,
+        ),
+        "retry_files_read_clarification_reselection": (
+            "files.read",
+            ["name"],
+        ),
+    }
+    records_by_case = {
+        record["metadata"]["repairCase"]: record for record in records
+    }
+    for repair_case, (
+        expected_tool_id,
+        expected_missing,
+    ) in cross_domain_retry_expectations.items():
+        record = records_by_case[repair_case]
+        payload = json.loads(record["messages"][-1]["content"])
+        assert record["metadata"]["failureCode"] == (
+            "cortex_route_tool_not_in_manifest"
+        )
+        assert record["metadata"]["requiredSplit"] == "train"
+        assert record["metadata"]["surfaceForm"] == (
+            "strict_retry_cross_domain_route_lock"
+        )
+        assert record["metadata"]["targetedFailureFamily"] == (
+            "outlook_read_files_read_route_lock"
+        )
+        assert payload["selectedToolID"] == expected_tool_id
+        if expected_missing is None:
+            assert payload["actionStep"]["toolID"] == expected_tool_id
+            assert "missingArguments" not in payload
+        else:
+            assert payload["missingArguments"] == expected_missing
+            assert "actionStep" not in payload
 
     persistence_retry = next(
         record
@@ -3395,6 +3440,8 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
         "route_new_text_missing_all",
     }
     expected_minimal_pair_counts = {
+        ("outlook_read_reference", "latest_outlook_email"): 3,
+        ("outlook_read_reference", "unresolved_reference"): 3,
         ("outlook_attachments_reference", "explicit_id"): 3,
         ("outlook_attachments_reference", "unresolved_reference"): 3,
         ("outlook_mark_unread_reference", "explicit_id"): 3,
@@ -3448,7 +3495,11 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
         (
             "outlook_reply_all_selected_message_body_boundary",
             "missing_message_id",
-        ): 1,
+        ): 3,
+        (
+            "outlook_reply_all_operation_without_values",
+            "all_missing",
+        ): 3,
         (
             "outlook_send_named_recipient_unresolved_content",
             "unmarked_incomplete",
@@ -3492,6 +3543,14 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
             "memory_same_topic_save_not_recall",
             "memory_same_topic_recall_not_save",
             "countdown_notify_missing_title",
+            "outlook_read_latest_not_files_1",
+            "outlook_read_latest_exact_tool_2",
+            "outlook_read_selected_not_files",
+            "files_read_explicit_not_outlook",
+            "files_read_unresolved_not_outlook",
+            "outlook_reply_all_operation_missing_all_1",
+            "outlook_reply_all_operation_missing_all_2",
+            "outlook_reply_all_operation_missing_all_3",
             "memory_preference_implicit_action_1",
             "memory_preference_implicit_action_2",
             "memory_preference_implicit_action_3",
@@ -3555,7 +3614,9 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
         "implicit_duration_countdown_missing_title": (6, 2),
         "implicit_preference_memory_save": (10, 8),
         "implicit_topic_memory_recall": (4, 2),
-        "outlook_reply_unresolved_reference_and_body": (11, 9),
+        "outlook_read_files_read_route_lock": (0, 4),
+        "outlook_read_reference_resolution": (6, 1),
+        "outlook_reply_unresolved_reference_and_body": (16, 12),
         "outlook_send_unresolved_subject_and_body": (4, 4),
         "zero_required_action_without_invented_arguments": (5, 4),
         "zero_required_list_action": (12, 7),
@@ -3605,6 +3666,14 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
             assert payload["missingArguments"]
             assert "actionStep" not in payload
     route_expectations = {
+        ("outlook_read_reference", "latest_outlook_email"): (
+            "outlook.message.read",
+            None,
+        ),
+        ("outlook_read_reference", "unresolved_reference"): (
+            "outlook.message.read",
+            ["messageId"],
+        ),
         ("outlook_attachments_reference", "explicit_id"): (
             "outlook.attachments.list",
             None,
@@ -3710,6 +3779,10 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
             "outlook_reply_all_selected_message_body_boundary",
             "missing_message_id",
         ): ("outlook.message.reply_all", ["messageId"]),
+        (
+            "outlook_reply_all_operation_without_values",
+            "all_missing",
+        ): ("outlook.message.reply_all", ["messageId", "body"]),
         ("outlook_reply_reference_without_body", "unresolved_reference"): (
             "outlook.message.reply",
             ["messageId", "body"],
@@ -3876,6 +3949,62 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
             "selectedToolID"
         ] == rejected_tool_id
 
+    cross_domain_route_expectations = {
+        "outlook_read_latest_not_files_1": (
+            "outlook.message.read",
+            None,
+            "files.read",
+            ["name"],
+        ),
+        "outlook_read_latest_exact_tool_2": (
+            "outlook.message.read",
+            None,
+            "outlook.message.latest",
+            None,
+        ),
+        "outlook_read_selected_not_files": (
+            "outlook.message.read",
+            ["messageId"],
+            "files.read",
+            ["name"],
+        ),
+        "files_read_explicit_not_outlook": (
+            "files.read",
+            None,
+            "outlook.message.read",
+            ["messageId"],
+        ),
+        "files_read_unresolved_not_outlook": (
+            "files.read",
+            ["name"],
+            "outlook.message.read",
+            ["messageId"],
+        ),
+    }
+    for case, (
+        chosen_tool_id,
+        chosen_missing,
+        rejected_tool_id,
+        rejected_missing,
+    ) in cross_domain_route_expectations.items():
+        chosen = json.loads(by_case[case]["chosen"]["content"])
+        rejected = json.loads(by_case[case]["rejected"]["content"])
+        assert chosen["selectedToolID"] == chosen_tool_id
+        assert rejected["selectedToolID"] == rejected_tool_id
+        if chosen_missing is None:
+            assert chosen["actionStep"]["toolID"] == chosen_tool_id
+            assert "missingArguments" not in chosen
+        else:
+            assert chosen["missingArguments"] == chosen_missing
+            assert "actionStep" not in chosen
+        if rejected_missing is None:
+            assert rejected["actionStep"]["toolID"] == rejected_tool_id
+            assert "missingArguments" not in rejected
+        else:
+            assert rejected["missingArguments"] == rejected_missing
+            assert "actionStep" not in rejected
+    assert "outlook.message.latest" not in manifest_tool_ids
+
     expected_missing_by_case = {
         "route_outlook_reply_all_reference_missing_all": ["messageId", "body"],
         "route_outlook_move_missing_all": ["messageId", "destination"],
@@ -4034,15 +4163,47 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
         assert rejected["missingArguments"] == rejected_missing
 
     reply_all_expected_missing = {
-        "outlook_reply_all_selected_without_body_1": ["messageId", "body"],
-        "outlook_reply_all_selected_without_body_2": ["messageId", "body"],
-        "outlook_reply_all_selected_with_body": ["messageId"],
+        "outlook_reply_all_selected_without_body_1": (
+            ["messageId", "body"],
+            ["messageId"],
+        ),
+        "outlook_reply_all_selected_without_body_2": (
+            ["messageId", "body"],
+            ["body"],
+        ),
+        "outlook_reply_all_selected_with_body": (
+            ["messageId"],
+            ["messageId", "body"],
+        ),
+        "outlook_reply_all_operation_missing_all_1": (
+            ["messageId", "body"],
+            ["messageId"],
+        ),
+        "outlook_reply_all_operation_missing_all_2": (
+            ["messageId", "body"],
+            ["body"],
+        ),
+        "outlook_reply_all_operation_missing_all_3": (
+            ["messageId", "body"],
+            None,
+        ),
     }
-    for case, expected_missing in reply_all_expected_missing.items():
+    for case, (
+        expected_missing,
+        rejected_missing,
+    ) in reply_all_expected_missing.items():
         chosen = json.loads(by_case[case]["chosen"]["content"])
         rejected = json.loads(by_case[case]["rejected"]["content"])
         assert chosen["missingArguments"] == expected_missing
-        assert rejected["missingArguments"] != expected_missing
+        assert "actionStep" not in chosen
+        if rejected_missing is None:
+            assert rejected["actionStep"]["toolID"] == (
+                "outlook.message.reply_all"
+            )
+            assert "missingArguments" not in rejected
+        else:
+            assert rejected["missingArguments"] == rejected_missing
+            assert "actionStep" not in rejected
 
     for case in (
         "selection_only_health_forbidden_decoys",
@@ -4096,24 +4257,97 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
         == "route_semantic_generalization_validation"
     ]
     expected_sft_routes = {
-        "validation_memory_recall_topic": ("memory.recall", None),
-        "validation_memory_save_preference": ("memory.save", None),
-        "validation_zero_required_reminders_list": ("reminders.list", None),
+        "validation_memory_recall_topic": (
+            "memory.recall",
+            None,
+            "implicit_topic_memory_recall",
+        ),
+        "validation_memory_save_preference": (
+            "memory.save",
+            None,
+            "implicit_preference_memory_save",
+        ),
+        "validation_zero_required_reminders_list": (
+            "reminders.list",
+            None,
+            "zero_required_list_action",
+        ),
         "validation_calendar_event_missing_start": (
             "calendar.create",
             ["startsInMinutes"],
+            "calendar_event_title_without_numeric_delay",
+        ),
+        "validation_outlook_latest_read": (
+            "outlook.message.read",
+            None,
+            "outlook_read_reference_resolution",
+        ),
+        "validation_outlook_read_unresolved": (
+            "outlook.message.read",
+            ["messageId"],
+            "outlook_read_reference_resolution",
+        ),
+        "validation_outlook_reply_all_missing_all": (
+            "outlook.message.reply_all",
+            ["messageId", "body"],
+            "outlook_reply_unresolved_reference_and_body",
+        ),
+        "validation_files_read_unresolved": (
+            "files.read",
+            ["name"],
+            "outlook_read_files_read_route_lock",
         ),
     }
     expected_dpo_routes = {
-        **expected_sft_routes,
+        "validation_memory_recall_topic": (
+            "memory.recall",
+            None,
+            "implicit_topic_memory_recall",
+        ),
+        "validation_memory_save_preference": (
+            "memory.save",
+            None,
+            "implicit_preference_memory_save",
+        ),
+        "validation_zero_required_reminders_list": (
+            "reminders.list",
+            None,
+            "zero_required_list_action",
+        ),
+        "validation_calendar_event_missing_start": (
+            "calendar.create",
+            ["startsInMinutes"],
+            "calendar_event_title_without_numeric_delay",
+        ),
         "validation_calendar_canonical_id": (
             "calendar.create",
             ["startsInMinutes"],
+            "calendar_event_title_without_numeric_delay",
+        ),
+        "validation_outlook_latest_not_files": (
+            "outlook.message.read",
+            None,
+            "outlook_read_files_read_route_lock",
+        ),
+        "validation_outlook_selected_not_files": (
+            "outlook.message.read",
+            ["messageId"],
+            "outlook_read_files_read_route_lock",
+        ),
+        "validation_files_read_not_outlook": (
+            "files.read",
+            None,
+            "outlook_read_files_read_route_lock",
+        ),
+        "validation_outlook_reply_all_missing_all": (
+            "outlook.message.reply_all",
+            ["messageId", "body"],
+            "outlook_reply_unresolved_reference_and_body",
         ),
     }
 
-    assert len(val_sft) == 4
-    assert len(val_dpo) == 5
+    assert len(val_sft) == 8
+    assert len(val_dpo) == 9
     assert {record["metadata"]["repairCase"] for record in val_sft} == set(
         expected_sft_routes
     )
@@ -4127,7 +4361,11 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
     ):
         for record in records:
             case = record["metadata"]["repairCase"]
-            expected_tool_id, expected_missing = expected_routes[case]
+            (
+                expected_tool_id,
+                expected_missing,
+                expected_failure_family,
+            ) = expected_routes[case]
             payload = json.loads(
                 (
                     record["messages"][-1]
@@ -4138,6 +4376,9 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
             assert record["metadata"]["requiredSplit"] == "validation"
             assert record["metadata"]["surfaceForm"] == (
                 "held_out_semantic_generalization"
+            )
+            assert record["metadata"]["targetedFailureFamily"] == (
+                expected_failure_family
             )
             assert payload["selectedToolID"] == expected_tool_id
             if expected_missing is None:
@@ -4170,6 +4411,16 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
             "calendar.schedule",
             ["startsInMinutes"],
         ),
+        "validation_outlook_latest_not_files": ("files.read", ["name"]),
+        "validation_outlook_selected_not_files": ("files.read", ["name"]),
+        "validation_files_read_not_outlook": (
+            "outlook.message.read",
+            ["messageId"],
+        ),
+        "validation_outlook_reply_all_missing_all": (
+            "outlook.message.reply_all",
+            ["messageId"],
+        ),
     }
     for record in val_dpo:
         rejected = json.loads(record["rejected"]["content"])
@@ -4177,7 +4428,16 @@ def test_cortex_semantic_generalization_validation_cases_are_explicit(
             record["metadata"]["repairCase"]
         ]
         assert rejected["selectedToolID"] == expected_tool_id
-        assert rejected["missingArguments"] == expected_missing
+        if expected_missing is None:
+            assert rejected["actionStep"] == {
+                "type": "tool_call",
+                "toolID": expected_tool_id,
+                "mustPersistBeforeFinal": True,
+            }
+            assert "missingArguments" not in rejected
+        else:
+            assert rejected["missingArguments"] == expected_missing
+            assert "actionStep" not in rejected
 
 
 def test_cortex_semantic_generalization_skips_absent_required_arguments() -> None:
@@ -4268,6 +4528,29 @@ def test_cortex_targeted_failure_repairs_stay_below_frozen_eval_containment(
         "natural_zero_required_reminders_list_actionable_4",
         "natural_zero_required_reminders_list_actionable_5",
         "natural_zero_required_trigger_list_actionable_1",
+        "natural_outlook_read_reference_latest_outlook_email_1",
+        "natural_outlook_read_reference_latest_outlook_email_2",
+        "natural_outlook_read_reference_latest_outlook_email_3",
+        "natural_outlook_read_reference_unresolved_reference_1",
+        "natural_outlook_read_reference_unresolved_reference_2",
+        "natural_outlook_read_reference_unresolved_reference_3",
+        "natural_outlook_reply_all_operation_without_values_all_missing_1",
+        "natural_outlook_reply_all_operation_without_values_all_missing_2",
+        "natural_outlook_reply_all_operation_without_values_all_missing_3",
+        (
+            "natural_outlook_reply_all_selected_message_body_boundary_"
+            "missing_message_id_1"
+        ),
+        (
+            "natural_outlook_reply_all_selected_message_body_boundary_"
+            "missing_message_id_2"
+        ),
+        (
+            "natural_outlook_reply_all_selected_message_body_boundary_"
+            "missing_message_id_3"
+        ),
+        "retry_outlook_latest_read_exact_catalog_reselection",
+        "retry_files_read_clarification_reselection",
     }
     new_dpo_repair_cases = {
         "calendar_event_vague_time_missing_start_1",
@@ -4285,6 +4568,14 @@ def test_cortex_targeted_failure_repairs_stay_below_frozen_eval_containment(
         "zero_required_list_reminders_action_1",
         "zero_required_list_reminders_action_2",
         "zero_required_list_trigger_action",
+        "outlook_read_latest_not_files_1",
+        "outlook_read_latest_exact_tool_2",
+        "outlook_read_selected_not_files",
+        "files_read_explicit_not_outlook",
+        "files_read_unresolved_not_outlook",
+        "outlook_reply_all_operation_missing_all_1",
+        "outlook_reply_all_operation_missing_all_2",
+        "outlook_reply_all_operation_missing_all_3",
     }
     train_sft_by_case = {
         record["metadata"].get("repairCase"): record
@@ -4296,9 +4587,20 @@ def test_cortex_targeted_failure_repairs_stay_below_frozen_eval_containment(
     }
     assert new_sft_repair_cases <= set(train_sft_by_case)
     assert new_dpo_repair_cases <= set(train_dpo_by_case)
+
+    def sft_user_request(case: str) -> str:
+        record = train_sft_by_case[case]
+        prompt = record["messages"][-2]["content"]
+        if record["metadata"].get("taskType") != (
+            "cortex_route_strict_retry_repair"
+        ):
+            return prompt
+        retry_separator = "\n\n" + STRICT_JSON_RETRY_DPO_INSTRUCTION
+        assert retry_separator in prompt
+        return prompt.split(retry_separator, maxsplit=1)[0]
+
     targeted_prompts = {
-        train_sft_by_case[case]["messages"][-2]["content"]
-        for case in new_sft_repair_cases
+        sft_user_request(case) for case in new_sft_repair_cases
     } | {
         train_dpo_by_case[case]["prompt"][-1]["content"]
         for case in new_dpo_repair_cases

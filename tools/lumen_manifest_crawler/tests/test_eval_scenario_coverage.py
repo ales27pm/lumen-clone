@@ -271,6 +271,7 @@ def test_curated_natural_prompts_distinguish_actionable_partial_and_ambiguous_va
         ("calendar.create", "Add a dentist appointment tomorrow at 2 PM.", ["title", "startsInMinutes"]),
         ("reminders.create", "Remind me to charge the scooter battery.", ["title"]),
         ("files.read", "Read the imported project notes file.", ["name"]),
+        ("outlook.message.read", "Read the latest email.", ["messageId"]),
         ("mail.draft", "Draft an email to Antoine about the show.", ["to", "body"]),
         ("memory.recall", "Search stored memory for the Aurora rollback checklist.", ["query"]),
         (
@@ -327,6 +328,41 @@ def test_curated_runtime_contract_survives_cortex_routing_without_executor_leaka
         record["metadata"].get("evalType") == "tool_runtime_scenario_selection"
         for record in routed["executor"]
     )
+
+
+def test_latest_outlook_message_reference_is_actionable_and_routes_as_message_id(
+    repo_compiled_evals: tuple[AgentBehaviorManifest, list[dict]],
+) -> None:
+    manifest, evals = repo_compiled_evals
+    prompt = "Read the latest email."
+    compiled = _runtime_scenario(evals, "outlook.message.read", prompt)
+
+    _assert_actionable(compiled, ["messageId"])
+    assert compiled["expected"]["selectedToolID"] == "outlook.message.read"
+    assert "missingArguments" not in compiled["expected"]
+
+    routed = _build_agent_eval_records(
+        manifest,
+        {"eval_scenarios": evals},
+        {tool.id for tool in manifest.tools},
+    )
+    routed_record = next(
+        record
+        for record in routed["cortex"]
+        if record["metadata"].get("evalType")
+        == "tool_runtime_scenario_selection"
+        and record["messages"][-1]["content"] == prompt
+    )
+    route_metric = next(
+        metric
+        for metric in routed_record["metrics"]
+        if metric.get("type") == "cortex_route_contract"
+    )
+
+    assert routed_record["expected"] == compiled["expected"]
+    assert route_metric["mode"] == "actionable"
+    assert route_metric["expectedToolID"] == "outlook.message.read"
+    assert "requiredArguments" not in route_metric
 
 
 def test_files_read_missing_name_clarifies_while_supplied_name_is_actionable():

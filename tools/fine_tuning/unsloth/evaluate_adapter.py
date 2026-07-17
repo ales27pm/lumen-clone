@@ -83,8 +83,12 @@ CORTEX_ROUTE_INSTRUCTION = (
     "argument: asking to schedule an agent run supplies no title, prompt, or schedule; "
     "asking to reply or reply-all supplies no body; a countdown duration plus alert "
     "wording supplies no title. References such as that item or the selected message "
-    "supply no id or messageId. Only concrete user values remove those names from the "
-    "missing set. Remove a "
+    "supply no id or messageId. One narrow runtime-supported exception applies: an "
+    "explicit latest, last, or newest email reference for an Outlook message "
+    "operation supplies the "
+    "symbolic `messageId` value `latest`; generic latest-item wording and selected or "
+    "current message references remain unresolved. Only concrete user values or that "
+    "narrow symbolic value remove those names from the missing set. Remove a "
     "required name only when this user request supplies its concrete value; do not copy "
     "Executor arguments into the route. If names remain, emit "
     "all of them in manifest order in missingArguments and omit actionStep; if none "
@@ -117,7 +121,11 @@ CORTEX_ROUTE_DECISION_ENDCAP = (
     "designated recipient role. Operation wording, standalone pronouns, and unresolved "
     "relative references such as that item, this one, the latest item, the selected "
     "message, or the entry discussed earlier do not supply an identifier or other "
-    "required value by themselves. In contrast, a that-clause containing a complete "
+    "required value by themselves. The narrow runtime-supported exception is an "
+    "explicit latest, last, or newest email reference for an Outlook message "
+    "operation, which supplies the "
+    "symbolic messageId value `latest`; it does not apply to generic latest items or "
+    "selected/current message wording. In contrast, a that-clause containing a complete "
     "proposition supplies content, a concrete topic after about, regarding, or concerning "
     "supplies query, personal-preference wording supplies preference kind, and a concrete "
     "event noun phrase supplies title. Precise relative delays can supply numeric time "
@@ -1269,6 +1277,56 @@ def _trusted_cortex_retry_manifest_row(
     }
 
 
+def _cortex_retry_transition_error(
+    failed_candidate: Any,
+    validation_error: str | None,
+    retry_candidate: Any,
+    tool_contracts: Mapping[str, Any] | None,
+    retry_locked_row: Mapping[str, Any] | None = None,
+) -> str | None:
+    """Reject a valid retry that escapes the first attempt's trusted route scope."""
+
+    if not isinstance(retry_candidate, Mapping) or not tool_contracts:
+        return None
+
+    trusted_row = _trusted_cortex_retry_manifest_row(
+        retry_locked_row,
+        tool_contracts,
+    ) or _trusted_cortex_retry_manifest_row(failed_candidate, tool_contracts)
+    if trusted_row is not None:
+        if retry_candidate.get("selectedToolID") != trusted_row["selectedToolID"]:
+            return "cortex_route_retry_tool_drift"
+        return None
+
+    if (
+        validation_error != "cortex_route_tool_not_in_manifest"
+        or not isinstance(failed_candidate, Mapping)
+    ):
+        return None
+    failed_intent = failed_candidate.get("intent")
+    if not isinstance(failed_intent, str) or not failed_intent:
+        return None
+
+    manifest_intents: set[str] = set()
+    for raw_tool in tool_contracts.values():
+        if not isinstance(raw_tool, Mapping):
+            continue
+        allowed_intents = raw_tool.get("allowedIntents")
+        if not isinstance(allowed_intents, list):
+            continue
+        manifest_intents.update(
+            intent
+            for intent in allowed_intents
+            if isinstance(intent, str) and intent
+        )
+    if (
+        failed_intent in manifest_intents
+        and retry_candidate.get("intent") != failed_intent
+    ):
+        return "cortex_route_retry_intent_drift"
+    return None
+
+
 def _trusted_cortex_retry_row_instruction(
     failed_candidate: Any,
     tool_contracts: Mapping[str, Any] | None,
@@ -1312,6 +1370,23 @@ def _quoted_manifest_tool_candidate(
     return {"selectedToolID": candidates[0]}
 
 
+def _cortex_retry_locked_manifest_row(
+    messages: Sequence[Mapping[str, str]],
+    failed_candidate: Any,
+    tool_contracts: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Return the exact row the retry prompt will bind, if one is trustworthy."""
+
+    trusted_row = _trusted_cortex_retry_manifest_row(
+        failed_candidate,
+        tool_contracts,
+    )
+    if trusted_row is not None:
+        return trusted_row
+    quoted_candidate = _quoted_manifest_tool_candidate(messages, tool_contracts)
+    return _trusted_cortex_retry_manifest_row(quoted_candidate, tool_contracts)
+
+
 def _strict_json_retry_messages(
     messages: Sequence[Mapping[str, str]],
     *,
@@ -1340,9 +1415,11 @@ def _strict_json_retry_messages(
                 "contracted route state.",
             )
         )
-    trusted_candidate = failed_candidate
-    if _trusted_cortex_retry_manifest_row(trusted_candidate, tool_contracts) is None:
-        trusted_candidate = _quoted_manifest_tool_candidate(copied, tool_contracts)
+    trusted_candidate = _cortex_retry_locked_manifest_row(
+        copied,
+        failed_candidate,
+        tool_contracts,
+    )
     retry_instruction += _trusted_cortex_retry_row_instruction(
         trusted_candidate,
         tool_contracts,
@@ -1415,6 +1492,9 @@ def evaluate_records(
         input_tokens = 0
         generated_tokens = 0
         generation_token_budget = 0
+        first_attempt_output: Any = None
+        first_attempt_error: str | None = None
+        cortex_retry_locked_row: dict[str, Any] | None = None
         for attempt_index in range(1, attempt_limit + 1):
             (
                 completion,
@@ -1435,6 +1515,17 @@ def evaluate_records(
                 evaluation_module=evaluation_module,
                 tool_contracts=tool_contracts,
             )
+            if attempt_index == 2 and agent == "cortex" and format_error is None:
+                transition_error = _cortex_retry_transition_error(
+                    first_attempt_output,
+                    first_attempt_error,
+                    output,
+                    tool_contracts,
+                    cortex_retry_locked_row,
+                )
+                if transition_error is not None:
+                    output_kind = "invalid_cortex_route"
+                    format_error = transition_error
             generation_attempts.append(
                 _generation_attempt_record(
                     attempt_index=attempt_index,
@@ -1452,10 +1543,19 @@ def evaluate_records(
                     generation_token_budget=generation_token_budget,
                 )
             )
+            if attempt_index == 1:
+                first_attempt_output = output
+                first_attempt_error = format_error
             if format_error is None:
                 break
             if attempt_index == 1 and agent in JSON_OUTPUT_AGENTS:
                 initial_format_failure_count += 1
+                if agent == "cortex":
+                    cortex_retry_locked_row = _cortex_retry_locked_manifest_row(
+                        prompt_messages,
+                        output,
+                        tool_contracts,
+                    )
                 prompt_messages = _strict_json_retry_messages(
                     prompt_messages,
                     validation_error=format_error,
@@ -1580,6 +1680,7 @@ def _validated_generation_attempts(
     agent: str,
     evaluation_module: ModuleType,
     tool_contracts: Mapping[str, Any] | None,
+    cortex_retry_locked_row: Mapping[str, Any] | None,
     expected_prompt_sha256: Sequence[str],
     path: Path,
     line_number: int,
@@ -1654,6 +1755,17 @@ def _validated_generation_attempts(
             evaluation_module=evaluation_module,
             tool_contracts=tool_contracts,
         )
+        if expected_index == 2 and agent == "cortex" and expected_error is None:
+            transition_error = _cortex_retry_transition_error(
+                normalized_attempt_outputs[0],
+                attempts[0]["formatError"],
+                normalized_output,
+                tool_contracts,
+                cortex_retry_locked_row,
+            )
+            if transition_error is not None:
+                expected_kind = "invalid_cortex_route"
+                expected_error = transition_error
         if (
             attempt.get("outputKind") != expected_kind
             or format_error != expected_error
@@ -1758,6 +1870,7 @@ def load_candidate_outputs(
             tool_contracts=tool_contracts,
         )
         expected_prompt_sha256 = [_canonical_sha256(primary_messages)]
+        cortex_retry_locked_row: Mapping[str, Any] | None = None
         if agent in JSON_OUTPUT_AGENTS:
             raw_attempts = row.get("generationAttempts")
             first_attempt = (
@@ -1782,6 +1895,12 @@ def load_candidate_outputs(
                     evaluation_module=evaluation_module,
                     tool_contracts=tool_contracts,
                 )
+            if agent == "cortex":
+                cortex_retry_locked_row = _cortex_retry_locked_manifest_row(
+                    primary_messages,
+                    first_output,
+                    tool_contracts,
+                )
             expected_prompt_sha256.append(
                 _canonical_sha256(
                     _strict_json_retry_messages(
@@ -1797,6 +1916,7 @@ def load_candidate_outputs(
             agent=agent,
             evaluation_module=evaluation_module,
             tool_contracts=tool_contracts,
+            cortex_retry_locked_row=cortex_retry_locked_row,
             expected_prompt_sha256=expected_prompt_sha256,
             path=path,
             line_number=line_number,

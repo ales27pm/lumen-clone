@@ -393,7 +393,7 @@ TOOL_SCENARIO_ARGUMENT_COVERAGE: dict[str, dict[str, tuple[str, ...]]] = {
         "Search my mailbox for Core ML.": ("query",),
     },
     "outlook.message.read": {
-        "Read the latest email.": (),
+        "Read the latest email.": ("messageId",),
         "Open this Outlook message.": (),
         "Show the full email body for this message.": (),
     },
