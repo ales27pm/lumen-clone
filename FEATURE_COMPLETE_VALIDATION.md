@@ -1097,6 +1097,10 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 | `PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tools/fine_tuning/unsloth/tests tools/lumen_manifest_crawler/tests/test_eval_scenario_coverage.py tools/lumen_manifest_crawler/tests/test_agent_fine_tuning.py tools/lumen_manifest_crawler/tests/test_fleet_self_awareness.py tools/lumen_manifest_crawler/tests/test_dataset_quality_contracts.py` | Passed; two pinned-environment integration cases skipped on the host as declared by their tests |
 | `PYTHONPATH=tools/lumen_manifest_crawler PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tools/lumen_manifest_crawler -m "not slow and not e2e"` after frozen-evaluation hardening | Passed |
 | `python3 -m compileall -q tools scripts`, Release-hardening guard, launcher shell syntax, and `git diff --check` after frozen-evaluation hardening | Passed |
+| `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools/lumen_manifest_crawler python3 -m pytest -q -p no:cacheprovider tools/fine_tuning/unsloth/tests/test_ubuntu_pipeline.py` after Ubuntu summary/publication-state hardening | Passed: 122 tests, including the six-state evaluation/GGUF matrix, full-pass-without-GGUF qualification, immutable execution-plan resume checks, diagnostic namespace/receipt checks, and order-independent launcher flag rejection |
+| `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools/lumen_manifest_crawler python3 -m pytest -q -p no:cacheprovider tools/fine_tuning/unsloth/tests` after Ubuntu summary/publication-state hardening | Passed: 373 passed, 2 skipped |
+| `PYTHONDONTWRITEBYTECODE=1 python3 -m compileall -q tools/fine_tuning/unsloth scripts` and `bash -n scripts/ubuntu_train_lumen_adapters_aio.sh scripts/ubuntu_train_lumen_full_pipeline.sh` after Ubuntu summary/publication-state hardening | Passed |
+| `python3 tools/check_release_hardening.py`, `bash scripts/check-lumen-integration-gate.sh`, and `git diff --check` after Ubuntu summary/publication-state hardening | Passed; integration used static iOS readiness because Xcode is unavailable on this Ubuntu host |
 
 ## Remaining DEBUG-Only Experimental Items
 

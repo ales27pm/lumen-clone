@@ -19,6 +19,7 @@ SHM_SIZE="${LUMEN_UBUNTU_SHM_SIZE:-8g}"
 BUILD_IMAGE="${LUMEN_UBUNTU_BUILD_IMAGE:-1}"
 PULL_BASE="${LUMEN_UBUNTU_PULL_BASE:-1}"
 UPLOAD="${LUMEN_UBUNTU_UPLOAD:-0}"
+ALLOW_DIAGNOSTIC_UPLOAD="${LUMEN_UBUNTU_ALLOW_DIAGNOSTIC_UPLOAD:-0}"
 HF_PRIVATE="${LUMEN_UBUNTU_HF_PRIVATE:-1}"
 OVERWRITE="${LUMEN_UBUNTU_OVERWRITE:-0}"
 RESUME="${LUMEN_UBUNTU_RESUME:-0}"
@@ -26,6 +27,8 @@ PREPARE_ONLY="${LUMEN_UBUNTU_PREPARE_ONLY:-0}"
 CONVERT_GGUF="${LUMEN_UBUNTU_CONVERT_GGUF:-1}"
 EVALUATE="${LUMEN_UBUNTU_EVALUATE:-1}"
 EVAL_MAX_EXAMPLES="${LUMEN_UBUNTU_EVAL_MAX_EXAMPLES:-}"
+NO_EVALUATE_OPTION_SEEN=0
+EVAL_SMOKE_OPTION_SEEN=0
 RUNTIME_HOME="/home/lumen-runtime"
 
 log() {
@@ -54,6 +57,8 @@ Options:
   --run-id ID          Safe run identifier; the variant suffix is added automatically
   --agents CSV         Comma-separated agents (default: all six Lumen agents)
   --upload             Upload verified outputs after training (off by default)
+  --allow-diagnostic-upload
+                       Permit an explicit smoke/no-evaluation upload under diagnostic-runs/
   --public             Make an explicitly requested upload public (private by default)
   --token-file FILE    Mount an HF token only into the isolated upload container
   --overwrite          Replace pre-existing per-variant run directories
@@ -136,6 +141,10 @@ while (($#)); do
       UPLOAD=1
       shift
       ;;
+    --allow-diagnostic-upload)
+      ALLOW_DIAGNOSTIC_UPLOAD=1
+      shift
+      ;;
     --public)
       HF_PRIVATE=0
       shift
@@ -158,12 +167,14 @@ while (($#)); do
       ;;
     --no-evaluate)
       EVALUATE=0
+      NO_EVALUATE_OPTION_SEEN=1
       shift
       ;;
     --eval-smoke)
       (($# >= 2)) || die "--eval-smoke requires a positive integer"
       EVAL_MAX_EXAMPLES="$2"
       EVALUATE=1
+      EVAL_SMOKE_OPTION_SEEN=1
       shift 2
       ;;
     --no-build)
@@ -188,6 +199,7 @@ for pair in \
   "LUMEN_UBUNTU_BUILD_IMAGE:$BUILD_IMAGE" \
   "LUMEN_UBUNTU_PULL_BASE:$PULL_BASE" \
   "LUMEN_UBUNTU_UPLOAD:$UPLOAD" \
+  "LUMEN_UBUNTU_ALLOW_DIAGNOSTIC_UPLOAD:$ALLOW_DIAGNOSTIC_UPLOAD" \
   "LUMEN_UBUNTU_HF_PRIVATE:$HF_PRIVATE" \
   "LUMEN_UBUNTU_OVERWRITE:$OVERWRITE" \
   "LUMEN_UBUNTU_RESUME:$RESUME" \
@@ -213,6 +225,16 @@ RUNTIME_GID="$(id -g)"
   || die "credential-scoped upload requires an image built by this invocation; remove --no-build"
 if [[ -n "$EVAL_MAX_EXAMPLES" ]]; then
   [[ "$EVAL_MAX_EXAMPLES" =~ ^[1-9][0-9]*$ ]] || die "--eval-smoke requires a positive integer"
+fi
+[[ "$NO_EVALUATE_OPTION_SEEN" == "0" || "$EVAL_SMOKE_OPTION_SEEN" == "0" ]] \
+  || die "--no-evaluate and --eval-smoke are mutually exclusive"
+[[ "$EVALUATE" != "0" || -z "$EVAL_MAX_EXAMPLES" ]] \
+  || die "disabled evaluation cannot retain a smoke cohort size"
+[[ "$ALLOW_DIAGNOSTIC_UPLOAD" == "0" || "$UPLOAD" == "1" ]] \
+  || die "--allow-diagnostic-upload is only valid together with --upload"
+if [[ "$UPLOAD" == "1" && ( "$EVALUATE" == "0" || -n "$EVAL_MAX_EXAMPLES" ) \
+  && "$ALLOW_DIAGNOSTIC_UPLOAD" != "1" ]]; then
+  die "smoke or unevaluated publication requires --allow-diagnostic-upload"
 fi
 
 declare -A seen_agents=()
@@ -376,6 +398,7 @@ log "HF cache: $HF_CACHE"
 log "agents: $AGENTS_CSV"
 log "variants: ${variants[*]}"
 log "upload: $UPLOAD (private: $HF_PRIVATE)"
+log "diagnostic upload override: $ALLOW_DIAGNOSTIC_UPLOAD"
 log "evaluation: $EVALUATE${EVAL_MAX_EXAMPLES:+ (smoke cases per agent: $EVAL_MAX_EXAMPLES)}"
 log "resume: $RESUME"
 
@@ -437,6 +460,9 @@ for variant in "${variants[@]}"; do
     fi
     if [[ "$CONVERT_GGUF" == "1" ]]; then
       upload_flags+=(--include-gguf)
+    fi
+    if [[ "$ALLOW_DIAGNOSTIC_UPLOAD" == "1" ]]; then
+      upload_flags+=(--allow-diagnostic-upload)
     fi
     log "uploading verified outputs in an isolated credential-scoped container"
     docker run --rm --init \

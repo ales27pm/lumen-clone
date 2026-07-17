@@ -75,7 +75,10 @@ release approval for the newly created artifact.
 
 6. Optional Hub upload is owned by the full Ubuntu launcher. Use `--upload`; it keeps the
 destination private by default, scopes credentials to a separate upload container, re-verifies
-the allowlisted evidence, and requires `--public` for public visibility.
+the allowlisted evidence, and requires `--public` for public visibility. Ordinary upload requires
+a full quality-passed evaluation. A full pass with conversion disabled remains qualified as
+`complete_without_gguf`; smoke or unevaluated publication additionally requires
+`--allow-diagnostic-upload`, uses `diagnostic-runs/`, and records `promotionEligible=false`.
 
 7. Evaluate the final preference adapter. The Ubuntu launcher creates the
 final lineage config and runs this for every selected role automatically:

@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -20,6 +20,19 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 FAKE_IMAGE_DIGEST = "sha256:" + ("a" * 64)
 OPTIMIZED_VARIANT = "internal_plus_public_optimized"
 VALID_GGUF_TEST_PAYLOAD = (b"\x00" * 64) + b"LUMEN_VALID_GGUF_TEST"
+
+
+def _test_execution_plan(
+    *,
+    evaluation_scope: str = "full",
+    evaluation_max_examples: int | None = None,
+    gguf_requested: bool = True,
+) -> dict:
+    return ubuntu_pipeline.execution_plan(
+        evaluation_scope=evaluation_scope,
+        evaluation_max_examples=evaluation_max_examples,
+        gguf_requested=gguf_requested,
+    )
 
 
 def _gguf_bytes(
@@ -628,6 +641,7 @@ def _write_evaluation_evidence(
             "variant": variant,
             "behaviorManifest": str(behavior_path.resolve()),
             "behaviorManifestFileSHA256": prepared_behavior_sha256,
+            "executionPlan": _test_execution_plan(gguf_requested=False),
             "agents": [
                 {
                     "agent": agent,
@@ -703,6 +717,7 @@ def _write_completed_summary_evidence(
         "_verified_run_manifest",
         lambda *_args: {
             "variant": variant,
+            "executionPlan": _test_execution_plan(),
             "agents": [{"agent": agent}],
         },
     )
@@ -723,8 +738,14 @@ def _write_completed_summary_evidence(
         lambda *_args: reader_script,
     )
     summary = {
-        "schema": "lumen.ubuntu-training-summary/2.0.0",
+        "schema": ubuntu_pipeline.SUMMARY_SCHEMA_VERSION,
         "status": "complete",
+        "evaluationStatus": "quality_gate_passed",
+        "evaluationScope": "full",
+        "ggufStatus": "verified",
+        "qualification": "quality_gate_passed",
+        "promotionEligible": True,
+        "executionPlanSHA256": _test_execution_plan()["executionPlanSHA256"],
         "variant": variant,
         "runRoot": str(run_root),
         "preferenceTraining": True,
@@ -1265,9 +1286,18 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
         seed=42,
         base_model_override="",
         container_digest=FAKE_IMAGE_DIGEST,
+        evaluation_scope="smoke",
+        evaluation_max_examples=7,
+        gguf_requested=False,
     )
     config = json.loads(
         (run_root / "configs" / "cortex.json").read_text(encoding="utf-8")
+    )
+    manifest = ubuntu_pipeline.read_object(run_root / "aio_run_manifest.json")
+    expected_plan = _test_execution_plan(
+        evaluation_scope="smoke",
+        evaluation_max_examples=7,
+        gguf_requested=False,
     )
 
     assert config["trainingEnvironmentSHA256"] == environment_sha
@@ -1275,9 +1305,23 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
     assert config["resolvedTrainingEnvironment"] == lineage[
         "resolvedTrainingEnvironment"
     ]
+    assert config["runExecutionPlan"] == expected_plan
+    assert manifest["executionPlan"] == expected_plan
     assert (
         run_root / "generated" / "agent_manifest" / "AgentBehaviorManifest.json"
     ).is_file()
+
+    with pytest.raises(RuntimeError, match="Resume request"):
+        ubuntu_pipeline.validate_prepared_runtime(
+            root=REPO_ROOT,
+            run_root=run_root,
+            agents=("cortex",),
+            variant=OPTIMIZED_VARIANT,
+            container_digest=FAKE_IMAGE_DIGEST,
+            evaluation_scope="full",
+            evaluation_max_examples=None,
+            gguf_requested=True,
+        )
 
 
 def test_final_config_switches_to_verified_preference_lineage(
@@ -1397,6 +1441,312 @@ def test_summary_rejects_failed_full_evaluation(
             require_gguf=False,
             require_evaluation=True,
         )
+
+
+def test_full_quality_summary_without_gguf_is_complete_and_upload_qualified(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = "cortex"
+    plan = _test_execution_plan(gguf_requested=False)
+    (tmp_path / "models" / "lora_qwen3_gguf").mkdir(parents=True)
+    evaluation_dir = tmp_path / "evaluation" / agent
+    evaluation_dir.mkdir(parents=True)
+    (evaluation_dir / "evaluation_report.json").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+    (evaluation_dir / "evaluation_run_manifest.json").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+    sft = {"phase": "sft", "adapterSHA256": "a" * 64}
+    final_phase = {
+        "phase": "dpo",
+        "adapterSHA256": "b" * 64,
+        "parentSFTAdapterSHA256": "a" * 64,
+    }
+    evaluation = {"status": "quality_gate_passed", "qualityGatePassed": True}
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_run_manifest",
+        lambda *_args: {
+            "variant": OPTIMIZED_VARIANT,
+            "executionPlan": plan,
+            "agents": [{"agent": agent}],
+        },
+    )
+    monkeypatch.setattr(ubuntu_pipeline, "verify_sft", lambda *_args: sft)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_preference",
+        lambda *_args: final_phase,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verify_evaluation_outputs",
+        lambda *_args, **_kwargs: evaluation,
+    )
+
+    summary = ubuntu_pipeline.write_summary(
+        run_root=tmp_path,
+        agents=(agent,),
+        variant=OPTIMIZED_VARIANT,
+        preference=True,
+        require_gguf=False,
+        require_evaluation=True,
+    )
+
+    assert summary["status"] == "complete_without_gguf"
+    assert summary["evaluationStatus"] == "quality_gate_passed"
+    assert summary["evaluationScope"] == "full"
+    assert summary["ggufStatus"] == "skipped_by_operator"
+    assert summary["qualification"] == "quality_gate_passed"
+    assert summary["promotionEligible"] is True
+    assert ubuntu_pipeline._verified_completed_summary(
+        tmp_path,
+        (agent,),
+    ) == summary
+    assert ubuntu_pipeline._upload_publication_contract(
+        summary,
+        allow_diagnostic_upload=False,
+    )["remoteNamespace"] == "runs"
+
+
+@pytest.mark.parametrize(
+    ("plan", "statuses", "agent_count", "gguf_count", "error"),
+    (
+        (
+            _test_execution_plan(gguf_requested=False),
+            ["quality_gate_passed"],
+            2,
+            0,
+            "partial evaluation evidence",
+        ),
+        (
+            _test_execution_plan(evaluation_scope="smoke", evaluation_max_examples=1, gguf_requested=False),
+            ["quality_gate_passed", "smoke_complete"],
+            2,
+            0,
+            "does not match the execution plan",
+        ),
+        (
+            _test_execution_plan(),
+            ["quality_gate_passed", "quality_gate_passed"],
+            2,
+            1,
+            "GGUF inventory does not match",
+        ),
+        (
+            _test_execution_plan(),
+            ["quality_gate_passed", "quality_gate_passed"],
+            2,
+            0,
+            "GGUF inventory does not match",
+        ),
+    ),
+)
+def test_summary_state_rejects_partial_mixed_or_plan_inconsistent_evidence(
+    plan: dict,
+    statuses: list[str],
+    agent_count: int,
+    gguf_count: int,
+    error: str,
+) -> None:
+    with pytest.raises(RuntimeError, match=error):
+        ubuntu_pipeline._derived_summary_state(
+            plan=plan,
+            evaluation_statuses=statuses,
+            agent_count=agent_count,
+            gguf_count=gguf_count,
+        )
+
+
+@pytest.mark.parametrize(
+    (
+        "evaluation_scope",
+        "evaluation_max_examples",
+        "evaluation_statuses",
+        "gguf_requested",
+        "expected_status",
+        "expected_evaluation_status",
+        "expected_gguf_status",
+    ),
+    (
+        (
+            "full",
+            None,
+            ["quality_gate_passed"],
+            True,
+            "complete",
+            "quality_gate_passed",
+            "verified",
+        ),
+        (
+            "full",
+            None,
+            ["quality_gate_passed"],
+            False,
+            "complete_without_gguf",
+            "quality_gate_passed",
+            "skipped_by_operator",
+        ),
+        (
+            "smoke",
+            1,
+            ["smoke_complete"],
+            True,
+            "smoke_complete",
+            "smoke_complete",
+            "verified",
+        ),
+        (
+            "smoke",
+            1,
+            ["smoke_complete"],
+            False,
+            "smoke_complete",
+            "smoke_complete",
+            "skipped_by_operator",
+        ),
+        (
+            "none",
+            None,
+            [],
+            True,
+            "training_complete_without_full_evaluation",
+            "not_run",
+            "verified",
+        ),
+        (
+            "none",
+            None,
+            [],
+            False,
+            "training_complete_without_full_evaluation",
+            "not_run",
+            "skipped_by_operator",
+        ),
+    ),
+)
+def test_summary_state_matrix_keeps_evaluation_and_gguf_independent(
+    evaluation_scope: str,
+    evaluation_max_examples: int | None,
+    evaluation_statuses: list[str],
+    gguf_requested: bool,
+    expected_status: str,
+    expected_evaluation_status: str,
+    expected_gguf_status: str,
+) -> None:
+    state = ubuntu_pipeline._derived_summary_state(
+        plan=_test_execution_plan(
+            evaluation_scope=evaluation_scope,
+            evaluation_max_examples=evaluation_max_examples,
+            gguf_requested=gguf_requested,
+        ),
+        evaluation_statuses=evaluation_statuses,
+        agent_count=1,
+        gguf_count=1 if gguf_requested else 0,
+    )
+
+    assert state["status"] == expected_status
+    assert state["evaluationStatus"] == expected_evaluation_status
+    assert state["evaluationScope"] == evaluation_scope
+    assert state["ggufStatus"] == expected_gguf_status
+
+
+@pytest.mark.parametrize(
+    ("evaluation_status", "evaluation_scope", "status"),
+    (
+        ("smoke_complete", "smoke", "smoke_complete"),
+        (
+            "not_run",
+            "none",
+            "training_complete_without_full_evaluation",
+        ),
+    ),
+)
+def test_diagnostic_publication_requires_override_and_separate_namespace(
+    evaluation_status: str,
+    evaluation_scope: str,
+    status: str,
+) -> None:
+    summary = {
+        "status": status,
+        "evaluationStatus": evaluation_status,
+        "evaluationScope": evaluation_scope,
+        "ggufStatus": "skipped_by_operator",
+        "qualification": "diagnostic_only",
+        "promotionEligible": False,
+    }
+    with pytest.raises(RuntimeError, match="--allow-diagnostic-upload"):
+        ubuntu_pipeline._upload_publication_contract(
+            summary,
+            allow_diagnostic_upload=False,
+        )
+
+    publication = ubuntu_pipeline._upload_publication_contract(
+        summary,
+        allow_diagnostic_upload=True,
+    )
+    assert publication == {
+        "remoteNamespace": "diagnostic-runs",
+        "qualification": "diagnostic_only",
+        "promotionEligible": False,
+        "diagnosticUploadOverrideApplied": True,
+        "evaluationStatus": evaluation_status,
+        "evaluationScope": evaluation_scope,
+        "ggufStatus": "skipped_by_operator",
+    }
+
+
+def test_launcher_rejects_diagnostic_upload_without_distinct_override() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/ubuntu_train_lumen_full_pipeline.sh",
+            "--upload",
+            "--eval-smoke",
+            "1",
+            "--run-id",
+            "diagnostic-upload-gate",
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "requires --allow-diagnostic-upload" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "evaluation_args",
+    (
+        ("--no-evaluate", "--eval-smoke", "1"),
+        ("--eval-smoke", "1", "--no-evaluate"),
+    ),
+)
+def test_launcher_rejects_conflicting_evaluation_flags_in_any_order(
+    evaluation_args: tuple[str, ...],
+) -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/ubuntu_train_lumen_full_pipeline.sh",
+            *evaluation_args,
+            "--run-id",
+            "conflicting-evaluation-flags",
+        ],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "--no-evaluate and --eval-smoke are mutually exclusive" in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -2084,6 +2434,7 @@ def test_resume_rejects_a_minimal_self_hashed_gguf_summary(
         "_verified_run_manifest",
         lambda *_args: {
             "variant": "internal_plus_public_optimized",
+            "executionPlan": _test_execution_plan(),
             "agents": [{"agent": "cortex"}],
         },
     )
@@ -2166,6 +2517,10 @@ def test_required_gguf_summary_fails_without_pinned_reader(
         "_verified_run_manifest",
         lambda *_args: {
             "variant": OPTIMIZED_VARIANT,
+            "executionPlan": _test_execution_plan(
+                evaluation_scope="none",
+                gguf_requested=True,
+            ),
             "agents": [{"agent": "cortex"}],
         },
     )
@@ -2510,10 +2865,142 @@ def test_upload_cli_is_private_unless_public_is_explicit(
             str(tmp_path / "token"),
         ],
     )
-    assert ubuntu_pipeline.parse_args().public is False
+    parsed = ubuntu_pipeline.parse_args()
+    assert parsed.public is False
+    assert parsed.allow_diagnostic_upload is False
 
     sys.argv.append("--public")
     assert ubuntu_pipeline.parse_args().public is True
+
+    sys.argv.append("--allow-diagnostic-upload")
+    assert ubuntu_pipeline.parse_args().allow_diagnostic_upload is True
+
+
+def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = "cortex"
+    run_id = "diagnostic-run"
+    repo_id = "lumen-owner/lumen-adapters"
+    runtime_manifest = (
+        tmp_path / "generated" / "fine_tuning" / "adapter_runtime_manifest.json"
+    )
+    runtime_manifest.parent.mkdir(parents=True)
+    ubuntu_pipeline.write_object(runtime_manifest, {"adapterRepoID": repo_id})
+    ubuntu_pipeline.write_object(tmp_path / "training_environment.json", {})
+    ubuntu_pipeline.write_object(tmp_path / "aio_run_manifest.json", {})
+    ubuntu_pipeline.write_object(tmp_path / "aio_summary.json", {})
+    adapter_dir = tmp_path / "models" / "lora_qwen3_dpo" / agent
+    adapter_dir.mkdir(parents=True)
+    adapter_file = adapter_dir / "adapter_model.safetensors"
+    adapter_file.write_bytes(b"adapter")
+    ubuntu_pipeline.write_object(
+        adapter_dir / "adapter_artifact_manifest.json",
+        {
+            "adapterSHA256": "a" * 64,
+            "files": [{"path": adapter_file.name}],
+        },
+    )
+    finalized = tmp_path / "training" / agent / "dpo" / "finalized_variant_manifest.json"
+    finalized.parent.mkdir(parents=True)
+    finalized.write_text("{}\n", encoding="utf-8")
+    token_file = tmp_path / "token"
+    token_file.write_text("hf_test_token\n", encoding="utf-8")
+
+    summary = {
+        "status": "smoke_complete",
+        "evaluationStatus": "smoke_complete",
+        "evaluationScope": "smoke",
+        "ggufStatus": "skipped_by_operator",
+        "qualification": "diagnostic_only",
+        "promotionEligible": False,
+        "agents": {agent: {"evaluation": None, "adapterGGUFExists": False}},
+    }
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_run_manifest",
+        lambda *_args: {
+            "runID": run_id,
+            "agents": [{"agent": agent}],
+            "adapterRepoID": repo_id,
+            "adapterRuntimeManifestFileSHA256": ubuntu_pipeline.file_sha256(
+                runtime_manifest
+            ),
+            "trainingEnvironment": {},
+        },
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_completed_summary",
+        lambda *_args: summary,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_preference",
+        lambda *_args: {"adapterSHA256": "a" * 64},
+    )
+
+    class FakeCommitOperationAdd:
+        def __init__(self, *, path_in_repo: str, path_or_fileobj: str) -> None:
+            self.path_in_repo = path_in_repo
+            self.path_or_fileobj = path_or_fileobj
+
+    class FakeHfApi:
+        def __init__(self, *, token: str) -> None:
+            assert token == "hf_test_token"
+            self.committed = False
+
+        def whoami(self) -> dict:
+            return {"name": "lumen-owner"}
+
+        def create_repo(self, **_kwargs) -> None:
+            return None
+
+        def repo_info(self, **_kwargs) -> SimpleNamespace:
+            revision = "2" * 40 if self.committed else "1" * 40
+            return SimpleNamespace(private=True, sha=revision)
+
+        def list_repo_files(self, **_kwargs) -> list[str]:
+            return []
+
+        def create_commit(self, *, operations, **_kwargs) -> SimpleNamespace:
+            assert operations
+            assert all(
+                operation.path_in_repo.startswith(
+                    "diagnostic-runs/diagnostic-run/"
+                )
+                for operation in operations
+            )
+            self.committed = True
+            return SimpleNamespace(oid="2" * 40)
+
+    fake_hub = ModuleType("huggingface_hub")
+    fake_hub.CommitOperationAdd = FakeCommitOperationAdd
+    fake_hub.HfApi = FakeHfApi
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+
+    receipt = ubuntu_pipeline.upload_run(
+        run_root=tmp_path,
+        agents=(agent,),
+        run_id=run_id,
+        private=True,
+        include_gguf=False,
+        token_file=token_file,
+        allow_diagnostic_upload=True,
+    )
+
+    assert receipt["schema"] == ubuntu_pipeline.UPLOAD_SCHEMA_VERSION
+    assert receipt["remoteNamespace"] == "diagnostic-runs"
+    assert receipt["remotePrefix"] == "diagnostic-runs/diagnostic-run/"
+    assert receipt["qualification"] == "diagnostic_only"
+    assert receipt["promotionEligible"] is False
+    assert receipt["diagnosticUploadOverrideApplied"] is True
+    assert receipt["evaluationStatus"] == "smoke_complete"
+    assert receipt["evaluationScope"] == "smoke"
+    assert receipt["ggufStatus"] == "skipped_by_operator"
+    assert receipt["ggufIncluded"] is False
+    assert ubuntu_pipeline.read_object(tmp_path / "upload_receipts.json") == receipt
 
 
 def test_trainers_save_only_the_unified_fast_tokenizer_format() -> None:

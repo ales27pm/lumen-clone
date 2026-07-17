@@ -190,8 +190,11 @@ The canonical launcher owns adapter conversion and optional upload. It verifies
 the pinned llama.cpp checkout and base artifacts before conversion. Upload is
 off by default; `--upload` scopes an owner-only token to a separate container,
 re-verifies exact evidence, and makes one private atomic commit unless
-`--public` is explicit. Manual converter and broad `hf upload` shortcuts are
-not part of this contract.
+`--public` is explicit. Ordinary upload requires a full frozen quality pass,
+including a `complete_without_gguf` run when conversion was disabled. Smoke or
+unevaluated publication additionally requires `--allow-diagnostic-upload` and
+uses the separate `diagnostic-runs/` namespace with `promotionEligible=false`.
+Manual converter and broad `hf upload` shortcuts are not part of this contract.
 
 ### Canonical Ubuntu training loop
 

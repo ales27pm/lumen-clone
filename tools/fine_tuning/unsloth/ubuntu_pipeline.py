@@ -68,6 +68,7 @@ NON_CONTROLLED_CONFIG_FIELDS = {
     "gguf_repo_id",
     "mergeExport",
     "output_dir",
+    "runExecutionPlan",
     "variant",
     "variantAttestation",
     "variantManifestSHA256",
@@ -77,6 +78,10 @@ GGUF_FIXED_HEADER_SIZE = 24
 GGUF_SUPPORTED_VERSIONS = frozenset({2, 3})
 GGUF_READER_RELATIVE_PATH = Path("gguf-py/gguf/scripts/gguf_dump.py")
 GGUF_READER_TIMEOUT_SECONDS = 120
+SUMMARY_SCHEMA_VERSION = "lumen.ubuntu-training-summary/3.0.0"
+UPLOAD_SCHEMA_VERSION = "lumen.ubuntu-training-upload/2.0.0"
+EXECUTION_PLAN_SCHEMA_VERSION = "lumen.ubuntu-training-execution-plan/1.0.0"
+RUN_SCHEMA_VERSION = "lumen.ubuntu-training-run/3.0.0"
 _GGUF_READER_FD_BOOTSTRAP = """
 import os
 import sys
@@ -219,6 +224,60 @@ def canonical_sha256(value: Any) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def execution_plan(
+    *,
+    evaluation_scope: str,
+    evaluation_max_examples: int | None,
+    gguf_requested: bool,
+) -> dict[str, Any]:
+    if evaluation_scope not in {"full", "smoke", "none"}:
+        raise RuntimeError(f"Unsupported evaluation scope: {evaluation_scope}")
+    if evaluation_scope == "smoke":
+        if type(evaluation_max_examples) is not int or evaluation_max_examples <= 0:
+            raise RuntimeError("Smoke evaluation requires a positive maximum")
+    elif evaluation_max_examples is not None:
+        raise RuntimeError(
+            "An evaluation maximum is valid only for smoke evaluation"
+        )
+    if type(gguf_requested) is not bool:
+        raise RuntimeError("GGUF execution-plan state must be boolean")
+    value: dict[str, Any] = {
+        "schema": EXECUTION_PLAN_SCHEMA_VERSION,
+        "evaluationScope": evaluation_scope,
+        "evaluationMaxExamples": evaluation_max_examples,
+        "ggufRequested": gguf_requested,
+    }
+    value["executionPlanSHA256"] = canonical_sha256(value)
+    return value
+
+
+def _verified_execution_plan(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise RuntimeError("Prepared run lacks an immutable execution plan")
+    plan = dict(value)
+    if set(plan) != {
+        "schema",
+        "evaluationScope",
+        "evaluationMaxExamples",
+        "ggufRequested",
+        "executionPlanSHA256",
+    }:
+        raise RuntimeError("Prepared execution plan has an invalid field set")
+    declared = plan.pop("executionPlanSHA256", None)
+    expected = execution_plan(
+        evaluation_scope=str(plan.get("evaluationScope") or ""),
+        evaluation_max_examples=plan.get("evaluationMaxExamples"),
+        gguf_requested=plan.get("ggufRequested"),
+    )
+    if (
+        plan.get("schema") != EXECUTION_PLAN_SCHEMA_VERSION
+        or declared != expected["executionPlanSHA256"]
+        or dict(value) != expected
+    ):
+        raise RuntimeError("Prepared execution plan failed integrity verification")
+    return expected
 
 
 def file_sha256(path: Path) -> str:
@@ -1061,6 +1120,9 @@ def prepare_run(
     seed: int,
     base_model_override: str,
     container_digest: str,
+    evaluation_scope: str = "full",
+    evaluation_max_examples: int | None = None,
+    gguf_requested: bool = True,
 ) -> dict[str, Any]:
     if run_root.exists():
         raise RuntimeError(f"Run root already exists: {run_root}")
@@ -1075,6 +1137,11 @@ def prepare_run(
         root=root,
         source_config=source_config,
         container_digest=container_digest,
+    )
+    prepared_execution_plan = execution_plan(
+        evaluation_scope=evaluation_scope,
+        evaluation_max_examples=evaluation_max_examples,
+        gguf_requested=gguf_requested,
     )
     run_root.mkdir(parents=True)
     snapshot_root = run_root / "generated" / "fine_tuning"
@@ -1146,6 +1213,7 @@ def prepare_run(
         config["trainingContainerImageDigestSource"] = "operator_declared"
         config["trainingRuntimeImageBindingStatus"] = "manual_validation_required"
         config["trainingRuntimeImageBindingVerified"] = False
+        config["runExecutionPlan"] = prepared_execution_plan
         config.update(runtime_source)
         for key in (
             "resolvedTrainingEnvironment",
@@ -1219,7 +1287,7 @@ def prepare_run(
             }
         )
     run_manifest: dict[str, Any] = {
-        "schema": "lumen.ubuntu-training-run/2.0.0",
+        "schema": RUN_SCHEMA_VERSION,
         "runID": run_root.name,
         "runRoot": str(run_root),
         "adapterFirst": True,
@@ -1237,6 +1305,7 @@ def prepare_run(
         "behaviorManifest": str(behavior_manifest_snapshot),
         "behaviorManifestFileSHA256": file_sha256(behavior_manifest_snapshot),
         "trainingEnvironment": runtime_environment,
+        "executionPlan": prepared_execution_plan,
         **runtime_source,
         "agents": prepared,
     }
@@ -1257,8 +1326,9 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
     if canonical_sha256(unsigned) != declared:
         raise RuntimeError("Prepared run manifest integrity check failed")
     manifest_agents = manifest.get("agents")
+    _verified_execution_plan(manifest.get("executionPlan"))
     if (
-        manifest.get("schema") != "lumen.ubuntu-training-run/2.0.0"
+        manifest.get("schema") != RUN_SCHEMA_VERSION
         or manifest.get("adapterFirst") is not True
         or manifest.get("trainBaseModelWeights") is not False
         or manifest.get("runID") != run_root.name
@@ -1384,13 +1454,22 @@ def validate_prepared_runtime(
     agents: Sequence[str],
     variant: str,
     container_digest: str,
+    evaluation_scope: str = "full",
+    evaluation_max_examples: int | None = None,
+    gguf_requested: bool = True,
 ) -> dict[str, Any]:
     manifest = _verified_run_manifest(run_root)
+    requested_execution_plan = execution_plan(
+        evaluation_scope=evaluation_scope,
+        evaluation_max_examples=evaluation_max_examples,
+        gguf_requested=gguf_requested,
+    )
     _reject_managed_symlinks(run_root)
     manifest_agents = manifest.get("agents")
     if (
         manifest.get("variant") != variant
         or manifest.get("containerImageDigest") != container_digest
+        or manifest.get("executionPlan") != requested_execution_plan
         or not isinstance(manifest_agents, list)
         or any(not isinstance(item, Mapping) for item in manifest_agents)
         or [item.get("agent") for item in manifest_agents] != list(agents)
@@ -1484,6 +1563,8 @@ def validate_prepared_runtime(
             != pending_manifest.get("variantManifestSHA256")
             or prepared_config.get("trainingContainerImageDigest")
             != container_digest
+            or prepared_config.get("runExecutionPlan")
+            != requested_execution_plan
             or not isinstance(manifest.get("trainingEnvironment"), Mapping)
             or prepared_config.get("trainingEnvironmentSHA256")
             != manifest["trainingEnvironment"].get("trainingEnvironmentSHA256")
@@ -2640,6 +2721,73 @@ def _verify_evaluation_outputs(
     return evaluation_run
 
 
+def _derived_summary_state(
+    *,
+    plan: Mapping[str, Any],
+    evaluation_statuses: Sequence[str],
+    agent_count: int,
+    gguf_count: int,
+) -> dict[str, Any]:
+    if agent_count <= 0:
+        raise RuntimeError("Summary state requires at least one prepared agent")
+    verified_plan = _verified_execution_plan(plan)
+    evaluation_scope = str(verified_plan["evaluationScope"])
+    if len(evaluation_statuses) not in {0, agent_count}:
+        raise RuntimeError(
+            "Summary contains partial evaluation evidence across prepared agents"
+        )
+    if evaluation_scope == "none":
+        if evaluation_statuses:
+            raise RuntimeError(
+                "Summary contains evaluation evidence disabled by the execution plan"
+            )
+        evaluation_status = "not_run"
+    elif len(evaluation_statuses) != agent_count:
+        raise RuntimeError(
+            "Summary is missing evaluation evidence required by the execution plan"
+        )
+    elif evaluation_scope == "full" and set(evaluation_statuses) == {
+        "quality_gate_passed"
+    }:
+        evaluation_status = "quality_gate_passed"
+    elif evaluation_scope == "smoke" and set(evaluation_statuses) == {
+        "smoke_complete"
+    }:
+        evaluation_status = "smoke_complete"
+    else:
+        raise RuntimeError(
+            "Summary evaluation evidence does not match the execution plan"
+        )
+
+    if verified_plan["ggufRequested"] is True and gguf_count == agent_count:
+        gguf_status = "verified"
+    elif verified_plan["ggufRequested"] is False and gguf_count == 0:
+        gguf_status = "skipped_by_operator"
+    else:
+        raise RuntimeError(
+            "Summary GGUF inventory does not match the execution plan"
+        )
+
+    promotion_eligible = evaluation_status == "quality_gate_passed"
+    qualification = (
+        "quality_gate_passed" if promotion_eligible else "diagnostic_only"
+    )
+    if evaluation_status == "quality_gate_passed":
+        status = "complete" if gguf_status == "verified" else "complete_without_gguf"
+    elif evaluation_status == "smoke_complete":
+        status = "smoke_complete"
+    else:
+        status = "training_complete_without_full_evaluation"
+    return {
+        "status": status,
+        "evaluationStatus": evaluation_status,
+        "evaluationScope": evaluation_scope,
+        "ggufStatus": gguf_status,
+        "qualification": qualification,
+        "promotionEligible": promotion_eligible,
+    }
+
+
 def write_summary(
     *,
     run_root: Path,
@@ -2653,6 +2801,9 @@ def write_summary(
         raise RuntimeError(f"Summary run root is not a regular directory: {run_root}")
     _reject_managed_symlinks(run_root)
     run_manifest = _verified_run_manifest(run_root)
+    prepared_execution_plan = _verified_execution_plan(
+        run_manifest.get("executionPlan")
+    )
     manifest_agents = run_manifest.get("agents")
     if (
         run_manifest.get("variant") != variant
@@ -2663,6 +2814,12 @@ def write_summary(
         raise RuntimeError(
             "Summary agents or variant do not match the exact prepared run"
         )
+    if require_gguf is not prepared_execution_plan["ggufRequested"]:
+        raise RuntimeError("Summary GGUF request drifted from the execution plan")
+    if require_evaluation is not (
+        prepared_execution_plan["evaluationScope"] != "none"
+    ):
+        raise RuntimeError("Summary evaluation request drifted from the execution plan")
     gguf_inventory = _verify_gguf_inventory(
         run_root,
         agents,
@@ -2674,8 +2831,14 @@ def write_summary(
         else None
     )
     summary: dict[str, Any] = {
-        "schema": "lumen.ubuntu-training-summary/2.0.0",
+        "schema": SUMMARY_SCHEMA_VERSION,
         "status": "pending_verification",
+        "evaluationStatus": "pending_verification",
+        "evaluationScope": "pending_verification",
+        "ggufStatus": "pending_verification",
+        "qualification": "pending_verification",
+        "promotionEligible": False,
+        "executionPlanSHA256": prepared_execution_plan["executionPlanSHA256"],
         "variant": variant,
         "runRoot": str(run_root),
         "preferenceTraining": preference,
@@ -2729,22 +2892,14 @@ def write_summary(
         for item in summary["agents"].values()
         if isinstance(item.get("evaluation"), Mapping)
     ]
-    all_ggufs_exist = all(
-        item.get("adapterGGUFExists") is True
-        for item in summary["agents"].values()
-    )
-    if (
-        len(evaluations) == len(agents)
-        and all(
-            item.get("status") == "quality_gate_passed" for item in evaluations
+    summary.update(
+        _derived_summary_state(
+            plan=prepared_execution_plan,
+            evaluation_statuses=[str(item.get("status")) for item in evaluations],
+            agent_count=len(agents),
+            gguf_count=len(gguf_inventory),
         )
-        and all_ggufs_exist
-    ):
-        summary["status"] = "complete"
-    elif evaluations:
-        summary["status"] = "smoke_complete"
-    else:
-        summary["status"] = "training_complete_without_full_evaluation"
+    )
     summary["summarySHA256"] = canonical_sha256(summary)
     write_object(run_root / "aio_summary.json", summary)
     return summary
@@ -2758,6 +2913,9 @@ def _verified_completed_summary(
         raise RuntimeError(f"Summary run root is not a regular directory: {run_root}")
     _reject_managed_symlinks(run_root)
     run_manifest = _verified_run_manifest(run_root)
+    prepared_execution_plan = _verified_execution_plan(
+        run_manifest.get("executionPlan")
+    )
     manifest_agents = run_manifest.get("agents")
     if (
         not isinstance(manifest_agents, list)
@@ -2779,22 +2937,39 @@ def _verified_completed_summary(
         != {
             "schema",
             "status",
+            "evaluationStatus",
+            "evaluationScope",
+            "ggufStatus",
+            "qualification",
+            "promotionEligible",
+            "executionPlanSHA256",
             "variant",
             "runRoot",
             "preferenceTraining",
             "agents",
             "summarySHA256",
         }
-        or summary.get("schema") != "lumen.ubuntu-training-summary/2.0.0"
+        or summary.get("schema") != SUMMARY_SCHEMA_VERSION
         or summary.get("runRoot") != str(run_root)
         or summary.get("variant") != run_manifest.get("variant")
         or summary.get("preferenceTraining") is not True
         or summary.get("status")
         not in {
             "complete",
+            "complete_without_gguf",
             "smoke_complete",
             "training_complete_without_full_evaluation",
         }
+        or summary.get("evaluationStatus")
+        not in {"quality_gate_passed", "smoke_complete", "not_run"}
+        or summary.get("evaluationScope") not in {"full", "smoke", "none"}
+        or summary.get("ggufStatus")
+        not in {"verified", "skipped_by_operator"}
+        or summary.get("qualification")
+        not in {"quality_gate_passed", "diagnostic_only"}
+        or type(summary.get("promotionEligible")) is not bool
+        or summary.get("executionPlanSHA256")
+        != prepared_execution_plan["executionPlanSHA256"]
         or not isinstance(summary_agents, Mapping)
         or set(summary_agents) != set(agents)
     ):
@@ -2810,7 +2985,6 @@ def _verified_completed_summary(
         else None
     )
     evaluation_statuses: list[str] = []
-    all_ggufs_exist = True
     for agent in agents:
         item = summary_agents.get(agent)
         if (
@@ -2865,7 +3039,6 @@ def _verified_completed_summary(
             else None
         )
         gguf_exists = gguf_metadata is not None
-        all_ggufs_exist = all_ggufs_exist and gguf_exists
         if (
             item.get("adapterGGUF") != str(gguf)
             or item.get("adapterGGUFExists") is not gguf_exists
@@ -2893,18 +3066,59 @@ def _verified_completed_summary(
             or item.get("adapterGGUFSHA256") is not None
         ):
             raise RuntimeError(f"Unbound or unsafe GGUF exists for {agent}")
-    expected_status = (
-        "complete"
-        if len(evaluation_statuses) == len(agents)
-        and set(evaluation_statuses) == {"quality_gate_passed"}
-        and all_ggufs_exist
-        else "smoke_complete"
-        if evaluation_statuses
-        else "training_complete_without_full_evaluation"
+    expected_state = _derived_summary_state(
+        plan=prepared_execution_plan,
+        evaluation_statuses=evaluation_statuses,
+        agent_count=len(agents),
+        gguf_count=len(gguf_inventory),
     )
-    if summary.get("status") != expected_status:
-        raise RuntimeError("Completed summary overstates its evaluation status")
+    if any(summary.get(field) != value for field, value in expected_state.items()):
+        raise RuntimeError("Completed summary state does not match its verified evidence")
     return summary
+
+
+def _upload_publication_contract(
+    summary: Mapping[str, Any],
+    *,
+    allow_diagnostic_upload: bool,
+) -> dict[str, Any]:
+    if type(allow_diagnostic_upload) is not bool:
+        raise RuntimeError("Diagnostic upload override must be boolean")
+    promotion_eligible = summary.get("promotionEligible") is True
+    qualification = str(summary.get("qualification") or "")
+    if promotion_eligible:
+        if (
+            qualification != "quality_gate_passed"
+            or summary.get("evaluationStatus") != "quality_gate_passed"
+            or summary.get("evaluationScope") != "full"
+            or summary.get("status") not in {"complete", "complete_without_gguf"}
+        ):
+            raise RuntimeError("Upload summary has inconsistent qualification state")
+        remote_namespace = "runs"
+    else:
+        if (
+            qualification != "diagnostic_only"
+            or summary.get("evaluationStatus")
+            not in {"smoke_complete", "not_run"}
+            or summary.get("evaluationScope") not in {"smoke", "none"}
+            or summary.get("status")
+            not in {"smoke_complete", "training_complete_without_full_evaluation"}
+        ):
+            raise RuntimeError("Upload summary has inconsistent diagnostic state")
+        if not allow_diagnostic_upload:
+            raise RuntimeError(
+                "Diagnostic upload requires --allow-diagnostic-upload"
+            )
+        remote_namespace = "diagnostic-runs"
+    return {
+        "remoteNamespace": remote_namespace,
+        "qualification": qualification,
+        "promotionEligible": promotion_eligible,
+        "diagnosticUploadOverrideApplied": not promotion_eligible,
+        "evaluationStatus": summary["evaluationStatus"],
+        "evaluationScope": summary["evaluationScope"],
+        "ggufStatus": summary["ggufStatus"],
+    }
 
 
 def upload_run(
@@ -2915,6 +3129,7 @@ def upload_run(
     private: bool,
     include_gguf: bool,
     token_file: Path,
+    allow_diagnostic_upload: bool = False,
 ) -> dict[str, Any]:
     try:
         from huggingface_hub import CommitOperationAdd, HfApi
@@ -2929,6 +3144,15 @@ def upload_run(
     if [item.get("agent") for item in manifest_agents] != list(agents):
         raise RuntimeError("Upload agents do not match the prepared run")
     summary = _verified_completed_summary(run_root, agents)
+    publication = _upload_publication_contract(
+        summary,
+        allow_diagnostic_upload=allow_diagnostic_upload,
+    )
+    promotion_eligible = bool(publication["promotionEligible"])
+    remote_namespace = str(publication["remoteNamespace"])
+    publication_root = f"{remote_namespace}/{run_id}"
+    if include_gguf and summary.get("ggufStatus") != "verified":
+        raise RuntimeError("Upload requested GGUF files that were not verified")
     repo_id = str(run_manifest.get("adapterRepoID") or "").strip()
     runtime_manifest_path = (
         run_root / "generated" / "fine_tuning" / "adapter_runtime_manifest.json"
@@ -2959,13 +3183,13 @@ def upload_run(
             local_files.append(
                 (
                     adapter_dir / item["path"],
-                    f"runs/{run_id}/adapters/{agent}/{item['path']}",
+                    f"{publication_root}/adapters/{agent}/{item['path']}",
                 )
             )
         local_files.append(
             (
                 adapter_dir / "adapter_artifact_manifest.json",
-                f"runs/{run_id}/adapters/{agent}/adapter_artifact_manifest.json",
+                f"{publication_root}/adapters/{agent}/adapter_artifact_manifest.json",
             )
         )
         local_files.append(
@@ -2975,7 +3199,7 @@ def upload_run(
                 / agent
                 / "dpo"
                 / "finalized_variant_manifest.json",
-                f"runs/{run_id}/manifests/{agent}/variant_manifest.json",
+                f"{publication_root}/manifests/{agent}/variant_manifest.json",
             )
         )
         evaluation = summary["agents"][agent].get("evaluation")
@@ -2988,7 +3212,7 @@ def upload_run(
                 local_files.append(
                     (
                         run_root / "evaluation" / agent / filename,
-                        f"runs/{run_id}/evaluation/{agent}/{filename}",
+                        f"{publication_root}/evaluation/{agent}/{filename}",
                     )
                 )
         if include_gguf:
@@ -3000,7 +3224,7 @@ def upload_run(
                     / "models"
                     / "lora_qwen3_gguf"
                     / f"lumen-{agent}-lora.gguf",
-                    f"runs/{run_id}/gguf/lumen-{agent}-lora.gguf",
+                    f"{publication_root}/gguf/lumen-{agent}-lora.gguf",
                 )
             )
         if preference.get("adapterSHA256") != adapter_manifest.get("adapterSHA256"):
@@ -3010,7 +3234,7 @@ def upload_run(
         "aio_summary.json",
         "training_environment.json",
     ):
-        local_files.append((run_root / filename, f"runs/{run_id}/{filename}"))
+        local_files.append((run_root / filename, f"{publication_root}/{filename}"))
     remote_paths = [remote for _, remote in local_files]
     if len(set(remote_paths)) != len(remote_paths):
         raise RuntimeError("Upload file contract contains duplicate remote paths")
@@ -3035,7 +3259,7 @@ def upload_run(
     if bool(info.private) != private:
         raise RuntimeError("Remote repository visibility does not match the requested policy")
     existing_files = api.list_repo_files(repo_id=repo_id, repo_type="model")
-    prefix = f"runs/{run_id}/"
+    prefix = f"{publication_root}/"
     if any(path.startswith(prefix) for path in existing_files):
         raise RuntimeError(f"Remote run prefix already exists: {prefix}")
     parent_revision = getattr(info, "sha", None)
@@ -3050,7 +3274,11 @@ def upload_run(
             CommitOperationAdd(path_in_repo=remote, path_or_fileobj=str(local))
             for local, remote in local_files
         ],
-        commit_message=f"Upload verified Lumen training run {run_id}",
+        commit_message=(
+            f"Upload verified Lumen training run {run_id}"
+            if promotion_eligible
+            else f"Upload diagnostic-only Lumen training run {run_id}"
+        ),
         parent_commit=parent_revision,
     )
     commit_oid = getattr(commit, "oid", None)
@@ -3061,12 +3289,16 @@ def upload_run(
     if final_revision != commit_oid or bool(final_info.private) != private:
         raise RuntimeError("Remote upload head or visibility failed post-commit verification")
     result: dict[str, Any] = {
-        "schema": "lumen.ubuntu-training-upload/1.0.0",
+        "schema": UPLOAD_SCHEMA_VERSION,
         "repository": repo_id,
         "private": bool(final_info.private),
         "headRevision": final_revision,
         "parentRevision": parent_revision,
         "runID": run_id,
+        **publication,
+        "remotePrefix": prefix,
+        "ggufIncluded": include_gguf,
+        "summaryStatus": summary["status"],
         "uploadedFileCount": len(local_files),
         "uploadedPaths": remote_paths,
         "commitOID": commit_oid,
@@ -3086,6 +3318,20 @@ def _common_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--container-digest", required=True)
 
 
+def _execution_plan_parser(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--evaluation-scope",
+        choices=("full", "smoke", "none"),
+        required=True,
+    )
+    parser.add_argument("--evaluation-max-examples", type=int)
+    parser.add_argument(
+        "--gguf-requested",
+        action=argparse.BooleanOptionalAction,
+        required=True,
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fail-closed Ubuntu training pipeline helper")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -3098,6 +3344,7 @@ def parse_args() -> argparse.Namespace:
     _common_parser(runtime)
     prepare = subparsers.add_parser("prepare")
     _common_parser(prepare)
+    _execution_plan_parser(prepare)
     prepare.add_argument("--run-root", type=Path, required=True)
     validate = subparsers.add_parser("validate-prepared-runtime")
     validate.add_argument("--root", type=Path, required=True)
@@ -3105,6 +3352,7 @@ def parse_args() -> argparse.Namespace:
     validate.add_argument("--agents", required=True)
     validate.add_argument("--variant", required=True)
     validate.add_argument("--container-digest", required=True)
+    _execution_plan_parser(validate)
     owned = subparsers.add_parser("verify-owned-run")
     owned.add_argument("--run-root", type=Path, required=True)
     owned.add_argument("--variant", required=True)
@@ -3138,6 +3386,7 @@ def parse_args() -> argparse.Namespace:
     upload.add_argument("--run-id", required=True)
     upload.add_argument("--public", action="store_true")
     upload.add_argument("--include-gguf", action="store_true")
+    upload.add_argument("--allow-diagnostic-upload", action="store_true")
     upload.add_argument("--token-file", type=Path, required=True)
     return parser.parse_args()
 
@@ -3185,6 +3434,9 @@ def main() -> None:
             seed=args.seed,
             base_model_override=args.base_model,
             container_digest=args.container_digest,
+            evaluation_scope=args.evaluation_scope,
+            evaluation_max_examples=args.evaluation_max_examples,
+            gguf_requested=args.gguf_requested,
         )
     elif args.command == "validate-prepared-runtime":
         result = validate_prepared_runtime(
@@ -3193,6 +3445,9 @@ def main() -> None:
             agents=agents,
             variant=args.variant,
             container_digest=args.container_digest,
+            evaluation_scope=args.evaluation_scope,
+            evaluation_max_examples=args.evaluation_max_examples,
+            gguf_requested=args.gguf_requested,
         )
     elif args.command == "verify-owned-run":
         result = verify_owned_run(
@@ -3234,6 +3489,7 @@ def main() -> None:
             private=not args.public,
             include_gguf=args.include_gguf,
             token_file=args.token_file,
+            allow_diagnostic_upload=args.allow_diagnostic_upload,
         )
     else:  # pragma: no cover - argparse enforces the command set.
         raise RuntimeError(f"Unsupported command: {args.command}")
