@@ -33,15 +33,15 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "c95b41273248edb0ac5bb7261dc46b88163b6fbd593b1445da037ddd4b0e83c2"
+        "reportSHA256": "9496e09e16aa9c2f4be7a74514236f2fa582eecf9d2067fdb5b5e8d5cf0faafd"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "028b2e3f6138f6e02da35d047fd92ce6d90354a12d10c38756459b79f97d6235",
-      "recordCount": 8,
+      "frozenEvaluationSHA256": "a9ddee04f6ea1215072f0ec81ad99cfd677de3b32349ab5e6e32dd29cea93cd2",
+      "recordCount": 61,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "633cd747db3339fc818372f85d790f14144aa845",
+    "manifestCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 6,
@@ -49,11 +49,11 @@
       "status": "generated_not_trained"
     },
     "recordCounts": {
-      "eval": 8,
+      "eval": 61,
       "train_dpo": 5,
-      "train_sft": 478,
+      "train_sft": 433,
       "val_dpo": 1,
-      "val_sft": 83
+      "val_sft": 70
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -65,15 +65,18 @@
       "tool_schema_cards"
     ],
     "sourceIntegrity": {
-      "baseCommit": "633cd747db3339fc818372f85d790f14144aa845",
-      "dirtyState": true,
-      "workingTreeDigest": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+      "baseCommit": "6f1d6df3ba42ba16676878c9ffc0ea118ad15496",
+      "dirtyState": false,
+      "workingTreeDigest": "4c844c2cc59c96526312a58617d6984db5bc74fb8854a8890dbd71cb78edbf08"
     },
     "taskTypes": [
-      "approval_boundary_samples",
-      "executor_tool_calls",
+      "approval_granted",
+      "approval_rejected",
+      "approval_required_tool",
+      "permission_unavailable",
       "public_manifest_tool_argument_extraction",
       "public_verified_tool_argument_extraction",
+      "tool_call_generation",
       "tool_id_repair",
       "tool_schema_cards",
       "ultra_specific_missing_argument_boundary",
@@ -120,7 +123,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "42dfced8622739abeaa89740983d37b4bc034aaa8a108ae1522019b24992393f",
+    "experimentManifestSHA256": "7497e992e9a3ed2bd6ef9a55b9d49c8e2b57d158cf27f96b32d746e34364ecbe",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -179,12 +182,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
-  "trainingCodeBundleSHA256": "11bd3870bfbb09009374bdd62d61d7a8bd00b19ad6c8c164bcca1845c638f8d2",
-  "trainingCodeSHA256": "f3f1cb5bdf98bc847c095a95af0d84bdbd5ea2e87655b20d09dafb5c96b38799",
+  "trainingCodeBundleSHA256": "42e198f843c54adcf48ada35067017d746041a10f55b39173c9a04d99ae05e99",
+  "trainingCodeSHA256": "3143af95849e563d9d33872fa4686c4dc4b7bc3002b1c66de308fe21d7f296d7",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "90823f38248fefa82bf3103a6d5955022885a99d9e29bf3b91aee8b7ed95e224",
-    "orpo": "4977e78e40a696282c10be6b4c866556f7db6bc4de3a6efd9adb80ff52ee2644",
-    "sft": "f3f1cb5bdf98bc847c095a95af0d84bdbd5ea2e87655b20d09dafb5c96b38799"
+    "dpo": "aba8f66d2319c8dfd0a4eb089693efb5062f219360d69bca242e6c1066b593d3",
+    "orpo": "1cf8fc4d804c825475a97fd2b3beada04fa0ec8dba951b228ea5d2cdaf38e5d5",
+    "sft": "3143af95849e563d9d33872fa4686c4dc4b7bc3002b1c66de308fe21d7f296d7"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
