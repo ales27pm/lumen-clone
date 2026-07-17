@@ -128,8 +128,12 @@ CORTEX_ROUTE_INSTRUCTION = (
     "argument: asking to schedule an agent run supplies no title, prompt, or schedule; "
     "asking to reply or reply-all supplies no body; a countdown duration plus alert "
     "wording supplies no title. References such as that item or the selected message "
-    "supply no id or messageId. Only concrete user values remove those names from the "
-    "missing set. Remove a "
+    "supply no id or messageId. One narrow runtime-supported exception applies: an "
+    "explicit latest, last, or newest email reference for an Outlook message "
+    "operation supplies the "
+    "symbolic `messageId` value `latest`; generic latest-item wording and selected or "
+    "current message references remain unresolved. Only concrete user values or that "
+    "narrow symbolic value remove those names from the missing set. Remove a "
     "required name only when this user request supplies its concrete value; do not copy "
     "Executor arguments into the route. If names remain, emit "
     "all of them in manifest order in missingArguments and omit actionStep; if none "
@@ -161,8 +165,12 @@ CORTEX_ROUTE_DECISION_ENDCAP = (
     "implicit values as supplied, including a specifically designated recipient role. "
     "Operation wording, standalone pronouns, and unresolved relative references such as "
     "that item, this one, the latest item, the selected message, or the entry discussed "
-    "earlier do not supply an identifier or other required value by themselves. In "
-    "contrast, a that-clause containing a complete proposition supplies content, a concrete "
+    "earlier do not supply an identifier or other required value by themselves. The "
+    "narrow runtime-supported exception is an explicit latest, last, or newest email "
+    "reference for an Outlook message operation, which supplies the symbolic messageId "
+    "value `latest`; it does not "
+    "apply to generic latest items or selected/current message wording. In contrast, a "
+    "that-clause containing a complete proposition supplies content, a concrete "
     "topic after about, regarding, or concerning supplies query, personal-preference "
     "wording supplies preference kind, and a concrete event noun phrase supplies title. "
     "Precise relative delays can supply numeric time fields; vague dayparts cannot. If any "
@@ -4074,6 +4082,28 @@ def _cortex_failure_repair_sft_records(
     )
     natural_minimal_pair_specs = (
         (
+            "outlook_read_reference",
+            "latest_outlook_email",
+            "outlook.message.read",
+            None,
+            (
+                "Please open latest correspondence arriving through Microsoft 365.",
+                "Retrieve last email through Microsoft 365.",
+                "Open latest mailbox correspondence in Microsoft 365.",
+            ),
+        ),
+        (
+            "outlook_read_reference",
+            "unresolved_reference",
+            "outlook.message.read",
+            ["messageId"],
+            (
+                "Retrieve the currently highlighted correspondence from Microsoft 365.",
+                "Render that correspondence from the Microsoft 365 mailbox.",
+                "Present the Graph mail entry we discussed earlier.",
+            ),
+        ),
+        (
             "outlook_attachments_reference",
             "explicit_id",
             "outlook.attachments.list",
@@ -4550,12 +4580,25 @@ def _cortex_failure_repair_sft_records(
             ),
         ),
         (
+            "outlook_reply_all_operation_without_values",
+            "all_missing",
+            "outlook.message.reply_all",
+            ["messageId", "body"],
+            (
+                "Begin an all-participant response through Microsoft 365.",
+                "Initiate group correspondence to every addressee through Microsoft 365.",
+                "Prepare a response for the complete recipient group in Microsoft 365.",
+            ),
+        ),
+        (
             "outlook_reply_all_selected_message_body_boundary",
             "missing_message_id",
             "outlook.message.reply_all",
             ["messageId"],
             (
-                "Answer every participant in the chosen Graph mailbox thread saying the release is clear.",
+                "Send every participant the text release is clear through the chosen Graph thread.",
+                "Distribute audit passed across every correspondent on a highlighted Microsoft 365 thread.",
+                "Return shipping is confirmed to every addressee of that Graph conversation.",
             ),
         ),
         (
@@ -4620,6 +4663,7 @@ def _cortex_failure_repair_sft_records(
         ),
         "memory_recall_query": "implicit_topic_memory_recall",
         "memory_save_preference": "implicit_preference_memory_save",
+        "outlook_read_reference": "outlook_read_reference_resolution",
         "outlook_reply_reference_without_body": (
             "outlook_reply_unresolved_reference_and_body"
         ),
@@ -4627,6 +4671,9 @@ def _cortex_failure_repair_sft_records(
             "outlook_reply_unresolved_reference_and_body"
         ),
         "outlook_reply_all_selected_message_body_boundary": (
+            "outlook_reply_unresolved_reference_and_body"
+        ),
+        "outlook_reply_all_operation_without_values": (
             "outlook_reply_unresolved_reference_and_body"
         ),
         "outlook_send_named_recipient_unresolved_content": (
@@ -4849,6 +4896,22 @@ def _cortex_failure_repair_sft_records(
             True,
         ),
         (
+            "retry_outlook_latest_read_exact_catalog_reselection",
+            "Please open latest correspondence delivered through Microsoft 365.",
+            "outlook.message.read",
+            None,
+            "cortex_route_tool_not_in_manifest",
+            False,
+        ),
+        (
+            "retry_files_read_clarification_reselection",
+            "Load an unidentified document from local imports.",
+            "files.read",
+            ["name"],
+            "cortex_route_tool_not_in_manifest",
+            False,
+        ),
+        (
             "retry_calendar_event_exact_catalog_reselection",
             (
                 "Arrange a compliance workshop on my calendar during an "
@@ -4894,6 +4957,8 @@ def _cortex_failure_repair_sft_records(
         "retry_deictic_clarification_contract": ["messageId", "to"],
         "retry_partial_clarification_contract": ["title", "durationSeconds"],
         "retry_action_persistence_literal_true": ["query"],
+        "retry_outlook_latest_read_exact_catalog_reselection": ["messageId"],
+        "retry_files_read_clarification_reselection": ["name"],
         "retry_calendar_event_exact_catalog_reselection": [
             "title",
             "startsInMinutes",
@@ -4947,6 +5012,16 @@ def _cortex_failure_repair_sft_records(
                     "targetedFailureFamily": (
                         "zero_required_strict_retry_action"
                     ),
+                }
+            )
+        elif repair_case in {
+            "retry_files_read_clarification_reselection",
+            "retry_outlook_latest_read_exact_catalog_reselection",
+        }:
+            metadata.update(
+                {
+                    "surfaceForm": "strict_retry_cross_domain_route_lock",
+                    "targetedFailureFamily": "outlook_read_files_read_route_lock",
                 }
             )
         elif repair_case == "retry_calendar_event_exact_catalog_reselection":
@@ -5006,6 +5081,34 @@ def _cortex_failure_repair_sft_records(
             "calendar.create",
             ["startsInMinutes"],
             "calendar_event_title_without_numeric_delay",
+        ),
+        (
+            "validation_outlook_latest_read",
+            "Open latest correspondence received through Microsoft 365.",
+            "outlook.message.read",
+            None,
+            "outlook_read_reference_resolution",
+        ),
+        (
+            "validation_outlook_read_unresolved",
+            "Access the highlighted Microsoft 365 correspondence.",
+            "outlook.message.read",
+            ["messageId"],
+            "outlook_read_reference_resolution",
+        ),
+        (
+            "validation_outlook_reply_all_missing_all",
+            "Initiate a complete-recipient response through Microsoft 365.",
+            "outlook.message.reply_all",
+            ["messageId", "body"],
+            "outlook_reply_unresolved_reference_and_body",
+        ),
+        (
+            "validation_files_read_unresolved",
+            "Load an unnamed item from the local import library.",
+            "files.read",
+            ["name"],
+            "outlook_read_files_read_route_lock",
         ),
     )
     for (
@@ -5161,6 +5264,7 @@ def _cortex_failure_repair_dpo_pairs(
         "calendar.create",
         "calendar.list",
         "camera.capture",
+        "files.read",
         "health.summary",
         "memory.recall",
         "memory.save",
@@ -5171,6 +5275,7 @@ def _cortex_failure_repair_dpo_pairs(
         "outlook.message.forward",
         "outlook.message.mark_read",
         "outlook.message.move",
+        "outlook.message.read",
         "outlook.message.reply",
         "outlook.message.reply_all",
         "outlook.messages.list",
@@ -5516,6 +5621,81 @@ def _cortex_failure_repair_dpo_pairs(
         ),
     )
     targeted_specs = (
+        (
+            "outlook_read_latest_not_files_1",
+            "Please open latest inbox correspondence through Microsoft 365.",
+            action("outlook.message.read"),
+            clarification("files.read", ["name"]),
+            "outlook_read_files_read_route_lock",
+            "natural_outlook_latest_1",
+        ),
+        (
+            "outlook_read_latest_exact_tool_2",
+            "Open latest correspondence delivered by Microsoft 365.",
+            action("outlook.message.read"),
+            route_with_nonexistent_alias(
+                action("outlook.message.read"),
+                "outlook.message.latest",
+            ),
+            "outlook_read_reference_resolution",
+            "natural_outlook_latest_2",
+        ),
+        (
+            "outlook_read_selected_not_files",
+            "Access the highlighted correspondence in Microsoft 365.",
+            clarification("outlook.message.read", ["messageId"]),
+            clarification("files.read", ["name"]),
+            "outlook_read_files_read_route_lock",
+            "natural_outlook_selected",
+        ),
+        (
+            "files_read_explicit_not_outlook",
+            "Load local artifact deployment-notes.txt.",
+            action("files.read"),
+            clarification("outlook.message.read", ["messageId"]),
+            "outlook_read_files_read_route_lock",
+            "natural_files_explicit",
+        ),
+        (
+            "files_read_unresolved_not_outlook",
+            "Load an unnamed artifact from local imports.",
+            clarification("files.read", ["name"]),
+            clarification("outlook.message.read", ["messageId"]),
+            "outlook_read_files_read_route_lock",
+            "natural_files_unresolved",
+        ),
+        (
+            "outlook_reply_all_operation_missing_all_1",
+            "Initiate an all-party response through Microsoft 365.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId", "body"],
+                ["messageId"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_operation_1",
+        ),
+        (
+            "outlook_reply_all_operation_missing_all_2",
+            "Prepare group correspondence for every addressee in Microsoft 365.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId", "body"],
+                ["body"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_operation_2",
+        ),
+        (
+            "outlook_reply_all_operation_missing_all_3",
+            "Begin responding to every participant in an existing Microsoft 365 conversation.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            action("outlook.message.reply_all"),
+            "outlook_reply_unresolved_reference_and_body",
+            "natural_reply_all_operation_3",
+        ),
         (
             "memory_preference_implicit_action_1",
             "Store the fact that I favor concise dependency-failure explanations as a user preference.",
@@ -6013,6 +6193,38 @@ def _cortex_failure_repair_dpo_pairs(
                 "calendar.schedule",
             ),
             "calendar_event_title_without_numeric_delay",
+        ),
+        (
+            "validation_outlook_latest_not_files",
+            "Retrieve last email from Microsoft 365.",
+            action("outlook.message.read"),
+            clarification("files.read", ["name"]),
+            "outlook_read_files_read_route_lock",
+        ),
+        (
+            "validation_outlook_selected_not_files",
+            "Present the highlighted correspondence from Microsoft 365.",
+            clarification("outlook.message.read", ["messageId"]),
+            clarification("files.read", ["name"]),
+            "outlook_read_files_read_route_lock",
+        ),
+        (
+            "validation_files_read_not_outlook",
+            "Access integration-report.md from local imports.",
+            action("files.read"),
+            clarification("outlook.message.read", ["messageId"]),
+            "outlook_read_files_read_route_lock",
+        ),
+        (
+            "validation_outlook_reply_all_missing_all",
+            "Compose a response for every participant through Microsoft 365.",
+            clarification("outlook.message.reply_all", ["messageId", "body"]),
+            wrong_missing_subset(
+                "outlook.message.reply_all",
+                ["messageId", "body"],
+                ["messageId"],
+            ),
+            "outlook_reply_unresolved_reference_and_body",
         ),
     )
     for (

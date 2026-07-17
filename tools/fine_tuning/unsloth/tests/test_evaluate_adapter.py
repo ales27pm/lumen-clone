@@ -113,13 +113,30 @@ def _cortex_tool_contracts() -> dict[str, dict]:
                 {"name": "encoding", "type": "string", "required": False},
             ],
         },
+        "outlook.message.read": {
+            "id": "outlook.message.read",
+            "displayName": "Read Outlook Message",
+            "description": "Read one Outlook email message.",
+            "requiresApproval": False,
+            "defaultIntent": "outlook",
+            "allowedIntents": ["outlook"],
+            "arguments": [
+                {"name": "messageId", "type": "string", "required": True},
+            ],
+        },
     }
 
 
-def _cortex_action_route(tool_id: str, *, requires_approval: bool = False) -> dict:
+def _cortex_action_route(
+    tool_id: str,
+    *,
+    requires_approval: bool = False,
+    intent: str = "tool",
+) -> dict:
     required_names = {
         "alarm.cancel": ["id"],
         "files.read": ["path"],
+        "outlook.message.read": ["messageId"],
     }.get(tool_id, [])
     reasoning_summary = (
         f"Manifest row {tool_id} has all exact required names supplied: "
@@ -129,7 +146,7 @@ def _cortex_action_route(tool_id: str, *, requires_approval: bool = False) -> di
     )
     return {
         "selectedToolID": tool_id,
-        "intent": "tool",
+        "intent": intent,
         "reasoningSummary": reasoning_summary,
         "actionStep": {
             "type": "tool_call",
@@ -838,6 +855,23 @@ def test_cortex_structured_prompt_binds_sorted_manifest_catalog() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "instruction",
+    (
+        evaluate_adapter.CORTEX_ROUTE_INSTRUCTION,
+        evaluate_adapter.CORTEX_ROUTE_DECISION_ENDCAP,
+    ),
+)
+def test_cortex_prompt_limits_latest_outlook_message_id_exception(
+    instruction: str,
+) -> None:
+    assert "latest, last, or newest email" in instruction
+    assert "Outlook message" in instruction
+    assert "`latest`" in instruction
+    assert "generic latest" in instruction
+    assert "selected" in instruction
+
+
 def test_generation_is_deterministic_thinking_off_and_sequence_bounded() -> None:
     model = _FakeModel()
     tokenizer = _FakeTokenizer(["result"])
@@ -1298,6 +1332,186 @@ def test_cortex_manifest_route_failure_gets_one_evidenced_retry() -> None:
     )
 
 
+def test_cortex_unknown_tool_retry_preserves_canonical_intent() -> None:
+    invalid_route = _cortex_action_route(
+        "outlook.message.latest",
+        intent="outlook",
+    )
+    valid_route = _cortex_action_route(
+        "outlook.message.read",
+        intent="outlook",
+    )
+    tokenizer = _FakeTokenizer(
+        [json.dumps(invalid_route), json.dumps(valid_route)]
+    )
+
+    outputs, rows, failures, initial_failures, recoveries = (
+        evaluate_adapter.evaluate_records(
+            [_record("eval-one", agent="cortex")],
+            agent="cortex",
+            model=_FakeModel(),
+            tokenizer=tokenizer,
+            max_seq_length=4096,
+            max_new_tokens=128,
+            evaluation_module=adapter_evaluation,
+            tool_contracts=_cortex_tool_contracts(),
+            torch_module=SimpleNamespace(inference_mode=nullcontext),
+        )
+    )
+
+    assert outputs == {"eval-one": valid_route}
+    assert (failures, initial_failures, recoveries) == (0, 1, 1)
+    assert [attempt["formatError"] for attempt in rows[0]["generationAttempts"]] == [
+        "cortex_route_tool_not_in_manifest",
+        None,
+    ]
+
+
+def test_cortex_unknown_tool_retry_fails_closed_on_canonical_intent_drift(
+    tmp_path: Path,
+) -> None:
+    invalid_route = _cortex_action_route(
+        "outlook.message.latest",
+        intent="outlook",
+    )
+    drifted_route = _cortex_action_route(
+        "files.read",
+        requires_approval=True,
+        intent="files",
+    )
+    tool_contracts = _cortex_tool_contracts()
+    tokenizer = _FakeTokenizer(
+        [json.dumps(invalid_route), json.dumps(drifted_route)]
+    )
+
+    outputs, rows, failures, initial_failures, recoveries = (
+        evaluate_adapter.evaluate_records(
+            [_record("eval-one", agent="cortex")],
+            agent="cortex",
+            model=_FakeModel(),
+            tokenizer=tokenizer,
+            max_seq_length=4096,
+            max_new_tokens=128,
+            evaluation_module=adapter_evaluation,
+            tool_contracts=tool_contracts,
+            torch_module=SimpleNamespace(inference_mode=nullcontext),
+        )
+    )
+
+    assert outputs == {"eval-one": drifted_route}
+    assert (failures, initial_failures, recoveries) == (1, 1, 0)
+    assert [attempt["formatError"] for attempt in rows[0]["generationAttempts"]] == [
+        "cortex_route_tool_not_in_manifest",
+        "cortex_route_retry_intent_drift",
+    ]
+    assert rows[0]["outputKind"] == "invalid_cortex_route"
+    assert rows[0]["formatError"] == "cortex_route_retry_intent_drift"
+
+    path = tmp_path / "candidate_outputs.jsonl"
+    path.write_bytes(evaluate_adapter._jsonl_bytes(rows))
+    assert evaluate_adapter.load_candidate_outputs(
+        path,
+        agent="cortex",
+        evaluation_records=[_record("eval-one", agent="cortex")],
+        tool_contracts=tool_contracts,
+    ) == {"eval-one": drifted_route}
+
+    forged_recovery = json.loads(json.dumps(rows[0]))
+    retry_attempt = forged_recovery["generationAttempts"][1]
+    retry_attempt["outputKind"] = "json_object"
+    retry_attempt["formatError"] = None
+    retry_attempt.pop("generationAttemptSHA256")
+    retry_attempt["generationAttemptSHA256"] = evaluate_adapter._canonical_sha256(
+        retry_attempt
+    )
+    forged_recovery["outputKind"] = "json_object"
+    forged_recovery["formatError"] = None
+    forged_recovery.pop("candidateRecordSHA256")
+    forged_recovery["candidateRecordSHA256"] = evaluate_adapter._canonical_sha256(
+        forged_recovery
+    )
+    path.write_bytes(evaluate_adapter._jsonl_bytes([forged_recovery]))
+    with pytest.raises(ValueError, match="inconsistent generation attempt evidence"):
+        evaluate_adapter.load_candidate_outputs(
+            path,
+            agent="cortex",
+            evaluation_records=[_record("eval-one", agent="cortex")],
+            tool_contracts=tool_contracts,
+        )
+
+
+def test_cortex_malformed_retry_enforces_uniquely_quoted_tool_lock(
+    tmp_path: Path,
+) -> None:
+    record = _record("eval-one", agent="cortex")
+    record["messages"][-1]["content"] = (
+        "Generate the manifest route for `alarm.list` from supplied values {}."
+    )
+    drifted_route = _cortex_action_route(
+        "files.read",
+        requires_approval=True,
+        intent="files",
+    )
+    tool_contracts = _cortex_tool_contracts()
+    tokenizer = _FakeTokenizer(["not-json", json.dumps(drifted_route)])
+
+    outputs, rows, failures, initial_failures, recoveries = (
+        evaluate_adapter.evaluate_records(
+            [record],
+            agent="cortex",
+            model=_FakeModel(),
+            tokenizer=tokenizer,
+            max_seq_length=4096,
+            max_new_tokens=128,
+            evaluation_module=adapter_evaluation,
+            tool_contracts=tool_contracts,
+            torch_module=SimpleNamespace(inference_mode=nullcontext),
+        )
+    )
+
+    assert outputs == {"eval-one": drifted_route}
+    assert (failures, initial_failures, recoveries) == (1, 1, 0)
+    assert [attempt["formatError"] for attempt in rows[0]["generationAttempts"]] == [
+        "invalid_json",
+        "cortex_route_retry_tool_drift",
+    ]
+    assert '"selectedToolID":"alarm.list"' in (
+        tokenizer.template_kwargs[1]["messages"][-1]["content"]
+    )
+
+    path = tmp_path / "candidate_outputs.jsonl"
+    path.write_bytes(evaluate_adapter._jsonl_bytes(rows))
+    assert evaluate_adapter.load_candidate_outputs(
+        path,
+        agent="cortex",
+        evaluation_records=[record],
+        tool_contracts=tool_contracts,
+    ) == {"eval-one": drifted_route}
+
+    forged_recovery = json.loads(json.dumps(rows[0]))
+    retry_attempt = forged_recovery["generationAttempts"][1]
+    retry_attempt["outputKind"] = "json_object"
+    retry_attempt["formatError"] = None
+    retry_attempt.pop("generationAttemptSHA256")
+    retry_attempt["generationAttemptSHA256"] = evaluate_adapter._canonical_sha256(
+        retry_attempt
+    )
+    forged_recovery["outputKind"] = "json_object"
+    forged_recovery["formatError"] = None
+    forged_recovery.pop("candidateRecordSHA256")
+    forged_recovery["candidateRecordSHA256"] = evaluate_adapter._canonical_sha256(
+        forged_recovery
+    )
+    path.write_bytes(evaluate_adapter._jsonl_bytes([forged_recovery]))
+    with pytest.raises(ValueError, match="inconsistent generation attempt evidence"):
+        evaluate_adapter.load_candidate_outputs(
+            path,
+            agent="cortex",
+            evaluation_records=[record],
+            tool_contracts=tool_contracts,
+        )
+
+
 def _alarm_authorization_failed_clarification() -> dict:
     return {
         "selectedToolID": "alarm.request_authorization",
@@ -1372,6 +1586,37 @@ def test_cortex_retry_grounds_only_the_exact_selected_manifest_row() -> None:
     trusted_suffix = retry_text.split("Trusted selected manifest row,", 1)[1]
     assert '"selectedToolID":"alarm.cancel"' not in trusted_suffix
     assert '"requiredArguments":["id"]' not in trusted_suffix
+
+
+def test_cortex_retry_fails_closed_when_trusted_tool_row_changes() -> None:
+    failed_route = _alarm_authorization_failed_clarification()
+    drifted_route = _cortex_action_route("alarm.list")
+    tokenizer = _FakeTokenizer(
+        [json.dumps(failed_route), json.dumps(drifted_route)]
+    )
+
+    outputs, rows, failures, initial_failures, recoveries = (
+        evaluate_adapter.evaluate_records(
+            [_record("eval-one", agent="cortex")],
+            agent="cortex",
+            model=_FakeModel(),
+            tokenizer=tokenizer,
+            max_seq_length=4096,
+            max_new_tokens=128,
+            evaluation_module=adapter_evaluation,
+            tool_contracts=_cortex_tool_contracts(),
+            torch_module=SimpleNamespace(inference_mode=nullcontext),
+        )
+    )
+
+    assert outputs == {"eval-one": drifted_route}
+    assert (failures, initial_failures, recoveries) == (1, 1, 0)
+    assert [attempt["formatError"] for attempt in rows[0]["generationAttempts"]] == [
+        "cortex_route_clarification_state_invalid",
+        "cortex_route_retry_tool_drift",
+    ]
+    assert rows[0]["outputKind"] == "invalid_cortex_route"
+    assert rows[0]["formatError"] == "cortex_route_retry_tool_drift"
 
 
 @pytest.mark.parametrize(
