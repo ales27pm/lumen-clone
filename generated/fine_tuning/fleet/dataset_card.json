@@ -1,7 +1,7 @@
 {
   "agent": "fleet",
   "availableSFTRecords": 877,
-  "candidateSFTRecords": 5586,
+  "candidateSFTRecords": 5600,
   "constraints": {
     "agentSpecific": true,
     "manifestOnlyTools": true,
@@ -17,18 +17,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "1ac4dfa432668a77de494ecd402fb37d662862469fbf3e7390288dc1a09c7a88"
+      "reportSHA256": "33921fc98f64b75a9e74e244886cd9fe831c4e67223cd0923faff5ed146c6f3a"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "d9baf7c0e8e6be97a13aeef22ae1c460e7bfc5d633c40ae3fa46b16c9ecf81c8",
+    "frozenEvaluationSHA256": "a1d0b075937c3b945d1ff3fa6b1cee34c1cb1cdbe3e71e90e4a801d9f4997510",
     "recordCount": 15,
     "schemaVersion": "lumen.adapter-eval/1.0.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "a6369110ca5a7a6cb3d37d9d2c40678c0e2eac60e1958fe216e2f2c161a1c2d6",
-      "optimizedTrainingCorpusSHA256": "56b919cf0e69c3dad2e0546c0d0d935351fc5a04f732cb22ca9b9fb8342b2fd2",
+      "baselineTrainingCorpusSHA256": "13fc3251a1c39980f6c636773e761235dddef182bf6b70dc9d1c199dd665f6b7",
+      "optimizedTrainingCorpusSHA256": "f054889614fbd7001965e45e9593bce21789e985e35464d9baeb7c15a5b0b0e4",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -55,7 +55,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "d4f39515057a8efdfcf622dd048e7305b97306b99fb4a3d38eab5fe95c58df42",
+    "experimentManifestSHA256": "7d43d98f01c0db75cc85ec16bce609e351f0c139385923ecdbb506441955b4ee",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -85,7 +85,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "84529adb4576261119a31c72dc10cb0052538373",
+  "manifestCommit": "b44748d7936173982251e869ebc1b2df8c3de037",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 25,
@@ -245,21 +245,21 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.009191,
-        "total": 0.232899
+        "target": 0.009173,
+        "total": 0.232597
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.009743,
-        "total": 0.240658
+        "target": 0.009975,
+        "total": 0.244259
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 724679,
+    "assistantTargetCharCount": 723327,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -268,9 +268,9 @@
     "cortexCodebaseSelfAwarenessSourceFamily": null,
     "cortexPublicBalanceDroppedRecordCount": 0,
     "sequenceBudgetDroppedRecordCount": 12,
-    "supplementalAssistantTargetCharCount": 508273,
-    "supplementalAssistantTargetCharShare": 0.7013767474978577,
-    "supplementalBalanceDroppedRecordCount": 4694,
+    "supplementalAssistantTargetCharCount": 506921,
+    "supplementalAssistantTargetCharShare": 0.7008185785958495,
+    "supplementalBalanceDroppedRecordCount": 4708,
     "supplementalSFTRecordCount": 219,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 19,
@@ -309,9 +309,9 @@
     "self_model_sft": 4
   },
   "sourceIntegrity": {
-    "baseCommit": "84529adb4576261119a31c72dc10cb0052538373",
+    "baseCommit": "b44748d7936173982251e869ebc1b2df8c3de037",
     "dirtyState": false,
-    "workingTreeDigest": "2c010878abf9d908f66494ca799bc95c4ff9fb4881b8e0ae7ff3f3cf581b6952"
+    "workingTreeDigest": "bb5ec907547b79079cc5b61411d1c4d2abc911cb1fee1e26cc69327d776dab56"
   },
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.",
   "taskTypeCounts": {
@@ -354,5 +354,5 @@
     "ultra_specific_fleet_slot_directory",
     "ultra_specific_tool_boundary_awareness"
   ],
-  "worktreeFingerprint": "2c010878abf9d908f66494ca799bc95c4ff9fb4881b8e0ae7ff3f3cf581b6952"
+  "worktreeFingerprint": "bb5ec907547b79079cc5b61411d1c4d2abc911cb1fee1e26cc69327d776dab56"
 }

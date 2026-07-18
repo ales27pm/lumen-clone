@@ -1,9 +1,9 @@
 {
   "counts": {
-    "evalReranking": 916,
-    "hardNegativePairs": 4783,
-    "trainPairs": 4294,
-    "valPairs": 489
+    "evalReranking": 920,
+    "hardNegativePairs": 4793,
+    "trainPairs": 4298,
+    "valPairs": 495
   },
   "evaluationIsolation": {
     "policy": "exclude_evaluation_only_documents_from_all_training_candidates"
