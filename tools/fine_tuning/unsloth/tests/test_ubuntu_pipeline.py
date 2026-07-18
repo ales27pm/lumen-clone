@@ -2619,7 +2619,7 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
         "resolvedTrainingEnvironment": {
             "schemaVersion": "lumen.resolved-training-environment/1.0.0"
         },
-        "resolvedTrainingEnvironmentSHA256": "r" * 64,
+        "resolvedTrainingEnvironmentSHA256": "a" * 64,
         "resolvedTrainingEnvironmentScanAudit": {"distributionCount": 1},
         "spaceConfigurationSHA256": None,
         "zeroGPUSize": None,
@@ -2791,7 +2791,7 @@ def test_incomplete_preparation_recovery_never_deletes_training_progress(
         "resolvedTrainingEnvironment": {
             "schemaVersion": "lumen.resolved-training-environment/1.0.0"
         },
-        "resolvedTrainingEnvironmentSHA256": "r" * 64,
+        "resolvedTrainingEnvironmentSHA256": "a" * 64,
         "resolvedTrainingEnvironmentScanAudit": {"distributionCount": 1},
         "spaceConfigurationSHA256": None,
         "zeroGPUSize": None,

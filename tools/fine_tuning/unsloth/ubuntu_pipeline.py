@@ -2244,9 +2244,7 @@ def _assert_incomplete_preparation_has_no_progress(
             )
         from tools.fine_tuning.unsloth.train_dpo import (
             _initial_preference_checkpoint_lineage,
-            _validate_preference_training_config,
         )
-        preference_config = _validate_preference_training_config(config)
         from tools.fine_tuning.unsloth.train_sft import _initial_sft_checkpoint_lineage
 
         for entry in (
@@ -2716,7 +2714,10 @@ def prepare_run(
         )
         from tools.fine_tuning.unsloth.train_dpo import (
             _initial_preference_checkpoint_lineage,
+            _validate_preference_training_config,
         )
+
+        preference_config = _validate_preference_training_config(config)
 
         write_object(
             sft_checkpoint_lineage_path,
