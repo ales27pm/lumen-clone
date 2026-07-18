@@ -2303,6 +2303,7 @@ def test_cortex_chosen_route_preferences_are_canonical_or_explicit_contrast(
             "route_selection_vs_no_tool_hybrid_validation",
             "route_selection_without_action",
             "safe_tool_selection",
+            "selection_only_replay_action_negative",
         } or record["metadata"].get("targetedFailureFamily") == (
             "selection_only_route_state"
         ):
@@ -2482,6 +2483,480 @@ def _load_json_object(value: object) -> dict | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def test_cortex_calendar_required_argument_lattice_is_exact_in_optimized_artifact(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    calendar_tool = next(tool for tool in manifest.tools if tool.id == "calendar.create")
+    state_contract = {
+        "none_supplied": ([], ["title", "startsInMinutes"]),
+        "title_only": (["title"], ["startsInMinutes"]),
+        "starts_in_minutes_only": (["startsInMinutes"], ["title"]),
+        "complete": (["title", "startsInMinutes"], []),
+    }
+    lane_contract = {
+        "train_sft": ("train", 8, 0),
+        "val_sft": ("validation", 2, 0),
+        "train_dpo": ("train", 8, 1),
+        "val_dpo": ("validation", 2, 0),
+    }
+
+    for lane, (required_split, expected_groups, expected_extras) in (
+        lane_contract.items()
+    ):
+        records = [
+            record
+            for record in _optimized_cortex_training_lane(fine_tuning, lane)
+            if record["metadata"].get("routeLattice")
+            == "calendar_create_required_arguments_v1"
+        ]
+        core_records = [
+            record
+            for record in records
+            if "routeLatticeExtraCase" not in record["metadata"]
+        ]
+        extra_records = [
+            record
+            for record in records
+            if "routeLatticeExtraCase" in record["metadata"]
+        ]
+        assert len(core_records) == expected_groups * len(state_contract)
+        assert len(extra_records) == expected_extras
+        assert Counter(
+            record["metadata"]["routeLatticeState"] for record in core_records
+        ) == Counter({state: expected_groups for state in state_contract})
+
+        records_by_group: dict[str, list[dict]] = {}
+        for record in core_records:
+            metadata = record["metadata"]
+            records_by_group.setdefault(
+                metadata["routeLatticeSurfaceGroup"], []
+            ).append(record)
+        assert len(records_by_group) == expected_groups
+        for group_records in records_by_group.values():
+            assert Counter(
+                record["metadata"]["routeLatticeState"]
+                for record in group_records
+            ) == Counter({state: 1 for state in state_contract})
+
+        for record in core_records:
+            metadata = record["metadata"]
+            state = metadata["routeLatticeState"]
+            supplied_arguments, missing_arguments = state_contract[state]
+            assert metadata["requiredSplit"] == required_split
+            assert metadata["targetedFailureFamily"] == (
+                "calendar_required_argument_lattice_replay"
+            )
+            assert metadata["suppliedArguments"] == supplied_arguments
+            assert metadata["missingArguments"] == missing_arguments
+            if lane.endswith("sft"):
+                assert metadata["taskType"] == (
+                    "cortex_calendar_required_argument_lattice"
+                )
+                payload = json.loads(record["messages"][-1]["content"])
+            else:
+                assert metadata["preferenceType"] == (
+                    "calendar_required_argument_lattice"
+                )
+                payload = json.loads(record["chosen"]["content"])
+            assert payload["intent"] == "calendar"
+            assert payload["selectedToolID"] == calendar_tool.id
+            assert payload["requiresApproval"] is calendar_tool.requiresApproval
+            if missing_arguments:
+                assert payload["status"] == "needs_clarification"
+                assert payload["missingArguments"] == missing_arguments
+                assert payload["nextModel"] == "mouth"
+                assert "actionStep" not in payload
+            else:
+                assert payload["nextModel"] == "approval"
+                assert payload["actionStep"] == {
+                    "mustPersistBeforeFinal": True,
+                    "toolID": calendar_tool.id,
+                    "type": "tool_call",
+                }
+                assert "status" not in payload
+                assert "missingArguments" not in payload
+
+
+def test_cortex_calendar_lattice_dpo_rejections_cover_exact_bidirectional_matrix(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    expected_rejection_counts = {
+        "train_dpo": Counter(
+            {
+                "over_clarification": 5,
+                "premature_action": 9,
+                "selection_without_action": 3,
+                "spurious_clarification": 5,
+                "under_clarification": 5,
+                "wrong_missing_subset": 5,
+            }
+        ),
+        "val_dpo": Counter(
+            {
+                "over_clarification": 1,
+                "premature_action": 3,
+                "spurious_clarification": 2,
+                "under_clarification": 1,
+                "wrong_missing_subset": 1,
+            }
+        ),
+    }
+    expected_state_rejections = {
+        "train_dpo": Counter(
+            {
+                ("none_supplied", "under_clarification", ("startsInMinutes",)): 3,
+                ("none_supplied", "under_clarification", ("title",)): 2,
+                ("none_supplied", "premature_action", ()): 3,
+                ("title_only", "premature_action", ()): 3,
+                (
+                    "title_only",
+                    "over_clarification",
+                    ("title", "startsInMinutes"),
+                ): 3,
+                ("title_only", "wrong_missing_subset", ("title",)): 2,
+                ("starts_in_minutes_only", "premature_action", ()): 3,
+                (
+                    "starts_in_minutes_only",
+                    "over_clarification",
+                    ("title", "startsInMinutes"),
+                ): 2,
+                (
+                    "starts_in_minutes_only",
+                    "wrong_missing_subset",
+                    ("startsInMinutes",),
+                ): 3,
+                ("complete", "spurious_clarification", ("title",)): 2,
+                (
+                    "complete",
+                    "spurious_clarification",
+                    ("startsInMinutes",),
+                ): 1,
+                (
+                    "complete",
+                    "spurious_clarification",
+                    ("title", "startsInMinutes"),
+                ): 2,
+                ("complete", "selection_without_action", ()): 3,
+            }
+        ),
+        "val_dpo": Counter(
+            {
+                ("none_supplied", "premature_action", ()): 1,
+                (
+                    "none_supplied",
+                    "under_clarification",
+                    ("startsInMinutes",),
+                ): 1,
+                (
+                    "title_only",
+                    "over_clarification",
+                    ("title", "startsInMinutes"),
+                ): 1,
+                ("title_only", "premature_action", ()): 1,
+                ("starts_in_minutes_only", "premature_action", ()): 1,
+                (
+                    "starts_in_minutes_only",
+                    "wrong_missing_subset",
+                    ("startsInMinutes",),
+                ): 1,
+                ("complete", "spurious_clarification", ("title",)): 1,
+                (
+                    "complete",
+                    "spurious_clarification",
+                    ("startsInMinutes",),
+                ): 1,
+            }
+        ),
+    }
+    selection_keys = {
+        "intent",
+        "nextModel",
+        "reasoningSummary",
+        "requiresApproval",
+        "selectedToolID",
+    }
+
+    for lane, expected_counts in expected_rejection_counts.items():
+        records = [
+            record
+            for record in _optimized_cortex_training_lane(fine_tuning, lane)
+            if record["metadata"].get("routeLattice")
+            == "calendar_create_required_arguments_v1"
+            and "routeLatticeExtraCase" not in record["metadata"]
+        ]
+        assert Counter(
+            record["metadata"]["rejectedRouteState"] for record in records
+        ) == expected_counts
+        assert Counter(
+            (
+                record["metadata"]["routeLatticeState"],
+                record["metadata"]["rejectedRouteState"],
+                tuple(record["metadata"]["rejectedMissingArguments"]),
+            )
+            for record in records
+        ) == expected_state_rejections[lane]
+        for record in records:
+            metadata = record["metadata"]
+            assert metadata["targetedFailureFamily"] == (
+                "calendar_required_argument_lattice_replay"
+            )
+            chosen = json.loads(record["chosen"]["content"])
+            rejected = json.loads(record["rejected"]["content"])
+            assert chosen != rejected
+            assert rejected["selectedToolID"] == "calendar.create"
+            rejected_state = metadata["rejectedRouteState"]
+            rejected_missing = metadata["rejectedMissingArguments"]
+            if rejected_state == "premature_action":
+                assert rejected["actionStep"]["toolID"] == "calendar.create"
+                assert "status" not in rejected
+                assert "missingArguments" not in rejected
+            elif rejected_state == "selection_without_action":
+                assert set(rejected) == selection_keys
+                assert metadata["routeLatticeState"] == "complete"
+            else:
+                assert rejected["status"] == "needs_clarification"
+                assert rejected["missingArguments"] == rejected_missing
+                assert "actionStep" not in rejected
+                if rejected_state == "under_clarification":
+                    assert set(rejected_missing) < set(chosen["missingArguments"])
+                elif rejected_state == "over_clarification":
+                    assert set(rejected_missing) > set(chosen["missingArguments"])
+                elif rejected_state == "wrong_missing_subset":
+                    assert set(rejected_missing) != set(chosen["missingArguments"])
+                else:
+                    assert rejected_state == "spurious_clarification"
+                    assert "missingArguments" not in chosen
+
+    current_error_records = [
+        record
+        for record in _optimized_cortex_training_lane(fine_tuning, "train_dpo")
+        if record["metadata"].get("routeLatticeExtraCase")
+        == "current_error_generic_object_as_title"
+    ]
+    assert len(current_error_records) == 1
+    current_error = current_error_records[0]
+    assert current_error["metadata"]["preferenceType"] == (
+        "calendar_required_argument_lattice_current_error"
+    )
+    assert current_error["metadata"]["targetedFailureFamily"] == (
+        "calendar_required_argument_lattice_replay"
+    )
+    assert json.loads(current_error["chosen"]["content"])["missingArguments"] == [
+        "title",
+        "startsInMinutes",
+    ]
+    assert json.loads(current_error["rejected"]["content"])[
+        "missingArguments"
+    ] == ["startsInMinutes"]
+
+
+def test_cortex_selection_only_replay_has_exact_counts_and_action_negatives(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    lane_contract = {
+        "train_sft": ("train", {"files.read", "health.summary", "memory.recall", "weather"}),
+        "val_sft": ("validation", {"photos.search", "rag.search"}),
+        "train_dpo": ("train", {"files.read", "health.summary", "memory.recall", "weather"}),
+        "val_dpo": ("validation", {"maps.search", "rag.search"}),
+    }
+    selection_keys = {
+        "intent",
+        "nextModel",
+        "reasoningSummary",
+        "requiresApproval",
+        "selectedToolID",
+    }
+
+    for lane, (required_split, expected_tool_ids) in lane_contract.items():
+        records = [
+            record
+            for record in _optimized_cortex_training_lane(fine_tuning, lane)
+            if record["metadata"].get("selectionOnlyReplay")
+            == "selection_only_replay_v1"
+        ]
+        assert len(records) == len(expected_tool_ids)
+        assert len(
+            {
+                record["metadata"]["selectionOnlyReplaySurfaceGroup"]
+                for record in records
+            }
+        ) == len(records)
+        chosen_by_tool: dict[str, dict] = {}
+        for record in records:
+            metadata = record["metadata"]
+            assert metadata["requiredSplit"] == required_split
+            assert metadata["routeState"] == "selection_only"
+            assert metadata["targetedFailureFamily"] == (
+                "selection_only_route_state_replay"
+            )
+            if lane.endswith("sft"):
+                assert metadata["taskType"] == "cortex_selection_only_replay"
+                chosen = json.loads(record["messages"][-1]["content"])
+            else:
+                assert metadata["preferenceType"] == (
+                    "selection_only_replay_action_negative"
+                )
+                assert metadata["rejectedRouteState"] == "premature_action"
+                chosen = json.loads(record["chosen"]["content"])
+                rejected = json.loads(record["rejected"]["content"])
+                assert rejected["selectedToolID"] == chosen["selectedToolID"]
+                assert rejected["actionStep"] == {
+                    "mustPersistBeforeFinal": True,
+                    "toolID": chosen["selectedToolID"],
+                    "type": "tool_call",
+                }
+            assert set(chosen) == selection_keys
+            chosen_by_tool[chosen["selectedToolID"]] = chosen
+        assert set(chosen_by_tool) == expected_tool_ids
+
+
+def test_cortex_replay_extensions_are_prompt_disjoint_and_below_frozen_containment(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    cortex = fine_tuning["cortex"]
+    extension_prompts: list[str] = []
+    train_extension_prompts: list[str] = []
+    validation_extension_prompts: list[str] = []
+    for lane in ("train_sft", "val_sft", "train_dpo", "val_dpo"):
+        for record in _optimized_cortex_training_lane(fine_tuning, lane):
+            metadata = record["metadata"]
+            if not (
+                metadata.get("routeLattice")
+                == "calendar_create_required_arguments_v1"
+                or metadata.get("selectionOnlyReplay")
+                == "selection_only_replay_v1"
+            ):
+                continue
+            prompt = (
+                record["messages"][-2]["content"]
+                if lane.endswith("sft")
+                else record["prompt"][-1]["content"]
+            )
+            extension_prompts.append(prompt)
+            if lane.startswith("train_"):
+                train_extension_prompts.append(prompt)
+            else:
+                validation_extension_prompts.append(prompt)
+
+    frozen_eval_prompts = {
+        record["messages"][-1]["content"] for record in cortex.eval
+    }
+    frozen_hashes = {
+        hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        for prompt in frozen_eval_prompts
+    }
+    assert len(cortex.eval) == 504
+    assert len(extension_prompts) == 93
+    assert len(set(extension_prompts)) == len(extension_prompts)
+    assert set(extension_prompts).isdisjoint(frozen_eval_prompts)
+    assert {
+        hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        for prompt in extension_prompts
+    }.isdisjoint(frozen_hashes)
+
+    for validation_prompt in validation_extension_prompts:
+        validation_tokens = set(
+            re.findall(r"\w+", validation_prompt.casefold())
+        )
+        for train_prompt in train_extension_prompts:
+            train_tokens = set(re.findall(r"\w+", train_prompt.casefold()))
+            containment = len(validation_tokens & train_tokens) / min(
+                len(validation_tokens),
+                len(train_tokens),
+            )
+            assert containment < 0.5, (
+                "Pilot replay validation prompt is lexically too close to training "
+                f"text: {containment:.3f}; validation={validation_prompt!r}; "
+                f"train={train_prompt!r}"
+            )
+
+    for extension_prompt in extension_prompts:
+        extension_tokens = set(re.findall(r"\w+", extension_prompt.casefold()))
+        assert extension_tokens
+        for frozen_prompt in frozen_eval_prompts:
+            frozen_tokens = set(re.findall(r"\w+", frozen_prompt.casefold()))
+            containment = len(extension_tokens & frozen_tokens) / min(
+                len(extension_tokens),
+                len(frozen_tokens),
+            )
+            assert containment < 0.5, (
+                "Pilot replay prompt is lexically too close to frozen evaluation "
+                f"text: {containment:.3f}; replay={extension_prompt!r}; "
+                f"eval={frozen_prompt!r}"
+            )
+
+
+def test_cortex_replay_extensions_do_not_shrink_historical_replay_floors(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    historical_floors = {
+        "train_sft": {
+            "calendar_event_title_without_numeric_delay": 5,
+            "calendar_operation_object_not_title": 1,
+            "implicit_duration_countdown_missing_title": 6,
+            "implicit_preference_memory_save": 10,
+            "implicit_topic_memory_recall": 4,
+            "outlook_read_files_read_route_lock": 2,
+            "outlook_read_reference_resolution": 6,
+            "outlook_reply_unresolved_reference_and_body": 16,
+            "outlook_send_unresolved_subject_and_body": 4,
+            "selection_only_route_state": 2,
+            "trigger_cancel_reference_resolution": 5,
+            "zero_required_action_without_invented_arguments": 5,
+            "zero_required_list_action": 12,
+            "zero_required_strict_retry_action": 30,
+        },
+        "val_sft": {
+            "calendar_event_title_without_numeric_delay": 1,
+            "calendar_operation_object_not_title": 2,
+            "implicit_preference_memory_save": 1,
+            "implicit_topic_memory_recall": 1,
+            "outlook_read_files_read_route_lock": 1,
+            "outlook_read_reference_resolution": 2,
+            "outlook_reply_unresolved_reference_and_body": 1,
+            "zero_required_list_action": 1,
+        },
+        "train_dpo": {
+            "action_step_persistence_literal_true": 3,
+            "calendar_event_title_without_numeric_delay": 4,
+            "calendar_operation_object_not_title": 2,
+            "implicit_duration_countdown_missing_title": 2,
+            "implicit_preference_memory_save": 8,
+            "implicit_topic_memory_recall": 2,
+            "outlook_read_files_read_route_lock": 4,
+            "outlook_read_reference_resolution": 1,
+            "outlook_reply_unresolved_reference_and_body": 12,
+            "outlook_send_unresolved_subject_and_body": 4,
+            "selection_only_route_state": 2,
+            "trigger_cancel_reference_resolution": 2,
+            "zero_required_action_without_invented_arguments": 4,
+            "zero_required_list_action": 7,
+        },
+        "val_dpo": {
+            "calendar_event_title_without_numeric_delay": 2,
+            "calendar_operation_object_not_title": 2,
+            "implicit_preference_memory_save": 1,
+            "implicit_topic_memory_recall": 1,
+            "outlook_read_files_read_route_lock": 3,
+            "outlook_reply_unresolved_reference_and_body": 1,
+            "zero_required_list_action": 1,
+        },
+    }
+
+    for lane, floors in historical_floors.items():
+        observed = Counter(
+            record["metadata"].get("targetedFailureFamily")
+            for record in _optimized_cortex_training_lane(fine_tuning, lane)
+        )
+        for family, floor in floors.items():
+            assert observed[family] >= floor
 
 
 def _is_natural_cortex_request(prompt: str) -> bool:
@@ -3627,6 +4102,7 @@ def test_cortex_failure_repair_curriculum_is_bidirectional_and_eval_disjoint(
         "zero_required_action_without_invented_arguments": (5, 4),
         "zero_required_list_action": (12, 7),
         "selection_only_route_state": (0, 2),
+        "trigger_cancel_reference_resolution": (5, 2),
         "action_step_persistence_literal_true": (0, 3),
     }
     assert Counter(
