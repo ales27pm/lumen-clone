@@ -1,8 +1,8 @@
 {
   "agent": "mimicry",
   "comparisonEligibility": {
-    "baselineTrainingCorpusSHA256": "892649a18d4d42e2891943bccdcf2b290d4e025e687cc2751fcd431db8f84e62",
-    "optimizedTrainingCorpusSHA256": "4352efb09e79947ba7a312acaea9d49083ba878bd25de3fdb02c45ce1e714446",
+    "baselineTrainingCorpusSHA256": "92cdf918d5346ed0121f33a6c32209abdd0947b4a0a9705af2f45da5358f6868",
+    "optimizedTrainingCorpusSHA256": "e16b00b3dcb4a6e2da6b05ca1e2ffc55a5b002f06ae7f46e86f53921c6d2f6f3",
     "promotionEligible": true,
     "promotionProhibited": false,
     "publicRecordCount": 600,
@@ -47,7 +47,7 @@
     "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139",
     "trainingEnvironmentLockSHA256": "6f124c50e9a9012e2f6f32cef521f428cfc8b10e1cda8203800bffc82c5cc7bf"
   },
-  "experimentManifestSHA256": "cf8296332e73059949965d43f8e536222ff3966f7c8c86876ce22a6e564e4595",
+  "experimentManifestSHA256": "acae269cccee2e1ecc4b17c79d475f9935af70410853171d54af2dbf019a93f8",
   "promotionContract": {
     "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
     "maximumContaminationMatches": 0,
@@ -113,8 +113,8 @@
         "matchCount": 0,
         "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
         "publicEvaluationRowCount": 1040,
-        "reportSHA256": "1412be3921fe0a042704cd6f8270b6f9f1d9cea6a3ddbc2c554758d8b7472c5f",
-        "trainingRecordsSHA256": "79cfa94f8b2448d641ef98ba2d2121d4e02500266b73cbb4e253c61bee5766ba"
+        "reportSHA256": "8441cffbdaaaa7f3006dc3e1d6806a697d49a1923784b08947b7fd83b956f4fb",
+        "trainingRecordsSHA256": "9256f429d4bbac8795b60e9d3020cc2c2c46b594de622bc40d7043dc6b310670"
       },
       "controlledTrainingConfig": {
         "agent": "mimicry",
@@ -1547,7 +1547,7 @@
         },
         "trainSFT": {
           "count": 57,
-          "sha256": "94ba58fa6502be0662b49966d8ba54783d84cdecb0c11cf0153ea9deebc36a85"
+          "sha256": "e25b2583cbffdc46fa959095cc4dc55517d9002819c21cca61e092c82e894faa"
         },
         "validationDPO": {
           "count": 6,
@@ -1555,7 +1555,7 @@
         },
         "validationSFT": {
           "count": 7,
-          "sha256": "47ac9da1cb24bd3556d51b6fc2092fc10e2e48c6cc3bc7050dc356ade385e9c5"
+          "sha256": "b0dc12398a9f52ff55d89b6e6c0397e628a23f4ef233a84aa44103cbb4ce5307"
         }
       },
       "dpoTraining": {
@@ -2846,7 +2846,7 @@
         "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingConfigSHA256": "6f327211a4e0d74fc892bcf0a397a4f195b42bcda62cfd35dc82407a13e33b9e",
-      "trainingCorpusSHA256": "79cfa94f8b2448d641ef98ba2d2121d4e02500266b73cbb4e253c61bee5766ba",
+      "trainingCorpusSHA256": "9256f429d4bbac8795b60e9d3020cc2c2c46b594de622bc40d7043dc6b310670",
       "trainingDependencyLock": {
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -2915,7 +2915,7 @@
       "trainingEnvironmentLockSHA256": "6f124c50e9a9012e2f6f32cef521f428cfc8b10e1cda8203800bffc82c5cc7bf",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_only",
-      "variantManifestSHA256": "017762c37ec82e771f98cb3d775be78d3dc329b175f1fec8506db4c60e27ed7d",
+      "variantManifestSHA256": "ef76293b666d384eb756c22dffd0e8513e8672803e5e0b614a16e2524ab07d69",
       "zeroGPUDurationSeconds": null,
       "zeroGPUSize": null
     },
@@ -2949,8 +2949,8 @@
         }
       ],
       "comparisonEligibility": {
-        "baselineTrainingCorpusSHA256": "892649a18d4d42e2891943bccdcf2b290d4e025e687cc2751fcd431db8f84e62",
-        "optimizedTrainingCorpusSHA256": "4352efb09e79947ba7a312acaea9d49083ba878bd25de3fdb02c45ce1e714446",
+        "baselineTrainingCorpusSHA256": "92cdf918d5346ed0121f33a6c32209abdd0947b4a0a9705af2f45da5358f6868",
+        "optimizedTrainingCorpusSHA256": "e16b00b3dcb4a6e2da6b05ca1e2ffc55a5b002f06ae7f46e86f53921c6d2f6f3",
         "promotionEligible": true,
         "promotionProhibited": false,
         "publicRecordCount": 600,
@@ -2963,8 +2963,8 @@
         "matchCount": 0,
         "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
         "publicEvaluationRowCount": 1040,
-        "reportSHA256": "45d1d949952750a9cd96cbe1fe8275ac63ea9d9051e6be2b2959c8aa6e1fb38e",
-        "trainingRecordsSHA256": "892649a18d4d42e2891943bccdcf2b290d4e025e687cc2751fcd431db8f84e62"
+        "reportSHA256": "56b203bb83f83b963481d1860ff8008f1bf77fda5898c25dbe79bf990a642cd9",
+        "trainingRecordsSHA256": "92cdf918d5346ed0121f33a6c32209abdd0947b4a0a9705af2f45da5358f6868"
       },
       "controlledTrainingConfig": {
         "agent": "mimicry",
@@ -4397,7 +4397,7 @@
         },
         "trainSFT": {
           "count": 80,
-          "sha256": "70ebd83b6e37079381eba85bc6b1e9592b9f9911392ccda1bb6488ce73dbe569"
+          "sha256": "f1c6184f6f4ac4ed71184402716f68d23d38e9235c56c93bc7bda56a31b89dd2"
         },
         "validationDPO": {
           "count": 6,
@@ -4405,7 +4405,7 @@
         },
         "validationSFT": {
           "count": 11,
-          "sha256": "a29efed463aafa7442f1ee8f3626645d74119824e25cde340dd768536ad9aeee"
+          "sha256": "013bb9e521366b290e2a65d33b3b2dafffb43fe35672bb164e797534c8ce2fbd"
         }
       },
       "dpoTraining": {
@@ -5698,7 +5698,7 @@
         "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingConfigSHA256": "6f327211a4e0d74fc892bcf0a397a4f195b42bcda62cfd35dc82407a13e33b9e",
-      "trainingCorpusSHA256": "892649a18d4d42e2891943bccdcf2b290d4e025e687cc2751fcd431db8f84e62",
+      "trainingCorpusSHA256": "92cdf918d5346ed0121f33a6c32209abdd0947b4a0a9705af2f45da5358f6868",
       "trainingDependencyLock": {
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -5767,7 +5767,7 @@
       "trainingEnvironmentLockSHA256": "6f124c50e9a9012e2f6f32cef521f428cfc8b10e1cda8203800bffc82c5cc7bf",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_plus_public_baseline",
-      "variantManifestSHA256": "d63e5dc8de2043a9fc442676740b3576b3d0b1c675af8a3ed426f182850c46f8",
+      "variantManifestSHA256": "ededfcf2e97e840e80d0c179462e9fa476710a98d687e82783e85ea068eedbd1",
       "zeroGPUDurationSeconds": null,
       "zeroGPUSize": null
     },
@@ -5801,8 +5801,8 @@
         }
       ],
       "comparisonEligibility": {
-        "baselineTrainingCorpusSHA256": "892649a18d4d42e2891943bccdcf2b290d4e025e687cc2751fcd431db8f84e62",
-        "optimizedTrainingCorpusSHA256": "4352efb09e79947ba7a312acaea9d49083ba878bd25de3fdb02c45ce1e714446",
+        "baselineTrainingCorpusSHA256": "92cdf918d5346ed0121f33a6c32209abdd0947b4a0a9705af2f45da5358f6868",
+        "optimizedTrainingCorpusSHA256": "e16b00b3dcb4a6e2da6b05ca1e2ffc55a5b002f06ae7f46e86f53921c6d2f6f3",
         "promotionEligible": true,
         "promotionProhibited": false,
         "publicRecordCount": 600,
@@ -5815,8 +5815,8 @@
         "matchCount": 0,
         "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
         "publicEvaluationRowCount": 1040,
-        "reportSHA256": "16150214a693917c88ac574442ec728e1c92899dd52f4eac65ecc0f8636c7754",
-        "trainingRecordsSHA256": "4352efb09e79947ba7a312acaea9d49083ba878bd25de3fdb02c45ce1e714446"
+        "reportSHA256": "7e741d23fc2497fcf4b558e41e292634cb86ba16b880e7b6c121195fcd55efcd",
+        "trainingRecordsSHA256": "e16b00b3dcb4a6e2da6b05ca1e2ffc55a5b002f06ae7f46e86f53921c6d2f6f3"
       },
       "controlledTrainingConfig": {
         "agent": "mimicry",
@@ -7249,7 +7249,7 @@
         },
         "trainSFT": {
           "count": 71,
-          "sha256": "febc1a286f2bde5a1746cc5044bb16c4ee199b8f114a26cd2f921094dd2ae347"
+          "sha256": "ff9c6adf83d214af65a131be3ea50c5de353b0710eaedc1a2ca7996eab009fac"
         },
         "validationDPO": {
           "count": 6,
@@ -7257,7 +7257,7 @@
         },
         "validationSFT": {
           "count": 8,
-          "sha256": "4481161aff5b6c33af4c164ff71dfe8419f5a864f37755a6607cdfe0f59086e1"
+          "sha256": "8cf1a1a17006b14d972ceda92e753b404f4e004d622d20e0878a7f65a7b2ae41"
         }
       },
       "dpoTraining": {
@@ -8550,7 +8550,7 @@
         "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingConfigSHA256": "6f327211a4e0d74fc892bcf0a397a4f195b42bcda62cfd35dc82407a13e33b9e",
-      "trainingCorpusSHA256": "4352efb09e79947ba7a312acaea9d49083ba878bd25de3fdb02c45ce1e714446",
+      "trainingCorpusSHA256": "e16b00b3dcb4a6e2da6b05ca1e2ffc55a5b002f06ae7f46e86f53921c6d2f6f3",
       "trainingDependencyLock": {
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -8619,7 +8619,7 @@
       "trainingEnvironmentLockSHA256": "6f124c50e9a9012e2f6f32cef521f428cfc8b10e1cda8203800bffc82c5cc7bf",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_plus_public_optimized",
-      "variantManifestSHA256": "d5faaaee6764868bb6357cc563af510c860a3dec1d31bae3e0ce5a84e905f92b",
+      "variantManifestSHA256": "a999677f7d37a10510f00bc7aa7f2baf4ac3bfcd813d79f67e78a2a3a211178b",
       "zeroGPUDurationSeconds": null,
       "zeroGPUSize": null
     }
