@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import io
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -749,6 +752,7 @@ def _write_completed_summary_evidence(
     run_root: Path,
     *,
     monkeypatch: pytest.MonkeyPatch,
+    evaluation_scope: str = "full",
 ) -> Path:
     agent = "cortex"
     variant = "internal_plus_public_optimized"
@@ -759,7 +763,35 @@ def _write_completed_summary_evidence(
         "parentSFTAdapterSHA256": "a" * 64,
         "finalizedVariantManifestSHA256": "f" * 64,
     }
-    evaluation = {"status": "quality_gate_passed", "qualityGatePassed": True}
+    if evaluation_scope == "full":
+        plan = _test_execution_plan()
+        evaluation = {
+            "status": "quality_gate_passed",
+            "qualityGatePassed": True,
+        }
+        status = "complete"
+        evaluation_status = "quality_gate_passed"
+        qualification = "quality_gate_passed"
+        promotion_eligible = True
+    elif evaluation_scope == "smoke":
+        plan = _test_execution_plan(
+            evaluation_scope="smoke",
+            evaluation_max_examples=1,
+        )
+        evaluation = {"status": "smoke_complete", "qualityGatePassed": False}
+        status = "smoke_complete"
+        evaluation_status = "smoke_complete"
+        qualification = "diagnostic_only"
+        promotion_eligible = False
+    elif evaluation_scope == "none":
+        plan = _test_execution_plan(evaluation_scope="none")
+        evaluation = None
+        status = "training_complete_without_full_evaluation"
+        evaluation_status = "not_run"
+        qualification = "diagnostic_only"
+        promotion_eligible = False
+    else:  # pragma: no cover - helper callers are closed above.
+        raise AssertionError(evaluation_scope)
     source_fields = {
         "workingTreeDigest": "1" * 64,
         "ubuntuOrchestrationCodeSHA256": "2" * 64,
@@ -778,14 +810,15 @@ def _write_completed_summary_evidence(
     evaluation_report = (
         run_root / "evaluation" / agent / "evaluation_report.json"
     )
-    evaluation_report.parent.mkdir(parents=True, exist_ok=True)
-    evaluation_report.write_text("{}\n", encoding="utf-8")
+    if evaluation is not None:
+        evaluation_report.parent.mkdir(parents=True, exist_ok=True)
+        evaluation_report.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(
         ubuntu_pipeline,
         "_verified_run_manifest",
         lambda *_args: {
             "variant": variant,
-            "executionPlan": _test_execution_plan(),
+            "executionPlan": plan,
             "agents": [{"agent": agent}],
             **source_fields,
         },
@@ -808,13 +841,13 @@ def _write_completed_summary_evidence(
     )
     summary = {
         "schema": ubuntu_pipeline.SUMMARY_SCHEMA_VERSION,
-        "status": "complete",
-        "evaluationStatus": "quality_gate_passed",
-        "evaluationScope": "full",
+        "status": status,
+        "evaluationStatus": evaluation_status,
+        "evaluationScope": evaluation_scope,
         "ggufStatus": "verified",
-        "qualification": "quality_gate_passed",
-        "promotionEligible": True,
-        "executionPlanSHA256": _test_execution_plan()["executionPlanSHA256"],
+        "qualification": qualification,
+        "promotionEligible": promotion_eligible,
+        "executionPlanSHA256": plan["executionPlanSHA256"],
         "variant": variant,
         "runRoot": str(run_root),
         "preferenceTraining": True,
@@ -828,7 +861,7 @@ def _write_completed_summary_evidence(
                 "adapterGGUFSHA256": ubuntu_pipeline.file_sha256(gguf),
                 "adapterGGUFSizeBytes": gguf.stat().st_size,
                 "evaluationReport": str(evaluation_report),
-                "evaluationReportExists": True,
+                "evaluationReportExists": evaluation is not None,
                 "evaluation": evaluation,
             }
         },
@@ -906,7 +939,144 @@ def test_credential_uploader_uses_only_the_verified_image_copy() -> None:
     assert "--read-only" in launcher
     assert "--cap-drop ALL" in launcher
     assert "--security-opt no-new-privileges" in launcher
+    assert (
+        'PRIVATE_UPLOAD_TMPFS="/tmp:rw,noexec,nosuid,nodev,mode=700,'
+        'uid=$RUNTIME_UID,gid=$RUNTIME_GID"'
+    ) in launcher
+    assert launcher.count('--tmpfs "$PRIVATE_UPLOAD_TMPFS"') == 2
+    assert 'tempfile.TemporaryFile(dir="/tmp").close()' in launcher
+    assert "scratch.st_uid == uid" in launcher
+    assert "scratch.st_gid == gid" in launcher
+    assert "stat.S_IMODE(scratch.st_mode) == 0o700" in launcher
     assert "--source-integrity-digest" in launcher
+
+
+def test_docker_build_uses_only_the_attested_commit_archive() -> None:
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    archive_function = launcher[
+        launcher.index("archive_attested_build_context()") : launcher.index(
+            "path_contains()"
+        )
+    ]
+    build_block = launcher[
+        launcher.index('if [[ "$BUILD_IMAGE" == "1" ]]') : launcher.index(
+            "IMAGE_DIGEST="
+        )
+    ]
+
+    assert "set -Eeuo pipefail" in launcher
+    assert "archive" in archive_function
+    assert "--format=tar" in archive_function
+    assert '"$SOURCE_BASE_COMMIT"' in archive_function
+    assert "GIT_CONFIG_GLOBAL=/dev/null" in archive_function
+    assert "GIT_NO_REPLACE_OBJECTS=1" in archive_function
+    assert "-u GIT_DIR" in archive_function
+    assert "-u GIT_WORK_TREE" in archive_function
+    assert "-u GIT_INDEX_FILE" in archive_function
+    assert {
+        "scripts/ubuntu_train_lumen_full_pipeline.sh",
+        "scripts/ubuntu_train_lumen_adapters_aio.sh",
+        "tools/fine_tuning/unsloth",
+        "tools/lumen_manifest_crawler/lumen_manifest_crawler",
+        "tools/hf_zerogpu/space_template",
+        "generated/fine_tuning",
+        "generated/agent_manifest/AgentBehaviorManifest.json",
+    }.issubset(set(archive_function.split()))
+    assert '--file "$DOCKERFILE_RELATIVE"' in build_block
+    assert '--file "$DOCKERFILE"' not in build_block
+    assert 'build_args+=("$ROOT")' not in build_block
+    assert 'archive_attested_build_context | "${build_args[@]}" -' in build_block
+
+
+def test_attested_build_archive_ignores_live_checkout_bytes_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    files = {
+        "scripts/ubuntu_train_lumen_full_pipeline.sh": b"trusted launcher\n",
+        "scripts/ubuntu_train_lumen_adapters_aio.sh": b"trusted inner launcher\n",
+        "tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128": b"trusted dockerfile\n",
+        "tools/lumen_manifest_crawler/lumen_manifest_crawler/__init__.py": (
+            b"trusted crawler\n"
+        ),
+        "tools/hf_zerogpu/space_template/app.py": b"trusted app\n",
+        "generated/fine_tuning/manifest.json": b"{}\n",
+        "generated/agent_manifest/AgentBehaviorManifest.json": b"{}\n",
+    }
+    for relative, payload in files.items():
+        path = repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Lumen Test"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "lumen@example.invalid"],
+        cwd=repository,
+        check=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=repository, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "trusted"],
+        cwd=repository,
+        check=True,
+    )
+    revision = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        text=True,
+    ).strip()
+    dockerfile = repository / "tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128"
+    dockerfile.write_bytes(b"transient untrusted dockerfile\n")
+
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    archive_function = launcher[
+        launcher.index("archive_attested_build_context()") : launcher.index(
+            "path_contains()"
+        )
+    ]
+    script = (
+        f"set -Eeuo pipefail\n{archive_function}\n"
+        "archive_attested_build_context\n"
+    )
+    environment = {
+        **os.environ,
+        "ROOT": str(repository),
+        "SOURCE_BASE_COMMIT": revision,
+        "GIT_DIR": str(tmp_path / "attacker-git-dir"),
+        "GIT_WORK_TREE": str(tmp_path / "attacker-worktree"),
+        "GIT_INDEX_FILE": str(tmp_path / "attacker-index"),
+    }
+    archived = subprocess.run(
+        ["bash", "-c", script],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    ).stdout
+    with tarfile.open(fileobj=io.BytesIO(archived), mode="r:") as archive:
+        archived_dockerfile = archive.extractfile(
+            "tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128"
+        )
+        assert archived_dockerfile is not None
+        assert archived_dockerfile.read() == b"trusted dockerfile\n"
+
+    failed = subprocess.run(
+        ["bash", "-c", script],
+        env={**environment, "SOURCE_BASE_COMMIT": "f" * 40},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert failed.returncode != 0
 
 
 def test_ubuntu_image_maps_the_invoking_non_root_identity() -> None:
@@ -947,6 +1117,11 @@ def test_ubuntu_launcher_rejects_an_image_without_the_runtime_identity(
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     docker_log = tmp_path / "docker.log"
+    repository_head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        text=True,
+    ).strip()
     fake_commands = {
         "uname": """#!/bin/sh
 printf 'Linux\\n'
@@ -964,7 +1139,7 @@ exit 0
         "python3": f"""#!/bin/sh
 case "$*" in
   *'ubuntu_source_integrity.py attest-host'*)
-    printf '%s\n' '{{"baseCommit":"{'a' * 40}","workingTreeDigest":"{'b' * 64}","ubuntuOrchestrationCodeSHA256":"{'c' * 64}","sourceIntegritySHA256":"{'d' * 64}"}}'
+    printf '%s\n' '{{"baseCommit":"{repository_head}","workingTreeDigest":"{'b' * 64}","ubuntuOrchestrationCodeSHA256":"{'c' * 64}","sourceIntegritySHA256":"{'d' * 64}"}}'
     exit 0
     ;;
 esac
@@ -973,6 +1148,10 @@ exec {sys.executable} "$@"
         "docker": f"""#!/bin/sh
 set -eu
 printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
+if [ "${{1:-}}" = build ]; then
+  cat >/dev/null
+  exit 0
+fi
 if [ "${{1:-}}" = image ] && [ "${{2:-}}" = inspect ]; then
   printf '{FAKE_IMAGE_DIGEST}\\n'
   exit 0
@@ -2685,7 +2864,7 @@ def test_resume_rejects_a_minimal_self_hashed_gguf_summary(
         ubuntu_pipeline.verify_gguf(tmp_path, "cortex")
 
 
-def test_resume_reuses_gguf_only_from_a_complete_canonical_summary(
+def test_resume_reuses_gguf_from_a_canonical_summary_with_verified_gguf_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2698,6 +2877,32 @@ def test_resume_reuses_gguf_only_from_a_complete_canonical_summary(
     gguf.write_bytes(b"GGUF-tampered")
     with pytest.raises(RuntimeError, match="GGUF"):
         ubuntu_pipeline.verify_gguf(tmp_path, "cortex")
+
+
+@pytest.mark.parametrize(
+    ("evaluation_scope", "expected_status"),
+    [
+        ("smoke", "smoke_complete"),
+        ("none", "training_complete_without_full_evaluation"),
+    ],
+)
+def test_resume_reuses_verified_gguf_from_diagnostic_summary_states(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    evaluation_scope: str,
+    expected_status: str,
+) -> None:
+    summary_path = _write_completed_summary_evidence(
+        tmp_path,
+        monkeypatch=monkeypatch,
+        evaluation_scope=evaluation_scope,
+    )
+    assert ubuntu_pipeline.read_object(summary_path)["status"] == expected_status
+
+    verified = ubuntu_pipeline.verify_gguf(tmp_path, "cortex")
+
+    gguf = tmp_path / "models" / "lora_qwen3_gguf" / "lumen-cortex-lora.gguf"
+    assert verified["adapterGGUFSHA256"] == ubuntu_pipeline.file_sha256(gguf)
 
 
 def test_gguf_inventory_requires_exact_prepared_agent_set(
@@ -3087,6 +3292,111 @@ def test_resume_gguf_reuse_requires_every_prepared_agent_in_summary(
         ubuntu_pipeline.verify_gguf(tmp_path, "cortex")
 
 
+def test_upload_snapshot_is_private_and_detached_from_later_host_path_swaps(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    source = run_root / "models" / "adapter.bin"
+    source.parent.mkdir(parents=True)
+    trusted_payload = b"verified adapter bytes"
+    source.write_bytes(trusted_payload)
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir(mode=0o700)
+    contract = ubuntu_pipeline._UploadInputContract(
+        relative_path="models/adapter.bin",
+        remote_path="runs/run-one/adapters/cortex/adapter.bin",
+        expected_sha256=hashlib.sha256(trusted_payload).hexdigest(),
+        expected_size=len(trusted_payload),
+    )
+
+    snapshotted = ubuntu_pipeline._snapshot_verified_upload_inputs(
+        run_root,
+        (contract,),
+        snapshot_root,
+    )
+    token = tmp_path / "hf_token"
+    token.write_bytes(b"hf_secret_must_not_be_uploaded")
+    source.unlink()
+    source.symlink_to(token)
+
+    assert len(snapshotted) == 1
+    assert snapshotted[0].path.parent == snapshot_root
+    assert snapshotted[0].path.read_bytes() == trusted_payload
+    assert stat.S_IMODE(snapshotted[0].path.stat().st_mode) == 0o400
+
+
+def test_upload_snapshot_rejects_digest_drift_before_credentials_are_used(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    source = run_root / "models" / "adapter.bin"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"tampered")
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir(mode=0o700)
+    contract = ubuntu_pipeline._UploadInputContract(
+        relative_path="models/adapter.bin",
+        remote_path="runs/run-one/adapters/cortex/adapter.bin",
+        expected_sha256=hashlib.sha256(b"verified").hexdigest(),
+        expected_size=len(b"verified"),
+    )
+
+    with pytest.raises(RuntimeError, match="drifted from its verified contract"):
+        ubuntu_pipeline._snapshot_verified_upload_inputs(
+            run_root,
+            (contract,),
+            snapshot_root,
+        )
+
+
+def test_upload_snapshot_rejects_symlinked_parent_components(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    payload = b"same bytes do not make a symlink safe"
+    (outside / "adapter.bin").write_bytes(payload)
+    (run_root / "models").symlink_to(outside, target_is_directory=True)
+    snapshot_root = tmp_path / "snapshot"
+    snapshot_root.mkdir(mode=0o700)
+    contract = ubuntu_pipeline._UploadInputContract(
+        relative_path="models/adapter.bin",
+        remote_path="runs/run-one/adapters/cortex/adapter.bin",
+        expected_sha256=hashlib.sha256(payload).hexdigest(),
+        expected_size=len(payload),
+    )
+
+    with pytest.raises(RuntimeError, match="without following links"):
+        ubuntu_pipeline._snapshot_verified_upload_inputs(
+            run_root,
+            (contract,),
+            snapshot_root,
+        )
+
+
+def test_upload_rejects_a_coherent_adapter_swap_after_summary_verification() -> None:
+    old_phase = {
+        "phase": "dpo",
+        "adapterSHA256": "a" * 64,
+        "finalizedVariantManifestSHA256": "b" * 64,
+    }
+    replacement_phase = {
+        "phase": "dpo",
+        "adapterSHA256": "c" * 64,
+        "finalizedVariantManifestSHA256": "d" * 64,
+    }
+    summary = {"agents": {"cortex": {"finalPhase": old_phase}}}
+
+    with pytest.raises(RuntimeError, match="drifted from the completed summary"):
+        ubuntu_pipeline._verified_upload_final_phase(
+            summary,
+            "cortex",
+            replacement_phase,
+        )
+
+
 def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3122,17 +3432,36 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     adapter_dir.mkdir(parents=True)
     adapter_file = adapter_dir / "adapter_model.safetensors"
     adapter_file.write_bytes(b"adapter")
-    adapter_sha = "a" * 64
+    adapter_payload = {
+        "schemaVersion": "lumen.peft-lora-adapter-artifact/1.0.0",
+        "artifactType": "peft_lora_directory",
+        "trainingPhase": "sft_dpo",
+        "parentSFTAdapterSHA256": "9" * 64,
+        "files": [
+            {
+                "path": adapter_file.name,
+                "sizeBytes": adapter_file.stat().st_size,
+                "sha256": ubuntu_pipeline.file_sha256(adapter_file),
+            }
+        ],
+    }
+    adapter_sha = ubuntu_pipeline.canonical_sha256(adapter_payload)
     ubuntu_pipeline.write_object(
         adapter_dir / "adapter_artifact_manifest.json",
-        {
-            "adapterSHA256": adapter_sha,
-            "files": [{"path": adapter_file.name}],
-        },
+        {**adapter_payload, "adapterSHA256": adapter_sha},
     )
     finalized = tmp_path / "training/cortex/dpo/finalized_variant_manifest.json"
     finalized.parent.mkdir(parents=True)
-    finalized.write_text("{}\n", encoding="utf-8")
+    finalized_payload = {"agent": agent, "trainingPhase": "sft_dpo"}
+    finalized_sha = ubuntu_pipeline.canonical_sha256(finalized_payload)
+    ubuntu_pipeline.write_object(
+        finalized,
+        {**finalized_payload, "variantManifestSHA256": finalized_sha},
+    )
+    preference_record = {
+        "adapterSHA256": adapter_sha,
+        "finalizedVariantManifestSHA256": finalized_sha,
+    }
     summary = {
         "status": "complete_without_gguf",
         "evaluationStatus": "quality_gate_passed",
@@ -3145,6 +3474,7 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
         )["executionPlanSHA256"],
         "agents": {
             agent: {
+                "finalPhase": preference_record,
                 "evaluation": None,
                 "adapterGGUFExists": False,
             }
@@ -3173,7 +3503,7 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     monkeypatch.setattr(
         ubuntu_pipeline,
         "verify_preference",
-        lambda *_args: {"adapterSHA256": adapter_sha},
+        lambda *_args: preference_record,
     )
 
     class _Info:
@@ -3284,16 +3614,36 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
     adapter_dir.mkdir(parents=True)
     adapter_file = adapter_dir / "adapter_model.safetensors"
     adapter_file.write_bytes(b"adapter")
+    adapter_payload = {
+        "schemaVersion": "lumen.peft-lora-adapter-artifact/1.0.0",
+        "artifactType": "peft_lora_directory",
+        "trainingPhase": "sft_dpo",
+        "parentSFTAdapterSHA256": "9" * 64,
+        "files": [
+            {
+                "path": adapter_file.name,
+                "sizeBytes": adapter_file.stat().st_size,
+                "sha256": ubuntu_pipeline.file_sha256(adapter_file),
+            }
+        ],
+    }
+    adapter_sha = ubuntu_pipeline.canonical_sha256(adapter_payload)
     ubuntu_pipeline.write_object(
         adapter_dir / "adapter_artifact_manifest.json",
-        {
-            "adapterSHA256": "a" * 64,
-            "files": [{"path": adapter_file.name}],
-        },
+        {**adapter_payload, "adapterSHA256": adapter_sha},
     )
     finalized = tmp_path / "training" / agent / "dpo" / "finalized_variant_manifest.json"
     finalized.parent.mkdir(parents=True)
-    finalized.write_text("{}\n", encoding="utf-8")
+    finalized_payload = {"agent": agent, "trainingPhase": "sft_dpo"}
+    finalized_sha = ubuntu_pipeline.canonical_sha256(finalized_payload)
+    ubuntu_pipeline.write_object(
+        finalized,
+        {**finalized_payload, "variantManifestSHA256": finalized_sha},
+    )
+    preference_record = {
+        "adapterSHA256": adapter_sha,
+        "finalizedVariantManifestSHA256": finalized_sha,
+    }
     token_file = tmp_path / "token"
     token_file.write_text("hf_test_token\n", encoding="utf-8")
 
@@ -3309,21 +3659,30 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
             evaluation_max_examples=1,
             gguf_requested=False,
         )["executionPlanSHA256"],
-        "agents": {agent: {"evaluation": None, "adapterGGUFExists": False}},
+        "agents": {
+            agent: {
+                "finalPhase": preference_record,
+                "evaluation": None,
+                "adapterGGUFExists": False,
+            }
+        },
     }
+    run_manifest = {
+        "runID": run_id,
+        "agents": [{"agent": agent}],
+        "adapterRepoID": repo_id,
+        "adapterRuntimeManifestFileSHA256": ubuntu_pipeline.file_sha256(
+            runtime_manifest
+        ),
+        "trainingEnvironment": {},
+        **source_fields,
+    }
+    ubuntu_pipeline.write_object(tmp_path / "aio_run_manifest.json", run_manifest)
+    ubuntu_pipeline.write_object(tmp_path / "aio_summary.json", summary)
     monkeypatch.setattr(
         ubuntu_pipeline,
         "_verified_run_manifest",
-        lambda *_args: {
-            "runID": run_id,
-            "agents": [{"agent": agent}],
-            "adapterRepoID": repo_id,
-            "adapterRuntimeManifestFileSHA256": ubuntu_pipeline.file_sha256(
-                runtime_manifest
-            ),
-            "trainingEnvironment": {},
-            **source_fields,
-        },
+        lambda *_args: run_manifest,
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
@@ -3333,7 +3692,7 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
     monkeypatch.setattr(
         ubuntu_pipeline,
         "verify_preference",
-        lambda *_args: {"adapterSHA256": "a" * 64},
+        lambda *_args: preference_record,
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
@@ -3341,10 +3700,16 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
         lambda *_args: source_record,
     )
 
+    swap_state = {"done": False}
+
     class FakeCommitOperationAdd:
         def __init__(self, *, path_in_repo: str, path_or_fileobj: str) -> None:
             self.path_in_repo = path_in_repo
             self.path_or_fileobj = path_or_fileobj
+            if not swap_state["done"]:
+                adapter_file.unlink()
+                adapter_file.symlink_to(token_file)
+                swap_state["done"] = True
 
     class FakeHfApi:
         def __init__(self, *, token: str) -> None:
@@ -3372,6 +3737,18 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
                 )
                 for operation in operations
             )
+            assert all(
+                not Path(operation.path_or_fileobj).is_relative_to(tmp_path)
+                for operation in operations
+            )
+            uploaded = {
+                operation.path_in_repo: Path(operation.path_or_fileobj).read_bytes()
+                for operation in operations
+            }
+            assert uploaded[
+                "diagnostic-runs/diagnostic-run/adapters/cortex/adapter_model.safetensors"
+            ] == b"adapter"
+            assert token_file.read_bytes() not in uploaded.values()
             self.committed = True
             return SimpleNamespace(oid="2" * 40)
 
@@ -3400,6 +3777,7 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
     assert receipt["evaluationScope"] == "smoke"
     assert receipt["ggufStatus"] == "skipped_by_operator"
     assert receipt["ggufIncluded"] is False
+    assert swap_state["done"] is True
     assert ubuntu_pipeline.read_object(tmp_path / "upload_receipts.json") == receipt
 
 

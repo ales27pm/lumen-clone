@@ -5,7 +5,8 @@ umask 077
 IFS=$'\n\t'
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-DOCKERFILE="$ROOT/tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128"
+DOCKERFILE_RELATIVE="tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128"
+DOCKERFILE="$ROOT/$DOCKERFILE_RELATIVE"
 SOURCE_ATTESTOR="$ROOT/tools/fine_tuning/unsloth/ubuntu_source_integrity.py"
 SAFE_REPO_OUTPUT_ROOT="$ROOT/.local/ubuntu_finetune_runs"
 
@@ -221,6 +222,7 @@ RUNTIME_GID="$(id -g)"
   || die "run this launcher as a regular non-root user (do not use sudo)"
 [[ "$RUNTIME_GID" =~ ^[1-9][0-9]*$ ]] \
   || die "the invoking user's primary group must be non-root"
+PRIVATE_UPLOAD_TMPFS="/tmp:rw,noexec,nosuid,nodev,mode=700,uid=$RUNTIME_UID,gid=$RUNTIME_GID"
 [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || die "run ID must contain only letters, digits, dot, underscore, and hyphen"
 [[ "$AGENTS_CSV" =~ ^[a-z]+(,[a-z]+)*$ ]] || die "agents must be a comma-separated lowercase list without spaces"
 [[ "$OVERWRITE" == "0" || "$RESUME" == "0" ]] || die "--overwrite and --resume are mutually exclusive"
@@ -296,6 +298,52 @@ verify_clean_source_unchanged() {
       && "${current[2]}" == "$SOURCE_ORCHESTRATION_DIGEST" \
       && "${current[3]}" == "$SOURCE_INTEGRITY_DIGEST" ]] \
     || die "Ubuntu pipeline source changed after its initial attestation"
+}
+
+archive_attested_build_context() {
+  local -a git_environment=(
+    env
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES
+    -u GIT_CEILING_DIRECTORIES
+    -u GIT_COMMON_DIR
+    -u GIT_CONFIG
+    -u GIT_CONFIG_COUNT
+    -u GIT_CONFIG_GLOBAL
+    -u GIT_CONFIG_NOSYSTEM
+    -u GIT_CONFIG_PARAMETERS
+    -u GIT_CONFIG_SYSTEM
+    -u GIT_DIR
+    -u GIT_DISCOVERY_ACROSS_FILESYSTEM
+    -u GIT_EXEC_PATH
+    -u GIT_INDEX_FILE
+    -u GIT_NAMESPACE
+    -u GIT_OBJECT_DIRECTORY
+    -u GIT_WORK_TREE
+  )
+  local -a context_paths=(
+    scripts/ubuntu_train_lumen_full_pipeline.sh
+    scripts/ubuntu_train_lumen_adapters_aio.sh
+    tools/fine_tuning/unsloth
+    tools/lumen_manifest_crawler/lumen_manifest_crawler
+    tools/hf_zerogpu/space_template
+    generated/fine_tuning
+    generated/agent_manifest/AgentBehaviorManifest.json
+  )
+  "${git_environment[@]}" \
+    GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 \
+    GIT_NO_REPLACE_OBJECTS=1 \
+    GIT_OPTIONAL_LOCKS=0 \
+    LC_ALL=C \
+    git \
+      -c core.fsmonitor=false \
+      -c core.untrackedCache=false \
+      -C "$ROOT" \
+      archive \
+      --format=tar \
+      "$SOURCE_BASE_COMMIT" \
+      -- \
+      "${context_paths[@]}"
 }
 
 path_contains() {
@@ -392,7 +440,7 @@ verify_clean_source_unchanged
 if [[ "$BUILD_IMAGE" == "1" ]]; then
   build_args=(
     docker build
-    --file "$DOCKERFILE"
+    --file "$DOCKERFILE_RELATIVE"
     --tag "$IMAGE_TAG"
     --build-arg "LUMEN_RUNTIME_UID=$RUNTIME_UID"
     --build-arg "LUMEN_RUNTIME_GID=$RUNTIME_GID"
@@ -403,9 +451,8 @@ if [[ "$BUILD_IMAGE" == "1" ]]; then
   if [[ "$PULL_BASE" == "1" ]]; then
     build_args+=(--pull)
   fi
-  build_args+=("$ROOT")
   log "building pinned training image: $IMAGE_TAG"
-  "${build_args[@]}"
+  archive_attested_build_context | "${build_args[@]}" -
 else
   log "reusing local training image: $IMAGE_TAG"
 fi
@@ -435,11 +482,12 @@ docker run --rm \
 log "checking container runtime identity"
 docker run --rm \
   --network none \
+  --tmpfs "$PRIVATE_UPLOAD_TMPFS" \
   --user "$RUNTIME_UID:$RUNTIME_GID" \
   -e "HOME=$RUNTIME_HOME" \
   --entrypoint /opt/lumen-venv/bin/python \
   "$IMAGE_DIGEST" \
-  -c 'import getpass, grp, os, pwd, tempfile; from pathlib import Path; uid = os.getuid(); gid = os.getgid(); assert pwd.getpwuid(uid).pw_uid == uid; assert grp.getgrgid(gid).gr_gid == gid; assert getpass.getuser(); home = Path.home(); assert home == Path(os.environ["HOME"]) and home.is_dir(); tempfile.TemporaryFile(dir=home).close()' \
+  -c 'import getpass, grp, os, pwd, stat, tempfile; from pathlib import Path; uid = os.getuid(); gid = os.getgid(); assert pwd.getpwuid(uid).pw_uid == uid; assert grp.getgrgid(gid).gr_gid == gid; assert getpass.getuser(); home = Path.home(); assert home == Path(os.environ["HOME"]) and home.is_dir(); tempfile.TemporaryFile(dir=home).close(); scratch = os.stat("/tmp", follow_symlinks=False); assert stat.S_ISDIR(scratch.st_mode) and scratch.st_uid == uid and scratch.st_gid == gid and stat.S_IMODE(scratch.st_mode) == 0o700; tempfile.TemporaryFile(dir="/tmp").close()' \
   || die "training image lacks the invoking user's passwd/group mapping or writable home; rebuild without --no-build"
 
 log "checking NVIDIA Container Toolkit access"
@@ -535,7 +583,7 @@ for variant in "${variants[@]}"; do
       --read-only \
       --cap-drop ALL \
       --security-opt no-new-privileges \
-      --tmpfs /tmp:rw,noexec,nosuid,nodev,mode=700 \
+      --tmpfs "$PRIVATE_UPLOAD_TMPFS" \
       --entrypoint /opt/lumen-venv/bin/python \
       --user "$RUNTIME_UID:$RUNTIME_GID" \
       -v "$host_run_root:$container_run_root:ro" \
