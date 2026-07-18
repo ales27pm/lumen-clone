@@ -13,7 +13,7 @@ import sys
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
 from tools.fine_tuning.unsloth.training_lineage import (
@@ -127,6 +127,23 @@ exec(compile(source, reader_path, "exec"), namespace, namespace)
 class _VerifiedGGUFReaderScript:
     path: Path
     git_blob_sha1: str
+
+
+@dataclass(frozen=True)
+class _UploadInputContract:
+    relative_path: str
+    remote_path: str
+    expected_sha256: str | None = None
+    expected_size: int | None = None
+    expected_json: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class _SnapshottedUploadInput:
+    path: Path
+    remote_path: str
+    sha256: str
+    size_bytes: int
 
 
 def _reject_nonfinite_json_constant(value: str) -> None:
@@ -299,6 +316,206 @@ def file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _validated_upload_relative_path(value: str, *, label: str) -> PurePosixPath:
+    path = PurePosixPath(value)
+    if (
+        not value
+        or path.is_absolute()
+        or path.as_posix() != value
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise RuntimeError(f"{label} is not a canonical relative path: {value}")
+    return path
+
+
+def _open_regular_beneath(
+    root_descriptor: int,
+    relative_path: str,
+    *,
+    label: str,
+) -> tuple[BinaryIO, os.stat_result]:
+    path = _validated_upload_relative_path(relative_path, label=label)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    if nofollow == 0 or directory == 0:
+        raise RuntimeError(f"{label} requires O_NOFOLLOW and O_DIRECTORY support")
+    common_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow
+    parent_descriptor = os.dup(root_descriptor)
+    file_descriptor: int | None = None
+    try:
+        for component in path.parts[:-1]:
+            child_descriptor = os.open(
+                component,
+                common_flags | directory,
+                dir_fd=parent_descriptor,
+            )
+            os.close(parent_descriptor)
+            parent_descriptor = child_descriptor
+        file_descriptor = os.open(
+            path.parts[-1],
+            common_flags,
+            dir_fd=parent_descriptor,
+        )
+        file_stat = os.fstat(file_descriptor)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise RuntimeError(f"{label} must be a regular file: {relative_path}")
+        handle = os.fdopen(file_descriptor, "rb", closefd=True)
+        file_descriptor = None
+        return handle, file_stat
+    except OSError as exc:
+        raise RuntimeError(
+            f"{label} could not be opened without following links: {relative_path}"
+        ) from exc
+    finally:
+        if file_descriptor is not None:
+            os.close(file_descriptor)
+        os.close(parent_descriptor)
+
+
+def _write_all(descriptor: int, payload: bytes) -> None:
+    offset = 0
+    while offset < len(payload):
+        written = os.write(descriptor, payload[offset:])
+        if written <= 0:
+            raise OSError("Short write while snapshotting an upload input")
+        offset += written
+
+
+def _snapshot_verified_upload_inputs(
+    run_root: Path,
+    contracts: Sequence[_UploadInputContract],
+    snapshot_root: Path,
+) -> list[_SnapshottedUploadInput]:
+    if not contracts:
+        raise RuntimeError("Upload requires at least one verified input")
+    snapshot_stat = os.stat(snapshot_root, follow_symlinks=False)
+    if (
+        not stat.S_ISDIR(snapshot_stat.st_mode)
+        or snapshot_stat.st_uid != os.geteuid()
+        or stat.S_IMODE(snapshot_stat.st_mode) & 0o077
+    ):
+        raise RuntimeError("Upload snapshot root must be a private owned directory")
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    if nofollow == 0 or directory == 0:
+        raise RuntimeError("Upload snapshotting requires Linux no-follow support")
+    try:
+        root_descriptor = os.open(
+            run_root,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow | directory,
+        )
+    except OSError as exc:
+        raise RuntimeError("Upload run root is not a regular no-follow directory") from exc
+
+    local_paths: set[str] = set()
+    remote_paths: set[str] = set()
+    snapshotted: list[_SnapshottedUploadInput] = []
+    try:
+        for index, contract in enumerate(contracts):
+            relative = _validated_upload_relative_path(
+                contract.relative_path,
+                label="Upload input path",
+            )
+            remote = _validated_upload_relative_path(
+                contract.remote_path,
+                label="Upload remote path",
+            )
+            if relative.as_posix() in local_paths:
+                raise RuntimeError("Upload file contract contains duplicate local paths")
+            if remote.as_posix() in remote_paths:
+                raise RuntimeError("Upload file contract contains duplicate remote paths")
+            local_paths.add(relative.as_posix())
+            remote_paths.add(remote.as_posix())
+            if contract.expected_sha256 is None and contract.expected_json is None:
+                raise RuntimeError("Upload input lacks a verified content contract")
+            if contract.expected_sha256 is not None and re.fullmatch(
+                r"[0-9a-f]{64}", contract.expected_sha256
+            ) is None:
+                raise RuntimeError("Upload input has an invalid expected digest")
+            if contract.expected_size is not None and (
+                type(contract.expected_size) is not int or contract.expected_size < 0
+            ):
+                raise RuntimeError("Upload input has an invalid expected size")
+
+            source_handle, source_stat = _open_regular_beneath(
+                root_descriptor,
+                relative.as_posix(),
+                label="Upload input",
+            )
+            destination = snapshot_root / f"{index:05d}.upload"
+            destination_descriptor: int | None = None
+            digest = hashlib.sha256()
+            copied_size = 0
+            try:
+                destination_descriptor = os.open(
+                    destination,
+                    os.O_WRONLY
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_CLOEXEC", 0)
+                    | nofollow,
+                    0o400,
+                )
+                offset = 0
+                while True:
+                    chunk = os.pread(source_handle.fileno(), 1 << 20, offset)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    _write_all(destination_descriptor, chunk)
+                    copied_size += len(chunk)
+                    offset += len(chunk)
+                os.fsync(destination_descriptor)
+                destination_stat = os.fstat(destination_descriptor)
+                if (
+                    not stat.S_ISREG(destination_stat.st_mode)
+                    or destination_stat.st_size != copied_size
+                ):
+                    raise RuntimeError("Private upload snapshot is not a stable regular file")
+                _require_stable_descriptor(
+                    source_handle,
+                    source_stat,
+                    label="Upload input",
+                )
+            except OSError as exc:
+                raise RuntimeError(
+                    f"Unable to snapshot verified upload input: {relative.as_posix()}"
+                ) from exc
+            finally:
+                source_handle.close()
+                if destination_descriptor is not None:
+                    os.close(destination_descriptor)
+
+            observed_sha256 = digest.hexdigest()
+            if (
+                contract.expected_sha256 is not None
+                and observed_sha256 != contract.expected_sha256
+            ) or (
+                contract.expected_size is not None
+                and copied_size != contract.expected_size
+            ):
+                raise RuntimeError(
+                    f"Upload input drifted from its verified contract: {relative.as_posix()}"
+                )
+            if contract.expected_json is not None and read_object(destination) != dict(
+                contract.expected_json
+            ):
+                raise RuntimeError(
+                    f"Upload JSON drifted from its verified contract: {relative.as_posix()}"
+                )
+            snapshotted.append(
+                _SnapshottedUploadInput(
+                    path=destination,
+                    remote_path=remote.as_posix(),
+                    sha256=observed_sha256,
+                    size_bytes=copied_size,
+                )
+            )
+    finally:
+        os.close(root_descriptor)
+    return snapshotted
 
 
 def _git_output(checkout: Path, *arguments: str) -> str:
@@ -1834,13 +2051,16 @@ def verify_gguf(run_root: Path, agent: str) -> dict[str, Any]:
     if agent not in prepared_agents:
         raise RuntimeError(f"Prepared run does not own agent {agent}")
     summary = _verified_completed_summary(run_root, prepared_agents)
-    if summary.get("status") != "complete":
+    if summary.get("ggufStatus") != "verified":
         raise RuntimeError(
-            "Existing GGUF reuse requires a complete canonical training summary"
+            "Existing GGUF reuse requires a verified canonical GGUF inventory"
         )
     agent_summary = summary["agents"].get(agent)
-    if not isinstance(agent_summary, Mapping):
-        raise RuntimeError(f"Existing summary lacks agent {agent}")
+    if (
+        not isinstance(agent_summary, Mapping)
+        or agent_summary.get("adapterGGUFExists") is not True
+    ):
+        raise RuntimeError(f"Existing summary lacks verified GGUF evidence for {agent}")
     path = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
     expected_digest = agent_summary.get("adapterGGUFSHA256")
     expected_size = agent_summary.get("adapterGGUFSizeBytes")
@@ -3345,6 +3565,28 @@ def _upload_publication_contract(
     }
 
 
+def _verified_upload_final_phase(
+    summary: Mapping[str, Any],
+    agent: str,
+    observed: Mapping[str, Any],
+) -> dict[str, Any]:
+    summary_agents = summary.get("agents")
+    summary_agent = (
+        summary_agents.get(agent) if isinstance(summary_agents, Mapping) else None
+    )
+    final_phase = (
+        summary_agent.get("finalPhase")
+        if isinstance(summary_agent, Mapping)
+        else None
+    )
+    observed_phase = dict(observed)
+    if not isinstance(final_phase, Mapping) or observed_phase != dict(final_phase):
+        raise RuntimeError(
+            f"Upload adapter lineage drifted from the completed summary for {agent}"
+        )
+    return observed_phase
+
+
 def upload_run(
     *,
     run_root: Path,
@@ -3403,78 +3645,158 @@ def upload_run(
     ):
         raise RuntimeError("Prepared training environment record drifted")
 
-    local_files: list[tuple[Path, str]] = []
+    upload_contracts: list[_UploadInputContract] = []
     for agent in agents:
-        preference = verify_preference(run_root, agent)
-        adapter_dir = run_root / "models" / "lora_qwen3_dpo" / agent
-        adapter_manifest = read_object(adapter_dir / "adapter_artifact_manifest.json")
+        preference = _verified_upload_final_phase(
+            summary,
+            agent,
+            verify_preference(run_root, agent),
+        )
+        adapter_root = f"models/lora_qwen3_dpo/{agent}"
+        adapter_manifest_relative = f"{adapter_root}/adapter_artifact_manifest.json"
+        adapter_manifest = read_object(run_root / adapter_manifest_relative)
+        adapter_manifest_digest = adapter_manifest.get("adapterSHA256")
+        unsigned_adapter_manifest = dict(adapter_manifest)
+        unsigned_adapter_manifest.pop("adapterSHA256", None)
         artifact_files = adapter_manifest.get("files")
-        if not isinstance(artifact_files, list):
+        if (
+            not isinstance(artifact_files, list)
+            or not artifact_files
+            or re.fullmatch(r"[0-9a-f]{64}", str(adapter_manifest_digest or ""))
+            is None
+            or canonical_sha256(unsigned_adapter_manifest) != adapter_manifest_digest
+            or preference.get("adapterSHA256") != adapter_manifest_digest
+        ):
             raise RuntimeError(f"Adapter upload manifest is invalid for {agent}")
+        artifact_names: set[str] = set()
         for item in artifact_files:
-            if not isinstance(item, Mapping) or not isinstance(item.get("path"), str):
+            name = item.get("path") if isinstance(item, Mapping) else None
+            size = item.get("sizeBytes") if isinstance(item, Mapping) else None
+            digest = item.get("sha256") if isinstance(item, Mapping) else None
+            relative_name = PurePosixPath(name) if isinstance(name, str) else None
+            if (
+                not isinstance(item, Mapping)
+                or set(item) != {"path", "sizeBytes", "sha256"}
+                or relative_name is None
+                or relative_name.is_absolute()
+                or len(relative_name.parts) != 1
+                or relative_name.as_posix() != name
+                or name in artifact_names
+                or type(size) is not int
+                or size < 0
+                or re.fullmatch(r"[0-9a-f]{64}", str(digest or "")) is None
+            ):
                 raise RuntimeError(f"Adapter upload manifest is invalid for {agent}")
-            local_files.append(
-                (
-                    adapter_dir / item["path"],
-                    f"{publication_root}/adapters/{agent}/{item['path']}",
+            artifact_names.add(name)
+            upload_contracts.append(
+                _UploadInputContract(
+                    relative_path=f"{adapter_root}/{name}",
+                    remote_path=f"{publication_root}/adapters/{agent}/{name}",
+                    expected_sha256=str(digest),
+                    expected_size=size,
                 )
             )
-        local_files.append(
-            (
-                adapter_dir / "adapter_artifact_manifest.json",
-                f"{publication_root}/adapters/{agent}/adapter_artifact_manifest.json",
+        upload_contracts.append(
+            _UploadInputContract(
+                relative_path=adapter_manifest_relative,
+                remote_path=(
+                    f"{publication_root}/adapters/{agent}/adapter_artifact_manifest.json"
+                ),
+                expected_json=adapter_manifest,
             )
         )
-        local_files.append(
-            (
-                run_root
-                / "training"
-                / agent
-                / "dpo"
-                / "finalized_variant_manifest.json",
-                f"{publication_root}/manifests/{agent}/variant_manifest.json",
+        finalized_relative = (
+            f"training/{agent}/dpo/finalized_variant_manifest.json"
+        )
+        finalized = _verify_manifest_integrity(run_root / finalized_relative)
+        if (
+            finalized.get("variantManifestSHA256")
+            != preference.get("finalizedVariantManifestSHA256")
+        ):
+            raise RuntimeError(f"Upload finalized lineage drifted for {agent}")
+        upload_contracts.append(
+            _UploadInputContract(
+                relative_path=finalized_relative,
+                remote_path=f"{publication_root}/manifests/{agent}/variant_manifest.json",
+                expected_json=finalized,
             )
         )
         evaluation = summary["agents"][agent].get("evaluation")
         if isinstance(evaluation, Mapping):
-            for filename in (
-                "candidate_outputs.jsonl",
-                "evaluation_report.json",
-                "evaluation_run_manifest.json",
+            candidate_digest = evaluation.get("candidateOutputsFileSHA256")
+            report_digest = evaluation.get("evaluationReportFileSHA256")
+            if any(
+                re.fullmatch(r"[0-9a-f]{64}", str(value or "")) is None
+                for value in (candidate_digest, report_digest)
             ):
-                local_files.append(
-                    (
-                        run_root / "evaluation" / agent / filename,
-                        f"{publication_root}/evaluation/{agent}/{filename}",
+                raise RuntimeError(f"Upload evaluation lineage drifted for {agent}")
+            upload_contracts.extend(
+                (
+                    _UploadInputContract(
+                        relative_path=f"evaluation/{agent}/candidate_outputs.jsonl",
+                        remote_path=(
+                            f"{publication_root}/evaluation/{agent}/candidate_outputs.jsonl"
+                        ),
+                        expected_sha256=str(candidate_digest),
+                    ),
+                    _UploadInputContract(
+                        relative_path=f"evaluation/{agent}/evaluation_report.json",
+                        remote_path=(
+                            f"{publication_root}/evaluation/{agent}/evaluation_report.json"
+                        ),
+                        expected_sha256=str(report_digest),
+                    ),
+                    _UploadInputContract(
+                        relative_path=(
+                            f"evaluation/{agent}/evaluation_run_manifest.json"
+                        ),
+                        remote_path=(
+                            f"{publication_root}/evaluation/{agent}/evaluation_run_manifest.json"
+                        ),
+                        expected_json=evaluation,
                     )
                 )
+            )
         if include_gguf:
-            if summary["agents"][agent].get("adapterGGUFExists") is not True:
+            agent_summary = summary["agents"][agent]
+            gguf_digest = agent_summary.get("adapterGGUFSHA256")
+            gguf_size = agent_summary.get("adapterGGUFSizeBytes")
+            if (
+                agent_summary.get("adapterGGUFExists") is not True
+                or re.fullmatch(r"[0-9a-f]{64}", str(gguf_digest or "")) is None
+                or type(gguf_size) is not int
+                or gguf_size <= 0
+            ):
                 raise RuntimeError(f"Upload requires a verified GGUF for {agent}")
-            local_files.append(
-                (
-                    run_root
-                    / "models"
-                    / "lora_qwen3_gguf"
-                    / f"lumen-{agent}-lora.gguf",
-                    f"{publication_root}/gguf/lumen-{agent}-lora.gguf",
+            upload_contracts.append(
+                _UploadInputContract(
+                    relative_path=(
+                        f"models/lora_qwen3_gguf/lumen-{agent}-lora.gguf"
+                    ),
+                    remote_path=f"{publication_root}/gguf/lumen-{agent}-lora.gguf",
+                    expected_sha256=str(gguf_digest),
+                    expected_size=gguf_size,
                 )
             )
-        if preference.get("adapterSHA256") != adapter_manifest.get("adapterSHA256"):
-            raise RuntimeError(f"Upload adapter lineage drifted for {agent}")
-    for filename in (
-        "aio_run_manifest.json",
-        "aio_summary.json",
-        "training_environment.json",
-    ):
-        local_files.append((run_root / filename, f"{publication_root}/{filename}"))
-    remote_paths = [remote for _, remote in local_files]
-    if len(set(remote_paths)) != len(remote_paths):
-        raise RuntimeError("Upload file contract contains duplicate remote paths")
-    for local_path, _ in local_files:
-        if local_path.is_symlink() or not local_path.is_file():
-            raise RuntimeError(f"Upload input is not a regular verified file: {local_path}")
+    upload_contracts.extend(
+        (
+            _UploadInputContract(
+                relative_path="aio_run_manifest.json",
+                remote_path=f"{publication_root}/aio_run_manifest.json",
+                expected_json=run_manifest,
+            ),
+            _UploadInputContract(
+                relative_path="aio_summary.json",
+                remote_path=f"{publication_root}/aio_summary.json",
+                expected_json=summary,
+            ),
+            _UploadInputContract(
+                relative_path="training_environment.json",
+                remote_path=f"{publication_root}/training_environment.json",
+                expected_json=run_manifest["trainingEnvironment"],
+            ),
+        )
+    )
     receipt_path = (
         receipt_path.resolve()
         if receipt_path is not None
@@ -3485,49 +3807,93 @@ def upload_run(
     if receipt_path.exists() or receipt_path.is_symlink():
         raise RuntimeError(f"Upload receipt path already exists: {receipt_path}")
 
-    if token_file.is_symlink() or not token_file.is_file():
-        raise RuntimeError("Upload token path is not a regular mounted secret")
-    token = token_file.read_text(encoding="utf-8").strip()
-    if not token or "\n" in token or "\r" in token:
-        raise RuntimeError("Upload token file is empty or malformed")
-    api = HfApi(token=token)
-    identity = api.whoami()
-    if not isinstance(identity, Mapping) or not identity.get("name"):
-        raise RuntimeError("Hugging Face authentication preflight failed")
-    api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
-    info = api.repo_info(repo_id=repo_id, repo_type="model")
-    if bool(info.private) != private:
-        raise RuntimeError("Remote repository visibility does not match the requested policy")
-    existing_files = api.list_repo_files(repo_id=repo_id, repo_type="model")
-    prefix = f"{publication_root}/"
-    if any(path.startswith(prefix) for path in existing_files):
-        raise RuntimeError(f"Remote run prefix already exists: {prefix}")
-    parent_revision = getattr(info, "sha", None)
-    if parent_revision is not None and re.fullmatch(
-        r"[0-9a-f]{40}", str(parent_revision)
-    ) is None:
-        raise RuntimeError("Remote parent revision is not immutable")
-    commit = api.create_commit(
-        repo_id=repo_id,
-        repo_type="model",
-        operations=[
-            CommitOperationAdd(path_in_repo=remote, path_or_fileobj=str(local))
-            for local, remote in local_files
-        ],
-        commit_message=(
-            f"Upload verified Lumen training run {run_id}"
-            if promotion_eligible
-            else f"Upload diagnostic-only Lumen training run {run_id}"
-        ),
-        parent_commit=parent_revision,
-    )
-    commit_oid = getattr(commit, "oid", None)
-    if re.fullmatch(r"[0-9a-f]{40}", str(commit_oid or "")) is None:
-        raise RuntimeError("Hugging Face upload did not return an immutable commit OID")
-    final_info = api.repo_info(repo_id=repo_id, repo_type="model")
-    final_revision = getattr(final_info, "sha", None)
-    if final_revision != commit_oid or bool(final_info.private) != private:
-        raise RuntimeError("Remote upload head or visibility failed post-commit verification")
+    with tempfile.TemporaryDirectory(
+        prefix="lumen-upload-snapshot-",
+        dir="/tmp",
+    ) as snapshot_name:
+        snapshot_root = Path(snapshot_name)
+        snapshot_root.chmod(0o700)
+        snapshotted_files = _snapshot_verified_upload_inputs(
+            run_root,
+            upload_contracts,
+            snapshot_root,
+        )
+        remote_paths = [item.remote_path for item in snapshotted_files]
+
+        token_handle, token_stat = _open_regular_readonly(
+            token_file,
+            label="Upload token",
+        )
+        try:
+            token_payload = _read_descriptor_bytes(token_handle)
+            _require_stable_descriptor(
+                token_handle,
+                token_stat,
+                label="Upload token",
+            )
+            _require_path_matches_descriptor(
+                token_file,
+                token_stat,
+                label="Upload token",
+            )
+        finally:
+            token_handle.close()
+        try:
+            token = token_payload.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise RuntimeError("Upload token file is not valid UTF-8") from exc
+        if not token or "\n" in token or "\r" in token:
+            raise RuntimeError("Upload token file is empty or malformed")
+        api = HfApi(token=token)
+        identity = api.whoami()
+        if not isinstance(identity, Mapping) or not identity.get("name"):
+            raise RuntimeError("Hugging Face authentication preflight failed")
+        api.create_repo(
+            repo_id=repo_id,
+            repo_type="model",
+            private=private,
+            exist_ok=True,
+        )
+        info = api.repo_info(repo_id=repo_id, repo_type="model")
+        if bool(info.private) != private:
+            raise RuntimeError(
+                "Remote repository visibility does not match the requested policy"
+            )
+        existing_files = api.list_repo_files(repo_id=repo_id, repo_type="model")
+        prefix = f"{publication_root}/"
+        if any(path.startswith(prefix) for path in existing_files):
+            raise RuntimeError(f"Remote run prefix already exists: {prefix}")
+        parent_revision = getattr(info, "sha", None)
+        if parent_revision is not None and re.fullmatch(
+            r"[0-9a-f]{40}", str(parent_revision)
+        ) is None:
+            raise RuntimeError("Remote parent revision is not immutable")
+        commit = api.create_commit(
+            repo_id=repo_id,
+            repo_type="model",
+            operations=[
+                CommitOperationAdd(
+                    path_in_repo=item.remote_path,
+                    path_or_fileobj=str(item.path),
+                )
+                for item in snapshotted_files
+            ],
+            commit_message=(
+                f"Upload verified Lumen training run {run_id}"
+                if promotion_eligible
+                else f"Upload diagnostic-only Lumen training run {run_id}"
+            ),
+            parent_commit=parent_revision,
+        )
+        commit_oid = getattr(commit, "oid", None)
+        if re.fullmatch(r"[0-9a-f]{40}", str(commit_oid or "")) is None:
+            raise RuntimeError("Hugging Face upload did not return an immutable commit OID")
+        final_info = api.repo_info(repo_id=repo_id, repo_type="model")
+        final_revision = getattr(final_info, "sha", None)
+        if final_revision != commit_oid or bool(final_info.private) != private:
+            raise RuntimeError(
+                "Remote upload head or visibility failed post-commit verification"
+            )
     result: dict[str, Any] = {
         "schema": UPLOAD_SCHEMA_VERSION,
         "repository": repo_id,
@@ -3539,7 +3905,7 @@ def upload_run(
         "remotePrefix": prefix,
         "ggufIncluded": include_gguf,
         "summaryStatus": summary["status"],
-        "uploadedFileCount": len(local_files),
+        "uploadedFileCount": len(snapshotted_files),
         "uploadedPaths": remote_paths,
         "commitOID": commit_oid,
         **image_source_fields,
