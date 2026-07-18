@@ -4697,6 +4697,7 @@ def _cortex_failure_repair_sft_records(
         "outlook_send_named_recipient_unresolved_content": (
             "outlook_send_unresolved_subject_and_body"
         ),
+        "trigger_cancel_reference": "trigger_cancel_reference_resolution",
         "zero_required_alarm_authorization_request": (
             "zero_required_action_without_invented_arguments"
         ),
@@ -6190,6 +6191,18 @@ def _cortex_failure_repair_dpo_pairs(
             surface_form,
         ) in targeted_specs
     }
+    targeted_metadata.update(
+        {
+            "deictic_trigger_cancel_missing_id": {
+                "surfaceForm": "natural_trigger_cancel_missing_id",
+                "targetedFailureFamily": "trigger_cancel_reference_resolution",
+            },
+            "deictic_trigger_cancel_explicit_id_action": {
+                "surfaceForm": "natural_trigger_cancel_explicit_id",
+                "targetedFailureFamily": "trigger_cancel_reference_resolution",
+            },
+        }
+    )
     pairs: list[dict[str, Any]] = []
     for repair_case, prompt, chosen, rejected in specs:
         pair = _dpo(
@@ -6321,6 +6334,893 @@ def _cortex_failure_repair_dpo_pairs(
                 "repairCase": repair_case,
                 "surfaceForm": "held_out_semantic_generalization",
                 "targetedFailureFamily": targeted_failure_family,
+            }
+        )
+        pairs.append(pair)
+    return pairs
+
+
+_CALENDAR_CREATE_ROUTE_LATTICE = "calendar_create_required_arguments_v1"
+_CALENDAR_CREATE_ROUTE_LATTICE_REQUIRED_ARGUMENTS = (
+    "title",
+    "startsInMinutes",
+)
+_CALENDAR_CREATE_ROUTE_LATTICE_STATES = (
+    ("none_supplied", (), ("title", "startsInMinutes")),
+    ("title_only", ("title",), ("startsInMinutes",)),
+    ("starts_in_minutes_only", ("startsInMinutes",), ("title",)),
+    ("complete", ("title", "startsInMinutes"), ()),
+)
+_CALENDAR_CREATE_SFT_ROUTE_LATTICE_SURFACES = (
+    (
+        "sft_train_personal_agenda",
+        "train",
+        {
+            "none_supplied": (
+                "Please place one fresh calendar entry inside my personal agenda."
+            ),
+            "title_only": (
+                "Please place the coolant audit inside my personal agenda."
+            ),
+            "starts_in_minutes_only": (
+                "Please place one fresh calendar entry inside my personal agenda "
+                "after fourteen minutes."
+            ),
+            "complete": (
+                "Please place the coolant audit inside my personal agenda after "
+                "fourteen minutes."
+            ),
+        },
+    ),
+    (
+        "sft_train_project_diary",
+        "train",
+        {
+            "none_supplied": (
+                "Kindly reserve an appointment within my project diary."
+            ),
+            "title_only": (
+                "Kindly reserve an appointment for loading dock inspection within "
+                "my project diary."
+            ),
+            "starts_in_minutes_only": (
+                "Kindly reserve an appointment within my project diary after thirty "
+                "eight minutes."
+            ),
+            "complete": (
+                "Kindly reserve an appointment for loading dock inspection within "
+                "my project diary after thirty eight minutes."
+            ),
+        },
+    ),
+    (
+        "sft_train_operations_agenda",
+        "train",
+        {
+            "none_supplied": "Put one meeting slot onto the operations agenda.",
+            "title_only": (
+                "Put one meeting slot for vendor onboarding onto the operations "
+                "agenda."
+            ),
+            "starts_in_minutes_only": (
+                "Put one meeting slot onto the operations agenda after sixty two "
+                "minutes."
+            ),
+            "complete": (
+                "Put one meeting slot for vendor onboarding onto the operations "
+                "agenda after sixty two minutes."
+            ),
+        },
+    ),
+    (
+        "sft_train_shared_planning_book",
+        "train",
+        {
+            "none_supplied": (
+                "Enter one new calendar item in the shared planning book."
+            ),
+            "title_only": (
+                "Enter the packaging review in the shared planning book."
+            ),
+            "starts_in_minutes_only": (
+                "Enter one new calendar item in the shared planning book after "
+                "ninety minutes."
+            ),
+            "complete": (
+                "Enter the packaging review in the shared planning book after ninety "
+                "minutes."
+            ),
+        },
+    ),
+    (
+        "sft_train_research_schedule",
+        "train",
+        {
+            "none_supplied": (
+                "Please record one planning item in our research datebook."
+            ),
+            "title_only": (
+                "Please record sensor qualification in our research datebook."
+            ),
+            "starts_in_minutes_only": (
+                "Please record one planning item in our research datebook, "
+                "beginning twenty six minutes hence."
+            ),
+            "complete": (
+                "Please record sensor qualification in our research datebook, "
+                "beginning twenty six minutes hence."
+            ),
+        },
+    ),
+    (
+        "sft_train_dispatch_log",
+        "train",
+        {
+            "none_supplied": "Create a new diary item in the dispatch log.",
+            "title_only": (
+                "Create a driver briefing diary item in the dispatch log."
+            ),
+            "starts_in_minutes_only": (
+                "Create a new diary item in the dispatch log fifty nine minutes "
+                "hence."
+            ),
+            "complete": (
+                "Create a driver briefing diary item in the dispatch log fifty "
+                "nine minutes hence."
+            ),
+        },
+    ),
+    (
+        "sft_train_team_timetable",
+        "train",
+        {
+            "none_supplied": (
+                "Please arrange an item on the coordination timetable."
+            ),
+            "title_only": (
+                "Please arrange prototype review on the coordination timetable."
+            ),
+            "starts_in_minutes_only": (
+                "Please arrange an item on the coordination timetable, starting "
+                "seventy six minutes from now."
+            ),
+            "complete": (
+                "Please arrange prototype review on the coordination timetable, "
+                "starting seventy six minutes from now."
+            ),
+        },
+    ),
+    (
+        "sft_train_facility_organizer",
+        "train",
+        {
+            "none_supplied": "Record one event in the facility organizer.",
+            "title_only": (
+                "Record the generator handoff event in the facility organizer."
+            ),
+            "starts_in_minutes_only": (
+                "Record one event in the facility organizer after eighty three "
+                "minutes."
+            ),
+            "complete": (
+                "Record the generator handoff event in the facility organizer "
+                "after eighty three minutes."
+            ),
+        },
+    ),
+    (
+        "sft_validation_maintenance_diary",
+        "validation",
+        {
+            "none_supplied": (
+                "Could you place one scheduling item within our maintenance ledger?"
+            ),
+            "title_only": (
+                "Could you place compressor inspection within our maintenance "
+                "ledger?"
+            ),
+            "starts_in_minutes_only": (
+                "Could you place one scheduling item within our maintenance ledger, "
+                "with its start twenty three minutes ahead?"
+            ),
+            "complete": (
+                "Could you place compressor inspection within our maintenance "
+                "ledger, with its start twenty three minutes ahead?"
+            ),
+        },
+    ),
+    (
+        "sft_validation_production_agenda",
+        "validation",
+        {
+            "none_supplied": (
+                "Schedule something on our production board."
+            ),
+            "title_only": (
+                "Schedule valve review on our production board."
+            ),
+            "starts_in_minutes_only": (
+                "Schedule something on our production board, commencing forty "
+                "seven minutes hence."
+            ),
+            "complete": (
+                "Schedule valve review on our production board, commencing forty "
+                "seven minutes hence."
+            ),
+        },
+    ),
+)
+_CALENDAR_CREATE_DPO_ROUTE_LATTICE_SURFACES = (
+    (
+        "dpo_train_engineering_planner",
+        "train",
+        {
+            "none_supplied": "Reserve one diary slot in the engineering planner.",
+            "title_only": (
+                "Reserve one diary slot for gearbox calibration in the engineering "
+                "planner."
+            ),
+            "starts_in_minutes_only": (
+                "Reserve one diary slot in the engineering planner after seventeen "
+                "minutes."
+            ),
+            "complete": (
+                "Reserve one diary slot for gearbox calibration in the engineering "
+                "planner after seventeen minutes."
+            ),
+        },
+        {
+            "none_supplied": ("under_clarification", ("startsInMinutes",)),
+            "title_only": ("premature_action", ()),
+            "starts_in_minutes_only": (
+                "over_clarification",
+                ("title", "startsInMinutes"),
+            ),
+            "complete": ("spurious_clarification", ("title",)),
+        },
+    ),
+    (
+        "dpo_train_field_service_agenda",
+        "train",
+        {
+            "none_supplied": (
+                "Open an appointment inside the field service agenda."
+            ),
+            "title_only": (
+                "Open an appointment for hydraulic testing inside the field service "
+                "agenda."
+            ),
+            "starts_in_minutes_only": (
+                "Open an appointment inside the field service agenda after forty one "
+                "minutes."
+            ),
+            "complete": (
+                "Open an appointment for hydraulic testing inside the field service "
+                "agenda after forty one minutes."
+            ),
+        },
+        {
+            "none_supplied": ("under_clarification", ("title",)),
+            "title_only": (
+                "over_clarification",
+                ("title", "startsInMinutes"),
+            ),
+            "starts_in_minutes_only": ("premature_action", ()),
+            "complete": (
+                "spurious_clarification",
+                ("startsInMinutes",),
+            ),
+        },
+    ),
+    (
+        "dpo_train_workshop_calendar",
+        "train",
+        {
+            "none_supplied": "Insert one event into the workshop calendar.",
+            "title_only": (
+                "Insert the steel shipment review into the workshop calendar."
+            ),
+            "starts_in_minutes_only": (
+                "Insert one event into the workshop calendar after sixty eight "
+                "minutes."
+            ),
+            "complete": (
+                "Insert the steel shipment review into the workshop calendar after "
+                "sixty eight minutes."
+            ),
+        },
+        {
+            "none_supplied": ("premature_action", ()),
+            "title_only": ("wrong_missing_subset", ("title",)),
+            "starts_in_minutes_only": (
+                "wrong_missing_subset",
+                ("startsInMinutes",),
+            ),
+            "complete": ("selection_without_action", ()),
+        },
+    ),
+    (
+        "dpo_train_laboratory_datebook",
+        "train",
+        {
+            "none_supplied": (
+                "Arrange one meeting in the laboratory datebook."
+            ),
+            "title_only": (
+                "Arrange one meeting for lab certification in the laboratory "
+                "datebook."
+            ),
+            "starts_in_minutes_only": (
+                "Arrange one meeting in the laboratory datebook after ninety four "
+                "minutes."
+            ),
+            "complete": (
+                "Arrange one meeting for lab certification in the laboratory "
+                "datebook after ninety four minutes."
+            ),
+        },
+        {
+            "none_supplied": ("under_clarification", ("startsInMinutes",)),
+            "title_only": ("premature_action", ()),
+            "starts_in_minutes_only": ("premature_action", ()),
+            "complete": (
+                "spurious_clarification",
+                ("title", "startsInMinutes"),
+            ),
+        },
+    ),
+    (
+        "dpo_train_service_roster",
+        "train",
+        {
+            "none_supplied": "Place an appointment on the service roster.",
+            "title_only": (
+                "Place the pump maintenance appointment on the service roster."
+            ),
+            "starts_in_minutes_only": (
+                "Place an appointment on the service roster in thirty four minutes."
+            ),
+            "complete": (
+                "Place the pump maintenance appointment on the service roster in "
+                "thirty four minutes."
+            ),
+        },
+        {
+            "none_supplied": ("premature_action", ()),
+            "title_only": (
+                "over_clarification",
+                ("title", "startsInMinutes"),
+            ),
+            "starts_in_minutes_only": ("wrong_missing_subset", ("startsInMinutes",)),
+            "complete": ("selection_without_action", ()),
+        },
+    ),
+    (
+        "dpo_train_test_schedule",
+        "train",
+        {
+            "none_supplied": "Make one calendar booking in the test schedule.",
+            "title_only": (
+                "Make a vibration trial booking in the test schedule."
+            ),
+            "starts_in_minutes_only": (
+                "Make one calendar booking in the test schedule after forty six "
+                "minutes."
+            ),
+            "complete": (
+                "Make a vibration trial booking in the test schedule after forty "
+                "six minutes."
+            ),
+        },
+        {
+            "none_supplied": ("under_clarification", ("title",)),
+            "title_only": ("premature_action", ()),
+            "starts_in_minutes_only": (
+                "over_clarification",
+                ("title", "startsInMinutes"),
+            ),
+            "complete": ("spurious_clarification", ("title",)),
+        },
+    ),
+    (
+        "dpo_train_logistics_planner",
+        "train",
+        {
+            "none_supplied": "Write an event into the logistics planner.",
+            "title_only": (
+                "Write the freight readiness event into the logistics planner."
+            ),
+            "starts_in_minutes_only": (
+                "Write an event into the logistics planner sixty five minutes from "
+                "now."
+            ),
+            "complete": (
+                "Write the freight readiness event into the logistics planner "
+                "sixty five minutes from now."
+            ),
+        },
+        {
+            "none_supplied": (
+                "under_clarification",
+                ("startsInMinutes",),
+            ),
+            "title_only": ("wrong_missing_subset", ("title",)),
+            "starts_in_minutes_only": ("premature_action", ()),
+            "complete": (
+                "spurious_clarification",
+                ("title", "startsInMinutes"),
+            ),
+        },
+    ),
+    (
+        "dpo_train_studio_calendar",
+        "train",
+        {
+            "none_supplied": "Schedule one diary entry on the studio calendar.",
+            "title_only": (
+                "Schedule the lighting rehearsal on the studio calendar."
+            ),
+            "starts_in_minutes_only": (
+                "Schedule one diary entry on the studio calendar in eighty seven "
+                "minutes."
+            ),
+            "complete": (
+                "Schedule the lighting rehearsal on the studio calendar in eighty "
+                "seven minutes."
+            ),
+        },
+        {
+            "none_supplied": ("premature_action", ()),
+            "title_only": (
+                "over_clarification",
+                ("title", "startsInMinutes"),
+            ),
+            "starts_in_minutes_only": ("wrong_missing_subset", ("startsInMinutes",)),
+            "complete": ("selection_without_action", ()),
+        },
+    ),
+    (
+        "dpo_validation_facilities_planner",
+        "validation",
+        {
+            "none_supplied": "Log one appointment into the facilities planner.",
+            "title_only": (
+                "Log one appointment for air handler inspection into the facilities "
+                "planner."
+            ),
+            "starts_in_minutes_only": (
+                "Log one appointment into the facilities planner after twenty nine "
+                "minutes."
+            ),
+            "complete": (
+                "Log one appointment for air handler inspection into the facilities "
+                "planner after twenty nine minutes."
+            ),
+        },
+        {
+            "none_supplied": ("premature_action", ()),
+            "title_only": (
+                "over_clarification",
+                ("title", "startsInMinutes"),
+            ),
+            "starts_in_minutes_only": ("premature_action", ()),
+            "complete": ("spurious_clarification", ("title",)),
+        },
+    ),
+    (
+        "dpo_validation_quality_agenda",
+        "validation",
+        {
+            "none_supplied": (
+                "Block some time within our quality-control agenda."
+            ),
+            "title_only": (
+                "Block sanitation review within our quality-control agenda."
+            ),
+            "starts_in_minutes_only": (
+                "Block some time within our quality-control agenda, "
+                "fifty three minutes ahead."
+            ),
+            "complete": (
+                "Block sanitation review within our quality-control agenda, fifty "
+                "three minutes ahead."
+            ),
+        },
+        {
+            "none_supplied": ("under_clarification", ("startsInMinutes",)),
+            "title_only": ("premature_action", ()),
+            "starts_in_minutes_only": (
+                "wrong_missing_subset",
+                ("startsInMinutes",),
+            ),
+            "complete": (
+                "spurious_clarification",
+                ("startsInMinutes",),
+            ),
+        },
+    ),
+)
+
+
+def _calendar_create_lattice_tool(
+    tools_by_id: dict[str, ToolManifest],
+) -> ToolManifest | None:
+    tool = tools_by_id.get("calendar.create")
+    if tool is None:
+        return None
+    required_arguments = tuple(
+        argument.name for argument in tool.arguments if argument.required
+    )
+    if required_arguments != _CALENDAR_CREATE_ROUTE_LATTICE_REQUIRED_ARGUMENTS:
+        return None
+    return tool
+
+
+def _calendar_create_route_lattice_sft_records(
+    manifest: AgentBehaviorManifest,
+    tools_by_id: dict[str, ToolManifest],
+) -> list[dict[str, Any]]:
+    """Build a natural 2x2 title/time lattice without frozen eval wording."""
+
+    tool = _calendar_create_lattice_tool(tools_by_id)
+    if tool is None:
+        return []
+    records: list[dict[str, Any]] = []
+    for surface_group, required_split, prompts_by_state in (
+        _CALENDAR_CREATE_SFT_ROUTE_LATTICE_SURFACES
+    ):
+        for state, supplied_arguments, missing_arguments in (
+            _CALENDAR_CREATE_ROUTE_LATTICE_STATES
+        ):
+            if missing_arguments:
+                route = _canonical_cortex_clarification_route(
+                    manifest,
+                    tool,
+                    list(missing_arguments),
+                )
+                curriculum_mode = "calendar_required_argument_lattice_clarification"
+                risk = "boundary"
+            else:
+                route = _canonical_cortex_action_route(manifest, tool)
+                curriculum_mode = "calendar_required_argument_lattice_actionable"
+                risk = _risk_for_tool(tool)
+            records.append(
+                _adapter_sft_record(
+                    "cortex",
+                    prompts_by_state[state],
+                    route,
+                    "cortex_calendar_required_argument_lattice",
+                    [tool.id],
+                    risk,
+                    {
+                        "curriculumMode": curriculum_mode,
+                        "missingArguments": list(missing_arguments),
+                        "requiredSplit": required_split,
+                        "routeLattice": _CALENDAR_CREATE_ROUTE_LATTICE,
+                        "routeLatticeState": state,
+                        "routeLatticeSurfaceGroup": surface_group,
+                        "semanticBoundary": (
+                            "generic_calendar_object_is_not_title"
+                            if state in {"none_supplied", "starts_in_minutes_only"}
+                            else "distinct_calendar_topic_supplies_title"
+                        ),
+                        "suppliedArguments": list(supplied_arguments),
+                        "targetedFailureFamily": (
+                            "calendar_required_argument_lattice_replay"
+                        ),
+                    },
+                    manifest,
+                )
+            )
+    return records
+
+
+def _calendar_create_route_lattice_dpo_pairs(
+    manifest: AgentBehaviorManifest,
+    tools_by_id: dict[str, ToolManifest],
+) -> list[dict[str, Any]]:
+    """Prefer every exact calendar slot state over its adjacent route error."""
+
+    tool = _calendar_create_lattice_tool(tools_by_id)
+    if tool is None:
+        return []
+    action_route = _canonical_cortex_action_route(manifest, tool)
+    selection_route = _canonical_cortex_selection_route(manifest, tool)
+    state_specs = {
+        state: (list(supplied_arguments), list(missing_arguments))
+        for state, supplied_arguments, missing_arguments in (
+            _CALENDAR_CREATE_ROUTE_LATTICE_STATES
+        )
+    }
+    pairs: list[dict[str, Any]] = []
+    for (
+        surface_group,
+        required_split,
+        prompts_by_state,
+        rejected_by_state,
+    ) in _CALENDAR_CREATE_DPO_ROUTE_LATTICE_SURFACES:
+        for state, (supplied_arguments, missing_arguments) in state_specs.items():
+            chosen = (
+                _canonical_cortex_clarification_route(
+                    manifest,
+                    tool,
+                    missing_arguments,
+                )
+                if missing_arguments
+                else action_route
+            )
+            rejected_route_state, rejected_missing = rejected_by_state[state]
+            if rejected_route_state == "premature_action":
+                rejected = action_route
+            elif rejected_route_state == "selection_without_action":
+                rejected = selection_route
+            else:
+                rejected = _canonical_cortex_clarification_route(
+                    manifest,
+                    tool,
+                    list(rejected_missing),
+                )
+            pair = _dpo(
+                "cortex",
+                prompts_by_state[state],
+                json.dumps(chosen, ensure_ascii=False, sort_keys=True),
+                json.dumps(rejected, ensure_ascii=False, sort_keys=True),
+                "calendar_required_argument_lattice",
+                (
+                    f"chosen preserves calendar lattice state {state}; rejected "
+                    f"reproduces {rejected_route_state}"
+                ),
+                required_split=required_split,
+            )
+            pair["metadata"].update(
+                {
+                    "missingArguments": missing_arguments,
+                    "rejectedMissingArguments": list(rejected_missing),
+                    "rejectedRouteState": rejected_route_state,
+                    "routeLattice": _CALENDAR_CREATE_ROUTE_LATTICE,
+                    "routeLatticeState": state,
+                    "routeLatticeSurfaceGroup": surface_group,
+                    "semanticBoundary": (
+                        "generic_calendar_object_is_not_title"
+                        if state in {"none_supplied", "starts_in_minutes_only"}
+                        else "distinct_calendar_topic_supplies_title"
+                    ),
+                    "suppliedArguments": supplied_arguments,
+                    "targetedFailureFamily": (
+                        "calendar_required_argument_lattice_replay"
+                    ),
+                }
+            )
+            pairs.append(pair)
+
+    current_error_chosen = _canonical_cortex_clarification_route(
+        manifest,
+        tool,
+        list(_CALENDAR_CREATE_ROUTE_LATTICE_REQUIRED_ARGUMENTS),
+    )
+    current_error_rejected = _canonical_cortex_clarification_route(
+        manifest,
+        tool,
+        ["startsInMinutes"],
+    )
+    current_error = _dpo(
+        "cortex",
+        "Begin one calendar appointment inside my agenda.",
+        json.dumps(current_error_chosen, ensure_ascii=False, sort_keys=True),
+        json.dumps(current_error_rejected, ensure_ascii=False, sort_keys=True),
+        "calendar_required_argument_lattice_current_error",
+        (
+            "chosen keeps the generic calendar object and absent delay missing; "
+            "rejected incorrectly promotes the operation object into title"
+        ),
+        required_split="train",
+    )
+    current_error["metadata"].update(
+        {
+            "missingArguments": list(
+                _CALENDAR_CREATE_ROUTE_LATTICE_REQUIRED_ARGUMENTS
+            ),
+            "rejectedMissingArguments": ["startsInMinutes"],
+            "rejectedRouteState": "current_error_generic_object_as_title",
+            "routeLattice": _CALENDAR_CREATE_ROUTE_LATTICE,
+            "routeLatticeExtraCase": "current_error_generic_object_as_title",
+            "routeLatticeState": "none_supplied",
+            "routeLatticeSurfaceGroup": "dpo_train_current_error_replay",
+            "semanticBoundary": "generic_calendar_object_is_not_title",
+            "suppliedArguments": [],
+            "targetedFailureFamily": (
+                "calendar_required_argument_lattice_replay"
+            ),
+        }
+    )
+    pairs.append(current_error)
+    return pairs
+
+
+_SELECTION_ONLY_REPLAY = "selection_only_replay_v1"
+_SELECTION_ONLY_REPLAY_SFT_SURFACES = (
+    (
+        "sft_train_health_route",
+        "train",
+        "health.summary",
+        (
+            "Resolve the manifest route for a health overview while keeping its "
+            "operation pending."
+        ),
+    ),
+    (
+        "sft_train_weather_route",
+        "train",
+        "weather",
+        (
+            "Weather routing only: select one permitted manifest tool, then leave "
+            "execution untouched."
+        ),
+    ),
+    (
+        "sft_train_files_route",
+        "train",
+        "files.read",
+        (
+            "Identify one allowed file-reading tool only; leave data access "
+            "untouched."
+        ),
+    ),
+    (
+        "sft_train_memory_route",
+        "train",
+        "memory.recall",
+        (
+            "Name one permitted memory-retrieval route only and do not start "
+            "recalling anything."
+        ),
+    ),
+    (
+        "sft_validation_photos_route",
+        "validation",
+        "photos.search",
+        (
+            "Choose one catalog-approved photo-search tool strictly as routing; do "
+            "not run it."
+        ),
+    ),
+    (
+        "sft_validation_rag_route",
+        "validation",
+        "rag.search",
+        (
+            "Routing decision only: name one permitted indexed-knowledge lookup and "
+            "halt prior to execution."
+        ),
+    ),
+)
+_SELECTION_ONLY_REPLAY_DPO_SURFACES = (
+    (
+        "dpo_train_health_route",
+        "train",
+        "health.summary",
+        (
+            "Identify the capability that owns a wellness-overview request; defer "
+            "all tool activity."
+        ),
+    ),
+    (
+        "dpo_train_weather_route",
+        "train",
+        "weather",
+        (
+            "Pick a single catalog-valid weather route only, without starting the "
+            "request."
+        ),
+    ),
+    (
+        "dpo_train_files_route",
+        "train",
+        "files.read",
+        (
+            "For reading a file, identify one allowed tool only and stop before "
+            "opening data."
+        ),
+    ),
+    (
+        "dpo_train_memory_route",
+        "train",
+        "memory.recall",
+        (
+            "Route a memory lookup by choosing one manifest-approved tool; do not "
+            "retrieve anything yet."
+        ),
+    ),
+    (
+        "dpo_validation_maps_route",
+        "validation",
+        "maps.search",
+        (
+            "Select one permitted maps-search route only and leave the lookup "
+            "unstarted."
+        ),
+    ),
+    (
+        "dpo_validation_rag_route",
+        "validation",
+        "rag.search",
+        (
+            "Choose one allowed indexed-search tool only; this turn is routing, "
+            "not execution."
+        ),
+    ),
+)
+
+
+def _selection_only_replay_sft_records(
+    manifest: AgentBehaviorManifest,
+    tools_by_id: dict[str, ToolManifest],
+) -> list[dict[str, Any]]:
+    """Rehearse an explicit selection boundary without beginning tool work."""
+
+    records: list[dict[str, Any]] = []
+    for surface_group, required_split, tool_id, prompt in (
+        _SELECTION_ONLY_REPLAY_SFT_SURFACES
+    ):
+        tool = tools_by_id.get(tool_id)
+        if tool is None:
+            continue
+        records.append(
+            _adapter_sft_record(
+                "cortex",
+                prompt,
+                _canonical_cortex_selection_route(manifest, tool),
+                "cortex_selection_only_replay",
+                [tool.id],
+                _risk_for_tool(tool),
+                {
+                    "curriculumMode": "selection_only_replay",
+                    "requiredSplit": required_split,
+                    "routeState": "selection_only",
+                    "selectionOnlyReplay": _SELECTION_ONLY_REPLAY,
+                    "selectionOnlyReplaySurfaceGroup": surface_group,
+                    "targetedFailureFamily": "selection_only_route_state_replay",
+                },
+                manifest,
+            )
+        )
+    return records
+
+
+def _selection_only_replay_dpo_pairs(
+    manifest: AgentBehaviorManifest,
+    tools_by_id: dict[str, ToolManifest],
+) -> list[dict[str, Any]]:
+    """Prefer a five-field selection over premature action for explicit routing."""
+
+    pairs: list[dict[str, Any]] = []
+    for surface_group, required_split, tool_id, prompt in (
+        _SELECTION_ONLY_REPLAY_DPO_SURFACES
+    ):
+        tool = tools_by_id.get(tool_id)
+        if tool is None:
+            continue
+        chosen = _canonical_cortex_selection_route(manifest, tool)
+        rejected = _canonical_cortex_action_route(manifest, tool)
+        pair = _dpo(
+            "cortex",
+            prompt,
+            json.dumps(chosen, ensure_ascii=False, sort_keys=True),
+            json.dumps(rejected, ensure_ascii=False, sort_keys=True),
+            "selection_only_replay_action_negative",
+            (
+                "chosen stops after a manifest-valid selection; rejected begins "
+                "the action despite the explicit routing-only boundary"
+            ),
+            required_split=required_split,
+        )
+        pair["metadata"].update(
+            {
+                "rejectedRouteState": "premature_action",
+                "routeState": "selection_only",
+                "selectionOnlyReplay": _SELECTION_ONLY_REPLAY,
+                "selectionOnlyReplaySurfaceGroup": surface_group,
+                "targetedFailureFamily": "selection_only_route_state_replay",
             }
         )
         pairs.append(pair)
@@ -6612,6 +7512,8 @@ def _cortex_route_state_curriculum_sft_records(
                     )
 
     records.extend(_cortex_failure_repair_sft_records(manifest, tools_by_id))
+    records.extend(_calendar_create_route_lattice_sft_records(manifest, tools_by_id))
+    records.extend(_selection_only_replay_sft_records(manifest, tools_by_id))
 
     targeted_selection_specs = (
         (
@@ -7252,6 +8154,8 @@ def _balanced_cortex_route_dpo_pairs(
                 )
 
     pairs.extend(_cortex_failure_repair_dpo_pairs(manifest, tools_by_id))
+    pairs.extend(_calendar_create_route_lattice_dpo_pairs(manifest, tools_by_id))
+    pairs.extend(_selection_only_replay_dpo_pairs(manifest, tools_by_id))
 
     semantic_sibling_contrasts = (
         (
