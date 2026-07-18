@@ -1,13 +1,21 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 1139,
-  "candidateSFTRecords": 12862,
+  "availableSFTRecords": 1200,
+  "candidateSFTRecords": 13990,
   "constraints": {
     "agentSpecific": true,
+    "fleetLossShareContract": null,
+    "fleetSourceRoleRegistry": null,
     "manifestOnlyTools": true,
     "maxCortexPublicSFTRecordsPerTool": 8,
     "maxCortexSupplementalAssistantCharShare": 0.15,
-    "maxPublicCorpusSFTTokenShare": 0.35,
+    "maxFleetSupplementalAssistantCharShare": null,
+    "maxFleetSupplementalAssistantTokenProxySelectionShare": null,
+    "maxFleetSupplementalAssistantTokenShare": null,
+    "maxFleetSupplementalDPOChosenCharShare": null,
+    "maxFleetSupplementalDPOChosenTokenProxySelectionShare": null,
+    "maxFleetSupplementalDPOChosenTokenShare": null,
+    "maxPublicCorpusSFTTokenProxyShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
@@ -17,18 +25,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "ff72f6c917d2d9e19e986471c750de30c67c69d826a3df4ef295069c64751aa1"
+      "reportSHA256": "4aad08c12a90c24428aaf703ff462f8cf7f0260d37ab5d6af484e5ed535c2fee"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "c78f7d7e1519961e8c4ecd5f462f6b1d4dd7f95bbcdd5815ae424383aa2f45be",
-    "recordCount": 504,
-    "schemaVersion": "lumen.adapter-eval/1.0.0"
+    "frozenEvaluationSHA256": "f796bba8a82e3165050acfb30c89a393a670b8fc6b3643fcefba42e6cd60177c",
+    "recordCount": 507,
+    "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "502de3a2728dbf9aa89d38634935b7bba14dba3a5511968b6fbc33c324a3646d",
-      "optimizedTrainingCorpusSHA256": "9d0b120d3fe58b4b3c33fce798562a9d3f16c28bcbabe29b37d7ed5b97aadf03",
+      "baselineTrainingCorpusSHA256": "71771c5190a6e294ad10562e55775aad342f1666b3d9a7e2226a4462263e6b12",
+      "optimizedTrainingCorpusSHA256": "0e2e864e8481ce73ea5d9ebda195d37efe0a8824fbfbcbea35042af5d0eade0f",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 31,
@@ -55,7 +63,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "edbe41aab5b85504525f1f898b8a1f94cb63f48b072eaa63c924a3d874a24827",
+    "experimentManifestSHA256": "8d1d3b9903d571cfe6234ed98d25d6b6eacb6d9ed1fbb8516d507f6b2f67526f",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -85,7 +93,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "640c64d27814c887c772118463e6f19605edc86a",
+  "manifestCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 822,
@@ -125,8 +133,8 @@
       "Apache-2.0",
       "CC-BY-4.0"
     ],
-    "maxDPOTokenShare": 0.35,
-    "maxSFTTokenShare": 0.35,
+    "maxDPOTokenProxyShare": 0.35,
+    "maxSFTTokenProxyShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
       "train_sft": 27,
@@ -140,11 +148,19 @@
       "val_sft": 0
     },
     "selectionContract": {
-      "maxTokenShare": 0.35,
+      "maxTokenProxyShare": 0.35,
       "policyVersions": [
         "2026-07-12.3"
       ],
-      "sha256": "96274a1447057e40d32f59cf3fed6daec721b2ee33b97daaf52eb83771d3591d",
+      "sha256": "601495d0961ed2518f7832b192f78c7fee35210f969609b709b899c6d37edd46",
+      "sourceTokenProxyContract": {
+        "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "exactPinnedTokenizerAuthoritative": true,
+        "maxCharsPerToken": 4,
+        "schemaVersion": "lumen.source-token-proxy/1.0.0",
+        "status": "source_side_selection_proxy_not_exact_token_count",
+        "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+      },
       "strategy": "group_atomic_quality_ranked_source_stratified_v2"
     },
     "selectionScoreSummary": {
@@ -256,49 +272,68 @@
         "val_sft": 0
       }
     },
-    "tokenShares": {
+    "tokenProxyShares": {
       "train_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.010177,
-        "total": 0.025766
+        "target": 0.016558,
+        "total": 0.02558
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.018843,
-        "total": 0.070451
+        "target": 0.033919,
+        "total": 0.069454
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 396853,
-    "cortexCodebaseChunkRecordCount": 6,
-    "cortexCodebaseFileRecordCount": 19,
-    "cortexCodebaseSelfAwarenessCandidateRecordCount": 6598,
+    "assistantTargetCharCount": 396741,
+    "assistantTargetTokenProxyCount": 99614,
+    "cortexCodebaseChunkRecordCount": 16,
+    "cortexCodebaseFileRecordCount": 49,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 7177,
     "cortexCodebaseSelfAwarenessCoverage": "deterministic_supplemental_sample_of_git_tracked_text_files",
-    "cortexCodebaseSelfAwarenessRecordCount": 27,
+    "cortexCodebaseSelfAwarenessRecordCount": 67,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "cortexPublicBalanceDroppedRecordCount": 47,
+    "fleetDPOChosenTargetCharCount": 0,
+    "fleetDPOChosenTargetTokenProxyCount": 0,
+    "fleetSourceRoleDPORecordCounts": {},
+    "fleetSourceRoleSFTRecordCounts": {},
+    "fleetSupplementalDPOChosenTargetCharCount": 0,
+    "fleetSupplementalDPOChosenTargetCharShare": 0.0,
+    "fleetSupplementalDPOChosenTargetTokenProxyCount": 0,
+    "fleetSupplementalDPOChosenTargetTokenProxyShare": 0.0,
     "sequenceBudgetDroppedRecordCount": 0,
-    "supplementalAssistantTargetCharCount": 59523,
-    "supplementalAssistantTargetCharShare": 0.1499875268676311,
-    "supplementalBalanceDroppedRecordCount": 11471,
-    "supplementalSFTRecordCount": 45,
+    "sourceTokenProxyContract": {
+      "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+      "exactPinnedTokenizerAuthoritative": true,
+      "maxCharsPerToken": 4,
+      "schemaVersion": "lumen.source-token-proxy/1.0.0",
+      "status": "source_side_selection_proxy_not_exact_token_count",
+      "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+    },
+    "supplementalAssistantTargetCharCount": 59411,
+    "supplementalAssistantTargetCharShare": 0.14974756831282876,
+    "supplementalAssistantTargetTokenProxyCount": 14891,
+    "supplementalAssistantTargetTokenProxyShare": 0.14948701989680166,
+    "supplementalBalanceDroppedRecordCount": 12537,
+    "supplementalSFTRecordCount": 106,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 901,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
-    "eval": 504,
+    "eval": 507,
     "train_dpo": 764,
-    "train_sft": 1076,
+    "train_sft": 1127,
     "val_dpo": 58,
-    "val_sft": 63
+    "val_sft": 73
   },
   "sourceDirty": false,
   "sourceFamilies": [
@@ -313,25 +348,25 @@
   ],
   "sourceFamilyCounts": {
     "adapter_ultra_specific": 901,
-    "codebase_home_chunk_sft": 7,
-    "codebase_home_sft": 7,
-    "cortex_codebase_self_awareness": 27,
+    "codebase_home_chunk_sft": 17,
+    "codebase_home_sft": 18,
+    "cortex_codebase_self_awareness": 67,
     "cortex_routing": 162,
     "manifest_grounding_cards": 4,
     "public_adapter_corpus_massive_en_us_1_1": 24,
     "public_adapter_corpus_toolace_train": 7
   },
   "sourceIntegrity": {
-    "baseCommit": "640c64d27814c887c772118463e6f19605edc86a",
+    "baseCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
     "dirtyState": false,
-    "workingTreeDigest": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
+    "workingTreeDigest": "f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0"
   },
   "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
   "taskTypeCounts": {
-    "codebase_home_grounding": 6,
+    "codebase_home_grounding": 17,
     "codebase_home_overview": 1,
-    "codebase_self_awareness": 6,
-    "codebase_source_chunk_grounding": 7,
+    "codebase_self_awareness": 16,
+    "codebase_source_chunk_grounding": 17,
     "cortex_calendar_required_argument_lattice": 40,
     "cortex_contrast_route_selection": 20,
     "cortex_invalid_tool_rejection": 1,
@@ -346,12 +381,12 @@
     "cortex_route_strict_retry_repair": 42,
     "cortex_selection_only_replay": 6,
     "manifest_grounding_cards": 4,
-    "module_ownership_grounding": 8,
+    "module_ownership_grounding": 17,
     "public_intent_routing": 24,
     "public_verified_tool_routing": 7,
-    "source_symbol_grounding": 6,
+    "source_symbol_grounding": 17,
     "total_codebase_self_awareness": 1,
-    "total_codebase_source_chunk": 6,
+    "total_codebase_source_chunk": 16,
     "ultra_specific_files_read_clarification": 1,
     "ultra_specific_intent_routing": 20,
     "ultra_specific_missing_required_argument_clarification": 37,
@@ -387,5 +422,5 @@
     "ultra_specific_missing_required_argument_clarification",
     "ultra_specific_regression_routing"
   ],
-  "worktreeFingerprint": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
+  "worktreeFingerprint": "f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0"
 }

@@ -1,13 +1,21 @@
 {
   "agent": "mouth",
-  "availableSFTRecords": 155,
-  "candidateSFTRecords": 707,
+  "availableSFTRecords": 161,
+  "candidateSFTRecords": 709,
   "constraints": {
     "agentSpecific": true,
+    "fleetLossShareContract": null,
+    "fleetSourceRoleRegistry": null,
     "manifestOnlyTools": true,
     "maxCortexPublicSFTRecordsPerTool": null,
     "maxCortexSupplementalAssistantCharShare": null,
-    "maxPublicCorpusSFTTokenShare": 0.35,
+    "maxFleetSupplementalAssistantCharShare": null,
+    "maxFleetSupplementalAssistantTokenProxySelectionShare": null,
+    "maxFleetSupplementalAssistantTokenShare": null,
+    "maxFleetSupplementalDPOChosenCharShare": null,
+    "maxFleetSupplementalDPOChosenTokenProxySelectionShare": null,
+    "maxFleetSupplementalDPOChosenTokenShare": null,
+    "maxPublicCorpusSFTTokenProxyShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
@@ -17,21 +25,21 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "10ca4a3a67e4ba5dc0aa736f911eb9ca64102aa98404865a9094a979b43d9b2e"
+      "reportSHA256": "5b6e1a958cdd86c6f3f425772b06b7cad2df06d40268c002a976abef04089d81"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
-    "recordCount": 8,
-    "schemaVersion": "lumen.adapter-eval/1.0.0"
+    "frozenEvaluationSHA256": "14eab1e73ff04997e36e5b9b113283dce4d2ef8e9d4dc70a8ec7aabe71099b8d",
+    "recordCount": 7,
+    "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "0aefa17c6109b98e61af8eeea725c31567a6606dfce7738baedf0a9dbe009296",
-      "optimizedTrainingCorpusSHA256": "456e7f728a843f10594ee4bc01a4202392737c853ace53ae2d34e624f00cd1c3",
+      "baselineTrainingCorpusSHA256": "a5b01db0d7a55ea70c67b9b257e80b8505d0c1a12746487cd4ed2457b7234767",
+      "optimizedTrainingCorpusSHA256": "55935e734dc010e3ee99e95151b70d0ce9f28d7aef69920994a4aa5b94cf2924",
       "promotionEligible": true,
       "promotionProhibited": false,
-      "publicRecordCount": 1051,
+      "publicRecordCount": 1047,
       "reason": "distinct_public_selection_corpora",
       "status": "eligible"
     },
@@ -55,7 +63,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "d61d0dba1c6af52ec8f8544ccbe8599f0d50a5a112709c57f39bb5e298f070f6",
+    "experimentManifestSHA256": "b4347f2e435f1100e36272e775bb29802a5fe170d853d6f8600623da6c2b4385",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -85,22 +93,22 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "640c64d27814c887c772118463e6f19605edc86a",
+  "manifestCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
   "preferenceTraining": {
     "includedInCheckpoint": false,
-    "recordCount": 19,
+    "recordCount": 29,
     "requiredPhase": "post_sft_preference_training",
     "status": "generated_not_trained"
   },
   "publicCorpus": {
     "availableRecordCounts": {
-      "train_dpo": 425,
-      "train_sft": 468,
+      "train_dpo": 423,
+      "train_sft": 466,
       "val_dpo": 75,
       "val_sft": 83
     },
     "availableSourceCounts": {
-      "McGill-NLP/FaithDial": 1000,
+      "McGill-NLP/FaithDial": 996,
       "OpenAssistant/oasst2": 50,
       "Team-ACE/ToolACE": 1
     },
@@ -134,39 +142,47 @@
       "Apache-2.0",
       "MIT"
     ],
-    "maxDPOTokenShare": 0.35,
-    "maxSFTTokenShare": 0.35,
+    "maxDPOTokenProxyShare": 0.35,
+    "maxSFTTokenProxyShare": 0.35,
     "recordCounts": {
-      "train_dpo": 3,
-      "train_sft": 21,
-      "val_dpo": 0,
+      "train_dpo": 4,
+      "train_sft": 23,
+      "val_dpo": 1,
       "val_sft": 4
     },
     "rejectedByTokenCap": {
-      "train_dpo": 422,
-      "train_sft": 447,
-      "val_dpo": 75,
+      "train_dpo": 419,
+      "train_sft": 443,
+      "val_dpo": 74,
       "val_sft": 79
     },
     "selectionContract": {
-      "maxTokenShare": 0.35,
+      "maxTokenProxyShare": 0.35,
       "policyVersions": [
         "2026-07-12.3"
       ],
-      "sha256": "96274a1447057e40d32f59cf3fed6daec721b2ee33b97daaf52eb83771d3591d",
+      "sha256": "601495d0961ed2518f7832b192f78c7fee35210f969609b709b899c6d37edd46",
+      "sourceTokenProxyContract": {
+        "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "exactPinnedTokenizerAuthoritative": true,
+        "maxCharsPerToken": 4,
+        "schemaVersion": "lumen.source-token-proxy/1.0.0",
+        "status": "source_side_selection_proxy_not_exact_token_count",
+        "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+      },
       "strategy": "group_atomic_quality_ranked_source_stratified_v2"
     },
     "selectionScoreSummary": {
       "available": {
-        "count": 1051,
+        "count": 1047,
         "maximum": 0.897506,
-        "mean": 0.892786,
+        "mean": 0.892768,
         "minimum": 0.806221
       },
       "selected": {
-        "count": 28,
+        "count": 32,
         "maximum": 0.897506,
-        "mean": 0.860064,
+        "mean": 0.859392,
         "minimum": 0.808721
       }
     },
@@ -248,20 +264,20 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "McGill-NLP/FaithDial": 16,
-      "OpenAssistant/oasst2": 11,
+      "McGill-NLP/FaithDial": 18,
+      "OpenAssistant/oasst2": 13,
       "Team-ACE/ToolACE": 1
     },
     "sourceSplitCounts": {
       "McGill-NLP/FaithDial": {
-        "train_dpo": 3,
+        "train_dpo": 4,
         "train_sft": 11,
-        "val_dpo": 0,
+        "val_dpo": 1,
         "val_sft": 2
       },
       "OpenAssistant/oasst2": {
         "train_dpo": 0,
-        "train_sft": 9,
+        "train_sft": 11,
         "val_dpo": 0,
         "val_sft": 2
       },
@@ -272,27 +288,28 @@
         "val_sft": 0
       }
     },
-    "tokenShares": {
+    "tokenProxyShares": {
       "train_dpo": {
-        "target": 0.348371,
-        "total": 0.291086
+        "target": 0.341801,
+        "total": 0.257014
       },
       "train_sft": {
-        "target": 0.348536,
-        "total": 0.349497
+        "target": 0.349398,
+        "total": 0.320841
       },
       "val_dpo": {
-        "target": 0.0,
-        "total": 0.0
+        "target": 0.348993,
+        "total": 0.330757
       },
       "val_sft": {
-        "target": 0.237057,
-        "total": 0.33871
+        "target": 0.264113,
+        "total": 0.331635
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 12503,
+    "assistantTargetCharCount": 12966,
+    "assistantTargetTokenProxyCount": 3318,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -300,20 +317,38 @@
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
     "cortexPublicBalanceDroppedRecordCount": 0,
+    "fleetDPOChosenTargetCharCount": 0,
+    "fleetDPOChosenTargetTokenProxyCount": 0,
+    "fleetSourceRoleDPORecordCounts": {},
+    "fleetSourceRoleSFTRecordCounts": {},
+    "fleetSupplementalDPOChosenTargetCharCount": 0,
+    "fleetSupplementalDPOChosenTargetCharShare": 0.0,
+    "fleetSupplementalDPOChosenTargetTokenProxyCount": 0,
+    "fleetSupplementalDPOChosenTargetTokenProxyShare": 0.0,
     "sequenceBudgetDroppedRecordCount": 0,
+    "sourceTokenProxyContract": {
+      "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+      "exactPinnedTokenizerAuthoritative": true,
+      "maxCharsPerToken": 4,
+      "schemaVersion": "lumen.source-token-proxy/1.0.0",
+      "status": "source_side_selection_proxy_not_exact_token_count",
+      "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+    },
     "supplementalAssistantTargetCharCount": 0,
     "supplementalAssistantTargetCharShare": 0.0,
+    "supplementalAssistantTargetTokenProxyCount": 0,
+    "supplementalAssistantTargetTokenProxyShare": 0.0,
     "supplementalBalanceDroppedRecordCount": 0,
     "supplementalSFTRecordCount": 0,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
-    "ultraSpecificRecordCount": 104,
+    "ultraSpecificRecordCount": 108,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
-    "eval": 8,
-    "train_dpo": 17,
-    "train_sft": 131,
-    "val_dpo": 2,
+    "eval": 7,
+    "train_dpo": 25,
+    "train_sft": 137,
+    "val_dpo": 4,
     "val_sft": 24
   },
   "sourceDirty": false,
@@ -325,22 +360,26 @@
     "public_adapter_corpus_toolace_train"
   ],
   "sourceFamilyCounts": {
-    "adapter_ultra_specific": 104,
+    "adapter_ultra_specific": 108,
     "mouth_responses": 26,
     "public_adapter_corpus_faithdial_train": 13,
-    "public_adapter_corpus_oasst2_train": 11,
+    "public_adapter_corpus_oasst2_train": 13,
     "public_adapter_corpus_toolace_train": 1
   },
   "sourceIntegrity": {
-    "baseCommit": "640c64d27814c887c772118463e6f19605edc86a",
+    "baseCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
     "dirtyState": false,
-    "workingTreeDigest": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
+    "workingTreeDigest": "f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0"
   },
-  "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
+  "systemPrompt": "You are Mouth, Lumen's user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
   "taskTypeCounts": {
-    "public_grounded_response_finalization": 11,
+    "public_grounded_response_finalization": 13,
     "public_grounded_response_preference": 13,
     "public_observation_grounded_final": 1,
+    "ultra_specific_adversarial_attachment_repair": 1,
+    "ultra_specific_adversarial_failure_repair": 1,
+    "ultra_specific_adversarial_observation_repair": 1,
+    "ultra_specific_adversarial_truncation_repair": 1,
     "ultra_specific_approval_request_response": 26,
     "ultra_specific_empty_after_sanitization_recovery": 1,
     "ultra_specific_permission_failure_response": 23,
@@ -352,6 +391,10 @@
     "public_grounded_response_finalization",
     "public_grounded_response_preference",
     "public_observation_grounded_final",
+    "ultra_specific_adversarial_attachment_repair",
+    "ultra_specific_adversarial_failure_repair",
+    "ultra_specific_adversarial_observation_repair",
+    "ultra_specific_adversarial_truncation_repair",
     "ultra_specific_approval_request_response",
     "ultra_specific_empty_after_sanitization_recovery",
     "ultra_specific_permission_failure_response",
@@ -359,5 +402,5 @@
     "ultra_specific_reference_resolution_failure",
     "user_response_generation"
   ],
-  "worktreeFingerprint": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
+  "worktreeFingerprint": "f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0"
 }

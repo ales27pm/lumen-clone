@@ -1,8 +1,8 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Base commit: `640c64d27814c887c772118463e6f19605edc86a`
-- Working-tree digest: `f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb`
+- Base commit: `76dcf63d3a799783f2c323d977c0c0c14c978fbd`
+- Working-tree digest: `f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0`
 - Dirty source state: `False`
 - Source files: 13
 - Source map:
@@ -784,9 +784,9 @@
 ## Memory Scopes
 - Scopes: backgroundOnly, conversation, currentTurn, person, preferenceOnly, project, referenceOnly, remCondensed, sourceOfTruth, task, toolObservation, userPreference
 - `durable`: durable; source: `ios/Lumen/Models/MemoryItem.swift`
-- `shortLived`: ttlSeconds=3600; source: `ios/Lumen/Models/MemoryItem.swift`
+- `shortLived`: ttlSeconds=21600; source: `ios/Lumen/Services/MemoryStore.swift`
 - `timeless`: durable; source: `ios/Lumen/Models/MemoryItem.swift`
-- `volatile`: ttlSeconds=300; source: `ios/Lumen/Models/MemoryItem.swift`
+- `volatile`: ttlSeconds=2700; source: `ios/Lumen/Services/MemoryStore.swift`
 
 ## Permissions
 - `alarm.authorization_status`: permission=NSAlarmKitUsageDescription, requiresApproval=False

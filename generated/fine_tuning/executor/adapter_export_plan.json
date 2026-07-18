@@ -33,27 +33,27 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "d0d8537e29ca895603f8a2fec3858322438d7f22c28a5d7c603dbfa1e7bf8d91"
+        "reportSHA256": "9ec57e7b619bd1a44b6bdc7144993cfb56b40b74cabb34d17b137398a4f84e24"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "a9ddee04f6ea1215072f0ec81ad99cfd677de3b32349ab5e6e32dd29cea93cd2",
-      "recordCount": 61,
-      "schemaVersion": "lumen.adapter-eval/1.0.0"
+      "frozenEvaluationSHA256": "233e07ec6cbcc83b55f31539d89bcd3ae62378d0938073ff932a0d6f6c7b2c15",
+      "recordCount": 63,
+      "schemaVersion": "lumen.adapter-eval/1.1.0"
     },
-    "manifestCommit": "640c64d27814c887c772118463e6f19605edc86a",
+    "manifestCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
     "preferenceTraining": {
       "includedInCheckpoint": false,
-      "recordCount": 6,
+      "recordCount": 36,
       "requiredPhase": "post_sft_preference_training",
       "status": "generated_not_trained"
     },
     "recordCounts": {
-      "eval": 61,
-      "train_dpo": 5,
-      "train_sft": 433,
-      "val_dpo": 1,
-      "val_sft": 70
+      "eval": 63,
+      "train_dpo": 33,
+      "train_sft": 365,
+      "val_dpo": 3,
+      "val_sft": 35
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -65,13 +65,12 @@
       "tool_schema_cards"
     ],
     "sourceIntegrity": {
-      "baseCommit": "640c64d27814c887c772118463e6f19605edc86a",
+      "baseCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
       "dirtyState": false,
-      "workingTreeDigest": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
+      "workingTreeDigest": "f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0"
     },
     "taskTypes": [
       "approval_granted",
-      "approval_rejected",
       "approval_required_tool",
       "permission_unavailable",
       "public_manifest_tool_argument_extraction",
@@ -79,8 +78,7 @@
       "tool_call_generation",
       "tool_id_repair",
       "tool_schema_cards",
-      "ultra_specific_missing_argument_boundary",
-      "ultra_specific_permission_boundary",
+      "ultra_specific_post_observation_final",
       "ultra_specific_tool_call_generation"
     ]
   },
@@ -123,7 +121,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "0db5ce03ab9963b5e0e5717d1b987ebeb4467bfd48b867c270e103238b2f9322",
+    "experimentManifestSHA256": "5251c20db637cb664dc102301106fba859019ee3e93df069d04a0080431ee87c",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -178,16 +176,16 @@
   "runtimeSourceBindingStatus": "unresolved",
   "runtimeSourceKind": "unresolved",
   "runtimeSourceRevision": null,
-  "schemaVersion": "1.4.0",
+  "schemaVersion": "1.5.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
-  "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
-  "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-  "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+  "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.",
+  "trainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+  "trainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-    "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-    "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+    "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+    "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+    "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
