@@ -33,26 +33,26 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "10ca4a3a67e4ba5dc0aa736f911eb9ca64102aa98404865a9094a979b43d9b2e"
+        "reportSHA256": "5b6e1a958cdd86c6f3f425772b06b7cad2df06d40268c002a976abef04089d81"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
-      "recordCount": 8,
-      "schemaVersion": "lumen.adapter-eval/1.0.0"
+      "frozenEvaluationSHA256": "14eab1e73ff04997e36e5b9b113283dce4d2ef8e9d4dc70a8ec7aabe71099b8d",
+      "recordCount": 7,
+      "schemaVersion": "lumen.adapter-eval/1.1.0"
     },
-    "manifestCommit": "640c64d27814c887c772118463e6f19605edc86a",
+    "manifestCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
     "preferenceTraining": {
       "includedInCheckpoint": false,
-      "recordCount": 19,
+      "recordCount": 29,
       "requiredPhase": "post_sft_preference_training",
       "status": "generated_not_trained"
     },
     "recordCounts": {
-      "eval": 8,
-      "train_dpo": 17,
-      "train_sft": 131,
-      "val_dpo": 2,
+      "eval": 7,
+      "train_dpo": 25,
+      "train_sft": 137,
+      "val_dpo": 4,
       "val_sft": 24
     },
     "sourceFamilies": [
@@ -63,14 +63,18 @@
       "public_adapter_corpus_toolace_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "640c64d27814c887c772118463e6f19605edc86a",
+      "baseCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
       "dirtyState": false,
-      "workingTreeDigest": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
+      "workingTreeDigest": "f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0"
     },
     "taskTypes": [
       "public_grounded_response_finalization",
       "public_grounded_response_preference",
       "public_observation_grounded_final",
+      "ultra_specific_adversarial_attachment_repair",
+      "ultra_specific_adversarial_failure_repair",
+      "ultra_specific_adversarial_observation_repair",
+      "ultra_specific_adversarial_truncation_repair",
       "ultra_specific_approval_request_response",
       "ultra_specific_empty_after_sanitization_recovery",
       "ultra_specific_permission_failure_response",
@@ -118,7 +122,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "d61d0dba1c6af52ec8f8544ccbe8599f0d50a5a112709c57f39bb5e298f070f6",
+    "experimentManifestSHA256": "b4347f2e435f1100e36272e775bb29802a5fe170d853d6f8600623da6c2b4385",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -173,16 +177,16 @@
   "runtimeSourceBindingStatus": "unresolved",
   "runtimeSourceKind": "unresolved",
   "runtimeSourceRevision": null,
-  "schemaVersion": "1.4.0",
+  "schemaVersion": "1.5.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
-  "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
-  "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-  "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+  "systemPrompt": "You are Mouth, Lumen's user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
+  "trainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+  "trainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-    "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-    "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+    "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+    "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+    "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

@@ -30,24 +30,11 @@
           "size": 622329984
         }
       ],
-      "evaluation": {
-        "contamination": {
-          "contaminated": false,
-          "matchCount": 0,
-          "promotionRequiresZeroMatches": true,
-          "reportSHA256": "ff72f6c917d2d9e19e986471c750de30c67c69d826a3df4ef295069c64751aa1"
-        },
-        "executableDeclarativeMetrics": true,
-        "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "c78f7d7e1519961e8c4ecd5f462f6b1d4dd7f95bbcdd5815ae424383aa2f45be",
-        "recordCount": 504,
-        "schemaVersion": "lumen.adapter-eval/1.0.0"
-      },
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "502de3a2728dbf9aa89d38634935b7bba14dba3a5511968b6fbc33c324a3646d",
-          "optimizedTrainingCorpusSHA256": "9d0b120d3fe58b4b3c33fce798562a9d3f16c28bcbabe29b37d7ed5b97aadf03",
+          "baselineTrainingCorpusSHA256": "71771c5190a6e294ad10562e55775aad342f1666b3d9a7e2226a4462263e6b12",
+          "optimizedTrainingCorpusSHA256": "0e2e864e8481ce73ea5d9ebda195d37efe0a8824fbfbcbea35042af5d0eade0f",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 31,
@@ -74,7 +61,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "edbe41aab5b85504525f1f898b8a1f94cb63f48b072eaa63c924a3d874a24827",
+        "experimentManifestSHA256": "8d1d3b9903d571cfe6234ed98d25d6b6eacb6d9ed1fbb8516d507f6b2f67526f",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -106,6 +93,25 @@
       },
       "observedRepositoryRevision": null,
       "observedRuntimeRevision": null,
+      "offlineFrozenEvaluation": {
+        "contract": {
+          "contamination": {
+            "contaminated": false,
+            "matchCount": 0,
+            "promotionRequiresZeroMatches": true,
+            "reportSHA256": "4aad08c12a90c24428aaf703ff462f8cf7f0260d37ab5d6af484e5ed535c2fee"
+          },
+          "executableDeclarativeMetrics": true,
+          "failClosedOnUnknownMetric": true,
+          "frozenEvaluationSHA256": "f796bba8a82e3165050acfb30c89a393a670b8fc6b3643fcefba42e6cd60177c",
+          "recordCount": 507,
+          "schemaVersion": "lumen.adapter-eval/1.1.0"
+        },
+        "evidenceType": "frozen_suite_contract",
+        "executionStatus": "not_executed_by_runtime_manifest_exporter",
+        "qualifiesShippedRuntime": false,
+        "scope": "offline_frozen_adapter_suite"
+      },
       "preferenceTraining": {
         "includedInCheckpoint": false,
         "recordCount": 822,
@@ -113,24 +119,56 @@
         "status": "generated_not_trained"
       },
       "recordCounts": {
-        "eval": 504,
+        "eval": 507,
         "train_dpo": 764,
-        "train_sft": 1076,
+        "train_sft": 1127,
         "val_dpo": 58,
-        "val_sft": 63
+        "val_sft": 73
       },
       "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimePromptContract": {
+        "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
+        "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
+        "privacy": "hashes_and_character_counts_only",
+        "requiredObservedEvidence": [
+          "componentPromptSHA256",
+          "sourcePromptSHA256",
+          "effectivePromptSHA256",
+          "composerPolicySHA256"
+        ],
+        "roleContractPromptCharacterCount": 1382,
+        "roleContractPromptSHA256": "8865ed477be5fc42787debf045e7179805a2744fee2a0905ae8a4f514ec5681e",
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0"
+      },
       "runtimeSourceBindingMethod": "unresolved",
       "runtimeSourceBindingStatus": "unresolved",
       "runtimeSourceKind": "unresolved",
       "runtimeSourceRevision": null,
+      "shippedRuntimeQualification": {
+        "observedEvidence": {
+          "componentPromptSHA256": null,
+          "composerPolicySHA256": null,
+          "effectivePromptSHA256": null,
+          "sourcePromptSHA256": null
+        },
+        "qualified": false,
+        "reasonCodes": [
+          "missing_component_prompt_sha256",
+          "missing_effective_prompt_sha256",
+          "missing_observed_composer_policy_sha256",
+          "missing_source_prompt_sha256",
+          "offline_frozen_evaluation_is_not_shipped_runtime_evidence"
+        ],
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0",
+        "status": "unqualified_missing_runtime_evidence"
+      },
       "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
-      "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-      "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+      "trainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+      "trainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-        "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-        "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+        "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+        "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+        "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -163,24 +201,11 @@
           "size": 622329984
         }
       ],
-      "evaluation": {
-        "contamination": {
-          "contaminated": false,
-          "matchCount": 0,
-          "promotionRequiresZeroMatches": true,
-          "reportSHA256": "d0d8537e29ca895603f8a2fec3858322438d7f22c28a5d7c603dbfa1e7bf8d91"
-        },
-        "executableDeclarativeMetrics": true,
-        "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "a9ddee04f6ea1215072f0ec81ad99cfd677de3b32349ab5e6e32dd29cea93cd2",
-        "recordCount": 61,
-        "schemaVersion": "lumen.adapter-eval/1.0.0"
-      },
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "c9b31d56c76cb684dcf418a77b273ca0a7358697d983928052975e5f8d804be5",
-          "optimizedTrainingCorpusSHA256": "94521ac109669c4d44574e0a8244aa72a920978b70d096e310943886c986e795",
+          "baselineTrainingCorpusSHA256": "262b6534e1da8f612f0359ecfa6e7248d833dbc63442a3567315aa4d5c9d40e0",
+          "optimizedTrainingCorpusSHA256": "064774b8d5aea4c2282f487d048e548711d3a16d45363315feba65de949a170a",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 462,
@@ -207,7 +232,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "0db5ce03ab9963b5e0e5717d1b987ebeb4467bfd48b867c270e103238b2f9322",
+        "experimentManifestSHA256": "5251c20db637cb664dc102301106fba859019ee3e93df069d04a0080431ee87c",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -239,31 +264,82 @@
       },
       "observedRepositoryRevision": null,
       "observedRuntimeRevision": null,
+      "offlineFrozenEvaluation": {
+        "contract": {
+          "contamination": {
+            "contaminated": false,
+            "matchCount": 0,
+            "promotionRequiresZeroMatches": true,
+            "reportSHA256": "9ec57e7b619bd1a44b6bdc7144993cfb56b40b74cabb34d17b137398a4f84e24"
+          },
+          "executableDeclarativeMetrics": true,
+          "failClosedOnUnknownMetric": true,
+          "frozenEvaluationSHA256": "233e07ec6cbcc83b55f31539d89bcd3ae62378d0938073ff932a0d6f6c7b2c15",
+          "recordCount": 63,
+          "schemaVersion": "lumen.adapter-eval/1.1.0"
+        },
+        "evidenceType": "frozen_suite_contract",
+        "executionStatus": "not_executed_by_runtime_manifest_exporter",
+        "qualifiesShippedRuntime": false,
+        "scope": "offline_frozen_adapter_suite"
+      },
       "preferenceTraining": {
         "includedInCheckpoint": false,
-        "recordCount": 6,
+        "recordCount": 36,
         "requiredPhase": "post_sft_preference_training",
         "status": "generated_not_trained"
       },
       "recordCounts": {
-        "eval": 61,
-        "train_dpo": 5,
-        "train_sft": 433,
-        "val_dpo": 1,
-        "val_sft": 70
+        "eval": 63,
+        "train_dpo": 33,
+        "train_sft": 365,
+        "val_dpo": 3,
+        "val_sft": 35
       },
       "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimePromptContract": {
+        "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
+        "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
+        "privacy": "hashes_and_character_counts_only",
+        "requiredObservedEvidence": [
+          "componentPromptSHA256",
+          "sourcePromptSHA256",
+          "effectivePromptSHA256",
+          "composerPolicySHA256"
+        ],
+        "roleContractPromptCharacterCount": 863,
+        "roleContractPromptSHA256": "0492e7b22552dffc309dbc936d0b3ea650578060fba497eb8df110f57539eae2",
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0"
+      },
       "runtimeSourceBindingMethod": "unresolved",
       "runtimeSourceBindingStatus": "unresolved",
       "runtimeSourceKind": "unresolved",
       "runtimeSourceRevision": null,
-      "systemPrompt": "You are Executor, Lumen’s tool-call agent. Produce strict manifest-valid tool JSON only. Never invent tools or arguments.",
-      "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-      "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+      "shippedRuntimeQualification": {
+        "observedEvidence": {
+          "componentPromptSHA256": null,
+          "composerPolicySHA256": null,
+          "effectivePromptSHA256": null,
+          "sourcePromptSHA256": null
+        },
+        "qualified": false,
+        "reasonCodes": [
+          "missing_component_prompt_sha256",
+          "missing_effective_prompt_sha256",
+          "missing_observed_composer_policy_sha256",
+          "missing_source_prompt_sha256",
+          "offline_frozen_evaluation_is_not_shipped_runtime_evidence"
+        ],
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0",
+        "status": "unqualified_missing_runtime_evidence"
+      },
+      "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.",
+      "trainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+      "trainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-        "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-        "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+        "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+        "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+        "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -296,24 +372,11 @@
           "size": 622329984
         }
       ],
-      "evaluation": {
-        "contamination": {
-          "contaminated": false,
-          "matchCount": 0,
-          "promotionRequiresZeroMatches": true,
-          "reportSHA256": "a574dd5cfc088d5057816039d3b6ea06bf1e1ae45f7ce5cda993b438abfbc95f"
-        },
-        "executableDeclarativeMetrics": true,
-        "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "000d8fd380732047ee9dc5762bac8ca8504ae534467a5fc8dd9d911f8b9a028e",
-        "recordCount": 15,
-        "schemaVersion": "lumen.adapter-eval/1.0.0"
-      },
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "a0de246db94edb14a5a02bbc074bb0bc24fbc13fdbff5f31666587249add655a",
-          "optimizedTrainingCorpusSHA256": "fe34b670f5484917a095e2e81b3c7f391d19c4a6e16b9cf1d76feb9cae203cb7",
+          "baselineTrainingCorpusSHA256": "38125d0159b60012eacd552ae2724dbafe8233ceec0e549286fa15012be737aa",
+          "optimizedTrainingCorpusSHA256": "690fcdbd579f4b6da6ac4a539d50926ba71c8008d84ca8a14ca88d286176e7d8",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 500,
@@ -340,7 +403,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "25fda6c9445b2af63de8742b932c94772d3e85a69ba2ac318479dc933844d897",
+        "experimentManifestSHA256": "05236fa7f8d0877ba6164766d5e49272105694c8bcdb8b24ef78c6d55d0b769e",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -372,31 +435,82 @@
       },
       "observedRepositoryRevision": null,
       "observedRuntimeRevision": null,
+      "offlineFrozenEvaluation": {
+        "contract": {
+          "contamination": {
+            "contaminated": false,
+            "matchCount": 0,
+            "promotionRequiresZeroMatches": true,
+            "reportSHA256": "74de452b6367c333bb064b43d274c287748bcf9891bb7d129be751b2f4af6884"
+          },
+          "executableDeclarativeMetrics": true,
+          "failClosedOnUnknownMetric": true,
+          "frozenEvaluationSHA256": "dc6edf609bd5e3705f6caae349faa92241a3d234027b87e06c44e2a7b482b90d",
+          "recordCount": 15,
+          "schemaVersion": "lumen.adapter-eval/1.1.0"
+        },
+        "evidenceType": "frozen_suite_contract",
+        "executionStatus": "not_executed_by_runtime_manifest_exporter",
+        "qualifiesShippedRuntime": false,
+        "scope": "offline_frozen_adapter_suite"
+      },
       "preferenceTraining": {
         "includedInCheckpoint": false,
-        "recordCount": 25,
+        "recordCount": 104,
         "requiredPhase": "post_sft_preference_training",
         "status": "generated_not_trained"
       },
       "recordCounts": {
         "eval": 15,
-        "train_dpo": 21,
-        "train_sft": 749,
-        "val_dpo": 4,
-        "val_sft": 128
+        "train_dpo": 89,
+        "train_sft": 271,
+        "val_dpo": 15,
+        "val_sft": 98
       },
       "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimePromptContract": {
+        "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
+        "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
+        "privacy": "hashes_and_character_counts_only",
+        "requiredObservedEvidence": [
+          "componentPromptSHA256",
+          "sourcePromptSHA256",
+          "effectivePromptSHA256",
+          "composerPolicySHA256"
+        ],
+        "roleContractPromptCharacterCount": 230,
+        "roleContractPromptSHA256": "9cac2fc91a9236714dabc8fdb28b794bf21067e340ec8527f5d483d742c71aa3",
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0"
+      },
       "runtimeSourceBindingMethod": "unresolved",
       "runtimeSourceBindingStatus": "unresolved",
       "runtimeSourceKind": "unresolved",
       "runtimeSourceRevision": null,
-      "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary.",
-      "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-      "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+      "shippedRuntimeQualification": {
+        "observedEvidence": {
+          "componentPromptSHA256": null,
+          "composerPolicySHA256": null,
+          "effectivePromptSHA256": null,
+          "sourcePromptSHA256": null
+        },
+        "qualified": false,
+        "reasonCodes": [
+          "missing_component_prompt_sha256",
+          "missing_effective_prompt_sha256",
+          "missing_observed_composer_policy_sha256",
+          "missing_source_prompt_sha256",
+          "offline_frozen_evaluation_is_not_shipped_runtime_evidence"
+        ],
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0",
+        "status": "unqualified_missing_runtime_evidence"
+      },
+      "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning.",
+      "trainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+      "trainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-        "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-        "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+        "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+        "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+        "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -429,24 +543,11 @@
           "size": 622329984
         }
       ],
-      "evaluation": {
-        "contamination": {
-          "contaminated": false,
-          "matchCount": 0,
-          "promotionRequiresZeroMatches": true,
-          "reportSHA256": "a0e0efc5fd7411dfb62e4c11f27c499deb4a22ef9d1ac0c61b419370c3be61a6"
-        },
-        "executableDeclarativeMetrics": true,
-        "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "e9a6957f9697c53a3d60b141250c8976739126a18831e68672ab4cf596515342",
-        "recordCount": 5,
-        "schemaVersion": "lumen.adapter-eval/1.0.0"
-      },
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "5a5c577e5501aca5e80a31895d103e8cfd96631da142560aea6bbf9c53d306d3",
-          "optimizedTrainingCorpusSHA256": "4b65ce0d57c9ad8a402023246d795395258ae8974258236b903e94ec2821fa22",
+          "baselineTrainingCorpusSHA256": "892649a18d4d42e2891943bccdcf2b290d4e025e687cc2751fcd431db8f84e62",
+          "optimizedTrainingCorpusSHA256": "4352efb09e79947ba7a312acaea9d49083ba878bd25de3fdb02c45ce1e714446",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 600,
@@ -473,7 +574,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "cb7eb3271b5b394e50d0f64f7e4f5154f41ff3c9401f7df44b2254625ec48096",
+        "experimentManifestSHA256": "cf8296332e73059949965d43f8e536222ff3966f7c8c86876ce22a6e564e4595",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -505,31 +606,82 @@
       },
       "observedRepositoryRevision": null,
       "observedRuntimeRevision": null,
+      "offlineFrozenEvaluation": {
+        "contract": {
+          "contamination": {
+            "contaminated": false,
+            "matchCount": 0,
+            "promotionRequiresZeroMatches": true,
+            "reportSHA256": "16150214a693917c88ac574442ec728e1c92899dd52f4eac65ecc0f8636c7754"
+          },
+          "executableDeclarativeMetrics": true,
+          "failClosedOnUnknownMetric": true,
+          "frozenEvaluationSHA256": "12c60c29b6792702d24ee00d6e2c5755159a29cf9669b659c59ff5994da9032c",
+          "recordCount": 5,
+          "schemaVersion": "lumen.adapter-eval/1.1.0"
+        },
+        "evidenceType": "frozen_suite_contract",
+        "executionStatus": "not_executed_by_runtime_manifest_exporter",
+        "qualifiesShippedRuntime": false,
+        "scope": "offline_frozen_adapter_suite"
+      },
       "preferenceTraining": {
         "includedInCheckpoint": false,
-        "recordCount": 2,
+        "recordCount": 61,
         "requiredPhase": "post_sft_preference_training",
         "status": "generated_not_trained"
       },
       "recordCounts": {
         "eval": 5,
-        "train_dpo": 1,
-        "train_sft": 9,
-        "val_dpo": 1,
-        "val_sft": 2
+        "train_dpo": 55,
+        "train_sft": 71,
+        "val_dpo": 6,
+        "val_sft": 8
       },
       "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimePromptContract": {
+        "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
+        "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
+        "privacy": "hashes_and_character_counts_only",
+        "requiredObservedEvidence": [
+          "componentPromptSHA256",
+          "sourcePromptSHA256",
+          "effectivePromptSHA256",
+          "composerPolicySHA256"
+        ],
+        "roleContractPromptCharacterCount": 97,
+        "roleContractPromptSHA256": "4da0200f3abf9472f6871ef8be86b7af36e0add13dbd7ab10bf9e1a22916efb2",
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0"
+      },
       "runtimeSourceBindingMethod": "unresolved",
       "runtimeSourceBindingStatus": "unresolved",
       "runtimeSourceKind": "unresolved",
       "runtimeSourceRevision": null,
-      "systemPrompt": "You are Mimicry, Lumen’s style adaptation agent. Adapt tone within safety and privacy boundaries.",
-      "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-      "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+      "shippedRuntimeQualification": {
+        "observedEvidence": {
+          "componentPromptSHA256": null,
+          "composerPolicySHA256": null,
+          "effectivePromptSHA256": null,
+          "sourcePromptSHA256": null
+        },
+        "qualified": false,
+        "reasonCodes": [
+          "missing_component_prompt_sha256",
+          "missing_effective_prompt_sha256",
+          "missing_observed_composer_policy_sha256",
+          "missing_source_prompt_sha256",
+          "offline_frozen_evaluation_is_not_shipped_runtime_evidence"
+        ],
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0",
+        "status": "unqualified_missing_runtime_evidence"
+      },
+      "systemPrompt": "You are Mimicry, Lumen's style adaptation agent. Adapt tone within safety and privacy boundaries.",
+      "trainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+      "trainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-        "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-        "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+        "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+        "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+        "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -562,27 +714,14 @@
           "size": 622329984
         }
       ],
-      "evaluation": {
-        "contamination": {
-          "contaminated": false,
-          "matchCount": 0,
-          "promotionRequiresZeroMatches": true,
-          "reportSHA256": "10ca4a3a67e4ba5dc0aa736f911eb9ca64102aa98404865a9094a979b43d9b2e"
-        },
-        "executableDeclarativeMetrics": true,
-        "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "22b7c7261803975063469c71bd0c53077578df97bf29f90d73fa6809ae129035",
-        "recordCount": 8,
-        "schemaVersion": "lumen.adapter-eval/1.0.0"
-      },
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "0aefa17c6109b98e61af8eeea725c31567a6606dfce7738baedf0a9dbe009296",
-          "optimizedTrainingCorpusSHA256": "456e7f728a843f10594ee4bc01a4202392737c853ace53ae2d34e624f00cd1c3",
+          "baselineTrainingCorpusSHA256": "a5b01db0d7a55ea70c67b9b257e80b8505d0c1a12746487cd4ed2457b7234767",
+          "optimizedTrainingCorpusSHA256": "55935e734dc010e3ee99e95151b70d0ce9f28d7aef69920994a4aa5b94cf2924",
           "promotionEligible": true,
           "promotionProhibited": false,
-          "publicRecordCount": 1051,
+          "publicRecordCount": 1047,
           "reason": "distinct_public_selection_corpora",
           "status": "eligible"
         },
@@ -606,7 +745,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "d61d0dba1c6af52ec8f8544ccbe8599f0d50a5a112709c57f39bb5e298f070f6",
+        "experimentManifestSHA256": "b4347f2e435f1100e36272e775bb29802a5fe170d853d6f8600623da6c2b4385",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -638,31 +777,82 @@
       },
       "observedRepositoryRevision": null,
       "observedRuntimeRevision": null,
+      "offlineFrozenEvaluation": {
+        "contract": {
+          "contamination": {
+            "contaminated": false,
+            "matchCount": 0,
+            "promotionRequiresZeroMatches": true,
+            "reportSHA256": "5b6e1a958cdd86c6f3f425772b06b7cad2df06d40268c002a976abef04089d81"
+          },
+          "executableDeclarativeMetrics": true,
+          "failClosedOnUnknownMetric": true,
+          "frozenEvaluationSHA256": "14eab1e73ff04997e36e5b9b113283dce4d2ef8e9d4dc70a8ec7aabe71099b8d",
+          "recordCount": 7,
+          "schemaVersion": "lumen.adapter-eval/1.1.0"
+        },
+        "evidenceType": "frozen_suite_contract",
+        "executionStatus": "not_executed_by_runtime_manifest_exporter",
+        "qualifiesShippedRuntime": false,
+        "scope": "offline_frozen_adapter_suite"
+      },
       "preferenceTraining": {
         "includedInCheckpoint": false,
-        "recordCount": 19,
+        "recordCount": 29,
         "requiredPhase": "post_sft_preference_training",
         "status": "generated_not_trained"
       },
       "recordCounts": {
-        "eval": 8,
-        "train_dpo": 17,
-        "train_sft": 131,
-        "val_dpo": 2,
+        "eval": 7,
+        "train_dpo": 25,
+        "train_sft": 137,
+        "val_dpo": 4,
         "val_sft": 24
       },
       "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimePromptContract": {
+        "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
+        "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
+        "privacy": "hashes_and_character_counts_only",
+        "requiredObservedEvidence": [
+          "componentPromptSHA256",
+          "sourcePromptSHA256",
+          "effectivePromptSHA256",
+          "composerPolicySHA256"
+        ],
+        "roleContractPromptCharacterCount": 123,
+        "roleContractPromptSHA256": "d13fa96fbc150bbaf436d0bd5c485832ed9d3e849cc20a5d2546a4738344d36a",
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0"
+      },
       "runtimeSourceBindingMethod": "unresolved",
       "runtimeSourceBindingStatus": "unresolved",
       "runtimeSourceKind": "unresolved",
       "runtimeSourceRevision": null,
-      "systemPrompt": "You are Mouth, Lumen’s user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
-      "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-      "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+      "shippedRuntimeQualification": {
+        "observedEvidence": {
+          "componentPromptSHA256": null,
+          "composerPolicySHA256": null,
+          "effectivePromptSHA256": null,
+          "sourcePromptSHA256": null
+        },
+        "qualified": false,
+        "reasonCodes": [
+          "missing_component_prompt_sha256",
+          "missing_effective_prompt_sha256",
+          "missing_observed_composer_policy_sha256",
+          "missing_source_prompt_sha256",
+          "offline_frozen_evaluation_is_not_shipped_runtime_evidence"
+        ],
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0",
+        "status": "unqualified_missing_runtime_evidence"
+      },
+      "systemPrompt": "You are Mouth, Lumen's user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
+      "trainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+      "trainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-        "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-        "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+        "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+        "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+        "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -695,24 +885,11 @@
           "size": 622329984
         }
       ],
-      "evaluation": {
-        "contamination": {
-          "contaminated": false,
-          "matchCount": 0,
-          "promotionRequiresZeroMatches": true,
-          "reportSHA256": "eb1367786b6c54dccbaf6eee6f929675d2469f0c33c516e42b03344273c911c3"
-        },
-        "executableDeclarativeMetrics": true,
-        "failClosedOnUnknownMetric": true,
-        "frozenEvaluationSHA256": "f83369f9fd2a46b45f22a15ab69e461b1b63607184b51e2e2feab992f28ba0d1",
-        "recordCount": 6,
-        "schemaVersion": "lumen.adapter-eval/1.0.0"
-      },
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "d5ebd76a960c16b2b6eeef5dfeb1ab2bd114c269888be24b0da3050a914030a2",
-          "optimizedTrainingCorpusSHA256": "570df137b8f9c1e08eb1f2162ea4ac45f96348db1efedfb7a99f2c1c83f6fa46",
+          "baselineTrainingCorpusSHA256": "f2a58b793787a6ade9ede4d81228bdefbc3e32ec2c32db90a45ef639b5984c36",
+          "optimizedTrainingCorpusSHA256": "23f39865d6a90b81887cc1a0b780ad5ab6c1406dfdf218c7a1561cfdaffbbf6b",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 505,
@@ -739,7 +916,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "102892b4aea5894d67ddfcd31e75da867120a1e3ce8a35b9625176e93eb6f43c",
+        "experimentManifestSHA256": "0818f6d9135b028d607927d80506885c0c41a91eeda972f6c8c779b375fca798",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -771,31 +948,82 @@
       },
       "observedRepositoryRevision": null,
       "observedRuntimeRevision": null,
+      "offlineFrozenEvaluation": {
+        "contract": {
+          "contamination": {
+            "contaminated": false,
+            "matchCount": 0,
+            "promotionRequiresZeroMatches": true,
+            "reportSHA256": "3d91806f661d6e1f29d59d95d5c21d2ee14c6597d54d8aea6cecd012f3741260"
+          },
+          "executableDeclarativeMetrics": true,
+          "failClosedOnUnknownMetric": true,
+          "frozenEvaluationSHA256": "a0f17f9f085c58d4fa4cc0fad01a689809af084d30fbf52118e53cd6a81fd194",
+          "recordCount": 6,
+          "schemaVersion": "lumen.adapter-eval/1.1.0"
+        },
+        "evidenceType": "frozen_suite_contract",
+        "executionStatus": "not_executed_by_runtime_manifest_exporter",
+        "qualifiesShippedRuntime": false,
+        "scope": "offline_frozen_adapter_suite"
+      },
       "preferenceTraining": {
         "includedInCheckpoint": false,
-        "recordCount": 3,
+        "recordCount": 39,
         "requiredPhase": "post_sft_preference_training",
         "status": "generated_not_trained"
       },
       "recordCounts": {
         "eval": 6,
-        "train_dpo": 2,
-        "train_sft": 17,
-        "val_dpo": 1,
-        "val_sft": 4
+        "train_dpo": 32,
+        "train_sft": 53,
+        "val_dpo": 7,
+        "val_sft": 10
       },
       "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
+      "runtimePromptContract": {
+        "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
+        "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
+        "privacy": "hashes_and_character_counts_only",
+        "requiredObservedEvidence": [
+          "componentPromptSHA256",
+          "sourcePromptSHA256",
+          "effectivePromptSHA256",
+          "composerPolicySHA256"
+        ],
+        "roleContractPromptCharacterCount": 140,
+        "roleContractPromptSHA256": "467357c5a493a5b123c0054f75b047f6f0dab6263e447d966429d9c968cd7476",
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0"
+      },
       "runtimeSourceBindingMethod": "unresolved",
       "runtimeSourceBindingStatus": "unresolved",
       "runtimeSourceKind": "unresolved",
       "runtimeSourceRevision": null,
-      "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
-      "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-      "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+      "shippedRuntimeQualification": {
+        "observedEvidence": {
+          "componentPromptSHA256": null,
+          "composerPolicySHA256": null,
+          "effectivePromptSHA256": null,
+          "sourcePromptSHA256": null
+        },
+        "qualified": false,
+        "reasonCodes": [
+          "missing_component_prompt_sha256",
+          "missing_effective_prompt_sha256",
+          "missing_observed_composer_policy_sha256",
+          "missing_source_prompt_sha256",
+          "offline_frozen_evaluation_is_not_shipped_runtime_evidence"
+        ],
+        "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0",
+        "status": "unqualified_missing_runtime_evidence"
+      },
+      "systemPrompt": "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
+      "trainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+      "trainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-        "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-        "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+        "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+        "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+        "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     }
@@ -810,6 +1038,16 @@
     "manualOnly": true,
     "requiresPassingEvalGates": true
   },
+  "runtimeQualificationPolicy": {
+    "missingOrMismatchedEvidence": "unqualified",
+    "offlineFrozenEvaluationQualifiesShippedRuntime": false,
+    "privacy": "hashes_and_character_counts_only",
+    "requiresExactComponentPromptSHA256": true,
+    "requiresExactComposerPolicySHA256": true,
+    "requiresExactEffectivePromptSHA256": true,
+    "requiresExactSourcePromptSHA256": true,
+    "schemaVersion": "lumen.shipped-runtime-prompt-qualification/1.0.0"
+  },
   "runtimeStrategy": {
     "fallbackUnit": "adapter",
     "loadBaseModelOnce": true,
@@ -817,7 +1055,7 @@
     "mergedExportPhase": "optional_release_bake",
     "selectAdapterByAgentSlot": true
   },
-  "schemaVersion": "1.4.0",
+  "schemaVersion": "1.5.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
   "sharedBaseModelID": "Qwen/Qwen3-1.7B",
@@ -843,12 +1081,12 @@
   ],
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "sharedRequirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
-  "sharedTrainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
-  "sharedTrainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
+  "sharedTrainingCodeBundleSHA256": "fef5f2ebebfb63af0556da31db2bbf30fd9119f486d0e3e38275e587b5e0364b",
+  "sharedTrainingCodeSHA256": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0",
   "sharedTrainingCodeSHA256ByPhase": {
-    "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
-    "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
-    "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
+    "dpo": "351a757c19472532fef6192a3b6f4834cf95a14ec03a08d9e01c006cbdced7d0",
+    "orpo": "fce31e6d42f5b905278152816beeedb1cb4549490298620f33057d629a8649fe",
+    "sft": "fd1f350ec641249e7ebf8f65bf4d06b47654ff2c43182bd0cf93a72c5fc256c0"
   },
   "sharedTrainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

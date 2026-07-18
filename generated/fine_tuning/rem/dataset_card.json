@@ -1,13 +1,21 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 21,
-  "candidateSFTRecords": 525,
+  "availableSFTRecords": 63,
+  "candidateSFTRecords": 561,
   "constraints": {
     "agentSpecific": true,
+    "fleetLossShareContract": null,
+    "fleetSourceRoleRegistry": null,
     "manifestOnlyTools": true,
     "maxCortexPublicSFTRecordsPerTool": null,
     "maxCortexSupplementalAssistantCharShare": null,
-    "maxPublicCorpusSFTTokenShare": 0.35,
+    "maxFleetSupplementalAssistantCharShare": null,
+    "maxFleetSupplementalAssistantTokenProxySelectionShare": null,
+    "maxFleetSupplementalAssistantTokenShare": null,
+    "maxFleetSupplementalDPOChosenCharShare": null,
+    "maxFleetSupplementalDPOChosenTokenProxySelectionShare": null,
+    "maxFleetSupplementalDPOChosenTokenShare": null,
+    "maxPublicCorpusSFTTokenProxyShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
@@ -17,18 +25,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "eb1367786b6c54dccbaf6eee6f929675d2469f0c33c516e42b03344273c911c3"
+      "reportSHA256": "3d91806f661d6e1f29d59d95d5c21d2ee14c6597d54d8aea6cecd012f3741260"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "f83369f9fd2a46b45f22a15ab69e461b1b63607184b51e2e2feab992f28ba0d1",
+    "frozenEvaluationSHA256": "a0f17f9f085c58d4fa4cc0fad01a689809af084d30fbf52118e53cd6a81fd194",
     "recordCount": 6,
-    "schemaVersion": "lumen.adapter-eval/1.0.0"
+    "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "d5ebd76a960c16b2b6eeef5dfeb1ab2bd114c269888be24b0da3050a914030a2",
-      "optimizedTrainingCorpusSHA256": "570df137b8f9c1e08eb1f2162ea4ac45f96348db1efedfb7a99f2c1c83f6fa46",
+      "baselineTrainingCorpusSHA256": "f2a58b793787a6ade9ede4d81228bdefbc3e32ec2c32db90a45ef639b5984c36",
+      "optimizedTrainingCorpusSHA256": "23f39865d6a90b81887cc1a0b780ad5ab6c1406dfdf218c7a1561cfdaffbbf6b",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -55,7 +63,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "102892b4aea5894d67ddfcd31e75da867120a1e3ce8a35b9625176e93eb6f43c",
+    "experimentManifestSHA256": "0818f6d9135b028d607927d80506885c0c41a91eeda972f6c8c779b375fca798",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -85,10 +93,10 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "640c64d27814c887c772118463e6f19605edc86a",
+  "manifestCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
   "preferenceTraining": {
     "includedInCheckpoint": false,
-    "recordCount": 3,
+    "recordCount": 39,
     "requiredPhase": "post_sft_preference_training",
     "status": "generated_not_trained"
   },
@@ -134,26 +142,34 @@
       "Apache-2.0",
       "MIT"
     ],
-    "maxDPOTokenShare": 0.35,
-    "maxSFTTokenShare": 0.35,
+    "maxDPOTokenProxyShare": 0.35,
+    "maxSFTTokenProxyShare": 0.35,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 5,
+      "train_sft": 11,
       "val_dpo": 0,
       "val_sft": 1
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 422,
+      "train_sft": 416,
       "val_dpo": 0,
       "val_sft": 77
     },
     "selectionContract": {
-      "maxTokenShare": 0.35,
+      "maxTokenProxyShare": 0.35,
       "policyVersions": [
         "2026-07-12.3"
       ],
-      "sha256": "96274a1447057e40d32f59cf3fed6daec721b2ee33b97daaf52eb83771d3591d",
+      "sha256": "601495d0961ed2518f7832b192f78c7fee35210f969609b709b899c6d37edd46",
+      "sourceTokenProxyContract": {
+        "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "exactPinnedTokenizerAuthoritative": true,
+        "maxCharsPerToken": 4,
+        "schemaVersion": "lumen.source-token-proxy/1.0.0",
+        "status": "source_side_selection_proxy_not_exact_token_count",
+        "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+      },
       "strategy": "group_atomic_quality_ranked_source_stratified_v2"
     },
     "selectionScoreSummary": {
@@ -164,9 +180,9 @@
         "minimum": 0.78375
       },
       "selected": {
-        "count": 6,
+        "count": 12,
         "maximum": 0.942625,
-        "mean": 0.848077,
+        "mean": 0.849602,
         "minimum": 0.78375
       }
     },
@@ -248,51 +264,52 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "Team-ACE/ToolACE": 3,
-      "grammarly/coedit": 1,
-      "json-schema-org/JSON-Schema-Test-Suite": 2
+      "Team-ACE/ToolACE": 4,
+      "grammarly/coedit": 4,
+      "json-schema-org/JSON-Schema-Test-Suite": 4
     },
     "sourceSplitCounts": {
       "Team-ACE/ToolACE": {
         "train_dpo": 0,
-        "train_sft": 2,
+        "train_sft": 3,
         "val_dpo": 0,
         "val_sft": 1
       },
       "grammarly/coedit": {
         "train_dpo": 0,
-        "train_sft": 1,
+        "train_sft": 4,
         "val_dpo": 0,
         "val_sft": 0
       },
       "json-schema-org/JSON-Schema-Test-Suite": {
         "train_dpo": 0,
-        "train_sft": 2,
+        "train_sft": 4,
         "val_dpo": 0,
         "val_sft": 0
       }
     },
-    "tokenShares": {
+    "tokenProxyShares": {
       "train_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.232804,
-        "total": 0.337702
+        "target": 0.33866,
+        "total": 0.271629
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.170213,
-        "total": 0.277457
+        "target": 0.212963,
+        "total": 0.121415
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 5203,
+    "assistantTargetCharCount": 8524,
+    "assistantTargetTokenProxyCount": 2156,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -300,21 +317,39 @@
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
     "cortexPublicBalanceDroppedRecordCount": 0,
+    "fleetDPOChosenTargetCharCount": 0,
+    "fleetDPOChosenTargetTokenProxyCount": 0,
+    "fleetSourceRoleDPORecordCounts": {},
+    "fleetSourceRoleSFTRecordCounts": {},
+    "fleetSupplementalDPOChosenTargetCharCount": 0,
+    "fleetSupplementalDPOChosenTargetCharShare": 0.0,
+    "fleetSupplementalDPOChosenTargetTokenProxyCount": 0,
+    "fleetSupplementalDPOChosenTargetTokenProxyShare": 0.0,
     "sequenceBudgetDroppedRecordCount": 0,
+    "sourceTokenProxyContract": {
+      "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+      "exactPinnedTokenizerAuthoritative": true,
+      "maxCharsPerToken": 4,
+      "schemaVersion": "lumen.source-token-proxy/1.0.0",
+      "status": "source_side_selection_proxy_not_exact_token_count",
+      "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+    },
     "supplementalAssistantTargetCharCount": 0,
     "supplementalAssistantTargetCharShare": 0.0,
+    "supplementalAssistantTargetTokenProxyCount": 0,
+    "supplementalAssistantTargetTokenProxyShare": 0.0,
     "supplementalBalanceDroppedRecordCount": 0,
     "supplementalSFTRecordCount": 0,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
-    "ultraSpecificRecordCount": 10,
+    "ultraSpecificRecordCount": 46,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
     "eval": 6,
-    "train_dpo": 2,
-    "train_sft": 17,
-    "val_dpo": 1,
-    "val_sft": 4
+    "train_dpo": 32,
+    "train_sft": 53,
+    "val_dpo": 7,
+    "val_sft": 10
   },
   "sourceDirty": false,
   "sourceFamilies": [
@@ -325,22 +360,28 @@
     "rem_reflection"
   ],
   "sourceFamilyCounts": {
-    "adapter_ultra_specific": 10,
-    "public_adapter_corpus_coedit_train": 1,
-    "public_adapter_corpus_json_schema_test_suite_draft_2020_12": 2,
-    "public_adapter_corpus_toolace_train": 3,
+    "adapter_ultra_specific": 46,
+    "public_adapter_corpus_coedit_train": 4,
+    "public_adapter_corpus_json_schema_test_suite_draft_2020_12": 4,
+    "public_adapter_corpus_toolace_train": 4,
     "rem_reflection": 5
   },
   "sourceIntegrity": {
-    "baseCommit": "640c64d27814c887c772118463e6f19605edc86a",
+    "baseCommit": "76dcf63d3a799783f2c323d977c0c0c14c978fbd",
     "dirtyState": false,
-    "workingTreeDigest": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
+    "workingTreeDigest": "f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0"
   },
-  "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
+  "systemPrompt": "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
   "taskTypeCounts": {
-    "public_schema_failure_diagnosis": 2,
-    "public_text_repair": 1,
-    "public_tool_boundary_repair": 3,
+    "critical_contract_action_step_repair": 6,
+    "critical_contract_audit_failure_diagnosis": 6,
+    "critical_contract_manifest_drift_repair": 6,
+    "critical_contract_memory_ttl_classification": 6,
+    "critical_contract_ultra_specific_no_thinking_root_cause": 6,
+    "critical_contract_ultra_specific_training_evidence_root_cause": 6,
+    "public_schema_failure_diagnosis": 4,
+    "public_text_repair": 4,
+    "public_tool_boundary_repair": 4,
     "reflection_and_memory_policy": 5,
     "ultra_specific_argument_extraction_repair": 1,
     "ultra_specific_manifest_tool_repair": 1,
@@ -351,6 +392,12 @@
     "ultra_specific_training_evidence_repair": 1
   },
   "taskTypes": [
+    "critical_contract_action_step_repair",
+    "critical_contract_audit_failure_diagnosis",
+    "critical_contract_manifest_drift_repair",
+    "critical_contract_memory_ttl_classification",
+    "critical_contract_ultra_specific_no_thinking_root_cause",
+    "critical_contract_ultra_specific_training_evidence_root_cause",
     "public_schema_failure_diagnosis",
     "public_text_repair",
     "public_tool_boundary_repair",
@@ -363,5 +410,5 @@
     "ultra_specific_runtime_repair",
     "ultra_specific_training_evidence_repair"
   ],
-  "worktreeFingerprint": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
+  "worktreeFingerprint": "f7229e7d54cbe06711ac9d79143da9f405e09181e85e4bcc5216e5f9fa0720d0"
 }
