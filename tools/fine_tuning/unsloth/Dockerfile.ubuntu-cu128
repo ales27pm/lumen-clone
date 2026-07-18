@@ -158,11 +158,52 @@ ENV HOME=/home/lumen-runtime \
 # host checkout is never mounted into either the GPU or credential container.
 COPY scripts/ubuntu_train_lumen_full_pipeline.sh /opt/lumen/source/scripts/ubuntu_train_lumen_full_pipeline.sh
 COPY scripts/ubuntu_train_lumen_adapters_aio.sh /opt/lumen/source/scripts/ubuntu_train_lumen_adapters_aio.sh
+COPY lumen_manifest_crawler/__init__.py /opt/lumen/source/lumen_manifest_crawler/__init__.py
 COPY tools/fine_tuning/unsloth /opt/lumen/source/tools/fine_tuning/unsloth
 COPY tools/lumen_manifest_crawler/lumen_manifest_crawler /opt/lumen/source/tools/lumen_manifest_crawler/lumen_manifest_crawler
 COPY tools/hf_zerogpu/space_template /opt/lumen/source/tools/hf_zerogpu/space_template
 COPY generated/fine_tuning /opt/lumen/source/generated/fine_tuning
 COPY generated/agent_manifest/AgentBehaviorManifest.json /opt/lumen/source/generated/agent_manifest/AgentBehaviorManifest.json
+
+# Prove that the baked source layout supports the imports used by the inner
+# launcher and by the isolated postcondition/uploader entry points before an
+# expensive GPU container can be created.
+RUN cd /opt/lumen/source \
+    && env -u PYTHONPATH python - <<'PY'
+from pathlib import Path
+
+import lumen_manifest_crawler
+from lumen_manifest_crawler.dataset import chat_template_contract
+from tools.fine_tuning.unsloth import ubuntu_pipeline
+
+source_root = Path("/opt/lumen/source").resolve()
+assert Path(lumen_manifest_crawler.__file__).resolve() == (
+    source_root / "lumen_manifest_crawler/__init__.py"
+)
+assert Path(chat_template_contract.__file__).resolve().is_relative_to(
+    source_root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
+)
+assert Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)
+PY
+
+RUN python -I - <<'PY'
+import sys
+from pathlib import Path
+
+source_root = Path("/opt/lumen/source").resolve()
+sys.path.insert(0, str(source_root))
+import lumen_manifest_crawler
+from lumen_manifest_crawler.dataset import chat_template_contract
+from tools.fine_tuning.unsloth import ubuntu_pipeline
+
+assert Path(lumen_manifest_crawler.__file__).resolve() == (
+    source_root / "lumen_manifest_crawler/__init__.py"
+)
+assert Path(chat_template_contract.__file__).resolve().is_relative_to(
+    source_root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
+)
+assert Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)
+PY
 
 RUN python -I \
         /opt/lumen/source/tools/fine_tuning/unsloth/ubuntu_source_integrity.py \

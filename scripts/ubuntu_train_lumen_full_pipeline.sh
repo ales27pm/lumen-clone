@@ -323,6 +323,7 @@ archive_attested_build_context() {
   local -a context_paths=(
     scripts/ubuntu_train_lumen_full_pipeline.sh
     scripts/ubuntu_train_lumen_adapters_aio.sh
+    lumen_manifest_crawler/__init__.py
     tools/fine_tuning/unsloth
     tools/lumen_manifest_crawler/lumen_manifest_crawler
     tools/hf_zerogpu/space_template
