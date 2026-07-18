@@ -1,8 +1,8 @@
 {
   "counts": {
     "evalReranking": 920,
-    "hardNegativePairs": 4793,
-    "trainPairs": 4298,
+    "hardNegativePairs": 4796,
+    "trainPairs": 4301,
     "valPairs": 495
   },
   "evaluationIsolation": {
