@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from lumen_manifest_crawler.dataset.fine_tuning import (
@@ -9,7 +10,9 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _cap_public_corpus_token_share,
     _experiment_public_group_limit,
     _public_validation_group_keys,
+    _record_token_counts,
     _route_record_agents,
+    _source_token_proxy_count,
     _stable_split,
     _unique_sorted_records,
     compile_agent_fine_tuning_datasets,
@@ -47,7 +50,10 @@ def _sft_record(*, target: str, group: str, row: str, repository: str = "OpenAss
         "messages": [
             {
                 "role": "user",
-                "content": "Route this intent with strict JSON, then diagnose the tone and provide a final user-facing fleet response.",
+                "content": (
+                    "Route this intent with strict JSON, then diagnose the tone "
+                    f"and provide the final response for source row {row}."
+                ),
             },
             {"role": "assistant", "content": f"Grounded response {row}."},
         ],
@@ -92,7 +98,11 @@ def test_public_records_route_only_to_explicit_target_and_preserve_provenance() 
             "public_adapter_corpus_mouth": mouth_records + [rejected_record],
             "public_adapter_corpus_preferences": [dpo_record],
         },
-        config=FineTuningDatasetConfig(validation_ratio=0.5, max_public_corpus_token_share=None),
+        config=FineTuningDatasetConfig(
+            validation_ratio=0.5,
+            max_public_corpus_token_share=None,
+            include_unsloth_config=False,
+        ),
     )
 
     mouth_public = [record for record in _all_sft(compiled["mouth"]) if "publicCorpus" in record["metadata"]]
@@ -256,22 +266,34 @@ def test_explicit_adapter_role_suppresses_incidental_text_heuristics() -> None:
                 ],
             },
             {
+                "sourceFamily": "adapter_ultra_specific",
                 "agentRole": "fleet",
-                "taskType": "custom_role_directory",
+                "taskType": "ultra_specific_fleet_slot_directory",
                 "messages": [
                     {"role": "user", "content": "Describe tone and the final user-facing stage."},
-                    {"role": "assistant", "content": "Fleet describes boundaries without becoming Mouth or Mimicry."},
+                    {
+                        "role": "assistant",
+                        "content": '{"scope":"fleet_boundaries_only"}',
+                    },
                 ],
             },
         ]
     }
 
-    compiled = compile_agent_fine_tuning_datasets(manifest, records)
+    compiled = compile_agent_fine_tuning_datasets(
+        manifest,
+        records,
+        config=FineTuningDatasetConfig(include_unsloth_config=False),
+    )
+    fixture_prompts = {
+        "Explain the fleet role directory, final user-facing response, and tone policy.",
+        "Describe tone and the final user-facing stage.",
+    }
     custom_by_agent = {
         agent: [
             record
             for record in _all_sft(compiled[agent])
-            if record["metadata"].get("taskType") == "custom_role_directory"
+            if record["messages"][1]["content"] in fixture_prompts
         ]
         for agent in AGENTS
     }
@@ -287,26 +309,35 @@ def test_explicit_adapter_role_suppresses_incidental_text_heuristics() -> None:
 def test_fleet_routing_uses_structured_ownership_without_bypassing_role_locks() -> None:
     manifest = AgentBehaviorManifest(sourceIntegrity=SourceIntegrity(commit="test-commit"))
     role_targets = {
-        "orchestrator": "cortex",
-        "tool_executor": "executor",
-        "user_response": "mouth",
-        "tone_adapter": "mimicry",
-        "idle_reflection": "rem",
+        "orchestrator": ("cortex", "fleet_delegation"),
+        "tool_executor": ("executor", "fleet_peer_source_knowledge"),
+        "user_response": ("mouth", "source_code_self_knowledge"),
+        "tone_adapter": ("mimicry", "fleet_peer_knowledge"),
+        "idle_reflection": ("rem", "fleet_peer_knowledge"),
     }
     peer_records = [
         {
             "agentRole": role,
-            "taskType": "peer_role_contract",
+            "taskType": task_type,
             "messages": [
                 {
                     "role": "system",
                     "content": "You are a fleet peer. Read slotID, model directory, and delegation boundaries.",
                 },
-                {"role": "user", "content": "Describe the full model fleet."},
-                {"role": "assistant", "content": f"This sample belongs only to {target}."},
+                {
+                    "role": "user",
+                    "content": f"Describe the full model fleet from the {target} source boundary.",
+                },
+                {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {"sourceBoundary": target},
+                        sort_keys=True,
+                    ),
+                },
             ],
         }
-        for role, target in role_targets.items()
+        for role, (target, task_type) in role_targets.items()
     ]
     text_only = {
         "taskType": "text_only_role_words",
@@ -321,23 +352,66 @@ def test_fleet_routing_uses_structured_ownership_without_bypassing_role_locks() 
     }
     structured_fleet = {
         **text_only,
-        "taskType": "structured_fleet_contract",
+        "sourceFamily": "adapter_ultra_specific",
+        "taskType": "ultra_specific_fleet_slot_directory",
+        "messages": [
+            *text_only["messages"][:-1],
+            {
+                "role": "assistant",
+                "content": '{"ownership":"structured_fleet"}',
+            },
+        ],
         "metadata": {"agentRole": "fleet"},
     }
+    # This routing-focused fixture includes enough role-native primary loss to
+    # retain all five compact cross-model rows while keeping their shared
+    # source family below the production 5% source-proxy safety ceiling. Short
+    # synthetic primary targets need more rows than the real Fleet corpus.
+    fleet_primary_support = [
+        {
+            "sourceFamily": "adapter_ultra_specific",
+            "taskType": "ultra_specific_fleet_delegation",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Return primary Fleet routing support row {index}.",
+                },
+                {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {"routingSupport": index},
+                        sort_keys=True,
+                    ),
+                },
+            ],
+            "metadata": {"agentRole": "fleet"},
+        }
+        for index in range(144)
+    ]
 
     compiled = compile_agent_fine_tuning_datasets(
         manifest,
         {
             "cross_model_training": peer_records,
-            "unowned_text_samples": [text_only, structured_fleet],
+            "unowned_text_samples": [
+                text_only,
+                structured_fleet,
+                *fleet_primary_support,
+            ],
         },
+        config=FineTuningDatasetConfig(
+            include_unsloth_config=False,
+            max_supplemental_sft_ratio=0.75,
+        ),
     )
 
     for target in AGENTS:
         peer_samples = [
             record
             for record in _all_sft(compiled[target])
-            if record["metadata"].get("taskType") == "peer_role_contract"
+            if record["messages"][1]["content"].startswith(
+                "Describe the full model fleet from the "
+            )
         ]
         assert len(peer_samples) == (len(peer_records) if target == "fleet" else 0)
     assert not [
@@ -349,7 +423,8 @@ def test_fleet_routing_uses_structured_ownership_without_bypassing_role_locks() 
     structured_fleet_samples = [
         record
         for record in _all_sft(compiled["fleet"])
-        if record["metadata"].get("taskType") == "structured_fleet_contract"
+        if record["messages"][1]["content"]
+        == "This text has no structured slot ownership."
     ]
     assert len(structured_fleet_samples) == 1
 
@@ -454,6 +529,7 @@ def test_sft_deduplicates_exact_messages_and_prefers_lumen_native_record() -> No
             "mouth_responses": [native_record],
             "public_adapter_corpus_mouth": [public_record],
         },
+        config=FineTuningDatasetConfig(include_unsloth_config=False),
     )
     matches = [record for record in _all_sft(compiled["mouth"]) if record["messages"][1:] == messages]
     assert len(matches) == 1
@@ -479,7 +555,7 @@ def test_public_corpus_total_and_target_token_shares_are_capped_per_lane() -> No
     ]
     public_records = []
     for index in range(40):
-        long_target = " ".join([f"supported-{index}"] * 80)
+        long_target = " ".join([f"supported-{index}"] * 30)
         public_records.append(
             {
                 "sourceFamily": "public_adapter_corpus_dialogue",
@@ -509,14 +585,95 @@ def test_public_corpus_total_and_target_token_shares_are_capped_per_lane() -> No
         config=FineTuningDatasetConfig(
             validation_ratio=0.25,
             max_public_corpus_token_share=cap,
+            include_unsloth_config=False,
         ),
     )
     public_card = compiled["mouth"].dataset_card["publicCorpus"]
     assert 0 < sum(public_card["recordCounts"].values()) < len(public_records)
-    assert public_card["maxSFTTokenShare"] == cap
+    assert public_card["maxSFTTokenProxyShare"] == cap
+    proxy_contract = public_card["selectionContract"][
+        "sourceTokenProxyContract"
+    ]
+    assert proxy_contract == {
+        "schemaVersion": "lumen.source-token-proxy/1.0.0",
+        "status": "source_side_selection_proxy_not_exact_token_count",
+        "strategy": "max_whitespace_terms_utf8_byte_ceiling",
+        "maxCharsPerToken": 4,
+        "exactPinnedTokenizerAuthoritative": True,
+        "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+    }
     for lane in ("train_sft", "val_sft"):
-        assert public_card["tokenShares"][lane]["total"] <= cap
-        assert public_card["tokenShares"][lane]["target"] <= cap
+        assert public_card["tokenProxyShares"][lane]["total"] <= cap
+        assert public_card["tokenProxyShares"][lane]["target"] <= cap
+
+
+def test_source_token_proxy_counts_minified_json_without_claiming_exact_tokens() -> None:
+    minified_json = (
+        '{"action":{"tool":"calendar.create","args":{"title":"Quarterly '
+        'planning","startsAt":"2026-08-01T09:00:00-04:00"}}}'
+    )
+    prose = "Create the quarterly planning event at nine tomorrow morning."
+
+    assert len(minified_json.split()) == 2
+    assert _source_token_proxy_count(minified_json, max_chars_per_token=4) == (
+        len(minified_json.encode("utf-8")) + 3
+    ) // 4
+    assert _source_token_proxy_count(minified_json) > len(minified_json.split())
+    assert _source_token_proxy_count(
+        minified_json,
+        max_chars_per_token=2,
+    ) > _source_token_proxy_count(minified_json, max_chars_per_token=4)
+    assert _source_token_proxy_count(prose) >= len(prose.split())
+    assert _source_token_proxy_count("éééé", max_chars_per_token=4) == 2
+
+    record = {
+        "messages": [
+            {"role": "user", "content": prose},
+            {"role": "assistant", "content": minified_json},
+        ]
+    }
+    total_proxy, target_proxy = _record_token_counts(record)
+    assert target_proxy == _source_token_proxy_count(minified_json)
+    assert total_proxy == target_proxy + _source_token_proxy_count(prose)
+
+
+def test_public_share_cap_rejects_minified_json_that_whitespace_count_would_admit() -> None:
+    internal = {
+        "messages": [
+            {"role": "user", "content": "Ground this internal request carefully."},
+            {
+                "role": "assistant",
+                "content": "one two three four five six seven eight nine ten",
+            },
+        ],
+        "metadata": {"agent": "executor"},
+    }
+    minified = (
+        '{"action":{"tool":"calendar.create","args":{"title":"Planning",'
+        '"startsAt":"2026-08-01T09:00:00-04:00"}}}'
+    )
+    public = {
+        "messages": [
+            {"role": "user", "content": "Route it."},
+            {"role": "assistant", "content": minified},
+        ],
+        "metadata": {
+            "agent": "executor",
+            "publicCorpus": _provenance(
+                target="executor",
+                group="minified-json",
+                row="minified-json",
+            ),
+        },
+    }
+
+    selected = _cap_public_corpus_token_share(
+        [internal, public],
+        0.20,
+        max_chars_per_token=4,
+    )
+    assert selected == [internal]
+    assert _record_token_counts(public)[1] > len(minified.split())
 
 
 def test_public_token_cap_balances_sources_before_source_strata() -> None:

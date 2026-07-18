@@ -3,16 +3,29 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import platform
 import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
+
+try:
+    from lumen_manifest_crawler.dataset.chat_template_contract import (
+        apply_non_thinking_chat_template,
+        verify_chat_template_contract,
+    )
+except ImportError:
+    from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.chat_template_contract import (
+        apply_non_thinking_chat_template,
+        verify_chat_template_contract,
+    )
 
 try:
     from .adapter_artifact import write_adapter_artifact_manifest
@@ -56,6 +69,7 @@ REQUIRED_CONFIG_KEYS = {
     "baseModelArtifactDigest",
     "baseModelWeightShards",
     "baseModelTokenizerDigest",
+    "chatTemplateContract",
     "trainingEnvironmentLock",
     "trainingContainerImageDigest",
     "trainingContainerImageDigestSource",
@@ -87,6 +101,8 @@ REQUIRED_CONFIG_KEYS = {
     "gradient_accumulation_steps",
     "num_train_epochs",
     "warmup_steps",
+    "bf16",
+    "fp16",
     "output_dir",
     "adapter_output_dir",
     "dataset_dir",
@@ -99,11 +115,79 @@ FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune
 CHECKPOINT_LINEAGE_SCHEMA = "lumen.zerogpu.checkpoint_lineage/1.0.0"
 CHECKPOINT_DIRECTORY_SCHEMA = "lumen.zerogpu.checkpoint_directory/1.0.0"
 RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.0.0"
+SFT_CHECKPOINT_LINEAGE_SCHEMA = "lumen.sft_checkpoint_lineage/1.2.0"
+SFT_CHECKPOINT_DIRECTORY_SCHEMA = "lumen.sft_checkpoint_directory/1.1.0"
+SFT_CHECKPOINT_SAVE_STEPS = 10
+SFT_CHECKPOINT_MINIMUM_RETENTION = 2
+CHECKPOINT_SCALER_STATE_SCHEMA = "lumen.transformers_scaler_checkpoint/1.0.0"
+CHECKPOINT_SCALER_FILENAME = "scaler.pt"
+CHECKPOINT_SCALER_TRANSFORMERS_VERSION = "4.57.6"
+CHECKPOINT_SCALER_ACCELERATE_VERSION = "1.14.0"
+SFT_CHECKPOINT_REQUIRED_FILES = frozenset(
+    {
+        "adapter_config.json",
+        "optimizer.pt",
+        "rng_state.pth",
+        "scheduler.pt",
+        "trainer_state.json",
+        "training_args.bin",
+    }
+)
+SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA = "lumen.sft_token_length_preflight/1.1.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.1.0"
+FLEET_LOSS_SHARE_EVIDENCE_SCHEMA = "lumen.fleet-loss-share-evidence/1.1.0"
+FLEET_SOURCE_ROLE_SCHEMA = "lumen.fleet-source-role/1.0.0"
+FLEET_LOSS_SHARE_BASIS_POINT_DENOMINATOR = 10_000
+FLEET_SOURCE_ROLES = (
+    "behavioral_primary",
+    "public_behavioral",
+    "supplemental_static",
+)
+FLEET_DPO_TOKENIZATION_POLICY = {
+    "trainerImplementation": "trl.DPOTrainer.tokenize_row",
+    "trlVersion": "0.24.0",
+    "completionTokenization": "add_special_tokens_false",
+    "completionSuffix": "append_tokenizer_eos_token_id",
+    "appendedEOSTokensPerCompletion": 1,
+}
+FLEET_LOSS_SHARE_FIELD_NAMES = {
+    "sft": {
+        "denominatorTokenCount": "assistantTargetTokenCount",
+        "supplementalNumeratorTokenCount": (
+            "supplementalStaticAssistantTargetTokenCount"
+        ),
+        "publicNumeratorTokenCount": (
+            "publicBehavioralAssistantTargetTokenCount"
+        ),
+        "perSourceFamilyNumeratorTokenCounts": (
+            "supplementalStaticAssistantTargetTokenCountsBySourceFamily"
+        ),
+    },
+    "dpo": {
+        "denominatorTokenCount": "chosenTargetTokenCount",
+        "supplementalNumeratorTokenCount": (
+            "supplementalStaticChosenTargetTokenCount"
+        ),
+        "publicNumeratorTokenCount": (
+            "publicBehavioralChosenTargetTokenCount"
+        ),
+        "perSourceFamilyNumeratorTokenCounts": (
+            "supplementalStaticChosenTargetTokenCountsBySourceFamily"
+        ),
+    },
+}
+TRAINING_COMPLETION_EVIDENCE_SCHEMA = "lumen.training_completion/1.1.0"
+TRAINING_PRECISION_SCHEMA = "lumen.training-precision/1.0.0"
+SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS = 128
 ZERO_GPU_LINEAGE_FIELDS = (
     "zeroGPUSize",
     "zeroGPUDurationSeconds",
     "observedAccelerator",
 )
+
+
+class _IncompleteSFTCheckpoint(RuntimeError):
+    """A structurally unfinished checkpoint that can only be discarded when stale."""
 
 
 def _runtime_accelerator_audit() -> dict[str, Any]:
@@ -172,11 +256,46 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _resolve_training_precision(cfg: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve an explicit, mutually exclusive mixed-precision contract."""
+
+    bf16 = cfg.get("bf16")
+    fp16 = cfg.get("fp16")
+    if type(bf16) is not bool or type(fp16) is not bool:
+        raise ValueError("bf16 and fp16 must both be explicit booleans")
+    if bf16 == fp16:
+        raise ValueError("Exactly one of bf16 and fp16 must be true")
+    return {
+        "schemaVersion": TRAINING_PRECISION_SCHEMA,
+        "bf16": bf16,
+        "fp16": fp16,
+        "dtype": "bfloat16" if bf16 else "float16",
+    }
+
+
+def _checkpoint_scaler_state_contract(
+    precision_value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind the pinned Transformers/Accelerate native-AMP scaler contract."""
+
+    precision = _resolve_training_precision(precision_value)
+    return {
+        "schemaVersion": CHECKPOINT_SCALER_STATE_SCHEMA,
+        "filename": CHECKPOINT_SCALER_FILENAME,
+        "required": precision["fp16"],
+        "requirement": "required_for_fp16_cuda_native_amp",
+        "transformersVersion": CHECKPOINT_SCALER_TRANSFORMERS_VERSION,
+        "accelerateVersion": CHECKPOINT_SCALER_ACCELERATE_VERSION,
+    }
+
+
 def load_config(path: Path) -> dict[str, Any]:
     cfg = json.loads(path.read_text(encoding="utf-8"))
     missing = [key for key in sorted(REQUIRED_CONFIG_KEYS) if key not in cfg]
     if missing:
         raise ValueError(f"Config is missing required keys: {', '.join(missing)}")
+    _resolve_training_precision(cfg)
+    verify_chat_template_contract(cfg["chatTemplateContract"])
     validate_artifact_path_config(cfg)
     return cfg
 
@@ -236,7 +355,12 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def render_messages(tokenizer: Any, messages: list[dict[str, str]]) -> str:
     if hasattr(tokenizer, "apply_chat_template"):
-        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+        return apply_non_thinking_chat_template(
+            tokenizer,
+            messages,
+            tokenize=False,
+            add_generation_prompt=False,
+        )
     return "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages)
 
 
@@ -306,7 +430,8 @@ def _chat_template_input_ids(
     *,
     add_generation_prompt: bool,
 ) -> list[int]:
-    rendered = tokenizer.apply_chat_template(
+    rendered = apply_non_thinking_chat_template(
+        tokenizer,
         messages,
         tokenize=True,
         add_generation_prompt=add_generation_prompt,
@@ -394,10 +519,15 @@ def tokenize_assistant_only_row(
         "tokenize": True,
         "add_generation_prompt": False,
         "return_dict": True,
+        "enable_thinking": False,
     }
     if _tokenizer_supports_assistant_masks(tokenizer):
         chat_template_kwargs["return_assistant_tokens_mask"] = True
-    processed = tokenizer.apply_chat_template(messages, **chat_template_kwargs)
+    processed = apply_non_thinking_chat_template(
+        tokenizer,
+        messages,
+        **chat_template_kwargs,
+    )
     if not hasattr(processed, "get"):
         raise RuntimeError(
             "Assistant-only loss requires apply_chat_template(..., return_dict=True) "
@@ -441,10 +571,14 @@ def tokenize_assistant_only_row(
                 f"({len(input_ids)} != {len(attention_mask)})"
             )
 
-    if max_seq_length is not None and max_seq_length > 0:
-        input_ids = input_ids[:max_seq_length]
-        attention_mask = attention_mask[:max_seq_length]
-        assistant_masks = assistant_masks[:max_seq_length]
+    if max_seq_length is not None:
+        if type(max_seq_length) is not int or max_seq_length <= 0:
+            raise ValueError("max_seq_length must be a positive integer")
+        if len(input_ids) > max_seq_length:
+            raise RuntimeError(
+                f"{path}:{row_index + 1} renders to {len(input_ids)} tokens, "
+                f"exceeding max_seq_length {max_seq_length}; SFT truncation is forbidden"
+            )
 
     labels = [token_id if mask else -100 for token_id, mask in zip(input_ids, assistant_masks)]
     if all(label == -100 for label in labels):
@@ -459,6 +593,150 @@ def tokenize_assistant_only_row(
         "attention_mask": attention_mask,
         "labels": labels,
     }
+
+
+def _sft_nearest_rank(values: list[int], percentile: int) -> int:
+    if not values:
+        raise ValueError("SFT token-length statistics require at least one value")
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil((percentile / 100) * len(ordered)) - 1)]
+
+
+def _sft_token_length_statistics(values: list[int]) -> dict[str, int]:
+    if not values:
+        raise ValueError("SFT token-length statistics require at least one value")
+    return {
+        "min": min(values),
+        "p50": _sft_nearest_rank(values, 50),
+        "p95": _sft_nearest_rank(values, 95),
+        "max": max(values),
+    }
+
+
+def _preflight_sft_token_lengths(
+    splits: Mapping[str, tuple[list[dict[str, Any]], Path]],
+    *,
+    tokenizer: Any,
+    max_sequence_length: int,
+    minimum_sequence_margin_tokens: int = SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+    agent: str | None = None,
+    fleet_loss_share_contract: Any = None,
+    fleet_config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if type(max_sequence_length) is not int or max_sequence_length <= 0:
+        raise ValueError("max_seq_length must be a positive integer")
+    if (
+        type(minimum_sequence_margin_tokens) is not int
+        or minimum_sequence_margin_tokens < SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS
+    ):
+        raise ValueError(
+            "minimum_sequence_margin_tokens cannot weaken the controlled 128-token margin"
+        )
+    if agent == "fleet":
+        _validated_fleet_loss_share_contract(
+            fleet_loss_share_contract,
+            lane="sft",
+            config=fleet_config,
+        )
+    elif fleet_loss_share_contract is not None:
+        raise RuntimeError("Fleet loss-share contract is forbidden for non-Fleet SFT")
+    aggregate_total: list[int] = []
+    aggregate_assistant: list[int] = []
+    split_summaries: dict[str, dict[str, Any]] = {}
+    fleet_target_rows: dict[
+        str,
+        list[tuple[Mapping[str, Any], int]],
+    ] = {}
+    for split, split_value in splits.items():
+        if (
+            not isinstance(split, str)
+            or not split
+            or not isinstance(split_value, tuple)
+            or len(split_value) != 2
+        ):
+            raise ValueError("SFT preflight splits must bind records and their source path")
+        records, path = split_value
+        if not isinstance(records, list) or not isinstance(path, Path):
+            raise TypeError("SFT preflight split values are invalid")
+        total_lengths: list[int] = []
+        assistant_lengths: list[int] = []
+        split_fleet_target_rows: list[tuple[Mapping[str, Any], int]] = []
+        for row_index, record in enumerate(records):
+            messages = normalize_chat_messages(
+                record,
+                row_index=row_index,
+                path=path,
+            )
+            tokenized = tokenize_assistant_only_row(
+                tokenizer,
+                messages,
+                path=path,
+                row_index=row_index,
+                max_seq_length=None,
+            )
+            total_tokens = len(tokenized["input_ids"])
+            assistant_tokens = sum(
+                1 for label in tokenized["labels"] if label != -100
+            )
+            if total_tokens > max_sequence_length:
+                raise RuntimeError(
+                    "SFT token-length preflight rejected "
+                    f"{split} row {row_index}: full rendered row uses "
+                    f"{total_tokens} tokens, exceeding max_seq_length "
+                    f"{max_sequence_length}; truncation is forbidden"
+                )
+            total_lengths.append(total_tokens)
+            assistant_lengths.append(assistant_tokens)
+            aggregate_total.append(total_tokens)
+            aggregate_assistant.append(assistant_tokens)
+            if agent == "fleet":
+                split_fleet_target_rows.append((record, assistant_tokens))
+        if agent == "fleet":
+            fleet_target_rows[split] = split_fleet_target_rows
+        if records:
+            split_summaries[split] = {
+                "records": len(records),
+                "totalTokens": _sft_token_length_statistics(total_lengths),
+                "assistantTargetTokens": _sft_token_length_statistics(
+                    assistant_lengths
+                ),
+                "smallestSequenceMarginTokens": (
+                    max_sequence_length - max(total_lengths)
+                ),
+            }
+        else:
+            split_summaries[split] = {"records": 0}
+    if not aggregate_total:
+        raise RuntimeError("SFT token-length preflight requires at least one row")
+    smallest_margin = max_sequence_length - max(aggregate_total)
+    if smallest_margin < minimum_sequence_margin_tokens:
+        raise RuntimeError(
+            "SFT token-length preflight rejected the configured sequence limit: "
+            f"the smallest exact-tokenizer margin is {smallest_margin} tokens, "
+            f"below the controlled minimum of {minimum_sequence_margin_tokens}"
+        )
+    report = {
+        "schemaVersion": SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA,
+        "maxSequenceLength": max_sequence_length,
+        "minimumSequenceMarginTokens": minimum_sequence_margin_tokens,
+        "percentileMethod": "nearest_rank",
+        "records": len(aggregate_total),
+        "totalTokens": _sft_token_length_statistics(aggregate_total),
+        "assistantTargetTokens": _sft_token_length_statistics(
+            aggregate_assistant
+        ),
+        "smallestSequenceMarginTokens": smallest_margin,
+        "truncationRequired": False,
+        "splits": split_summaries,
+    }
+    if agent == "fleet":
+        report["fleetLossShareEvidence"] = _build_fleet_loss_share_evidence(
+            contract_value=fleet_loss_share_contract,
+            lane="sft",
+            split_target_rows=fleet_target_rows,
+            config=fleet_config,
+        )
+    return report
 
 
 def _seed_everything(seed: int) -> None:
@@ -544,6 +822,532 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _require_exact_mapping_keys(
+    value: Any,
+    expected: set[str],
+    *,
+    label: str,
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != expected:
+        raise RuntimeError(f"{label} has an invalid schema")
+    return value
+
+
+def _validated_fleet_loss_share_contract(
+    value: Any,
+    *,
+    lane: str,
+    config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate the complete deny-by-default Fleet loss-share contract.
+
+    This deliberately does not import the dataset compiler. Training must
+    fail closed if either the generated contract or its row-role registry is
+    malformed, even when the compiler is unavailable in the runtime image.
+    """
+
+    if lane not in FLEET_LOSS_SHARE_FIELD_NAMES:
+        raise RuntimeError(f"Unsupported Fleet loss-share lane: {lane}")
+    contract = _require_exact_mapping_keys(
+        value,
+        {
+            "schemaVersion",
+            "enforcementRequired",
+            "enforcementPhase",
+            "requiredLanes",
+            "authoritativeCapEncoding",
+            "basisPointDenominator",
+            "capsBasisPoints",
+            "dpoTokenizationPolicy",
+            "exactTokenEvidenceContract",
+            "failurePolicy",
+            "rowMetadataContract",
+            "sourceSelectionProxy",
+            "sourceRoleRegistry",
+            "tokenizer",
+            "tokenAccounting",
+        },
+        label="Fleet loss-share contract",
+    )
+    if (
+        contract.get("schemaVersion") != FLEET_LOSS_SHARE_CONTRACT_SCHEMA
+        or contract.get("enforcementRequired") is not True
+        or contract.get("enforcementPhase")
+        != "post_tokenizer_load_pre_optimizer"
+        or contract.get("requiredLanes") != ["sft", "dpo"]
+        or contract.get("authoritativeCapEncoding") != "integer_basis_points"
+        or type(contract.get("basisPointDenominator")) is not int
+        or contract.get("basisPointDenominator")
+        != FLEET_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+        or contract.get("failurePolicy") != "abort_before_optimizer"
+    ):
+        raise RuntimeError("Fleet loss-share contract control fields drifted")
+
+    caps = _require_exact_mapping_keys(
+        contract.get("capsBasisPoints"),
+        {
+            "supplementalStaticTotal",
+            "publicBehavioralTotal",
+            "eachSupplementalSourceFamily",
+        },
+        label="Fleet loss-share caps",
+    )
+    supplemental_caps = _require_exact_mapping_keys(
+        caps.get("supplementalStaticTotal"),
+        {"requested", "hard"},
+        label="Fleet supplemental-static caps",
+    )
+    public_caps = _require_exact_mapping_keys(
+        caps.get("publicBehavioralTotal"),
+        {"requested", "hard"},
+        label="Fleet public-behavioral caps",
+    )
+    family_caps = _require_exact_mapping_keys(
+        caps.get("eachSupplementalSourceFamily"),
+        {"hard"},
+        label="Fleet per-source-family caps",
+    )
+    if (
+        any(type(value) is not int for value in supplemental_caps.values())
+        or any(type(value) is not int for value in public_caps.values())
+        or any(type(value) is not int for value in family_caps.values())
+        or supplemental_caps != {"requested": 2_500, "hard": 3_000}
+        or public_caps != {"requested": 3_500, "hard": 3_500}
+        or family_caps != {"hard": 1_000}
+    ):
+        raise RuntimeError("Fleet loss-share basis-point caps drifted")
+
+    row_contract = _require_exact_mapping_keys(
+        contract.get("rowMetadataContract"),
+        {"requiredCanonicalFields", "missingOrUnknown"},
+        label="Fleet row-metadata contract",
+    )
+    if row_contract != {
+        "requiredCanonicalFields": ["sourceFamily", "taskType"],
+        "missingOrUnknown": "hard_fail",
+    }:
+        raise RuntimeError("Fleet row-metadata contract drifted")
+
+    source_selection_proxy = _require_exact_mapping_keys(
+        contract.get("sourceSelectionProxy"),
+        {
+            "status",
+            "maximumSupplementalStaticShareBasisPoints",
+            "contract",
+        },
+        label="Fleet source-selection proxy",
+    )
+    source_proxy_contract = _require_exact_mapping_keys(
+        source_selection_proxy.get("contract"),
+        {
+            "schemaVersion",
+            "status",
+            "strategy",
+            "maxCharsPerToken",
+            "exactPinnedTokenizerAuthoritative",
+            "authoritativeEnforcementPhase",
+        },
+        label="Fleet source-token proxy contract",
+    )
+    if (
+        source_selection_proxy.get("status")
+        != "safety_budget_not_exact_token_count"
+        or source_selection_proxy.get("maximumSupplementalStaticShareBasisPoints")
+        != 1_500
+        or source_proxy_contract.get("schemaVersion")
+        != "lumen.source-token-proxy/1.0.0"
+        or source_proxy_contract.get("status")
+        != "source_side_selection_proxy_not_exact_token_count"
+        or source_proxy_contract.get("strategy")
+        != "max_whitespace_terms_utf8_byte_ceiling"
+        or type(source_proxy_contract.get("maxCharsPerToken")) is not int
+        or source_proxy_contract["maxCharsPerToken"] <= 0
+        or source_proxy_contract.get("exactPinnedTokenizerAuthoritative") is not True
+        or source_proxy_contract.get("authoritativeEnforcementPhase")
+        != "post_tokenizer_load_pre_optimizer"
+    ):
+        raise RuntimeError("Fleet source-selection proxy contract drifted")
+
+    dpo_tokenization_policy = _require_exact_mapping_keys(
+        contract.get("dpoTokenizationPolicy"),
+        set(FLEET_DPO_TOKENIZATION_POLICY),
+        label="Fleet DPO tokenization policy",
+    )
+    if dict(dpo_tokenization_policy) != FLEET_DPO_TOKENIZATION_POLICY:
+        raise RuntimeError("Fleet DPO tokenization policy drifted")
+
+    accounting = _require_exact_mapping_keys(
+        contract.get("tokenAccounting"),
+        {"sft", "dpo"},
+        label="Fleet token-accounting contract",
+    )
+    if accounting != {
+        "sft": "assistant_mask_non_ignored_token_count",
+        "dpo": (
+            "rendered_chosen_completion_tokens_add_special_tokens_false_"
+            "plus_one_trl_0_24_0_appended_eos"
+        ),
+    }:
+        raise RuntimeError("Fleet token-accounting contract drifted")
+
+    tokenizer_binding = _require_exact_mapping_keys(
+        contract.get("tokenizer"),
+        {"baseModelID", "baseModelRevision", "tokenizerSHA256"},
+        label="Fleet tokenizer binding",
+    )
+    if (
+        not isinstance(tokenizer_binding.get("baseModelID"), str)
+        or not tokenizer_binding["baseModelID"]
+        or not isinstance(tokenizer_binding.get("baseModelRevision"), str)
+        or re.fullmatch(
+            r"[0-9a-f]{40}", str(tokenizer_binding["baseModelRevision"])
+        )
+        is None
+        or re.fullmatch(r"[0-9a-f]{64}", str(tokenizer_binding.get("tokenizerSHA256")))
+        is None
+    ):
+        raise RuntimeError("Fleet tokenizer binding is malformed")
+    if config is not None and (
+        tokenizer_binding.get("baseModelID") != config.get("base_model_name")
+        or tokenizer_binding.get("baseModelRevision")
+        != config.get("baseModelRevision")
+        or tokenizer_binding.get("tokenizerSHA256")
+        != config.get("baseModelTokenizerDigest")
+    ):
+        raise RuntimeError("Fleet tokenizer binding drifted from the training config")
+
+    evidence_contract = _require_exact_mapping_keys(
+        contract.get("exactTokenEvidenceContract"),
+        {
+            "required",
+            "schemaVersion",
+            "statusAtGeneration",
+            "tokenizer",
+            "comparisonRule",
+            "lanes",
+        },
+        label="Fleet exact-token evidence contract",
+    )
+    if (
+        evidence_contract.get("required") is not True
+        or evidence_contract.get("schemaVersion")
+        != FLEET_LOSS_SHARE_EVIDENCE_SCHEMA
+        or evidence_contract.get("statusAtGeneration")
+        != "pending_exact_tokenizer_preflight"
+        or evidence_contract.get("tokenizer") != "pinned_qwen_tokenizer"
+        or evidence_contract.get("comparisonRule")
+        != (
+            "numeratorTokenCount*basisPointDenominator<="
+            "denominatorTokenCount*capBasisPoints"
+        )
+    ):
+        raise RuntimeError("Fleet exact-token evidence contract drifted")
+    lanes = _require_exact_mapping_keys(
+        evidence_contract.get("lanes"),
+        {"sft", "dpo"},
+        label="Fleet exact-token evidence lanes",
+    )
+    for expected_lane, expected_fields in FLEET_LOSS_SHARE_FIELD_NAMES.items():
+        actual_fields = _require_exact_mapping_keys(
+            lanes.get(expected_lane),
+            set(expected_fields),
+            label=f"Fleet {expected_lane} exact-token evidence fields",
+        )
+        if dict(actual_fields) != expected_fields:
+            raise RuntimeError(
+                f"Fleet {expected_lane} exact-token evidence field names drifted"
+            )
+
+    registry = _require_exact_mapping_keys(
+        contract.get("sourceRoleRegistry"),
+        {
+            "schemaVersion",
+            "unknownPairs",
+            "categories",
+            "registeredPairs",
+            "publicBehavioralRule",
+        },
+        label="Fleet source-role registry",
+    )
+    if (
+        registry.get("schemaVersion") != FLEET_SOURCE_ROLE_SCHEMA
+        or registry.get("unknownPairs") != "hard_fail"
+        or registry.get("categories") != list(FLEET_SOURCE_ROLES)
+    ):
+        raise RuntimeError("Fleet source-role registry control fields drifted")
+    registered_pairs = registry.get("registeredPairs")
+    if not isinstance(registered_pairs, list) or not registered_pairs:
+        raise RuntimeError("Fleet source-role registry has no registered pairs")
+    observed_pairs: set[tuple[str, str]] = set()
+    observed_registered_categories: set[str] = set()
+    for index, item in enumerate(registered_pairs):
+        pair = _require_exact_mapping_keys(
+            item,
+            {"sourceFamily", "taskType", "category"},
+            label=f"Fleet registered source-role pair {index}",
+        )
+        source_family = pair.get("sourceFamily")
+        task_type = pair.get("taskType")
+        category = pair.get("category")
+        if (
+            not isinstance(source_family, str)
+            or not source_family
+            or source_family.strip() != source_family
+            or not isinstance(task_type, str)
+            or not task_type
+            or task_type.strip() != task_type
+            or category not in FLEET_SOURCE_ROLES
+            or category == "public_behavioral"
+            or source_family.startswith("public_adapter_corpus_")
+            or (source_family, task_type) in observed_pairs
+        ):
+            raise RuntimeError("Fleet source-role registry contains an invalid pair")
+        observed_pairs.add((source_family, task_type))
+        observed_registered_categories.add(category)
+    if observed_registered_categories != {
+        "behavioral_primary",
+        "supplemental_static",
+    }:
+        raise RuntimeError(
+            "Fleet source-role registry must contain primary and static pairs"
+        )
+    public_rule = _require_exact_mapping_keys(
+        registry.get("publicBehavioralRule"),
+        {
+            "sourceFamilyPrefix",
+            "taskType",
+            "requiresPublicCorpusLineage",
+        },
+        label="Fleet public-behavioral source rule",
+    )
+    if public_rule != {
+        "sourceFamilyPrefix": "public_adapter_corpus_",
+        "taskType": "public_capability_delegation",
+        "requiresPublicCorpusLineage": True,
+    }:
+        raise RuntimeError("Fleet public-behavioral source rule drifted")
+    return dict(contract)
+
+
+def _fleet_source_role_from_contract(
+    record: Mapping[str, Any],
+    *,
+    contract: Mapping[str, Any],
+) -> tuple[str, str, str]:
+    metadata = record.get("metadata")
+    if not isinstance(metadata, Mapping):
+        raise RuntimeError("Fleet loss-share rows require object metadata")
+    source_family = metadata.get("sourceFamily")
+    task_type = metadata.get("taskType")
+    if (
+        not isinstance(source_family, str)
+        or not source_family
+        or source_family.strip() != source_family
+        or not isinstance(task_type, str)
+        or not task_type
+        or task_type.strip() != task_type
+    ):
+        raise RuntimeError(
+            "Fleet loss-share rows require canonical metadata.sourceFamily and "
+            "metadata.taskType"
+        )
+    registry = contract["sourceRoleRegistry"]
+    registered = {
+        (item["sourceFamily"], item["taskType"]): item["category"]
+        for item in registry["registeredPairs"]
+    }
+    category = registered.get((source_family, task_type))
+    if category is None:
+        public_rule = registry["publicBehavioralRule"]
+        public_corpus = metadata.get("publicCorpus")
+        if (
+            source_family.startswith(public_rule["sourceFamilyPrefix"])
+            and task_type == public_rule["taskType"]
+            and isinstance(public_corpus, Mapping)
+            and bool(public_corpus)
+        ):
+            category = "public_behavioral"
+        else:
+            raise RuntimeError(
+                "Unregistered Fleet source-role pair: "
+                f"sourceFamily={source_family!r}, taskType={task_type!r}"
+            )
+    return source_family, task_type, category
+
+
+def _fleet_cap_passes(
+    *,
+    numerator: int,
+    denominator: int,
+    cap_basis_points: int,
+) -> bool:
+    return (
+        type(numerator) is int
+        and numerator >= 0
+        and type(denominator) is int
+        and denominator > 0
+        and type(cap_basis_points) is int
+        and 0 <= cap_basis_points <= FLEET_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+        and numerator * FLEET_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+        <= denominator * cap_basis_points
+    )
+
+
+def _build_fleet_loss_share_evidence(
+    *,
+    contract_value: Any,
+    lane: str,
+    split_target_rows: Mapping[
+        str,
+        list[tuple[Mapping[str, Any], int]],
+    ],
+    config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    contract = _validated_fleet_loss_share_contract(
+        contract_value,
+        lane=lane,
+        config=config,
+    )
+    if set(split_target_rows) != {"train", "validation"}:
+        raise RuntimeError(
+            "Fleet exact-token enforcement requires train and validation splits"
+        )
+    field_names = FLEET_LOSS_SHARE_FIELD_NAMES[lane]
+    caps = contract["capsBasisPoints"]
+    split_evidence: dict[str, Any] = {}
+    for split in ("train", "validation"):
+        rows = split_target_rows[split]
+        if not isinstance(rows, list) or not rows:
+            raise RuntimeError(
+                f"Fleet exact-token enforcement requires a non-empty {split} split"
+            )
+        target_by_category = {category: 0 for category in FLEET_SOURCE_ROLES}
+        supplemental_by_family: dict[str, int] = {}
+        row_evidence: list[dict[str, Any]] = []
+        for row_index, row_value in enumerate(rows):
+            if (
+                not isinstance(row_value, tuple)
+                or len(row_value) != 2
+                or not isinstance(row_value[0], Mapping)
+            ):
+                raise RuntimeError("Fleet exact-token row evidence is malformed")
+            record, target_tokens = row_value
+            if type(target_tokens) is not int or target_tokens <= 0:
+                raise RuntimeError(
+                    "Fleet exact-token rows require positive integer target counts"
+                )
+            source_family, task_type, category = _fleet_source_role_from_contract(
+                record,
+                contract=contract,
+            )
+            target_by_category[category] += target_tokens
+            if category == "supplemental_static":
+                supplemental_by_family[source_family] = (
+                    supplemental_by_family.get(source_family, 0) + target_tokens
+                )
+            row_evidence.append(
+                {
+                    "rowIndex": row_index,
+                    "sourceRowSHA256": _canonical_sha256(record),
+                    "sourceFamily": source_family,
+                    "taskType": task_type,
+                    "category": category,
+                    "targetTokenCount": target_tokens,
+                }
+            )
+
+        denominator = sum(target_by_category.values())
+        supplemental = target_by_category["supplemental_static"]
+        public = target_by_category["public_behavioral"]
+        cap_checks = (
+            (
+                "supplemental-static requested",
+                supplemental,
+                caps["supplementalStaticTotal"]["requested"],
+            ),
+            (
+                "supplemental-static hard",
+                supplemental,
+                caps["supplementalStaticTotal"]["hard"],
+            ),
+            (
+                "public-behavioral requested",
+                public,
+                caps["publicBehavioralTotal"]["requested"],
+            ),
+            (
+                "public-behavioral hard",
+                public,
+                caps["publicBehavioralTotal"]["hard"],
+            ),
+        )
+        # The contract bounds optimization loss. Validation rows never enter
+        # optimizer steps (there is no early stopping or best-checkpoint
+        # selection), so their exact shares are recorded and independently
+        # reconstructed without imposing a quantized small-split cap.
+        enforce_optimizer_caps = split == "train"
+        for label, numerator, cap in cap_checks:
+            if enforce_optimizer_caps and not _fleet_cap_passes(
+                numerator=numerator,
+                denominator=denominator,
+                cap_basis_points=cap,
+            ):
+                raise RuntimeError(
+                    f"Fleet {lane} {split} {label} exact-token cap failed: "
+                    f"{numerator}*10000 > {denominator}*{cap}"
+                )
+        family_cap = caps["eachSupplementalSourceFamily"]["hard"]
+        for source_family, numerator in sorted(supplemental_by_family.items()):
+            if enforce_optimizer_caps and not _fleet_cap_passes(
+                numerator=numerator,
+                denominator=denominator,
+                cap_basis_points=family_cap,
+            ):
+                raise RuntimeError(
+                    f"Fleet {lane} {split} supplemental source family "
+                    f"{source_family!r} exact-token cap failed: "
+                    f"{numerator}*10000 > {denominator}*{family_cap}"
+                )
+
+        row_hashes = [item["sourceRowSHA256"] for item in row_evidence]
+        split_evidence[split] = {
+            "records": len(rows),
+            "capEnforcementStatus": (
+                "optimizer_enforced"
+                if enforce_optimizer_caps
+                else "observed_non_optimizer_split"
+            ),
+            "sourceRowsSHA256": _canonical_sha256(row_hashes),
+            "rowTokenEvidence": row_evidence,
+            "targetTokenCountsByCategory": target_by_category,
+            field_names["denominatorTokenCount"]: denominator,
+            field_names["supplementalNumeratorTokenCount"]: supplemental,
+            field_names["publicNumeratorTokenCount"]: public,
+            field_names["perSourceFamilyNumeratorTokenCounts"]: dict(
+                sorted(supplemental_by_family.items())
+            ),
+        }
+
+    return {
+        "schemaVersion": FLEET_LOSS_SHARE_EVIDENCE_SCHEMA,
+        "status": "passed",
+        "lane": lane,
+        "enforcementScope": "optimizer_train_with_validation_observation",
+        "basisPointDenominator": contract["basisPointDenominator"],
+        "capsBasisPoints": contract["capsBasisPoints"],
+        "tokenizer": contract["tokenizer"],
+        "tokenAccounting": contract["tokenAccounting"][lane],
+        "dpoTokenizationPolicy": (
+            contract["dpoTokenizationPolicy"] if lane == "dpo" else None
+        ),
+        "contractSHA256": _canonical_sha256(contract),
+        "sourceRoleRegistrySHA256": _canonical_sha256(
+            contract["sourceRoleRegistry"]
+        ),
+        "splits": split_evidence,
+    }
+
+
 def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
@@ -562,6 +1366,14 @@ def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
+        directory_fd = os.open(
+            path.parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
         temporary = None
     finally:
         if temporary is not None:
@@ -878,6 +1690,522 @@ def _checkpoint_lineage_callback(
     return CheckpointLineageCallback()
 
 
+def _sft_checkpoint_policy(cfg: Mapping[str, Any]) -> tuple[int, int]:
+    save_steps = cfg.get("sft_checkpoint_save_steps", SFT_CHECKPOINT_SAVE_STEPS)
+    save_total_limit = cfg.get("save_total_limit", 2)
+    if type(save_steps) is not int or save_steps <= 0:
+        raise ValueError("sft_checkpoint_save_steps must be a positive integer")
+    if (
+        type(save_total_limit) is not int
+        or save_total_limit < SFT_CHECKPOINT_MINIMUM_RETENTION
+    ):
+        raise ValueError("save_total_limit must retain at least two SFT checkpoints")
+    return save_steps, save_total_limit
+
+
+def _sft_checkpoint_dataset_sha256(cfg: Mapping[str, Any]) -> dict[str, str]:
+    dataset_root = Path(str(cfg.get("dataset_dir") or "")).resolve()
+    filenames = ("train_sft.jsonl", "val_sft.jsonl", "variant_manifest.json")
+    hashes: dict[str, str] = {}
+    for filename in filenames:
+        path = dataset_root / filename
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError(f"SFT checkpoint lineage requires a regular {filename}")
+        hashes[filename] = _require_sha256(
+            _hash_file(path),
+            name=f"{filename} SHA-256",
+        )
+    return hashes
+
+
+def _sft_training_code_sha256(cfg: Mapping[str, Any]) -> str:
+    phase_digests = cfg.get("trainingCodeSHA256ByPhase")
+    digest = (
+        phase_digests.get("sft")
+        if isinstance(phase_digests, Mapping)
+        else cfg.get("trainingCodeSHA256")
+    )
+    return _require_sha256(digest, name="SFT training-code SHA-256")
+
+
+def _sft_checkpoint_static_contract(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+) -> dict[str, Any]:
+    output_dir = Path(str(cfg.get("output_dir") or "")).resolve()
+    record_value = str(cfg.get("sftCheckpointLineagePath") or "")
+    if not record_value:
+        raise RuntimeError("SFT checkpoint lineage path is missing")
+    record_path = Path(record_value).resolve()
+    if record_path == output_dir or output_dir in record_path.parents:
+        raise RuntimeError("SFT checkpoint lineage record must be outside its checkpoint root")
+    preflight_value = str(cfg.get("sftTokenLengthPreflightPath") or "")
+    if not preflight_value:
+        raise RuntimeError("SFT token-length preflight path is missing")
+    preflight_path = Path(preflight_value).resolve()
+    if output_dir not in preflight_path.parents:
+        raise RuntimeError("SFT token-length preflight must be inside its output directory")
+    save_steps, save_total_limit = _sft_checkpoint_policy(cfg)
+    precision = _resolve_training_precision(cfg)
+    return {
+        "schema": SFT_CHECKPOINT_LINEAGE_SCHEMA,
+        "agent": cfg.get("agent"),
+        "configPath": str(cfg_path.resolve()),
+        "configSHA256": _require_sha256(
+            _hash_file(cfg_path.resolve()),
+            name="SFT config SHA-256",
+        ),
+        "sourceVariantManifestSHA256": _require_sha256(
+            cfg.get("variantManifestSHA256"),
+            name="variantManifestSHA256",
+        ),
+        "datasetFileSHA256": _sft_checkpoint_dataset_sha256(cfg),
+        "trainingCodeSHA256": _sft_training_code_sha256(cfg),
+        "resolvedTrainingEnvironmentSHA256": _require_sha256(
+            cfg.get("resolvedTrainingEnvironmentSHA256"),
+            name="resolvedTrainingEnvironmentSHA256",
+        ),
+        "precision": precision,
+        "checkpointScalerState": _checkpoint_scaler_state_contract(precision),
+        "checkpointRoot": str(output_dir),
+        "outputDirectory": str(output_dir),
+        "adapterOutputDirectory": str(
+            Path(str(cfg.get("adapter_output_dir") or "")).resolve()
+        ),
+        "tokenLengthPreflightPath": str(
+            preflight_path
+        ),
+        "saveStrategy": "steps",
+        "saveSteps": save_steps,
+        "saveTotalLimit": save_total_limit,
+    }
+
+
+def _self_hashed_sft_checkpoint_record(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    unsigned = dict(payload)
+    unsigned.pop("checkpointLineageSHA256", None)
+    return {
+        **unsigned,
+        "checkpointLineageSHA256": _canonical_sha256(unsigned),
+    }
+
+
+def _initial_sft_checkpoint_lineage(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+) -> dict[str, Any]:
+    return _self_hashed_sft_checkpoint_record(
+        {
+            **_sft_checkpoint_static_contract(cfg, cfg_path=cfg_path),
+            "assistantOnlyLoss": None,
+            "tokenLengthPreflightSHA256": None,
+            "checkpoints": [],
+        }
+    )
+
+
+def _read_sft_checkpoint_lineage(path: Path) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("Missing regular SFT checkpoint lineage record")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema") != SFT_CHECKPOINT_LINEAGE_SCHEMA
+    ):
+        raise RuntimeError("Invalid SFT checkpoint lineage contract")
+    expected = payload.get("checkpointLineageSHA256")
+    unsigned = dict(payload)
+    unsigned.pop("checkpointLineageSHA256", None)
+    if (
+        not isinstance(expected, str)
+        or re.fullmatch(r"[0-9a-f]{64}", expected) is None
+        or _canonical_sha256(unsigned) != expected
+    ):
+        raise RuntimeError("SFT checkpoint lineage integrity check failed")
+    return payload
+
+
+def _validate_sft_checkpoint_lineage_static(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+) -> dict[str, Any]:
+    record = _read_sft_checkpoint_lineage(
+        Path(str(cfg.get("sftCheckpointLineagePath") or "")).resolve()
+    )
+    expected = _sft_checkpoint_static_contract(cfg, cfg_path=cfg_path)
+    if any(record.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("SFT checkpoint lineage drifted from the config")
+    assistant_only_loss = record.get("assistantOnlyLoss")
+    if assistant_only_loss is not None and type(assistant_only_loss) is not bool:
+        raise RuntimeError("SFT checkpoint assistant-only-loss binding is invalid")
+    if not isinstance(record.get("checkpoints"), list):
+        raise RuntimeError("SFT checkpoint lineage checkpoints must be a list")
+    preflight_sha256 = record.get("tokenLengthPreflightSHA256")
+    if preflight_sha256 is not None:
+        _require_sha256(
+            preflight_sha256,
+            name="SFT token-length preflight SHA-256",
+        )
+    if assistant_only_loss is None and (
+        record.get("checkpoints") != [] or preflight_sha256 is not None
+    ):
+        raise RuntimeError("Unbound SFT checkpoint lineage cannot contain checkpoints")
+    return record
+
+
+def _reset_sft_checkpoint_lineage(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+) -> None:
+    _write_json_atomic(
+        Path(str(cfg.get("sftCheckpointLineagePath") or "")).resolve(),
+        _initial_sft_checkpoint_lineage(cfg, cfg_path=cfg_path),
+    )
+
+
+def _bind_sft_token_length_preflight(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+    preflight: Mapping[str, Any],
+) -> dict[str, Any]:
+    if preflight.get("schemaVersion") != SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA:
+        raise RuntimeError("SFT token-length preflight contract is invalid")
+    record_path = Path(str(cfg.get("sftCheckpointLineagePath") or "")).resolve()
+    record = _validate_sft_checkpoint_lineage_static(cfg, cfg_path=cfg_path)
+    if record.get("assistantOnlyLoss") is None:
+        raise RuntimeError("SFT token-length preflight requires bound training semantics")
+    unsigned = {
+        **dict(preflight),
+        "agent": cfg.get("agent"),
+        "variant": cfg.get("variant"),
+        "configPath": str(cfg_path.resolve()),
+        "configSHA256": record["configSHA256"],
+        "datasetFileSHA256": record["datasetFileSHA256"],
+        "trainingCodeSHA256": record["trainingCodeSHA256"],
+        "baseModelID": cfg.get("base_model_name"),
+        "baseModelRevision": cfg.get("baseModelRevision"),
+        "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "chatTemplateContract": cfg.get("chatTemplateContract"),
+    }
+    evidence = {
+        **unsigned,
+        "preflightSHA256": _canonical_sha256(unsigned),
+    }
+    evidence_path = Path(str(record["tokenLengthPreflightPath"])).resolve()
+    if evidence_path.is_symlink():
+        raise RuntimeError("SFT token-length preflight path is unsafe")
+    if evidence_path.exists():
+        if not evidence_path.is_file():
+            raise RuntimeError("SFT token-length preflight path is not a regular file")
+        existing = json.loads(evidence_path.read_text(encoding="utf-8"))
+        if existing != evidence:
+            raise RuntimeError("SFT token-length preflight evidence drifted")
+    else:
+        _write_json_atomic(evidence_path, evidence)
+    recorded_digest = record.get("tokenLengthPreflightSHA256")
+    if recorded_digest is None:
+        if record.get("checkpoints") != []:
+            raise RuntimeError("SFT checkpoints predate token-length preflight evidence")
+        updated = dict(record)
+        updated["tokenLengthPreflightSHA256"] = evidence["preflightSHA256"]
+        _write_json_atomic(
+            record_path,
+            _self_hashed_sft_checkpoint_record(updated),
+        )
+    elif recorded_digest != evidence["preflightSHA256"]:
+        raise RuntimeError("SFT token-length preflight lineage drifted")
+    return evidence
+
+
+def _sft_checkpoint_directory_manifest(
+    checkpoint: Path,
+    *,
+    expected_base_model: str,
+    precision: Mapping[str, Any],
+) -> dict[str, Any]:
+    if checkpoint.is_symlink():
+        raise RuntimeError("SFT checkpoint directory is missing or unsafe")
+    checkpoint = checkpoint.resolve()
+    step = _checkpoint_step(checkpoint.name)
+    if not checkpoint.is_dir():
+        raise RuntimeError("SFT checkpoint directory is missing or unsafe")
+    files: set[str] = set()
+    entries: list[dict[str, Any]] = []
+    for candidate in sorted(
+        checkpoint.rglob("*"),
+        key=lambda path: path.relative_to(checkpoint).as_posix(),
+    ):
+        if candidate.is_symlink():
+            raise RuntimeError("SFT checkpoint contains a symlink")
+        if candidate.is_dir():
+            continue
+        if not candidate.is_file():
+            raise RuntimeError("SFT checkpoint contains a non-regular entry")
+        relative = candidate.relative_to(checkpoint).as_posix()
+        files.add(relative)
+        entries.append(
+            {
+                "path": relative,
+                "sizeBytes": candidate.stat().st_size,
+                "sha256": _require_sha256(
+                    _hash_file(candidate),
+                    name=f"SFT checkpoint file {relative}",
+                ),
+            }
+        )
+    scaler_state = _checkpoint_scaler_state_contract(precision)
+    required_files = set(SFT_CHECKPOINT_REQUIRED_FILES)
+    if scaler_state["required"]:
+        required_files.add(CHECKPOINT_SCALER_FILENAME)
+    missing = sorted(required_files - files)
+    adapter_weights = files & {"adapter_model.bin", "adapter_model.safetensors"}
+    nested_adapters = sorted(
+        path
+        for path in files
+        if path.endswith("/adapter_config.json")
+        or path.endswith("/adapter_model.bin")
+        or path.endswith("/adapter_model.safetensors")
+    )
+    if missing:
+        raise _IncompleteSFTCheckpoint(
+            "SFT checkpoint is incomplete: missing " + ", ".join(missing)
+        )
+    if not adapter_weights:
+        raise _IncompleteSFTCheckpoint(
+            "SFT checkpoint is incomplete: missing a root policy adapter"
+        )
+    if len(adapter_weights) != 1 or nested_adapters:
+        raise RuntimeError("SFT checkpoint must contain exactly one root policy adapter")
+    try:
+        trainer_state = json.loads(
+            (checkpoint / "trainer_state.json").read_text(encoding="utf-8")
+        )
+        adapter_config = json.loads(
+            (checkpoint / "adapter_config.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("SFT checkpoint metadata is unreadable") from exc
+    if (
+        not isinstance(trainer_state, Mapping)
+        or trainer_state.get("global_step") != step
+    ):
+        raise RuntimeError("SFT checkpoint trainer state does not match its directory step")
+    if (
+        not isinstance(adapter_config, Mapping)
+        or adapter_config.get("base_model_name_or_path") != expected_base_model
+    ):
+        raise RuntimeError("SFT checkpoint base-model lineage drifted")
+    payload = {
+        "schema": SFT_CHECKPOINT_DIRECTORY_SCHEMA,
+        "globalStep": step,
+        "scalerState": scaler_state,
+        "files": entries,
+    }
+    return {**payload, "checkpointSHA256": _canonical_sha256(payload)}
+
+
+def _bound_sft_checkpoint_entries(
+    record: Mapping[str, Any],
+    *,
+    expected_base_model: str,
+) -> tuple[list[tuple[int, Path]], set[str], list[Path]]:
+    root = Path(str(record.get("checkpointRoot") or "")).resolve()
+    entries = record.get("checkpoints")
+    if not isinstance(entries, list):
+        raise RuntimeError("SFT checkpoint lineage checkpoints must be a list")
+    prepared: list[tuple[int, Path, str]] = []
+    declared_names: set[str] = set()
+    steps: list[int] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping) or set(entry) != {
+            "path",
+            "checkpointSHA256",
+        }:
+            raise RuntimeError("SFT checkpoint lineage entry is not canonical")
+        relative = str(entry.get("path") or "")
+        step = _checkpoint_step(relative)
+        if relative in declared_names:
+            raise RuntimeError("SFT checkpoint lineage contains duplicates")
+        declared_names.add(relative)
+        steps.append(step)
+        expected_digest = _require_sha256(
+            entry.get("checkpointSHA256"),
+            name=f"SFT checkpoint lineage digest for {relative}",
+        )
+        unresolved = root / relative
+        if unresolved.is_symlink():
+            raise RuntimeError("SFT checkpoint lineage points to a symlink")
+        checkpoint = unresolved.resolve()
+        if checkpoint.parent != root:
+            raise RuntimeError("SFT checkpoint lineage escapes its root")
+        prepared.append((step, checkpoint, expected_digest))
+    if steps != sorted(set(steps)):
+        raise RuntimeError("SFT checkpoint lineage entries must be unique and step-sorted")
+
+    # Transformers may rotate the oldest checkpoint before the on_save callback
+    # binds the newly completed checkpoint. Validate from newest to oldest so a
+    # newer signed recovery point can prove that a structurally unfinished older
+    # directory is only a stale rotation remnant. A missing or incomplete newest
+    # signed entry remains fatal, as does digest drift at any age.
+    validated_descending: list[tuple[int, Path]] = []
+    stale_partials: list[Path] = []
+    newer_checkpoint_validated = False
+    for step, checkpoint, expected_digest in reversed(prepared):
+        if not checkpoint.exists():
+            if not newer_checkpoint_validated:
+                raise RuntimeError("Newest bound SFT checkpoint is missing")
+            continue
+        try:
+            manifest = _sft_checkpoint_directory_manifest(
+                checkpoint,
+                expected_base_model=expected_base_model,
+                precision=record["precision"],
+            )
+        except _IncompleteSFTCheckpoint:
+            if not newer_checkpoint_validated:
+                raise
+            stale_partials.append(checkpoint)
+            continue
+        if manifest["checkpointSHA256"] != expected_digest:
+            raise RuntimeError("SFT checkpoint contents drifted from lineage")
+        validated_descending.append((step, checkpoint))
+        newer_checkpoint_validated = True
+    return (
+        list(reversed(validated_descending)),
+        declared_names,
+        sorted(stale_partials, key=lambda path: _checkpoint_step(path.name)),
+    )
+
+
+def _unbound_sft_checkpoint_directories(
+    root: Path,
+    *,
+    declared_names: set[str],
+) -> list[Path]:
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError("SFT checkpoint root is unsafe")
+    unbound: list[Path] = []
+    for candidate in root.glob("checkpoint-*"):
+        _checkpoint_step(candidate.name)
+        if candidate.is_symlink() or not candidate.is_dir():
+            raise RuntimeError("SFT checkpoint candidate is unsafe")
+        if candidate.name not in declared_names:
+            unbound.append(candidate)
+    return sorted(unbound, key=lambda path: _checkpoint_step(path.name))
+
+
+def _bind_and_validate_sft_checkpoint_lineage(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+    assistant_only_loss: bool,
+    require_checkpoint: bool,
+) -> tuple[Path | None, Path, list[Path]]:
+    record_path = Path(str(cfg.get("sftCheckpointLineagePath") or "")).resolve()
+    record = _validate_sft_checkpoint_lineage_static(cfg, cfg_path=cfg_path)
+    recorded_assistant_only = record.get("assistantOnlyLoss")
+    if recorded_assistant_only is None:
+        updated = dict(record)
+        updated["assistantOnlyLoss"] = bool(assistant_only_loss)
+        record = _self_hashed_sft_checkpoint_record(updated)
+        _write_json_atomic(record_path, record)
+    elif recorded_assistant_only is not bool(assistant_only_loss):
+        raise RuntimeError("SFT checkpoint assistant-only-loss setting drifted")
+    validated, declared_names, stale_partials = _bound_sft_checkpoint_entries(
+        record,
+        expected_base_model=str(cfg.get("base_model_name") or ""),
+    )
+    root = Path(str(record["checkpointRoot"])).resolve()
+    unbound = _unbound_sft_checkpoint_directories(
+        root,
+        declared_names=declared_names,
+    )
+    discardable = sorted(
+        [*stale_partials, *unbound],
+        key=lambda path: _checkpoint_step(path.name),
+    )
+    if not require_checkpoint:
+        if record.get("checkpoints") or discardable:
+            raise RuntimeError("Fresh SFT training cannot reuse checkpoint state")
+        return None, record_path, []
+    if not validated:
+        if record.get("checkpoints") == [] and unbound:
+            return None, record_path, unbound
+        raise RuntimeError("Resume requires a complete bound SFT checkpoint")
+    return validated[-1][1], record_path, discardable
+
+
+def _prune_unbound_sft_checkpoints(paths: list[Path]) -> None:
+    for path in paths:
+        if path.is_symlink() or not path.is_dir():
+            raise RuntimeError("Refusing to prune an unsafe SFT checkpoint")
+        shutil.rmtree(path)
+
+
+def _record_sft_checkpoint(record_path: Path, checkpoint: Path) -> None:
+    record = _read_sft_checkpoint_lineage(record_path)
+    root = Path(str(record.get("checkpointRoot") or "")).resolve()
+    checkpoint = checkpoint.resolve()
+    if checkpoint.parent != root:
+        raise RuntimeError("Saved SFT checkpoint escapes its recorded root")
+    candidates = sorted(
+        (
+            candidate
+            for candidate in root.glob("checkpoint-*")
+            if candidate.is_dir() and not candidate.is_symlink()
+        ),
+        key=lambda path: _checkpoint_step(path.name),
+    )
+    if checkpoint not in candidates:
+        raise RuntimeError("Saved SFT checkpoint is absent from its root")
+    config_path = Path(str(record["configPath"]))
+    if (
+        config_path.is_symlink()
+        or not config_path.is_file()
+        or _hash_file(config_path) != record.get("configSHA256")
+    ):
+        raise RuntimeError("SFT checkpoint config drifted during training")
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    expected_base_model = str(config.get("base_model_name") or "")
+    precision = _resolve_training_precision(config)
+    updated = dict(record)
+    updated["checkpoints"] = [
+        {
+            "path": candidate.name,
+            "checkpointSHA256": _sft_checkpoint_directory_manifest(
+                candidate,
+                expected_base_model=expected_base_model,
+                precision=precision,
+            )["checkpointSHA256"],
+        }
+        for candidate in candidates
+    ]
+    _write_json_atomic(record_path, _self_hashed_sft_checkpoint_record(updated))
+
+
+def _sft_checkpoint_lineage_callback(
+    trainer_callback_type: type,
+    *,
+    record_path: Path,
+) -> Any:
+    class SFTCheckpointLineageCallback(trainer_callback_type):
+        def on_save(self, args: Any, state: Any, control: Any, **_kwargs: Any) -> Any:
+            checkpoint = Path(args.output_dir).resolve() / f"checkpoint-{state.global_step}"
+            _record_sft_checkpoint(record_path, checkpoint)
+            return control
+
+    return SFTCheckpointLineageCallback()
+
+
 def _require_sha256(value: Any, *, name: str, prefix: bool = False) -> str:
     text = str(value or "")
     pattern = r"sha256:[0-9a-f]{64}" if prefix else r"[0-9a-f]{64}"
@@ -904,10 +2232,207 @@ def _write_json_atomic(path: Path, value: Mapping[str, Any]) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
+        directory_fd = os.open(
+            path.parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
         temporary = None
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def _require_finite_training_metrics(
+    value: Any,
+    *,
+    name: str,
+    required_fields: frozenset[str],
+) -> None:
+    """Reject empty, non-numeric, or non-finite trainer metric evidence."""
+
+    if not isinstance(value, Mapping) or not value:
+        raise RuntimeError(f"{name} must be a non-empty metric object")
+    missing = sorted(required_fields - set(value))
+    if missing:
+        raise RuntimeError(f"{name} is missing required metrics: {', '.join(missing)}")
+
+    def verify_metric(metric: Any, *, path: str) -> None:
+        if isinstance(metric, Mapping):
+            if not metric:
+                raise RuntimeError(f"{path} must not be empty")
+            for key, nested in metric.items():
+                if not isinstance(key, str) or not key:
+                    raise RuntimeError(f"{path} contains an invalid metric name")
+                verify_metric(nested, path=f"{path}.{key}")
+            return
+        if (
+            isinstance(metric, bool)
+            or not isinstance(metric, (int, float))
+            or not math.isfinite(float(metric))
+        ):
+            raise RuntimeError(f"{path} must be a finite numeric metric")
+
+    verify_metric(value, path=name)
+
+
+def _verified_training_completion_evidence(
+    trainer: Any,
+    training_args: Any,
+    train_result: Any,
+    evaluation_metrics: Mapping[str, Any],
+    *,
+    has_eval_dataset: bool,
+    train_record_count: int,
+    expected_precision: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prove that Trainer reached its controlled terminal step and epoch."""
+
+    canonical_expected_precision = _resolve_training_precision(
+        {
+            "bf16": expected_precision.get("bf16"),
+            "fp16": expected_precision.get("fp16"),
+        }
+    )
+    if dict(expected_precision) != canonical_expected_precision:
+        raise RuntimeError("Expected training precision contract is not canonical")
+    try:
+        resolved_precision = _resolve_training_precision(
+            {
+                "bf16": getattr(training_args, "bf16", None),
+                "fp16": getattr(training_args, "fp16", None),
+            }
+        )
+    except ValueError as exc:
+        raise RuntimeError("Trainer precision arguments are invalid") from exc
+    if resolved_precision != canonical_expected_precision:
+        raise RuntimeError("Trainer precision drifted from the controlled config")
+
+    state = getattr(trainer, "state", None)
+    global_step = getattr(state, "global_step", None)
+    max_steps = getattr(state, "max_steps", None)
+    train_result_global_step = getattr(train_result, "global_step", None)
+    if (
+        type(global_step) is not int
+        or type(max_steps) is not int
+        or type(train_result_global_step) is not int
+        or max_steps <= 0
+        or global_step != max_steps
+        or train_result_global_step != global_step
+    ):
+        raise RuntimeError(
+            "Training did not reach the exact positive terminal global step"
+        )
+
+    configured_epochs_raw = getattr(training_args, "num_train_epochs", None)
+    observed_epoch_raw = getattr(state, "epoch", None)
+    if (
+        isinstance(configured_epochs_raw, bool)
+        or not isinstance(configured_epochs_raw, (int, float))
+        or isinstance(observed_epoch_raw, bool)
+        or not isinstance(observed_epoch_raw, (int, float))
+    ):
+        raise RuntimeError("Training epoch completion evidence is not numeric")
+    configured_epochs = float(configured_epochs_raw)
+    observed_epoch = float(observed_epoch_raw)
+    per_device_batch_size = getattr(
+        training_args,
+        "per_device_train_batch_size",
+        None,
+    )
+    gradient_accumulation_steps = getattr(
+        training_args,
+        "gradient_accumulation_steps",
+        None,
+    )
+    world_size = getattr(training_args, "world_size", None)
+    if (
+        configured_epochs <= 0
+        or not math.isfinite(configured_epochs)
+        or not math.isfinite(observed_epoch)
+        or not math.isclose(
+            observed_epoch,
+            configured_epochs,
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        )
+    ):
+        raise RuntimeError("Training did not complete the configured epoch count")
+    if (
+        type(train_record_count) is not int
+        or train_record_count <= 0
+        or type(per_device_batch_size) is not int
+        or per_device_batch_size <= 0
+        or type(gradient_accumulation_steps) is not int
+        or gradient_accumulation_steps <= 0
+        or type(world_size) is not int
+        or world_size != 1
+    ):
+        raise RuntimeError("Training step reconstruction inputs are invalid")
+    train_dataloader_batch_count = math.ceil(
+        train_record_count / (per_device_batch_size * world_size)
+    )
+    update_steps_per_epoch = max(
+        math.ceil(train_dataloader_batch_count / gradient_accumulation_steps),
+        1,
+    )
+    expected_max_steps = math.ceil(configured_epochs * update_steps_per_epoch)
+    if max_steps != expected_max_steps:
+        raise RuntimeError("Training terminal step drifted from controlled inputs")
+
+    train_metrics = getattr(train_result, "metrics", None)
+    _require_finite_training_metrics(
+        train_metrics,
+        name="training metrics",
+        required_fields=frozenset({"train_loss", "epoch"}),
+    )
+    train_metric_epoch = float(train_metrics["epoch"])
+    if not math.isclose(
+        train_metric_epoch,
+        observed_epoch,
+        rel_tol=0.0,
+        abs_tol=1e-6,
+    ):
+        raise RuntimeError("Training metric epoch drifted from Trainer state")
+
+    if has_eval_dataset:
+        _require_finite_training_metrics(
+            evaluation_metrics,
+            name="evaluation metrics",
+            required_fields=frozenset({"eval_loss", "epoch"}),
+        )
+        if not math.isclose(
+            float(evaluation_metrics["epoch"]),
+            observed_epoch,
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        ):
+            raise RuntimeError("Evaluation metric epoch drifted from Trainer state")
+    elif evaluation_metrics:
+        raise RuntimeError("Evaluation metrics exist without an evaluation dataset")
+
+    return {
+        "schema": TRAINING_COMPLETION_EVIDENCE_SCHEMA,
+        "status": "completed",
+        "globalStep": global_step,
+        "maxSteps": max_steps,
+        "expectedMaxSteps": expected_max_steps,
+        "trainResultGlobalStep": train_result_global_step,
+        "configuredNumTrainEpochs": configured_epochs,
+        "observedEpoch": observed_epoch,
+        "trainRecordCount": train_record_count,
+        "perDeviceTrainBatchSize": per_device_batch_size,
+        "gradientAccumulationSteps": gradient_accumulation_steps,
+        "worldSize": world_size,
+        "trainDataloaderBatchCount": train_dataloader_batch_count,
+        "updateStepsPerEpoch": update_steps_per_epoch,
+        "trainMetricsVerified": True,
+        "evaluationMetricsVerified": has_eval_dataset,
+        "resolvedPrecision": resolved_precision,
+    }
 
 
 def _training_environment(
@@ -1415,24 +2940,9 @@ def _package_version(name: str) -> str:
         return ""
 
 
-def _precision_flags(cfg: dict[str, Any]) -> tuple[bool, bool]:
-    has_bf16 = "bf16" in cfg
-    has_fp16 = "fp16" in cfg
-    if has_bf16 or has_fp16:
-        bf16 = bool(cfg.get("bf16", False))
-        fp16 = bool(cfg.get("fp16", not bf16))
-        if bf16 and fp16:
-            fp16 = False
-        return bf16, fp16
-
-    try:
-        import torch  # type: ignore
-
-        if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
-            return True, False
-    except Exception:
-        pass
-    return False, True
+def _precision_flags(cfg: Mapping[str, Any]) -> tuple[bool, bool]:
+    precision = _resolve_training_precision(cfg)
+    return precision["bf16"], precision["fp16"]
 
 
 def _limit_records(records: list[dict[str, Any]], value: Any) -> list[dict[str, Any]]:
@@ -1539,14 +3049,31 @@ def main() -> None:
     val_path = dataset_dir / "val_sft.jsonl"
     if not train_path.exists() or not val_path.exists():
         raise FileNotFoundError(f"Expected {train_path} and {val_path}")
-    resume_checkpoint, checkpoint_lineage_path = _validate_checkpoint_lineage(
-        cfg,
-        cfg_path=cfg_path,
-        require_checkpoint=bool(args.resume_from_checkpoint),
-        assistant_only_loss=bool(
-            args.assistant_only_loss or cfg.get("assistant_only_loss", False)
-        ),
+    assistant_only_loss = bool(
+        args.assistant_only_loss or cfg.get("assistant_only_loss", False)
     )
+    unbound_checkpoints: list[Path] = []
+    ubuntu_sft_checkpoint_lineage = bool(cfg.get("sftCheckpointLineagePath"))
+    if ubuntu_sft_checkpoint_lineage:
+        (
+            resume_checkpoint,
+            checkpoint_lineage_path,
+            unbound_checkpoints,
+        ) = _bind_and_validate_sft_checkpoint_lineage(
+            cfg,
+            cfg_path=cfg_path,
+            assistant_only_loss=assistant_only_loss,
+            require_checkpoint=bool(args.resume_from_checkpoint),
+        )
+        if unbound_checkpoints:
+            _prune_unbound_sft_checkpoints(unbound_checkpoints)
+    else:
+        resume_checkpoint, checkpoint_lineage_path = _validate_checkpoint_lineage(
+            cfg,
+            cfg_path=cfg_path,
+            require_checkpoint=bool(args.resume_from_checkpoint),
+            assistant_only_loss=assistant_only_loss,
+        )
 
     training_runtime_lineage = _training_runtime_lineage(cfg)
     training_environment = _training_environment(
@@ -1583,6 +3110,35 @@ def main() -> None:
         load_in_4bit=bool(cfg["load_in_4bit"]),
         use_exact_model_name=True,
     )
+    verify_chat_template_contract(cfg["chatTemplateContract"], tokenizer=tokenizer)
+
+    train_records = _limit_records(load_jsonl(train_path), cfg.get("max_train_records"))
+    val_records = _limit_records(load_jsonl(val_path), cfg.get("max_val_records"))
+    max_sequence_length = cfg["max_seq_length"]
+    token_length_preflight = _preflight_sft_token_lengths(
+        {
+            "train": (train_records, train_path),
+            "validation": (val_records, val_path),
+        },
+        tokenizer=tokenizer,
+        max_sequence_length=max_sequence_length,
+        minimum_sequence_margin_tokens=cfg.get(
+            "sft_minimum_sequence_margin_tokens",
+            SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+        ),
+        agent=cfg.get("agent"),
+        fleet_loss_share_contract=cfg.get("fleetLossShareContract"),
+        fleet_config=cfg,
+    )
+    token_length_preflight_evidence = (
+        _bind_sft_token_length_preflight(
+            cfg,
+            cfg_path=cfg_path,
+            preflight=token_length_preflight,
+        )
+        if ubuntu_sft_checkpoint_lineage
+        else token_length_preflight
+    )
     model = FastLanguageModel.get_peft_model(
         model,
         r=int(cfg["lora_r"]),
@@ -1597,14 +3153,10 @@ def main() -> None:
         random_state=seed,
     )
 
-    train_records = _limit_records(load_jsonl(train_path), cfg.get("max_train_records"))
-    val_records = _limit_records(load_jsonl(val_path), cfg.get("max_val_records"))
-
     output_dir, adapter_output_dir = validate_sft_artifact_paths(cfg)
     output_dir.mkdir(parents=True, exist_ok=True)
     adapter_output_dir.mkdir(parents=True, exist_ok=True)
 
-    assistant_only_loss = bool(args.assistant_only_loss or cfg.get("assistant_only_loss", False))
     train_rows = build_sft_rows(
         train_records,
         tokenizer=tokenizer,
@@ -1622,7 +3174,9 @@ def main() -> None:
 
     train_dataset = Dataset.from_list(train_rows)
     eval_dataset = Dataset.from_list(val_rows) if val_rows else None
-    bf16, fp16 = _precision_flags(cfg)
+    precision = _resolve_training_precision(cfg)
+    bf16, fp16 = precision["bf16"], precision["fp16"]
+    checkpoint_save_steps, checkpoint_save_total_limit = _sft_checkpoint_policy(cfg)
 
     sft_kwargs: dict[str, Any] = dict(
         output_dir=str(output_dir),
@@ -1634,8 +3188,10 @@ def main() -> None:
         warmup_steps=int(cfg["warmup_steps"]),
         logging_steps=int(cfg.get("logging_steps", 10)),
         eval_strategy="epoch" if eval_dataset is not None else "no",
-        save_strategy="epoch",
-        save_total_limit=int(cfg.get("save_total_limit", 2)),
+        save_strategy="steps",
+        save_steps=checkpoint_save_steps,
+        save_total_limit=checkpoint_save_total_limit,
+        save_only_model=False,
         bf16=bf16,
         fp16=fp16,
         report_to="none",
@@ -1660,9 +3216,16 @@ def main() -> None:
     )
     if checkpoint_lineage_path is not None:
         trainer.add_callback(
-            _checkpoint_lineage_callback(
-                TrainerCallback,
-                record_path=checkpoint_lineage_path,
+            (
+                _sft_checkpoint_lineage_callback(
+                    TrainerCallback,
+                    record_path=checkpoint_lineage_path,
+                )
+                if ubuntu_sft_checkpoint_lineage
+                else _checkpoint_lineage_callback(
+                    TrainerCallback,
+                    record_path=checkpoint_lineage_path,
+                )
             )
         )
 
@@ -1672,6 +3235,15 @@ def main() -> None:
         )
     )
     evaluation_metrics = trainer.evaluate() if eval_dataset is not None else {}
+    training_completion = _verified_training_completion_evidence(
+        trainer,
+        training_args,
+        train_result,
+        evaluation_metrics,
+        has_eval_dataset=eval_dataset is not None,
+        train_record_count=len(train_rows),
+        expected_precision=precision,
+    )
     trainer.model.save_pretrained(str(adapter_output_dir), safe_serialization=True)
     tokenizer.save_pretrained(str(adapter_output_dir), legacy_format=False)
     adapter_artifact_manifest = write_adapter_artifact_manifest(
@@ -1721,11 +3293,22 @@ def main() -> None:
         "load_in_4bit": cfg["load_in_4bit"],
         "packing": bool(cfg.get("packing", False)),
         "gradient_checkpointing": bool(cfg.get("gradient_checkpointing", True)),
+        "precision": precision,
         "assistant_only_loss": assistant_only_loss,
         "resume_from_checkpoint": resume_checkpoint is not None,
         "resume_checkpoint": str(resume_checkpoint) if resume_checkpoint else None,
         "checkpoint_lineage": (
             str(checkpoint_lineage_path) if checkpoint_lineage_path else None
+        ),
+        "checkpoint_save_steps": int(training_args.save_steps),
+        "checkpoint_save_total_limit": int(training_args.save_total_limit),
+        "checkpoint_recovery_discarded_unbound": [
+            str(path) for path in unbound_checkpoints
+        ],
+        "token_length_preflight": token_length_preflight_evidence,
+        "token_length_preflight_path": cfg.get("sftTokenLengthPreflightPath"),
+        "token_length_preflight_sha256": token_length_preflight_evidence.get(
+            "preflightSHA256"
         ),
         "seed": seed,
         "seed_source": seed_source,
@@ -1755,6 +3338,7 @@ def main() -> None:
 
     report = {
         **manifest,
+        "trainingCompletion": training_completion,
         "metrics": train_result.metrics,
         "evaluation_metrics": evaluation_metrics,
     }

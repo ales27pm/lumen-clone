@@ -602,6 +602,14 @@ def _normalize_record(
     all_tool_ids = sorted(_extract_tool_ids(record))
     tool_ids = [tool_id for tool_id in all_tool_ids if tool_id in known_tool_ids]
     risk = _risk_label(manifest, record, tool_ids)
+    source_metadata = (
+        record.get("metadata")
+        if isinstance(record.get("metadata"), dict)
+        else {}
+    )
+    required_split = source_metadata.get("requiredSplit")
+    if required_split not in {None, "train", "validation"}:
+        raise ValueError(f"Unsupported required SFT split: {required_split!r}")
     record_id = _stable_id({"family": family, "index": index, "messages": messages, "task": task})
     return {
         "id": f"lumen-{family}-{record_id[:16]}",
@@ -636,6 +644,17 @@ def _normalize_record(
             "worktreeFingerprint": manifest.sourceIntegrity.worktreeFingerprint,
             "sourceIndex": index,
             "invalidContrastToolIDs": [tool_id for tool_id in all_tool_ids if tool_id not in known_tool_ids],
+            **(
+                {"requiredSplit": required_split}
+                if required_split is not None
+                else {}
+            ),
+            **(
+                {"contractCase": source_metadata["contractCase"]}
+                if isinstance(source_metadata.get("contractCase"), str)
+                and source_metadata["contractCase"]
+                else {}
+            ),
         },
     }
 

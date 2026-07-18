@@ -51,6 +51,7 @@ REQUIRED_ORCHESTRATION_PATHS = frozenset(
         "tools/fine_tuning/unsloth/train_sft.py",
         "tools/fine_tuning/unsloth/training_lineage.py",
         "tools/fine_tuning/unsloth/ubuntu_pipeline.py",
+        "tools/fine_tuning/unsloth/ubuntu_postcondition.py",
         "tools/fine_tuning/unsloth/ubuntu_source_integrity.py",
         "tools/fine_tuning/unsloth/ubuntu_uploader.py",
         "tools/hf_zerogpu/space_template/app.py",

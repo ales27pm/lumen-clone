@@ -108,15 +108,15 @@ def test_fine_tuning_only_loop_preserves_complete_fleet_evaluation_corpus(tmp_pa
         for line in fleet_eval_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    orchestration_scenarios = {
-        record["metadata"]["scenarioID"]
+    orchestration_behaviors = {
+        record["metadata"]["behaviorClass"]
         for record in records
         if record.get("metadata", {}).get("evalType")
         == "fleet_orchestration_event_graph_eval"
     }
 
     assert len(records) == 15
-    assert orchestration_scenarios == {
+    assert orchestration_behaviors == {
         "no-delegation",
         "sequential-dependencies",
         "parallel-dependencies",

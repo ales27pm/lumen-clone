@@ -16,8 +16,14 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     default_training_lineage_contract,
     promotion_contract,
 )
+from lumen_manifest_crawler.runtime_prompt_contract import (
+    RUNTIME_PROMPT_COMPOSER_POLICY_ID,
+    RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+    SHIPPED_RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+    prompt_sha256,
+)
 
-ADAPTER_EXPORT_SCHEMA_VERSION = "1.4.0"
+ADAPTER_EXPORT_SCHEMA_VERSION = "1.5.0"
 DEFAULT_AGENT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"
 DEFAULT_TRAINING_OUTPUT_ROOT = "models/training_runs_qwen3_bootstrap"
@@ -276,6 +282,44 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         training_code_phase_digests.append(
             dict(phase_digests) if isinstance(phase_digests, dict) else None
         )
+        system_prompt = dataset_card.get("systemPrompt")
+        role_contract_prompt = (
+            system_prompt.strip()
+            if isinstance(system_prompt, str) and system_prompt.strip()
+            else None
+        )
+        offline_frozen_evaluation = dataset_card.get("evaluation", {})
+        runtime_prompt_contract = {
+            "schemaVersion": SHIPPED_RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+            "composerPolicyID": RUNTIME_PROMPT_COMPOSER_POLICY_ID,
+            "composerPolicySHA256": RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+            "roleContractPromptSHA256": (
+                prompt_sha256(role_contract_prompt)
+                if role_contract_prompt is not None
+                else None
+            ),
+            "roleContractPromptCharacterCount": (
+                len(role_contract_prompt)
+                if role_contract_prompt is not None
+                else None
+            ),
+            "privacy": "hashes_and_character_counts_only",
+            "requiredObservedEvidence": [
+                "componentPromptSHA256",
+                "sourcePromptSHA256",
+                "effectivePromptSHA256",
+                "composerPolicySHA256",
+            ],
+        }
+        qualification_reasons = [
+            "offline_frozen_evaluation_is_not_shipped_runtime_evidence",
+            "missing_component_prompt_sha256",
+            "missing_source_prompt_sha256",
+            "missing_effective_prompt_sha256",
+            "missing_observed_composer_policy_sha256",
+        ]
+        if role_contract_prompt is None:
+            qualification_reasons.append("missing_role_contract_prompt_sha256")
         adapters.append(
             {
                 "agent": agent,
@@ -309,9 +353,28 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                     field: unsloth_config.get(field)
                     for field in RUNTIME_SOURCE_AUDIT_FIELDS
                 },
-                "systemPrompt": dataset_card.get("systemPrompt"),
+                "systemPrompt": system_prompt,
+                "runtimePromptContract": runtime_prompt_contract,
                 "recordCounts": dataset_card.get("recordCounts", {}),
-                "evaluation": dataset_card.get("evaluation", {}),
+                "offlineFrozenEvaluation": {
+                    "scope": "offline_frozen_adapter_suite",
+                    "evidenceType": "frozen_suite_contract",
+                    "executionStatus": "not_executed_by_runtime_manifest_exporter",
+                    "qualifiesShippedRuntime": False,
+                    "contract": offline_frozen_evaluation,
+                },
+                "shippedRuntimeQualification": {
+                    "schemaVersion": SHIPPED_RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+                    "qualified": False,
+                    "status": "unqualified_missing_runtime_evidence",
+                    "reasonCodes": sorted(qualification_reasons),
+                    "observedEvidence": {
+                        "componentPromptSHA256": None,
+                        "sourcePromptSHA256": None,
+                        "effectivePromptSHA256": None,
+                        "composerPolicySHA256": None,
+                    },
+                },
                 "preferenceTraining": dataset_card.get("preferenceTraining", {}),
                 "experimentPolicy": dataset_card.get("experimentPolicy", {}),
             }
@@ -373,6 +436,16 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
             "mergeAdaptersByDefault": False,
             "mergedExportPhase": "optional_release_bake",
             "fallbackUnit": "adapter",
+        },
+        "runtimeQualificationPolicy": {
+            "schemaVersion": SHIPPED_RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+            "offlineFrozenEvaluationQualifiesShippedRuntime": False,
+            "requiresExactComponentPromptSHA256": True,
+            "requiresExactSourcePromptSHA256": True,
+            "requiresExactEffectivePromptSHA256": True,
+            "requiresExactComposerPolicySHA256": True,
+            "missingOrMismatchedEvidence": "unqualified",
+            "privacy": "hashes_and_character_counts_only",
         },
         "adapters": adapters,
         "releaseBakePolicy": {

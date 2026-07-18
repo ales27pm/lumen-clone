@@ -505,7 +505,13 @@ def test_frozen_eval_records_route_to_their_owning_adapter_contracts():
     assert "user_output_safety" not in cortex_types
     assert "tool_schema_adherence" in executor_types
     assert "tool_runtime_scenario_selection" not in executor_types
-    assert "user_output_safety" in mouth_types
+    assert "user_output_safety" not in mouth_types
+    assert {
+        "concise_response",
+        "no_internal_json",
+        "sentinel_suppression",
+        "truthful_failure_summary",
+    } <= mouth_types
 
     missing_file = next(
         record

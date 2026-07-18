@@ -19,6 +19,12 @@ from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
     build_public_adapter_eval_fingerprint_bundle,
 )
 from lumen_manifest_crawler.output.hashing import sha256_file
+from lumen_manifest_crawler.runtime_prompt_contract import (
+    RUNTIME_GROUNDING_PROMPT_CONTRACT_SCHEMA_VERSION,
+    RUNTIME_PROMPT_COMPOSER_POLICY_ID,
+    RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+    prompt_sha256,
+)
 
 
 EMBEDDING_DATASET_ALIASES = {
@@ -323,12 +329,20 @@ def _write_runtime_grounding_outputs(
             "maxPromptCharacters": 6000,
         },
     }
+    runtime_grounding_prompt = _runtime_grounding_prompt(bundle)
+    bundle["promptContract"] = {
+        "schemaVersion": RUNTIME_GROUNDING_PROMPT_CONTRACT_SCHEMA_VERSION,
+        "composerPolicyID": RUNTIME_PROMPT_COMPOSER_POLICY_ID,
+        "composerPolicySHA256": RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+        "promptSHA256": prompt_sha256(runtime_grounding_prompt),
+        "promptUTF8ByteCount": len(runtime_grounding_prompt.encode("utf-8")),
+    }
     (output_dir / "runtime_grounding_bundle.json").write_text(
         json.dumps(bundle, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     (output_dir / "runtime_grounding_prompt.md").write_text(
-        _runtime_grounding_prompt(bundle),
+        runtime_grounding_prompt,
         encoding="utf-8",
     )
 

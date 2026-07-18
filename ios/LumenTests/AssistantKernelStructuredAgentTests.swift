@@ -145,6 +145,77 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         }
     }
 
+    func testExecutorRuntimeSystemPromptKeepsAttestedCoreAndDynamicSecurityContext() throws {
+        #if DEBUG
+        let request = AgentKernelRequest(
+            userMessage: "What's the weather here?",
+            systemPrompt: "Keep the user-facing answer concise.",
+            options: AgentKernelOptions(
+                allowHeavyRuntime: true,
+                allowDegradedMode: false,
+                requireUserVisibleFinal: true,
+                diagnosticsEnabled: true,
+                maxSteps: 2,
+                prefersFoundationModels: false,
+                structuredMode: .requiredAgentJSON,
+                structuredAllowedToolIDs: ["weather"]
+            )
+        )
+        let prompt = StructuredAgentKernelExecutor.executorRuntimeSystemPromptForTests(
+            request: request,
+            availableTools: [try tool("weather")]
+        )
+
+        XCTAssertTrue(prompt.hasPrefix(StructuredAgentKernelExecutor.executorRuntimeSystemPromptContract))
+        XCTAssertTrue(prompt.contains("\nAvailable tools:\n- weather:"))
+        XCTAssertTrue(prompt.contains("\nContext note, lower priority than JSON/tool rules:\nKeep the user-facing answer concise.\n"))
+        XCTAssertTrue(prompt.contains("\nRouting hints:"))
+        #endif
+    }
+
+    func testExecutorRuntimeSystemPromptKeepsNoToolBoundaryAfterAttestedCore() {
+        #if DEBUG
+        let request = structuredRequest("Say hello.", allowedToolIDs: [])
+        let prompt = StructuredAgentKernelExecutor.executorRuntimeSystemPromptForTests(
+            request: request,
+            availableTools: []
+        )
+
+        XCTAssertTrue(prompt.hasPrefix(StructuredAgentKernelExecutor.executorRuntimeSystemPromptContract))
+        XCTAssertTrue(prompt.contains("\nNo tools are available. Emit final JSON only.\n"))
+        XCTAssertFalse(prompt.contains("\nAvailable tools:\n"))
+        #endif
+    }
+
+    func testExecutorRuntimeCoreAndPreferredToolSurviveFastPromptBounding() throws {
+        #if DEBUG
+        let request = structuredRequest(
+            "What's the weather here?",
+            allowedToolIDs: ToolRegistry.all.map(\.id)
+        )
+        let prompt = StructuredAgentKernelExecutor.executorRuntimeSystemPromptForTests(
+            request: request,
+            availableTools: ToolRegistry.all
+        )
+        XCTAssertGreaterThan(prompt.count, PromptBudgetConstants.agentJSONSystemChars)
+
+        let assembly = PromptAssembler.assemble(
+            systemPrompt: prompt,
+            history: [],
+            userMessage: request.userMessage,
+            memories: [],
+            attachments: [],
+            budget: .agentJSON(contextSize: 2_048, maxTokens: 384),
+            attachmentNormalization: .agentRouting,
+            latencyClass: .fastInteractive
+        )
+
+        XCTAssertTrue(assembly.systemPrompt.hasPrefix(StructuredAgentKernelExecutor.executorRuntimeSystemPromptContract))
+        XCTAssertTrue(assembly.systemPrompt.contains("- weather:"))
+        XCTAssertTrue(assembly.systemPrompt.contains("Fast interactive mode:"))
+        #endif
+    }
+
     func testToolRequiredFirstTurnUsesActionOnlySchema() throws {
         #if DEBUG
         let request = structuredRequest(

@@ -537,7 +537,12 @@ private actor AdapterChatRuntime {
 
     private func initializeCompletion(messages: [LlamaChatMessage], cancellationToken: LlamaGenerationCancellationToken? = nil) throws {
         try checkGenerationCancellation(cancellationToken)
-        let prompt = model.applyChatTemplate(to: messages, addAssistant: nil)
+        let renderedPrompt = model.applyChatTemplate(to: messages, addAssistant: nil)
+        let finalUserMessage = messages.last { $0.role == .user }?.content
+        let prompt = try ModelThinkingControl.finalizeQwen3Prompt(
+            renderedPrompt,
+            finalUserMessage: finalUserMessage
+        )
         try checkGenerationCancellation(cancellationToken)
         let tokens = model.tokenize(text: prompt, addBos: model.shouldAddBos(), special: true)
         guard tokens.count < contextSize - 4 else {
@@ -1205,8 +1210,12 @@ final actor AppLlamaService {
         }
     }
 
+    nonisolated static func defaultGenerationSlot(for request: GenerateRequest) -> LumenModelSlot {
+        request.preservesRawStructuredAgentOutput ? .executor : .mouth
+    }
+
     func stream(_ req: GenerateRequest) -> AsyncStream<GenerationToken> {
-        stream(req, slot: primaryChatSlot)
+        stream(req, slot: Self.defaultGenerationSlot(for: req))
     }
 
     private func allowsGenerationWork(
@@ -2220,10 +2229,11 @@ final actor AppLlamaService {
         let requireFinalAnswerOnly = !req.responseFormat.requiresRawStructuredOutput
             && !req.modelName.lowercased().contains("json")
         let allowReasoningCapture = req.reasoningCaptureEnabled && requireFinalAnswerOnly
-        let systemPrompt = ModelThinkingControl.systemPrompt(
+        let systemPrompt = ModelThinkingControl.runtimeSystemPrompt(
             assembly.systemPrompt,
             reasoningCaptureEnabled: allowReasoningCapture,
-            requireFinalAnswerOnly: requireFinalAnswerOnly
+            requireFinalAnswerOnly: requireFinalAnswerOnly,
+            useQwenNonThinkingContract: useQwenDirective
         )
         let userMessage = ModelThinkingControl.userMessage(
             assembly.userMessage,

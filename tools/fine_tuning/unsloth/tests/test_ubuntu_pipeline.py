@@ -12,10 +12,14 @@ import sys
 import tarfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any, Mapping
 
 import pytest
 
 from lumen_manifest_crawler.dataset import adapter_evaluation
+from lumen_manifest_crawler.dataset.chat_template_contract import (
+    chat_template_contract,
+)
 from tools.fine_tuning.unsloth import (
     evaluate_adapter,
     ubuntu_pipeline,
@@ -70,7 +74,7 @@ def _gguf_bytes(
     *,
     version: int = 3,
     tensor_count: int = 1,
-    metadata_kv_count: int = 1,
+    metadata_kv_count: int = 5,
     payload: bytes = VALID_GGUF_TEST_PAYLOAD,
 ) -> bytes:
     return b"".join(
@@ -84,15 +88,53 @@ def _gguf_bytes(
     )
 
 
-def _write_fake_gguf_reader(root: Path) -> Path:
+def _valid_gguf_semantic_metadata(
+    *,
+    chat_template: str | None = None,
+) -> dict[str, dict[str, object]]:
+    values: list[tuple[str, str, object]] = [
+        ("general.architecture", "STRING", "qwen3"),
+        ("general.type", "STRING", "adapter"),
+        ("adapter.type", "STRING", "lora"),
+        ("general.base_model.count", "UINT32", 1),
+        (
+            "general.base_model.0.repo_url",
+            "STRING",
+            "https://huggingface.co/Qwen/Qwen3-1.7B",
+        ),
+    ]
+    if chat_template is not None:
+        values.append(("tokenizer.chat_template", "STRING", chat_template))
+    return {
+        key: {
+            "index": index,
+            "type": value_type,
+            "offset": index * 16,
+            "value": value,
+        }
+        for index, (key, value_type, value) in enumerate(values)
+    }
+
+
+def _write_fake_gguf_reader(
+    root: Path,
+    *,
+    semantic_metadata: dict[str, dict[str, object]] | None = None,
+) -> Path:
+    configured_metadata = (
+        _valid_gguf_semantic_metadata()
+        if semantic_metadata is None
+        else semantic_metadata
+    )
     reader = root / "fake_gguf_dump.py"
     reader.write_text(
-        """from __future__ import annotations
+        f"""from __future__ import annotations
 
 import json
 import sys
 from pathlib import Path
 
+configured_metadata = json.loads({json.dumps(configured_metadata)!r})
 model = Path(sys.argv[1]).resolve()
 data = model.read_bytes()
 if not data.endswith(b"LUMEN_VALID_GGUF_TEST"):
@@ -100,19 +142,26 @@ if not data.endswith(b"LUMEN_VALID_GGUF_TEST"):
     raise SystemExit(7)
 tensor_count = int.from_bytes(data[8:16], "little")
 metadata_count = int.from_bytes(data[16:24], "little")
-metadata = {
-    "GGUF.version": {},
-    "GGUF.tensor_count": {},
-    "GGUF.kv_count": {},
-}
-metadata.update({f"metadata.{index}": {} for index in range(metadata_count)})
-tensors = {f"tensor.{index}": {} for index in range(tensor_count)}
-print(json.dumps({
+metadata = {{
+    "GGUF.version": {{}},
+    "GGUF.tensor_count": {{}},
+    "GGUF.kv_count": {{}},
+}}
+if len(configured_metadata) > metadata_count:
+    print("configured metadata exceeds fixed header", file=sys.stderr)
+    raise SystemExit(8)
+metadata.update(configured_metadata)
+metadata.update({{
+    f"metadata.fixture.{{index}}": {{}}
+    for index in range(metadata_count - len(configured_metadata))
+}})
+tensors = {{f"tensor.{{index}}": {{}} for index in range(tensor_count)}}
+print(json.dumps({{
     "filename": str(model),
     "endian": "LITTLE",
     "metadata": metadata,
     "tensors": tensors,
-}))
+}}))
 """,
         encoding="utf-8",
     )
@@ -160,8 +209,12 @@ def test_pipeline_json_readers_reject_duplicate_object_keys(
         "variantManifestSHA256",
         "sftAdapterDir",
         "sftFinalizedVariantManifest",
+        "sftCheckpointLineagePath",
+        "sftTokenLengthPreflight",
         "preferenceTrainer",
         "preferenceAdapterDir",
+        "preferenceCheckpointLineagePath",
+        "preferenceTokenLengthPreflight",
         "preferenceFinalizedVariantManifest",
         "adapterGGUF",
     ],
@@ -193,8 +246,16 @@ def test_prepared_agent_entry_binds_every_owned_path_and_value(
         "sftFinalizedVariantManifest": str(
             paths["output_dir"] / "finalized_variant_manifest.json"
         ),
+        "sftCheckpointLineagePath": str(paths["sftCheckpointLineagePath"]),
+        "sftTokenLengthPreflight": str(paths["sftTokenLengthPreflightPath"]),
         "preferenceTrainer": "dpo",
         "preferenceAdapterDir": str(paths["dpo_output_dir"]),
+        "preferenceCheckpointLineagePath": str(
+            paths["preferenceCheckpointLineagePath"]
+        ),
+        "preferenceTokenLengthPreflight": str(
+            paths["preferenceTokenLengthPreflightPath"]
+        ),
         "preferenceFinalizedVariantManifest": str(
             paths["output_dir"] / "dpo" / "finalized_variant_manifest.json"
         ),
@@ -286,6 +347,7 @@ def _evaluation_record(eval_id: str = "eval-one", *, agent: str = "cortex") -> d
             {"role": "user", "content": "Return the structured result."},
         ],
         "metrics": metrics,
+        "outputMode": "text" if agent == "mouth" else "json",
         "metadata": {
             "agent": agent,
             "evalType": "unit",
@@ -312,6 +374,10 @@ def _write_evaluation_evidence(
 ) -> Path:
     variant = "internal_plus_public_optimized"
     (run_root / "models" / "lora_qwen3_gguf").mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    (run_root / "models" / "lora_qwen3_gguf_receipts").mkdir(
         parents=True,
         exist_ok=True,
     )
@@ -390,6 +456,7 @@ def _write_evaluation_evidence(
     output, output_kind, format_error = evaluate_adapter.normalize_candidate_output(
         agent,
         completion,
+        output_mode=records[0]["outputMode"],
         evaluation_module=evaluation_module,
         tool_contracts=fixture_tool_contracts,
     )
@@ -404,6 +471,7 @@ def _write_evaluation_evidence(
         ) = evaluate_adapter.normalize_candidate_output(
             agent,
             retry_from_completion,
+            output_mode=records[0]["outputMode"],
             evaluation_module=evaluation_module,
             tool_contracts=fixture_tool_contracts,
         )
@@ -411,9 +479,11 @@ def _write_evaluation_evidence(
             raise AssertionError("Retry fixture requires an invalid first completion")
     candidate_rows = []
     for record in selected_records:
+        output_mode = record["outputMode"]
         prompt_messages = evaluate_adapter._structured_output_messages(
             agent,
             record["messages"],
+            output_mode=output_mode,
             tool_contracts=fixture_tool_contracts,
         )
         generation_attempts = []
@@ -432,6 +502,7 @@ def _write_evaluation_evidence(
                 )
             )
             prompt_messages = evaluate_adapter._strict_json_retry_messages(
+                agent,
                 prompt_messages,
                 validation_error=retry_format_error,
                 failed_candidate=retry_output,
@@ -458,6 +529,7 @@ def _write_evaluation_evidence(
             "schemaVersion": evaluate_adapter.CANDIDATE_OUTPUT_SCHEMA_VERSION,
             "evalID": record["evalID"],
             "agent": agent,
+            "outputMode": output_mode,
             "output": output,
             "outputKind": output_kind,
             "formatError": format_error,
@@ -555,7 +627,21 @@ def _write_evaluation_evidence(
             {"filename": "model.safetensors", "sha256": "5" * 64, "size": 1}
         ],
         "baseModelTokenizerDigest": "6" * 64,
+        "chatTemplateContract": chat_template_contract(),
         "max_seq_length": 64,
+        "max_prompt_length": 32,
+        "batch_size": 1,
+        "gradient_accumulation_steps": 1,
+        "warmup_steps": 0,
+        "dpo_learning_rate": 5e-6,
+        "dpo_num_train_epochs": 1,
+        "dpo_beta": 0.1,
+        "gradient_checkpointing": True,
+        "use_logits_to_keep": True,
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "bf16": False,
+        "fp16": True,
         "seed": 42,
         "output_dir": str((run_root / "training" / agent).resolve()),
         "adapter_output_dir": str(
@@ -592,6 +678,10 @@ def _write_evaluation_evidence(
                 "variantManifestSHA256"
             ],
             "phase": "dpo",
+            "tokenLengthPreflightSHA256": "e" * 64,
+            "tokenLengthStatistics": {
+                "promptTokens": {"min": 1, "p50": 1, "p95": 1, "max": 1}
+            },
         },
         behavior_file_sha=ubuntu_pipeline.file_sha256(behavior_path),
     )
@@ -614,7 +704,6 @@ def _write_evaluation_evidence(
     report_path = evaluation_dir / "evaluation_report.json"
     ubuntu_pipeline.write_object(report_path, report)
     evaluator_path = Path(evaluate_adapter.__file__).resolve()
-    structured_eligible = agent in evaluate_adapter.JSON_OUTPUT_AGENTS
     generation = {
         "doSample": False,
         "numBeams": 1,
@@ -623,26 +712,11 @@ def _write_evaluation_evidence(
         "maxNewTokens": 8,
         "maxSequenceLength": 64,
         "seed": 42,
-        "structuredOutputContractEligible": structured_eligible,
-        "structuredOutputContractVersion": (
-            evaluate_adapter.STRUCTURED_OUTPUT_CONTRACT_VERSION
+        "outputModeContract": evaluate_adapter._evaluation_output_mode_contract(
+            selected_records,
+            agent=agent,
+            tool_contracts=fixture_tool_contracts,
         ),
-        "structuredOutputContractSHA256": (
-            evaluate_adapter._structured_output_contract_sha256(
-                agent,
-                tool_contracts=fixture_tool_contracts,
-            )
-        ),
-        "strictJSONRetryEligible": structured_eligible,
-        "strictJSONMaxAttempts": (
-            evaluate_adapter.STRICT_JSON_MAX_ATTEMPTS if structured_eligible else 1
-        ),
-        "strictJSONRetryContractVersion": (
-            evaluate_adapter.STRICT_JSON_RETRY_CONTRACT_VERSION
-        ),
-        "strictJSONRetryContractSHA256": hashlib.sha256(
-            evaluate_adapter.STRICT_JSON_RETRY_INSTRUCTION.encode("utf-8")
-        ).hexdigest(),
     }
     run_manifest = {
         "schemaVersion": evaluate_adapter.EVALUATION_RUN_SCHEMA_VERSION,
@@ -651,6 +725,7 @@ def _write_evaluation_evidence(
         "variant": variant,
         "configPath": str(config_path.resolve()),
         "configSHA256": ubuntu_pipeline.file_sha256(config_path),
+        "chatTemplateContract": config["chatTemplateContract"],
         "adapterDirectory": str(adapter_dir.resolve()),
         "adapterSHA256": "b" * 64,
         "finalizedVariantManifestPath": str(finalized_path.resolve()),
@@ -717,6 +792,21 @@ def _write_evaluation_evidence(
         },
     )
     return run_path
+
+
+def _evaluation_final_phase(evaluation_run: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "adapterSHA256": "b" * 64,
+        "finalizedVariantManifestSHA256": evaluation_run[
+            "finalizedVariantManifestSHA256"
+        ],
+        "parentSFTAdapterSHA256": "9" * 64,
+        "phase": "dpo",
+        "tokenLengthPreflightSHA256": "e" * 64,
+        "tokenLengthStatistics": {
+            "promptTokens": {"min": 1, "p50": 1, "p95": 1, "max": 1}
+        },
+    }
 
 
 def _rehash_evaluation_run(run_path: Path) -> dict:
@@ -806,7 +896,19 @@ def _write_completed_summary_evidence(
     )
     gguf.parent.mkdir(parents=True, exist_ok=True)
     gguf.write_bytes(_gguf_bytes())
+    conversion_receipt = (
+        run_root
+        / "models"
+        / "lora_qwen3_gguf_receipts"
+        / "lumen-cortex-lora.conversion.json"
+    )
+    conversion_receipt.parent.mkdir(parents=True, exist_ok=True)
+    ubuntu_pipeline.write_object(conversion_receipt, {"fixture": True})
     reader_script = _write_fake_gguf_reader(run_root)
+    gguf_verification = ubuntu_pipeline.verify_gguf_artifact(
+        gguf,
+        reader_script=reader_script,
+    )
     evaluation_report = (
         run_root / "evaluation" / agent / "evaluation_report.json"
     )
@@ -839,12 +941,46 @@ def _write_completed_summary_evidence(
         "_verified_pinned_gguf_reader_script",
         lambda *_args: reader_script,
     )
+    gguf_verification.update(
+        {
+            "adapterGGUFConversionReceipt": str(conversion_receipt),
+            "adapterGGUFConversionReceiptSHA256": "4" * 64,
+            "adapterGGUFConversionQualification": (
+                ubuntu_pipeline.GGUF_CONVERSION_QUALIFICATION
+            ),
+            "adapterGGUFTensorEquivalenceStatus": (
+                ubuntu_pipeline.GGUF_TENSOR_EQUIVALENCE_STATUS
+            ),
+        }
+    )
+    def verify_fixture_gguf(_run_root: Path, path: Path) -> dict:
+        current = ubuntu_pipeline.verify_gguf_artifact(
+            path,
+            reader_script=reader_script,
+        )
+        current.update(
+            {
+                field: gguf_verification[field]
+                for field in ubuntu_pipeline.GGUF_CONVERSION_SUMMARY_FIELDS
+            }
+        )
+        return current
+
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_gguf_file",
+        verify_fixture_gguf,
+    )
     summary = {
         "schema": ubuntu_pipeline.SUMMARY_SCHEMA_VERSION,
         "status": status,
         "evaluationStatus": evaluation_status,
         "evaluationScope": evaluation_scope,
         "ggufStatus": "verified",
+        "ggufConversionStatus": ubuntu_pipeline.GGUF_CONVERSION_QUALIFICATION,
+        "ggufTensorEquivalenceStatus": (
+            ubuntu_pipeline.GGUF_TENSOR_EQUIVALENCE_STATUS
+        ),
         "qualification": qualification,
         "promotionEligible": promotion_eligible,
         "executionPlanSHA256": plan["executionPlanSHA256"],
@@ -860,6 +996,14 @@ def _write_completed_summary_evidence(
                 "adapterGGUFExists": True,
                 "adapterGGUFSHA256": ubuntu_pipeline.file_sha256(gguf),
                 "adapterGGUFSizeBytes": gguf.stat().st_size,
+                **{
+                    field: gguf_verification[field]
+                    for field in ubuntu_pipeline.ADAPTER_GGUF_SEMANTIC_FIELDS
+                },
+                **{
+                    field: gguf_verification[field]
+                    for field in ubuntu_pipeline.GGUF_CONVERSION_SUMMARY_FIELDS
+                },
                 "evaluationReport": str(evaluation_report),
                 "evaluationReportExists": evaluation is not None,
                 "evaluation": evaluation,
@@ -883,6 +1027,10 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
         .splitlines()
     )
 
+    assert dockerfile.splitlines()[0] == (
+        "FROM nvidia/cuda:12.8.1-devel-ubuntu22.04@"
+        "sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97"
+    )
     assert (
         "COPY tools/fine_tuning/unsloth/training_lineage.py "
         "/tmp/lumen-training-lineage.py"
@@ -951,6 +1099,142 @@ def test_credential_uploader_uses_only_the_verified_image_copy() -> None:
     assert "--source-integrity-digest" in launcher
 
 
+def test_long_running_gpu_container_is_durable_and_recoverable() -> None:
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    training_block = launcher[
+        launcher.index("training_create_args=(") : launcher.index(
+            'if [[ "$UPLOAD" == "1" ]]',
+            launcher.index("training_create_args=("),
+        )
+    ]
+
+    assert "docker create --name \"$training_container\"" in training_block
+    assert "docker run --rm" not in training_block
+    assert 'docker start "$training_container"' in training_block
+    assert 'docker logs --timestamps --follow "$training_container"' in training_block
+    assert 'docker wait "$training_container"' in training_block
+    assert '--label "ai.lumen.source-integrity-sha256=$SOURCE_INTEGRITY_DIGEST"' in training_block
+    assert '--label "ai.lumen.launch-contract-sha256=$launch_contract_digest"' in training_block
+    assert '--label "ai.lumen.host-run-root-identity=$host_run_root_identity"' in training_block
+    assert '--label "ai.lumen.host-lock-identity=$HOST_LOCK_IDENTITY"' in training_block
+    assert '--label "ai.lumen.container-run-root=$container_run_root"' in training_block
+    assert '-v "$OUTPUT_ROOT:/outputs:rw"' not in launcher
+    assert '-v "$host_run_root:$container_run_root:rw"' in training_block
+    assert '-v "$HOST_LOCK_DIR:$CONTAINER_LOCK_DIR:ro"' in training_block
+    assert "verify_exact_training_mounts" in launcher
+    assert "expected_bind_creation=new" in launcher
+    assert '"$host_run_root" 1 "$expected_bind_creation"' in launcher
+    assert "'{{json .Mounts}}'" in launcher
+    assert 'if "/outputs" in observed' in launcher
+    assert "bash -l" not in launcher
+    assert "/etc/profile" not in launcher
+    assert "verify_training_container_identity" in training_block
+    assert "verify_training_postcondition" in training_block
+    assert "ubuntu_postcondition.py" in launcher
+    assert "--network none" in launcher
+    assert "OOMKilled=" in training_block
+    assert "and was retained as $training_container; rerun with --resume" in training_block
+    assert 'docker rm "$training_container"' in training_block
+    assert training_block.rindex("capture_training_container_evidence") < (
+        training_block.rindex('docker rm "$training_container"')
+    )
+
+
+def test_precreated_bind_preparation_commits_owner_first_and_manifest_last() -> None:
+    pipeline = (
+        REPO_ROOT / "tools/fine_tuning/unsloth/ubuntu_pipeline.py"
+    ).read_text(encoding="utf-8")
+    prepare = pipeline[
+        pipeline.index("def prepare_run(") : pipeline.index(
+            "def _verified_run_manifest(", pipeline.index("def prepare_run(")
+        )
+    ]
+    owner_commit = prepare.index("_initialize_preparation_root(")
+    first_snapshot = prepare.index("_copy_private_regular_tree(")
+    final_manifest = prepare.index(
+        'write_object(run_root / "aio_run_manifest.json", run_manifest)'
+    )
+    owner_removal = prepare.index("_durably_remove_preparation_owner(run_root)")
+
+    assert owner_commit < first_snapshot < final_manifest < owner_removal
+    assert '"runRootInitializationMode"' in prepare
+    assert "precreated_bind_root=precreated_bind_root" in prepare
+
+    inner = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_adapters_aio.sh"
+    ).read_text(encoding="utf-8")
+    assert "LUMEN_AIO_PRECREATED_BIND_ROOT" in inner
+    assert "LUMEN_AIO_EXPECTED_RUN_ROOT_IDENTITY" in inner
+    assert "reset-owned-run-root" in inner
+    assert 'rm -rf -- "$RUN_ROOT"' in inner  # retained only for direct/non-bind use
+
+
+def test_docker_mount_identity_validator_rejects_the_old_broad_output_mount() -> None:
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    marker = "mounts = json.loads(sys.argv[1])"
+    start = launcher.index("import json\nimport sys\n\n" + marker)
+    end = launcher.index("\nPY\n}", start)
+    validator = launcher[start:end]
+    host_run = "/host/outputs/run-one"
+    container_run = "/outputs/run-one"
+    host_lock = "/host/outputs/.lumen-training.lock"
+    container_lock = "/run/lumen-training-lock"
+    hub = "/host/cache/hub"
+    xet = "/host/cache/xet"
+    assets = "/host/cache/assets"
+
+    def mount(source: str, destination: str, writable: bool) -> dict[str, object]:
+        return {
+            "Type": "bind",
+            "Source": source,
+            "Destination": destination,
+            "Mode": "rw" if writable else "ro",
+            "RW": writable,
+            "Propagation": "rprivate",
+        }
+
+    exact = [
+        mount(host_run, container_run, True),
+        mount(host_lock, container_lock, False),
+        mount(hub, "/cache/huggingface/hub", True),
+        mount(xet, "/cache/huggingface/xet", True),
+        mount(assets, "/cache/huggingface/assets", True),
+    ]
+    arguments = (
+        host_run,
+        container_run,
+        host_lock,
+        container_lock,
+        hub,
+        xet,
+        assets,
+    )
+    accepted = subprocess.run(
+        [sys.executable, "-", json.dumps(exact), *arguments],
+        input=validator,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+
+    broad = list(exact)
+    broad[0] = mount("/host/outputs", "/outputs", True)
+    rejected = subprocess.run(
+        [sys.executable, "-", json.dumps(broad), *arguments],
+        input=validator,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert rejected.returncode != 0
+    assert "broad output root" in rejected.stderr
+
+
 def test_docker_build_uses_only_the_attested_commit_archive() -> None:
     launcher = (
         REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
@@ -960,10 +1244,9 @@ def test_docker_build_uses_only_the_attested_commit_archive() -> None:
             "path_contains()"
         )
     ]
+    build_start = launcher.index('if [[ "$BUILD_IMAGE" == "1" ]]')
     build_block = launcher[
-        launcher.index('if [[ "$BUILD_IMAGE" == "1" ]]') : launcher.index(
-            "IMAGE_DIGEST="
-        )
+        build_start : launcher.index("IMAGE_DIGEST=", build_start)
     ]
 
     assert "set -Eeuo pipefail" in launcher
@@ -1093,6 +1376,11 @@ def test_ubuntu_image_maps_the_invoking_non_root_identity() -> None:
     assert 'getent group "${LUMEN_RUNTIME_GID}"' in dockerfile
     assert "pwd.getpwuid(uid).pw_uid == uid" in dockerfile
     assert "grp.getgrgid(gid).gr_gid == gid" in dockerfile
+    assert (
+        "UNSLOTH_COMPILE_LOCATION=/home/lumen-runtime/.cache/unsloth_compiled_cache"
+        in dockerfile
+    )
+    assert 'os.environ["UNSLOTH_COMPILE_LOCATION"]' in dockerfile
     assert "USER ${LUMEN_RUNTIME_UID}:${LUMEN_RUNTIME_GID}" in dockerfile
     assert '--build-arg "LUMEN_RUNTIME_UID=$RUNTIME_UID"' in launcher
     assert '--build-arg "LUMEN_RUNTIME_GID=$RUNTIME_GID"' in launcher
@@ -1204,6 +1492,581 @@ exit 0
     assert "--gpus all" not in logged
 
 
+@pytest.mark.parametrize("training_exit_code", (0, 137))
+def test_ubuntu_launcher_detaches_and_collects_container_evidence(
+    tmp_path: Path,
+    training_exit_code: int,
+) -> None:
+    if sys.platform != "linux":
+        pytest.skip("launcher harness requires the Ubuntu/GNU host utilities")
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker_log = tmp_path / "docker.log"
+    docker_state = tmp_path / "docker.state"
+    docker_contract = tmp_path / "docker.contract"
+    docker_environment = tmp_path / "docker.environment"
+    docker_launch_mode = tmp_path / "docker.launch-mode"
+    docker_run_root = tmp_path / "docker.run-root"
+    repository_head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        text=True,
+    ).strip()
+    container_id = "1" * 64
+    source_integrity = "d" * 64
+    fake_commands = {
+        "uname": """#!/bin/sh
+printf 'Linux\\n'
+""",
+        "id": """#!/bin/sh
+case "${1:-}" in
+  -u) printf '12345\\n' ;;
+  -g) printf '23456\\n' ;;
+  *) exit 2 ;;
+esac
+""",
+        "nvidia-smi": """#!/bin/sh
+exit 0
+""",
+        "python3": f"""#!/bin/sh
+case "$*" in
+  *'ubuntu_source_integrity.py attest-host'*)
+    printf '%s\\n' '{{"baseCommit":"{repository_head}","workingTreeDigest":"{'b' * 64}","ubuntuOrchestrationCodeSHA256":"{'c' * 64}","sourceIntegritySHA256":"{source_integrity}"}}'
+    exit 0
+    ;;
+esac
+exec {sys.executable} "$@"
+""",
+        "docker": f"""#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
+case "${{1:-}}" in
+  info) exit 0 ;;
+  build)
+    cat >/dev/null
+    exit 0
+    ;;
+  image)
+    if [ "${{2:-}}" = inspect ]; then
+      printf '{FAKE_IMAGE_DIGEST}\\n'
+      exit 0
+    fi
+    ;;
+  run) exit 0 ;;
+  create)
+    : > "$FAKE_DOCKER_ENVIRONMENT"
+    capture_environment=0
+    for value in "$@"; do
+      if [ "$capture_environment" = 1 ]; then
+        printf '%s\\n' "$value" >> "$FAKE_DOCKER_ENVIRONMENT"
+        capture_environment=0
+        continue
+      fi
+      case "$value" in
+        -e) capture_environment=1 ;;
+        ai.lumen.launch-contract-sha256=*)
+          printf '%s\\n' "${{value#*=}}" > "$FAKE_DOCKER_CONTRACT"
+          ;;
+        ai.lumen.launch-mode=*)
+          printf '%s\\n' "${{value#*=}}" > "$FAKE_DOCKER_LAUNCH_MODE"
+          ;;
+        ai.lumen.host-run-root=*)
+          printf '%s\\n' "${{value#*=}}" > "$FAKE_DOCKER_RUN_ROOT"
+          ;;
+      esac
+    done
+    printf 'created\\n' > "$FAKE_DOCKER_STATE"
+    printf '{container_id}\\n'
+    if [ "${{FAKE_DISCONNECT_ON_CREATE:-0}}" = 1 ]; then
+      kill -TERM "$PPID"
+      exit 143
+    fi
+    exit 0
+    ;;
+  start)
+    printf 'running\\n' > "$FAKE_DOCKER_STATE"
+    exit 0
+    ;;
+  logs)
+    printf 'durable training output\\n'
+    exit 0
+    ;;
+  wait)
+    printf 'exited\\n' > "$FAKE_DOCKER_STATE"
+    if [ "$FAKE_TRAINING_EXIT" = 0 ]; then
+      mkdir -p "$(cat "$FAKE_DOCKER_RUN_ROOT")"
+    fi
+    printf '%s\\n' "$FAKE_TRAINING_EXIT"
+    exit 0
+    ;;
+  rm)
+    rm -f "$FAKE_DOCKER_STATE"
+    exit 0
+    ;;
+  container)
+    if [ "${{2:-}}" != inspect ] || [ ! -f "$FAKE_DOCKER_STATE" ]; then
+      exit 1
+    fi
+    if [ "${{3:-}}" != --format ]; then
+      printf '[{{"Id":"{container_id}"}}]\\n'
+      exit 0
+    fi
+    format="${{4:-}}"
+    case "$format" in
+      *source-integrity-sha256*) printf '{source_integrity}\\n' ;;
+      *launch-contract-sha256*) cat "$FAKE_DOCKER_CONTRACT" ;;
+      *ai.lumen.launch-mode*) cat "$FAKE_DOCKER_LAUNCH_MODE" ;;
+      *container-run-root*) printf '/outputs/%s\\n' "$(basename "$(cat "$FAKE_DOCKER_RUN_ROOT")")" ;;
+      *host-run-root-identity*) stat -c '%d:%i:%u:%g:0%a' "$(cat "$FAKE_DOCKER_RUN_ROOT")" ;;
+      *host-lock-identity*) stat -c '%d:%i:%u:%g:0%a' "$(dirname "$(cat "$FAKE_DOCKER_RUN_ROOT")")/.lumen-training.lock" ;;
+      *host-lock-dir*) printf '%s/.lumen-training.lock\\n' "$(dirname "$(cat "$FAKE_DOCKER_RUN_ROOT")")" ;;
+      *host-run-root*) cat "$FAKE_DOCKER_RUN_ROOT" ;;
+      *'.Mounts'*)
+        run_root="$(cat "$FAKE_DOCKER_RUN_ROOT")"
+        printf '[{{"Type":"bind","Source":"%s","Destination":"/outputs/%s","Mode":"rw","RW":true,"Propagation":"rprivate"}},{{"Type":"bind","Source":"%s/.lumen-training.lock","Destination":"/run/lumen-training-lock","Mode":"ro","RW":false,"Propagation":"rprivate"}},{{"Type":"bind","Source":"%s/hub","Destination":"/cache/huggingface/hub","Mode":"rw","RW":true,"Propagation":"rprivate"}},{{"Type":"bind","Source":"%s/xet","Destination":"/cache/huggingface/xet","Mode":"rw","RW":true,"Propagation":"rprivate"}},{{"Type":"bind","Source":"%s/assets","Destination":"/cache/huggingface/assets","Mode":"rw","RW":true,"Propagation":"rprivate"}}]\\n' "$run_root" "$(basename "$run_root")" "$(dirname "$run_root")" "$FAKE_HF_CACHE" "$FAKE_HF_CACHE" "$FAKE_HF_CACHE"
+        ;;
+      *Config.Entrypoint*) printf '["/bin/bash"]\\n' ;;
+      *Config.Cmd*) printf '["/opt/lumen/source/scripts/ubuntu_train_lumen_adapters_aio.sh"]\\n' ;;
+      *Config.Env*) {sys.executable} -c 'import json,sys; print(json.dumps(open(sys.argv[1], encoding="utf-8").read().splitlines()))' "$FAKE_DOCKER_ENVIRONMENT" ;;
+      *Config.User*) printf '12345:23456\\n' ;;
+      *HostConfig.AutoRemove*) printf 'false\\n' ;;
+      *HostConfig.Init*) printf 'true\\n' ;;
+      *.State.Status*) cat "$FAKE_DOCKER_STATE" ;;
+      *.State.ExitCode*) printf '%s\\n' "$FAKE_TRAINING_EXIT" ;;
+      *.State.OOMKilled*) printf 'false\\n' ;;
+      *.State.Error*) printf '\\n' ;;
+      *.Image*) printf '{FAKE_IMAGE_DIGEST}\\n' ;;
+      *.Id*) printf '{container_id}\\n' ;;
+      *) exit 2 ;;
+    esac
+    exit 0
+    ;;
+esac
+exit 2
+""",
+    }
+    for name, source in fake_commands.items():
+        path = fake_bin / name
+        path.write_text(source, encoding="utf-8")
+        path.chmod(0o755)
+
+    output_root = tmp_path / "outputs"
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/ubuntu_train_lumen_full_pipeline.sh",
+            "--prepare-only",
+            "--no-pull",
+            "--run-id",
+            "durable-probe",
+            "--output-dir",
+            str(output_root),
+            "--hf-cache",
+            str(tmp_path / "hf-cache"),
+        ],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "FAKE_DOCKER_LOG": str(docker_log),
+            "FAKE_DOCKER_STATE": str(docker_state),
+            "FAKE_DOCKER_CONTRACT": str(docker_contract),
+            "FAKE_DOCKER_ENVIRONMENT": str(docker_environment),
+            "FAKE_DOCKER_LAUNCH_MODE": str(docker_launch_mode),
+            "FAKE_DOCKER_RUN_ROOT": str(docker_run_root),
+            "FAKE_HF_CACHE": str(tmp_path / "hf-cache"),
+            "FAKE_TRAINING_EXIT": str(training_exit_code),
+        },
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert (result.returncode == 0) is (training_exit_code == 0)
+    commands = docker_log.read_text(encoding="utf-8").splitlines()
+    create_command = next(line for line in commands if line.startswith("create "))
+    assert "--rm" not in create_command
+    assert "--name lumen-ubuntu-" in create_command
+    assert f"-v {output_root}:/outputs:rw" not in create_command
+    assert (
+        f"-v {output_root}/durable-probe-{OPTIMIZED_VARIANT}:"
+        f"/outputs/durable-probe-{OPTIMIZED_VARIANT}:rw"
+    ) in create_command
+    assert (
+        f"-v {output_root}/.lumen-training.lock:"
+        "/run/lumen-training-lock:ro"
+    ) in create_command
+    assert any("{{json .Mounts}}" in line for line in commands)
+    assert any(line.startswith("start lumen-ubuntu-") for line in commands)
+    assert any(
+        line.startswith("logs --timestamps --follow lumen-ubuntu-")
+        for line in commands
+    )
+    assert any(line.startswith("wait lumen-ubuntu-") for line in commands)
+    evidence = output_root / ".lumen-container-evidence"
+    assert "it remains running if this launcher disconnects" in result.stdout
+    if training_exit_code == 0:
+        assert any(line.startswith("rm lumen-ubuntu-") for line in commands)
+        assert not docker_state.exists()
+        assert list(evidence.rglob("success-*.docker-inspect.json"))
+        assert list(evidence.rglob("success-*.docker.log"))
+    else:
+        assert not any(line.startswith("rm lumen-ubuntu-") for line in commands)
+        assert docker_state.exists()
+        assert list(evidence.rglob("failure-*.docker-inspect.json"))
+        assert list(evidence.rglob("failure-*.docker.log"))
+        assert "exited 137" in result.stderr
+        assert "was retained as lumen-ubuntu-" in result.stderr
+
+
+def _retained_container_launcher_harness(tmp_path: Path) -> dict[str, Any]:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    paths = {
+        "log": tmp_path / "docker.log",
+        "state": tmp_path / "docker.state",
+        "contract": tmp_path / "docker.contract",
+        "environment": tmp_path / "docker.environment",
+        "launch_mode": tmp_path / "docker.launch-mode",
+        "run_root": tmp_path / "docker.run-root",
+    }
+    repository_head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        text=True,
+    ).strip()
+    container_id = "7" * 64
+    source_integrity = "d" * 64
+    commands = {
+        "uname": """#!/bin/sh
+printf 'Linux\\n'
+""",
+        "id": """#!/bin/sh
+case "${1:-}" in
+  -u) printf '12345\\n' ;;
+  -g) printf '23456\\n' ;;
+  *) exit 2 ;;
+esac
+""",
+        "nvidia-smi": """#!/bin/sh
+exit 0
+""",
+        "python3": f"""#!/bin/sh
+case "$*" in
+  *'ubuntu_source_integrity.py attest-host'*)
+    printf '%s\\n' '{{"baseCommit":"{repository_head}","workingTreeDigest":"{'b' * 64}","ubuntuOrchestrationCodeSHA256":"{'c' * 64}","sourceIntegritySHA256":"{source_integrity}"}}'
+    exit 0
+    ;;
+esac
+exec {sys.executable} "$@"
+""",
+        "docker": f"""#!/bin/sh
+set -eu
+printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
+case "${{1:-}}" in
+  info) exit 0 ;;
+  build) cat >/dev/null; exit 0 ;;
+  image)
+    [ "${{2:-}}" = inspect ] || exit 2
+    printf '{FAKE_IMAGE_DIGEST}\\n'
+    exit 0
+    ;;
+  run) exit 0 ;;
+  create)
+    : > "$FAKE_DOCKER_ENVIRONMENT"
+    capture_environment=0
+    for value in "$@"; do
+      if [ "$capture_environment" = 1 ]; then
+        printf '%s\\n' "$value" >> "$FAKE_DOCKER_ENVIRONMENT"
+        capture_environment=0
+        continue
+      fi
+      case "$value" in
+        -e) capture_environment=1 ;;
+        ai.lumen.launch-contract-sha256=*) printf '%s\\n' "${{value#*=}}" > "$FAKE_DOCKER_CONTRACT" ;;
+        ai.lumen.launch-mode=*) printf '%s\\n' "${{value#*=}}" > "$FAKE_DOCKER_LAUNCH_MODE" ;;
+        ai.lumen.host-run-root=*) printf '%s\\n' "${{value#*=}}" > "$FAKE_DOCKER_RUN_ROOT" ;;
+      esac
+    done
+    printf 'created\\n' > "$FAKE_DOCKER_STATE"
+    printf '{container_id}\\n'
+    if [ "${{FAKE_DISCONNECT_ON_CREATE:-0}}" = 1 ]; then
+      kill -TERM "$PPID"
+      exit 143
+    fi
+    exit 0
+    ;;
+  start) printf 'running\\n' > "$FAKE_DOCKER_STATE"; exit 0 ;;
+  logs)
+    printf 'retained training output\\n'
+    if [ "${{FAKE_DISCONNECT_ON_FOLLOW:-0}}" = 1 ]; then
+      case "$*" in
+        *--follow*) kill -TERM "$PPID"; exit 143 ;;
+      esac
+    fi
+    exit 0
+    ;;
+  wait)
+    printf 'exited\\n' > "$FAKE_DOCKER_STATE"
+    printf '0\\n'
+    exit 0
+    ;;
+  rm) rm -f "$FAKE_DOCKER_STATE"; exit 0 ;;
+  container)
+    if [ "${{2:-}}" != inspect ] || [ ! -f "$FAKE_DOCKER_STATE" ]; then
+      exit 1
+    fi
+    if [ "${{3:-}}" != --format ]; then
+      printf '[{{"Id":"{container_id}"}}]\\n'
+      exit 0
+    fi
+    format="${{4:-}}"
+    case "$format" in
+      *source-integrity-sha256*) printf '{source_integrity}\\n' ;;
+      *launch-contract-sha256*) cat "$FAKE_DOCKER_CONTRACT" ;;
+      *ai.lumen.launch-mode*) cat "$FAKE_DOCKER_LAUNCH_MODE" ;;
+      *container-run-root*) printf '/outputs/%s\\n' "$(basename "$(cat "$FAKE_DOCKER_RUN_ROOT")")" ;;
+      *host-run-root-identity*) stat -c '%d:%i:%u:%g:0%a' "$(cat "$FAKE_DOCKER_RUN_ROOT")" ;;
+      *host-lock-identity*) stat -c '%d:%i:%u:%g:0%a' "$(dirname "$(cat "$FAKE_DOCKER_RUN_ROOT")")/.lumen-training.lock" ;;
+      *host-lock-dir*) printf '%s/.lumen-training.lock\\n' "$(dirname "$(cat "$FAKE_DOCKER_RUN_ROOT")")" ;;
+      *host-run-root*) cat "$FAKE_DOCKER_RUN_ROOT" ;;
+      *'.Mounts'*)
+        run_root="$(cat "$FAKE_DOCKER_RUN_ROOT")"
+        printf '[{{"Type":"bind","Source":"%s","Destination":"/outputs/%s","Mode":"rw","RW":true,"Propagation":"rprivate"}},{{"Type":"bind","Source":"%s/.lumen-training.lock","Destination":"/run/lumen-training-lock","Mode":"ro","RW":false,"Propagation":"rprivate"}},{{"Type":"bind","Source":"%s/hub","Destination":"/cache/huggingface/hub","Mode":"rw","RW":true,"Propagation":"rprivate"}},{{"Type":"bind","Source":"%s/xet","Destination":"/cache/huggingface/xet","Mode":"rw","RW":true,"Propagation":"rprivate"}},{{"Type":"bind","Source":"%s/assets","Destination":"/cache/huggingface/assets","Mode":"rw","RW":true,"Propagation":"rprivate"}}]\\n' "$run_root" "$(basename "$run_root")" "$(dirname "$run_root")" "$FAKE_HF_CACHE" "$FAKE_HF_CACHE" "$FAKE_HF_CACHE"
+        ;;
+      *Config.Entrypoint*) printf '["/bin/bash"]\\n' ;;
+      *Config.Cmd*) printf '["/opt/lumen/source/scripts/ubuntu_train_lumen_adapters_aio.sh"]\\n' ;;
+      *Config.Env*) {sys.executable} -c 'import json,sys; print(json.dumps(open(sys.argv[1], encoding="utf-8").read().splitlines()))' "$FAKE_DOCKER_ENVIRONMENT" ;;
+      *Config.User*) printf '12345:23456\\n' ;;
+      *HostConfig.AutoRemove*) printf 'false\\n' ;;
+      *HostConfig.Init*) printf 'true\\n' ;;
+      *.State.Status*) cat "$FAKE_DOCKER_STATE" ;;
+      *.State.ExitCode*) printf '0\\n' ;;
+      *.State.OOMKilled*) printf 'false\\n' ;;
+      *.State.Error*) printf '\\n' ;;
+      *.Image*) printf '{FAKE_IMAGE_DIGEST}\\n' ;;
+      *.Id*) printf '{container_id}\\n' ;;
+      *) exit 2 ;;
+    esac
+    exit 0
+    ;;
+esac
+exit 2
+""",
+    }
+    for name, source in commands.items():
+        executable = fake_bin / name
+        executable.write_text(source, encoding="utf-8")
+        executable.chmod(0o755)
+    return {
+        "paths": paths,
+        "env": {
+            **os.environ,
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "FAKE_DOCKER_LOG": str(paths["log"]),
+            "FAKE_DOCKER_STATE": str(paths["state"]),
+            "FAKE_DOCKER_CONTRACT": str(paths["contract"]),
+            "FAKE_DOCKER_ENVIRONMENT": str(paths["environment"]),
+            "FAKE_DOCKER_LAUNCH_MODE": str(paths["launch_mode"]),
+            "FAKE_DOCKER_RUN_ROOT": str(paths["run_root"]),
+            "FAKE_HF_CACHE": str(tmp_path / "hf-cache"),
+        },
+        "output_root": tmp_path / "outputs",
+        "hf_cache": tmp_path / "hf-cache",
+    }
+
+
+@pytest.mark.parametrize("initial_mode", ("fresh", "overwrite"))
+def test_running_retained_container_can_be_safely_reattached_by_resume(
+    tmp_path: Path,
+    initial_mode: str,
+) -> None:
+    if sys.platform != "linux":
+        pytest.skip("launcher harness requires the Ubuntu/GNU host utilities")
+    harness = _retained_container_launcher_harness(tmp_path)
+    base_args = [
+        "bash",
+        "scripts/ubuntu_train_lumen_full_pipeline.sh",
+        "--prepare-only",
+        "--no-pull",
+        "--run-id",
+        "retained-reattach",
+        "--output-dir",
+        str(harness["output_root"]),
+        "--hf-cache",
+        str(harness["hf_cache"]),
+    ]
+    first_args = [*base_args, *( ["--overwrite"] if initial_mode == "overwrite" else [] )]
+    first = subprocess.run(
+        first_args,
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_FOLLOW": "1"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode != 0
+    assert harness["paths"]["state"].read_text(encoding="utf-8").strip() == "running"
+    assert harness["paths"]["launch_mode"].read_text(encoding="utf-8").strip() == initial_mode
+
+    second = subprocess.run(
+        [*base_args, "--resume"],
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_FOLLOW": "0"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert second.returncode == 0, second.stderr
+    assert "reattaching to durable training container" in second.stdout
+    commands = harness["paths"]["log"].read_text(encoding="utf-8").splitlines()
+    assert sum(line.startswith("create ") for line in commands) == 1
+
+
+def test_fresh_created_retained_container_is_started_by_explicit_resume(
+    tmp_path: Path,
+) -> None:
+    if sys.platform != "linux":
+        pytest.skip("launcher harness requires the Ubuntu/GNU host utilities")
+    harness = _retained_container_launcher_harness(tmp_path)
+    base_args = [
+        "bash",
+        "scripts/ubuntu_train_lumen_full_pipeline.sh",
+        "--prepare-only",
+        "--no-pull",
+        "--run-id",
+        "retained-created",
+        "--output-dir",
+        str(harness["output_root"]),
+        "--hf-cache",
+        str(harness["hf_cache"]),
+    ]
+    first = subprocess.run(
+        base_args,
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_CREATE": "1"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode != 0
+    assert harness["paths"]["state"].read_text(encoding="utf-8").strip() == "created"
+
+    second = subprocess.run(
+        [*base_args, "--resume"],
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_CREATE": "0"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert second.returncode == 0, second.stderr
+    assert "never-started fresh container" in second.stdout
+    commands = harness["paths"]["log"].read_text(encoding="utf-8").splitlines()
+    assert sum(line.startswith("start ") for line in commands) == 1
+    assert sum(line.startswith("create ") for line in commands) == 1
+
+
+def test_overwrite_created_container_requires_repeated_overwrite_authorization(
+    tmp_path: Path,
+) -> None:
+    if sys.platform != "linux":
+        pytest.skip("launcher harness requires the Ubuntu/GNU host utilities")
+    harness = _retained_container_launcher_harness(tmp_path)
+    base_args = [
+        "bash",
+        "scripts/ubuntu_train_lumen_full_pipeline.sh",
+        "--prepare-only",
+        "--no-pull",
+        "--run-id",
+        "retained-overwrite-created",
+        "--output-dir",
+        str(harness["output_root"]),
+        "--hf-cache",
+        str(harness["hf_cache"]),
+    ]
+    first = subprocess.run(
+        [*base_args, "--overwrite"],
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_CREATE": "1"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode != 0
+    assert harness["paths"]["state"].read_text(encoding="utf-8").strip() == "created"
+
+    resume = subprocess.run(
+        [*base_args, "--resume"],
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_CREATE": "0"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert resume.returncode != 0
+    assert "requires --overwrite" in resume.stderr
+    commands = harness["paths"]["log"].read_text(encoding="utf-8").splitlines()
+    assert not any(line.startswith("start ") for line in commands)
+
+    overwrite = subprocess.run(
+        [*base_args, "--overwrite"],
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_CREATE": "0"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert overwrite.returncode == 0, overwrite.stderr
+    commands = harness["paths"]["log"].read_text(encoding="utf-8").splitlines()
+    assert sum(line.startswith("create ") for line in commands) == 1
+    assert sum(line.startswith("start ") for line in commands) == 1
+
+
+def test_running_retained_container_rejects_duplicate_state_environment(
+    tmp_path: Path,
+) -> None:
+    if sys.platform != "linux":
+        pytest.skip("launcher harness requires the Ubuntu/GNU host utilities")
+    harness = _retained_container_launcher_harness(tmp_path)
+    base_args = [
+        "bash",
+        "scripts/ubuntu_train_lumen_full_pipeline.sh",
+        "--prepare-only",
+        "--no-pull",
+        "--run-id",
+        "retained-env-drift",
+        "--output-dir",
+        str(harness["output_root"]),
+        "--hf-cache",
+        str(harness["hf_cache"]),
+    ]
+    first = subprocess.run(
+        base_args,
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_FOLLOW": "1"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert first.returncode != 0
+    with harness["paths"]["environment"].open("a", encoding="utf-8") as handle:
+        handle.write("LUMEN_AIO_RESUME=1\n")
+
+    second = subprocess.run(
+        [*base_args, "--resume"],
+        cwd=REPO_ROOT,
+        env={**harness["env"], "FAKE_DISCONNECT_ON_FOLLOW": "0"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert second.returncode != 0
+    assert "malformed or duplicate observed environment" in second.stderr
+    assert harness["paths"]["state"].read_text(encoding="utf-8").strip() == "running"
+
+
 def test_unsloth_import_guard_fails_closed_if_transformers_loaded_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1299,6 +2162,176 @@ def test_agent_and_run_root_validation_fails_closed(tmp_path: Path) -> None:
         ubuntu_pipeline.validate_run_root(tmp_path, allowed_parent=tmp_path)
     child = tmp_path / "run-one"
     assert ubuntu_pipeline.validate_run_root(child, allowed_parent=tmp_path) == child
+
+
+def test_exact_bind_root_is_private_durable_and_identity_bound(tmp_path: Path) -> None:
+    output_root = tmp_path / "outputs"
+    output_root.mkdir(mode=0o700)
+    run_root = output_root / "pilot-internal_plus_public_optimized"
+
+    initialized = ubuntu_pipeline.initialize_bind_root(
+        run_root,
+        allowed_parent=output_root,
+        create_if_missing=True,
+    )
+    identity = initialized["rootIdentity"]
+    inode = run_root.stat(follow_symlinks=False).st_ino
+
+    assert initialized["created"] is True
+    assert run_root.stat().st_mode & 0o777 == 0o700
+    assert ubuntu_pipeline.verify_bind_root(
+        run_root,
+        allowed_parent=output_root,
+        expected_identity=identity,
+    )["status"] == "bind_root_identity_verified"
+
+    displaced = output_root / "displaced"
+    run_root.rename(displaced)
+    run_root.mkdir(mode=0o700)
+    with pytest.raises(RuntimeError, match="device/inode/ownership/mode changed"):
+        ubuntu_pipeline.verify_bind_root(
+            run_root,
+            allowed_parent=output_root,
+            expected_identity=identity,
+        )
+    assert displaced.stat().st_ino == inode
+
+
+def test_precreated_bind_root_rejects_unowned_existing_contents(
+    tmp_path: Path,
+) -> None:
+    output_root = tmp_path / "outputs"
+    output_root.mkdir(mode=0o700)
+    run_root = output_root / "malicious-internal_plus_public_optimized"
+    ubuntu_pipeline.initialize_bind_root(
+        run_root,
+        allowed_parent=output_root,
+        create_if_missing=True,
+    )
+    malicious = run_root / "unowned-payload"
+    malicious.write_text("do not delete me", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="unexpected state without an ownership record"):
+        ubuntu_pipeline.static_preflight(
+            root=REPO_ROOT,
+            dataset_source=REPO_ROOT / "generated" / "fine_tuning",
+            agents=("cortex",),
+            variant=OPTIMIZED_VARIANT,
+            seed=42,
+            base_model_override="",
+            container_digest=FAKE_IMAGE_DIGEST,
+            run_root=run_root,
+            allowed_parent=output_root,
+            expected_run_id=run_root.name,
+            evaluation_scope="smoke",
+            evaluation_max_examples=7,
+            gguf_requested=False,
+            precreated_bind_root=True,
+        )
+    assert malicious.read_text(encoding="utf-8") == "do not delete me"
+
+
+def test_precreated_partial_preparation_recovery_keeps_bind_inode_and_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_root = tmp_path / "outputs"
+    output_root.mkdir(mode=0o700)
+    lock_root = output_root / ".lumen-training.lock"
+    lock_root.mkdir(mode=0o700)
+    run_root = output_root / "partial-internal_plus_public_optimized"
+    ubuntu_pipeline.initialize_bind_root(
+        run_root,
+        allowed_parent=output_root,
+        create_if_missing=True,
+    )
+    original_inode = run_root.stat(follow_symlinks=False).st_ino
+    source_integrity = _source_integrity_fixture()["ubuntuSourceIntegrity"]
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "current_source_integrity",
+        lambda *_args, **_kwargs: source_integrity,
+    )
+    plan = _test_execution_plan(
+        evaluation_scope="smoke",
+        evaluation_max_examples=7,
+        gguf_requested=False,
+    )
+    owner = ubuntu_pipeline._preparation_owner_record(
+        root=REPO_ROOT,
+        dataset_source=REPO_ROOT / "generated" / "fine_tuning",
+        run_root=run_root,
+        agents=("cortex",),
+        variant=OPTIMIZED_VARIANT,
+        seed=42,
+        base_model_override="",
+        container_digest=FAKE_IMAGE_DIGEST,
+        prepared_execution_plan=plan,
+        source_integrity=source_integrity,
+        precreated_bind_root=True,
+    )
+    ubuntu_pipeline._initialize_preparation_root(
+        run_root,
+        owner,
+        precreated_bind_root=True,
+    )
+    partial = run_root / "generated" / "fine_tuning"
+    partial.mkdir(parents=True, mode=0o700)
+    (partial / "partial.json").write_text("{}\n", encoding="utf-8")
+
+    result = ubuntu_pipeline.recover_incomplete_preparation(
+        root=REPO_ROOT,
+        dataset_source=REPO_ROOT / "generated" / "fine_tuning",
+        run_root=run_root,
+        allowed_parent=output_root,
+        agents=("cortex",),
+        variant=OPTIMIZED_VARIANT,
+        seed=42,
+        base_model_override="",
+        container_digest=FAKE_IMAGE_DIGEST,
+        evaluation_scope="smoke",
+        evaluation_max_examples=7,
+        gguf_requested=False,
+        precreated_bind_root=True,
+    )
+
+    assert result["status"] == "incomplete_preparation_cleared"
+    assert run_root.stat(follow_symlinks=False).st_ino == original_inode
+    assert not list(run_root.iterdir())
+    assert lock_root.is_dir()
+
+
+def test_owned_bind_reset_verifies_before_clearing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_root = tmp_path / "owned-bind-root"
+    run_root.mkdir(mode=0o700)
+    payload = run_root / "payload"
+    payload.write_text("artifact", encoding="utf-8")
+    original_inode = run_root.stat(follow_symlinks=False).st_ino
+
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_owned_run",
+        lambda *_args, **_kwargs: {
+            "runManifestSHA256": "a" * 64,
+            "runRootInitializationMode": "precreated_bind_root",
+        },
+    )
+    ubuntu_pipeline.reset_owned_run_root(run_root, variant=OPTIMIZED_VARIANT)
+    assert run_root.stat(follow_symlinks=False).st_ino == original_inode
+    assert not list(run_root.iterdir())
+
+    payload.write_text("must-survive", encoding="utf-8")
+
+    def reject_ownership(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise RuntimeError("ownership rejected")
+
+    monkeypatch.setattr(ubuntu_pipeline, "verify_owned_run", reject_ownership)
+    with pytest.raises(RuntimeError, match="ownership rejected"):
+        ubuntu_pipeline.reset_owned_run_root(run_root, variant=OPTIMIZED_VARIANT)
+    assert payload.read_text(encoding="utf-8") == "must-survive"
 
 
 def test_current_optimized_artifacts_pass_static_preflight(tmp_path: Path) -> None:
@@ -1520,8 +2553,23 @@ def test_ubuntu_inner_launcher_processes_the_final_declared_agent() -> None:
     ).read_text(encoding="utf-8")
 
     assert 'IFS=\',\' read -r -a AGENTS <<< "$AGENTS_CSV"' in launcher
-    assert launcher.count('for agent in "${AGENTS[@]}"; do') == 3
+    assert launcher.count('for agent in "${AGENTS[@]}"; do') == 1
+    assert 'evaluate_agent "$agent"' in launcher
+    assert 'convert_agent_gguf "$agent"' in launcher
     assert "done < <(printf '%s' \"$AGENTS_CSV\" | tr ',' '\\n')" not in launcher
+
+
+def test_ubuntu_launchers_default_to_the_same_risk_first_agent_order() -> None:
+    expected = "fleet,executor,mouth,rem,mimicry,cortex"
+    outer = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+    inner = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_adapters_aio.sh"
+    ).read_text(encoding="utf-8")
+
+    assert f"${{LUMEN_UBUNTU_AGENTS:-{expected}}}" in outer
+    assert f"${{LUMEN_AIO_AGENTS:-{expected}}}" in inner
 
 
 def test_converter_source_preflight_runs_before_the_first_sft_phase() -> None:
@@ -1530,9 +2578,10 @@ def test_converter_source_preflight_runs_before_the_first_sft_phase() -> None:
     ).read_text(encoding="utf-8")
     first_sft_loop = launcher.index('for agent in "${AGENTS[@]}"; do')
 
-    assert launcher.index('git init "$CONVERTER_REPO"') < first_sft_loop
+    assert launcher.index('git init "$CONVERTER_STAGING"') < first_sft_loop
+    assert launcher.index('promote_converter_checkout') < first_sft_loop
     assert launcher.index(
-        'git -C "$CONVERTER_REPO" status --porcelain=v1 --untracked-files=all'
+        'git -C "$checkout" status --porcelain=v1 --untracked-files=all'
     ) < first_sft_loop
     assert launcher.index(
         '"$TRAIN_PY" "$CONVERTER" --help >/dev/null'
@@ -1540,7 +2589,8 @@ def test_converter_source_preflight_runs_before_the_first_sft_phase() -> None:
     assert launcher.index(
         '"$TRAIN_PY" "$GGUF_READER" --help >/dev/null'
     ) < first_sft_loop
-    assert launcher.count('git init "$CONVERTER_REPO"') == 1
+    assert launcher.count('git init "$CONVERTER_STAGING"') == 1
+    assert 'git init "$CONVERTER_REPO"' not in launcher
 
 
 def test_converter_pin_is_derived_from_training_lineage() -> None:
@@ -1625,6 +2675,7 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
     ]
     assert config["runExecutionPlan"] == expected_plan
     assert run_manifest["executionPlan"] == expected_plan
+    assert not (run_root / ubuntu_pipeline.PREPARATION_OWNER_FILENAME).exists()
     assert (
         run_root / "generated" / "agent_manifest" / "AgentBehaviorManifest.json"
     ).is_file()
@@ -1662,6 +2713,156 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
         )
 
 
+def test_prepared_snapshot_copy_normalizes_read_only_image_modes(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "read-only-source"
+    nested = source / "agent" / "experiments"
+    nested.mkdir(parents=True)
+    source_file = nested / "train_sft.jsonl"
+    source_file.write_text('{"messages": []}\n', encoding="utf-8")
+    for directory in (nested, nested.parent, source):
+        directory.chmod(0o555)
+    source_file.chmod(0o444)
+
+    destination = tmp_path / "private-snapshot"
+    try:
+        ubuntu_pipeline._copy_private_regular_tree(source, destination)
+
+        assert destination.stat().st_mode & 0o777 == 0o700
+        assert (destination / "agent").stat().st_mode & 0o777 == 0o700
+        assert (
+            destination / "agent" / "experiments"
+        ).stat().st_mode & 0o777 == 0o700
+        copied_file = destination / "agent" / "experiments" / source_file.name
+        assert copied_file.stat().st_mode & 0o777 == 0o600
+        assert copied_file.read_bytes() == source_file.read_bytes()
+
+        # Exercise the launcher's explicit-overwrite deletion path. The
+        # partial-copy test below separately exercises Python recovery.
+        subprocess.run(
+            ["rm", "-rf", "--", str(destination)],
+            check=True,
+        )
+        assert not destination.exists()
+    finally:
+        for directory in (nested, nested.parent, source):
+            directory.chmod(0o700)
+
+
+def test_partial_prepared_snapshot_remains_removable_after_source_rejection(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "partially-unsafe-source"
+    completed = source / "a-completed"
+    completed.mkdir(parents=True)
+    completed_file = completed / "train.jsonl"
+    completed_file.write_text("{}\n", encoding="utf-8")
+    unsafe = source / "z-unsafe-link"
+    unsafe.symlink_to(completed, target_is_directory=True)
+    completed_file.chmod(0o444)
+    completed.chmod(0o555)
+    source.chmod(0o555)
+
+    destination = tmp_path / "partial-private-snapshot"
+    try:
+        with pytest.raises(RuntimeError, match="contains a symlink"):
+            ubuntu_pipeline._copy_private_regular_tree(source, destination)
+
+        assert destination.stat().st_mode & 0o777 == 0o700
+        assert (destination / completed.name).stat().st_mode & 0o777 == 0o700
+        assert (
+            destination / completed.name / completed_file.name
+        ).stat().st_mode & 0o777 == 0o600
+        shutil.rmtree(destination)
+        assert not destination.exists()
+    finally:
+        source.chmod(0o700)
+        completed.chmod(0o700)
+
+
+def test_incomplete_preparation_recovery_never_deletes_training_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tools.fine_tuning.unsloth import train_sft
+
+    lineage = {
+        "resolvedTrainingEnvironment": {
+            "schemaVersion": "lumen.resolved-training-environment/1.0.0"
+        },
+        "resolvedTrainingEnvironmentSHA256": "r" * 64,
+        "resolvedTrainingEnvironmentScanAudit": {"distributionCount": 1},
+        "spaceConfigurationSHA256": None,
+        "zeroGPUSize": None,
+        "zeroGPUDurationSeconds": None,
+        "observedAccelerator": {"backend": "cuda", "deviceCount": 1},
+    }
+    environment = {"trainingEnvironmentSHA256": "e" * 64}
+    source_integrity = _source_integrity_fixture()["ubuntuSourceIntegrity"]
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_runtime_lineage",
+        lambda **_kwargs: (lineage, environment),
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "current_source_integrity",
+        lambda *_args, **_kwargs: source_integrity,
+    )
+    monkeypatch.setattr(
+        train_sft,
+        "_training_environment",
+        lambda *_args, **_kwargs: environment,
+    )
+    # Simulate a kill after the manifest commit but before the durable owner
+    # unlink, then a later loss of the manifest after training had begun.
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_durably_remove_preparation_owner",
+        lambda _run_root: None,
+    )
+
+    run_root = tmp_path / "prepared-with-progress"
+    ubuntu_pipeline.prepare_run(
+        root=REPO_ROOT,
+        dataset_source=REPO_ROOT / "generated" / "fine_tuning",
+        run_root=run_root,
+        agents=("cortex",),
+        variant=OPTIMIZED_VARIANT,
+        seed=42,
+        base_model_override="",
+        container_digest=FAKE_IMAGE_DIGEST,
+        evaluation_scope="smoke",
+        evaluation_max_examples=7,
+        gguf_requested=False,
+    )
+    checkpoint = run_root / "training" / "cortex" / "checkpoint-1"
+    checkpoint.mkdir(parents=True)
+    irreplaceable = b"signed-training-progress"
+    (checkpoint / "adapter_model.safetensors").write_bytes(irreplaceable)
+    (run_root / "aio_run_manifest.json").unlink()
+
+    with pytest.raises(RuntimeError, match="training progress"):
+        ubuntu_pipeline.recover_incomplete_preparation(
+            root=REPO_ROOT,
+            dataset_source=REPO_ROOT / "generated" / "fine_tuning",
+            run_root=run_root,
+            allowed_parent=tmp_path,
+            agents=("cortex",),
+            variant=OPTIMIZED_VARIANT,
+            seed=42,
+            base_model_override="",
+            container_digest=FAKE_IMAGE_DIGEST,
+            evaluation_scope="smoke",
+            evaluation_max_examples=7,
+            gguf_requested=False,
+        )
+
+    assert run_root.is_dir()
+    assert (checkpoint / "adapter_model.safetensors").read_bytes() == irreplaceable
+
+
 def test_final_config_switches_to_verified_preference_lineage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1671,6 +2872,20 @@ def test_final_config_switches_to_verified_preference_lineage(
     config = {
         "agent": "cortex",
         "preference_trainer": "dpo",
+        "dpo_learning_rate": 5e-6,
+        "dpo_num_train_epochs": 1,
+        "dpo_beta": 0.1,
+        "max_seq_length": 64,
+        "max_prompt_length": 32,
+        "batch_size": 1,
+        "gradient_accumulation_steps": 1,
+        "warmup_steps": 0,
+        "gradient_checkpointing": True,
+        "use_logits_to_keep": True,
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "bf16": False,
+        "fp16": True,
         "trainingCodeManifestsByPhase": {"dpo": {"phase": "dpo"}},
         "trainingCodeSHA256ByPhase": {"dpo": "d" * 64},
         "variantAttestation": {
@@ -1714,6 +2929,10 @@ def test_final_config_switches_to_verified_preference_lineage(
         lambda *_args: {
             "adapterSHA256": "b" * 64,
             "parentSFTAdapterSHA256": "a" * 64,
+            "tokenLengthPreflightSHA256": "f" * 64,
+            "tokenLengthStatistics": {
+                "promptTokens": {"min": 1, "p50": 2, "p95": 3, "max": 4}
+            },
         },
     )
     monkeypatch.setattr(
@@ -1727,6 +2946,7 @@ def test_final_config_switches_to_verified_preference_lineage(
 
     assert written["adapter_training_phase"] == "sft_dpo"
     assert written["parent_sft_adapter_sha256"] == "a" * 64
+    assert written["preferenceTokenLengthPreflightSHA256"] == "f" * 64
     assert written["adapter_output_dir"].endswith("models/lora_qwen3_dpo/cortex")
     assert written["trainingCodeSHA256"] == "d" * 64
     assert written["variantAttestation"]["trainingEnvironmentSHA256"] == "e" * 64
@@ -1768,6 +2988,10 @@ def test_summary_rejects_failed_full_evaluation(
             ],
             "parentSFTAdapterSHA256": "9" * 64,
             "phase": "dpo",
+            "tokenLengthPreflightSHA256": "e" * 64,
+            "tokenLengthStatistics": {
+                "promptTokens": {"min": 1, "p50": 1, "p95": 1, "max": 1}
+            },
         },
     )
 
@@ -1790,6 +3014,7 @@ def test_full_quality_summary_without_gguf_is_complete_and_upload_qualified(
     plan = _test_execution_plan(gguf_requested=False)
     source_fields = _source_integrity_fixture()
     (tmp_path / "models" / "lora_qwen3_gguf").mkdir(parents=True)
+    (tmp_path / "models" / "lora_qwen3_gguf_receipts").mkdir(parents=True)
     evaluation_dir = tmp_path / "evaluation" / agent
     evaluation_dir.mkdir(parents=True)
     (evaluation_dir / "evaluation_report.json").write_text(
@@ -2022,6 +3247,8 @@ def test_diagnostic_publication_requires_override_and_separate_namespace(
         "evaluationStatus": evaluation_status,
         "evaluationScope": evaluation_scope,
         "ggufStatus": "skipped_by_operator",
+        "ggufConversionStatus": "skipped_by_operator",
+        "ggufTensorEquivalenceStatus": "not_applicable",
         "qualification": "diagnostic_only",
         "promotionEligible": False,
         "executionPlanSHA256": plan["executionPlanSHA256"],
@@ -2044,6 +3271,8 @@ def test_diagnostic_publication_requires_override_and_separate_namespace(
         "evaluationStatus": evaluation_status,
         "evaluationScope": evaluation_scope,
         "ggufStatus": "skipped_by_operator",
+        "ggufConversionStatus": "skipped_by_operator",
+        "ggufTensorEquivalenceStatus": "not_applicable",
         "executionPlanSHA256": plan["executionPlanSHA256"],
     }
 
@@ -2104,11 +3333,12 @@ def test_launcher_rejects_conflicting_evaluation_flags_in_any_order(
         "evaluation_sha",
         "evaluation_path",
         "evaluator_code_sha",
-        "retry_contract_sha",
-        "retry_max_attempts",
+        "output_mode_contract_sha",
+        "output_mode_contract_record",
         "recovery_counter",
         "config_path",
         "config_sha",
+        "chat_template_contract",
         "adapter_directory",
         "finalized_path",
         "finalized_sha",
@@ -2129,14 +3359,7 @@ def test_evaluation_summary_verifier_rejects_controlled_evidence_drift(
 ) -> None:
     run_path = _write_evaluation_evidence(tmp_path, monkeypatch=monkeypatch)
     evaluation_run = ubuntu_pipeline.read_object(run_path)
-    final_phase = {
-        "adapterSHA256": "b" * 64,
-        "finalizedVariantManifestSHA256": evaluation_run[
-            "finalizedVariantManifestSHA256"
-        ],
-        "parentSFTAdapterSHA256": "9" * 64,
-        "phase": "dpo",
-    }
+    final_phase = _evaluation_final_phase(evaluation_run)
     verified = ubuntu_pipeline._verify_evaluation_outputs(
         tmp_path,
         "cortex",
@@ -2155,16 +3378,36 @@ def test_evaluation_summary_verifier_rejects_controlled_evidence_drift(
         )
     elif mutation == "evaluator_code_sha":
         manifest["evaluatorCodeSHA256"] = "0" * 64
-    elif mutation == "retry_contract_sha":
-        manifest["generation"]["strictJSONRetryContractSHA256"] = "0" * 64
-    elif mutation == "retry_max_attempts":
-        manifest["generation"]["strictJSONMaxAttempts"] = 3
+    elif mutation == "output_mode_contract_sha":
+        manifest["generation"]["outputModeContract"][
+            "outputModeContractSHA256"
+        ] = "0" * 64
+    elif mutation == "output_mode_contract_record":
+        contract = manifest["generation"]["outputModeContract"]
+        contract["records"][0].update(
+            {
+                "outputMode": "text",
+                "structuredOutputContractSHA256": None,
+                "strictJSONRetryEligible": False,
+                "strictJSONMaxAttempts": 1,
+                "strictJSONRetryContractSHA256": None,
+            }
+        )
+        unsigned_contract = dict(contract)
+        unsigned_contract.pop("outputModeContractSHA256")
+        contract["outputModeContractSHA256"] = (
+            evaluate_adapter._canonical_sha256(unsigned_contract)
+        )
     elif mutation == "recovery_counter":
         manifest["formatRecoveryCount"] = 1
     elif mutation == "config_path":
         manifest["configPath"] = str((tmp_path / "configs" / "other.json").resolve())
     elif mutation == "config_sha":
         manifest["configSHA256"] = "0" * 64
+    elif mutation == "chat_template_contract":
+        manifest["chatTemplateContract"]["generationPrefixOwnership"] = (
+            "completion"
+        )
     elif mutation == "adapter_directory":
         manifest["adapterDirectory"] = str(
             (tmp_path / "models" / "lora_qwen3_dpo" / "executor").resolve()
@@ -2216,15 +3459,9 @@ def test_evaluation_verifier_binds_image_source_attestation(
         monkeypatch=monkeypatch,
         attested_source=True,
     )
-    final_phase = {
-        "adapterSHA256": "b" * 64,
-        "finalizedVariantManifestSHA256": ubuntu_pipeline.read_object(
-            tmp_path
-            / "training/cortex/dpo/finalized_variant_manifest.json"
-        )["variantManifestSHA256"],
-        "parentSFTAdapterSHA256": "9" * 64,
-        "phase": "dpo",
-    }
+    final_phase = _evaluation_final_phase(
+        ubuntu_pipeline.read_object(run_path)
+    )
     ubuntu_pipeline._verify_evaluation_outputs(
         tmp_path,
         "cortex",
@@ -2269,14 +3506,7 @@ def test_evaluation_verifier_accepts_evidenced_two_attempt_cortex_recovery(
         retry_from_completion=invalid_first_completion,
     )
     manifest = ubuntu_pipeline.read_object(run_path)
-    final_phase = {
-        "adapterSHA256": "b" * 64,
-        "finalizedVariantManifestSHA256": manifest[
-            "finalizedVariantManifestSHA256"
-        ],
-        "parentSFTAdapterSHA256": "9" * 64,
-        "phase": "dpo",
-    }
+    final_phase = _evaluation_final_phase(manifest)
 
     verified = ubuntu_pipeline._verify_evaluation_outputs(
         tmp_path,
@@ -2306,15 +3536,18 @@ def test_evaluation_verifier_accepts_evidenced_two_attempt_cortex_recovery(
     primary_messages = evaluate_adapter._structured_output_messages(
         "cortex",
         record["messages"],
+        output_mode="json",
         tool_contracts=tool_contracts,
     )
     first_output, _, first_error = evaluate_adapter.normalize_candidate_output(
         "cortex",
         attempts[0]["rawOutput"],
+        output_mode="json",
         evaluation_module=evaluate_adapter._load_evaluation_module(),
         tool_contracts=tool_contracts,
     )
     retry_messages = evaluate_adapter._strict_json_retry_messages(
+        "cortex",
         primary_messages,
         validation_error=first_error,
         failed_candidate=first_output,
@@ -2344,14 +3577,7 @@ def test_evaluation_verifier_independently_rescores_rehashed_forged_reports(
 ) -> None:
     run_path = _write_evaluation_evidence(tmp_path, monkeypatch=monkeypatch)
     original = ubuntu_pipeline.read_object(run_path)
-    final_phase = {
-        "adapterSHA256": "b" * 64,
-        "finalizedVariantManifestSHA256": original[
-            "finalizedVariantManifestSHA256"
-        ],
-        "parentSFTAdapterSHA256": "9" * 64,
-        "phase": "dpo",
-    }
+    final_phase = _evaluation_final_phase(original)
 
     def forge(report: dict, manifest: dict) -> None:
         if mutation == "passed_case_count":
@@ -2386,14 +3612,7 @@ def test_evaluation_verifier_rejects_rehashed_final_config_drift(
 ) -> None:
     run_path = _write_evaluation_evidence(tmp_path, monkeypatch=monkeypatch)
     manifest = ubuntu_pipeline.read_object(run_path)
-    final_phase = {
-        "adapterSHA256": "b" * 64,
-        "finalizedVariantManifestSHA256": manifest[
-            "finalizedVariantManifestSHA256"
-        ],
-        "parentSFTAdapterSHA256": "9" * 64,
-        "phase": "dpo",
-    }
+    final_phase = _evaluation_final_phase(manifest)
     config_path = Path(manifest["configPath"])
     config = ubuntu_pipeline.read_object(config_path)
     config["seed"] = 43
@@ -2418,14 +3637,7 @@ def test_evaluation_verifier_rejects_rehashed_behavior_manifest_drift(
 ) -> None:
     run_path = _write_evaluation_evidence(tmp_path, monkeypatch=monkeypatch)
     manifest = ubuntu_pipeline.read_object(run_path)
-    final_phase = {
-        "adapterSHA256": "b" * 64,
-        "finalizedVariantManifestSHA256": manifest[
-            "finalizedVariantManifestSHA256"
-        ],
-        "parentSFTAdapterSHA256": "9" * 64,
-        "phase": "dpo",
-    }
+    final_phase = _evaluation_final_phase(manifest)
     behavior_path = Path(manifest["behaviorManifestPath"])
     behavior = ubuntu_pipeline.read_object(behavior_path)
     behavior["tools"].append({"id": "files.write", "arguments": []})
@@ -2457,14 +3669,7 @@ def test_evaluation_verifier_rejects_rehashed_attempt_budget_drift(
 ) -> None:
     run_path = _write_evaluation_evidence(tmp_path, monkeypatch=monkeypatch)
     manifest = ubuntu_pipeline.read_object(run_path)
-    final_phase = {
-        "adapterSHA256": "b" * 64,
-        "finalizedVariantManifestSHA256": manifest[
-            "finalizedVariantManifestSHA256"
-        ],
-        "parentSFTAdapterSHA256": "9" * 64,
-        "phase": "dpo",
-    }
+    final_phase = _evaluation_final_phase(manifest)
     candidate_path = Path(manifest["candidateOutputsPath"])
     row = ubuntu_pipeline.read_jsonl(candidate_path)[0]
     attempt = row["generationAttempts"][0]
@@ -2509,14 +3714,7 @@ def test_evaluation_verifier_preserves_valid_smoke_semantics(
     verified = ubuntu_pipeline._verify_evaluation_outputs(
         tmp_path,
         "cortex",
-        final_phase={
-            "adapterSHA256": "b" * 64,
-            "finalizedVariantManifestSHA256": manifest[
-                "finalizedVariantManifestSHA256"
-            ],
-            "parentSFTAdapterSHA256": "9" * 64,
-            "phase": "dpo",
-        },
+        final_phase=_evaluation_final_phase(manifest),
     )
 
     assert verified["status"] == "smoke_complete"
@@ -2571,14 +3769,7 @@ def test_evaluation_verifier_rejects_smoke_complete_with_a_generated_failure(
         ubuntu_pipeline._verify_evaluation_outputs(
             tmp_path,
             "cortex",
-            final_phase={
-                "adapterSHA256": "b" * 64,
-                "finalizedVariantManifestSHA256": manifest[
-                    "finalizedVariantManifestSHA256"
-                ],
-                "parentSFTAdapterSHA256": "9" * 64,
-                "phase": "dpo",
-            },
+            final_phase=_evaluation_final_phase(manifest),
         )
 
 
@@ -2625,14 +3816,7 @@ def test_evaluation_verifier_reconstructs_non_prefix_semantic_smoke_selection(
     verified = ubuntu_pipeline._verify_evaluation_outputs(
         tmp_path,
         "cortex",
-        final_phase={
-            "adapterSHA256": "b" * 64,
-            "finalizedVariantManifestSHA256": manifest[
-                "finalizedVariantManifestSHA256"
-            ],
-            "parentSFTAdapterSHA256": "9" * 64,
-            "phase": "dpo",
-        },
+        final_phase=_evaluation_final_phase(manifest),
     )
 
     assert verified["status"] == "smoke_complete"
@@ -2660,14 +3844,7 @@ def test_evaluation_verifier_rejects_rehashed_smoke_cohort_size_drift(
         ubuntu_pipeline._verify_evaluation_outputs(
             tmp_path,
             "cortex",
-            final_phase={
-                "adapterSHA256": "b" * 64,
-                "finalizedVariantManifestSHA256": manifest[
-                    "finalizedVariantManifestSHA256"
-                ],
-                "parentSFTAdapterSHA256": "9" * 64,
-                "phase": "dpo",
-            },
+            final_phase=_evaluation_final_phase(manifest),
         )
 
 
@@ -2693,14 +3870,7 @@ def test_evaluation_verifier_rejects_rehashed_smoke_plan_evidence_drift(
         ubuntu_pipeline._verify_evaluation_outputs(
             tmp_path,
             "cortex",
-            final_phase={
-                "adapterSHA256": "b" * 64,
-                "finalizedVariantManifestSHA256": manifest[
-                    "finalizedVariantManifestSHA256"
-                ],
-                "parentSFTAdapterSHA256": "9" * 64,
-                "phase": "dpo",
-            },
+            final_phase=_evaluation_final_phase(manifest),
         )
 
 
@@ -2723,14 +3893,7 @@ def test_evaluation_verifier_leaves_full_evaluation_selection_unchanged(
     verified = ubuntu_pipeline._verify_evaluation_outputs(
         tmp_path,
         "cortex",
-        final_phase={
-            "adapterSHA256": "b" * 64,
-            "finalizedVariantManifestSHA256": manifest[
-                "finalizedVariantManifestSHA256"
-            ],
-            "parentSFTAdapterSHA256": "9" * 64,
-            "phase": "dpo",
-        },
+        final_phase=_evaluation_final_phase(manifest),
     )
 
     assert verified["status"] == "quality_gate_passed"
@@ -2756,14 +3919,7 @@ def test_evaluation_verifier_rejects_managed_ancestor_symlink(
         ubuntu_pipeline._verify_evaluation_outputs(
             tmp_path,
             "cortex",
-            final_phase={
-                "adapterSHA256": "b" * 64,
-                "finalizedVariantManifestSHA256": manifest[
-                    "finalizedVariantManifestSHA256"
-                ],
-                "parentSFTAdapterSHA256": "9" * 64,
-                "phase": "dpo",
-            },
+            final_phase=_evaluation_final_phase(manifest),
         )
 
 
@@ -2819,6 +3975,31 @@ def test_completed_summary_rejects_rehashed_canonical_evidence_drift(
         ubuntu_pipeline._verified_completed_summary(tmp_path, ("cortex",))
 
 
+@pytest.mark.parametrize("field", ubuntu_pipeline.ADAPTER_GGUF_SEMANTIC_FIELDS)
+def test_completed_summary_rejects_rehashed_gguf_semantic_evidence_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+) -> None:
+    summary_path = _write_completed_summary_evidence(
+        tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    summary = ubuntu_pipeline.read_object(summary_path)
+    item = summary["agents"]["cortex"]
+    item[field] = (
+        "0" * 64
+        if field == "adapterGGUFChatTemplateSHA256"
+        else "drifted"
+    )
+    summary.pop("summarySHA256", None)
+    summary["summarySHA256"] = ubuntu_pipeline.canonical_sha256(summary)
+    ubuntu_pipeline.write_object(summary_path, summary)
+
+    with pytest.raises(RuntimeError, match="summary GGUF drifted"):
+        ubuntu_pipeline._verified_completed_summary(tmp_path, ("cortex",))
+
+
 def test_completed_summary_rejects_managed_symlink_without_evaluation_recheck(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2840,6 +4021,14 @@ def test_resume_rejects_a_minimal_self_hashed_gguf_summary(
     gguf = tmp_path / "models" / "lora_qwen3_gguf" / "lumen-cortex-lora.gguf"
     gguf.parent.mkdir(parents=True)
     gguf.write_bytes(_gguf_bytes())
+    receipt = (
+        tmp_path
+        / "models"
+        / "lora_qwen3_gguf_receipts"
+        / "lumen-cortex-lora.conversion.json"
+    )
+    receipt.parent.mkdir(parents=True)
+    ubuntu_pipeline.write_object(receipt, {"fixture": True})
     summary = {
         "agents": {
             "cortex": {
@@ -2859,6 +4048,13 @@ def test_resume_rejects_a_minimal_self_hashed_gguf_summary(
             "agents": [{"agent": "cortex"}],
         },
     )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_gguf_file",
+        lambda *_args: (_ for _ in ()).throw(
+            RuntimeError("Missing regular pinned llama.cpp checkout")
+        ),
+    )
 
     with pytest.raises(RuntimeError, match="summary failed verification"):
         ubuntu_pipeline.verify_gguf(tmp_path, "cortex")
@@ -2876,6 +4072,26 @@ def test_resume_reuses_gguf_from_a_canonical_summary_with_verified_gguf_state(
 
     gguf.write_bytes(b"GGUF-tampered")
     with pytest.raises(RuntimeError, match="GGUF"):
+        ubuntu_pipeline.verify_gguf(tmp_path, "cortex")
+
+
+def test_resume_rejects_summary_semantics_even_when_digest_and_size_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summary_path = _write_completed_summary_evidence(
+        tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    summary = ubuntu_pipeline.read_object(summary_path)
+    summary["agents"]["cortex"]["adapterGGUFArchitecture"] = "qwen2"
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_completed_summary",
+        lambda *_args: summary,
+    )
+
+    with pytest.raises(RuntimeError, match="does not match the completed summary"):
         ubuntu_pipeline.verify_gguf(tmp_path, "cortex")
 
 
@@ -2909,9 +4125,15 @@ def test_gguf_inventory_requires_exact_prepared_agent_set(
     tmp_path: Path,
 ) -> None:
     gguf_dir = tmp_path / "models" / "lora_qwen3_gguf"
+    receipt_dir = tmp_path / "models" / "lora_qwen3_gguf_receipts"
     gguf_dir.mkdir(parents=True)
+    receipt_dir.mkdir(parents=True)
     for agent in ubuntu_pipeline.AGENTS:
         (gguf_dir / f"lumen-{agent}-lora.gguf").write_bytes(_gguf_bytes())
+        ubuntu_pipeline.write_object(
+            receipt_dir / f"lumen-{agent}-lora.conversion.json",
+            {"agent": agent},
+        )
 
     inventory = ubuntu_pipeline._verify_gguf_inventory(
         tmp_path,
@@ -2932,6 +4154,7 @@ def test_gguf_inventory_requires_exact_prepared_agent_set(
         )
     extra.unlink()
     (gguf_dir / "lumen-fleet-lora.gguf").unlink()
+    (receipt_dir / "lumen-fleet-lora.conversion.json").unlink()
     with pytest.raises(RuntimeError, match="missing required entries"):
         ubuntu_pipeline._verify_gguf_inventory(
             tmp_path,
@@ -2959,6 +4182,14 @@ def test_required_gguf_summary_fails_without_pinned_reader(
     gguf = tmp_path / "models" / "lora_qwen3_gguf" / "lumen-cortex-lora.gguf"
     gguf.parent.mkdir(parents=True)
     gguf.write_bytes(_gguf_bytes())
+    receipt = (
+        tmp_path
+        / "models"
+        / "lora_qwen3_gguf_receipts"
+        / "lumen-cortex-lora.conversion.json"
+    )
+    receipt.parent.mkdir(parents=True)
+    ubuntu_pipeline.write_object(receipt, {"fixture": True})
     monkeypatch.setattr(
         ubuntu_pipeline,
         "_verified_run_manifest",
@@ -2969,7 +4200,25 @@ def test_required_gguf_summary_fails_without_pinned_reader(
                 gguf_requested=True,
             ),
             "agents": [{"agent": "cortex"}],
+            **_source_integrity_fixture(),
         },
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_gguf_file",
+        lambda *_args: (_ for _ in ()).throw(
+            RuntimeError("Missing regular pinned llama.cpp checkout")
+        ),
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_sft",
+        lambda *_args: {"phase": "sft"},
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_preference",
+        lambda *_args: {"phase": "dpo"},
     )
 
     with pytest.raises(RuntimeError, match="pinned llama.cpp checkout"):
@@ -3058,6 +4307,15 @@ def test_gguf_artifact_verifier_requires_regular_file_size_and_magic(
         "adapterGGUF": str(gguf),
         "adapterGGUFSHA256": ubuntu_pipeline.file_sha256(gguf),
         "adapterGGUFSizeBytes": gguf.stat().st_size,
+        "adapterGGUFArchitecture": "qwen3",
+        "adapterGGUFType": "adapter",
+        "adapterGGUFAdapterType": "lora",
+        "adapterGGUFBaseModelID": "Qwen/Qwen3-1.7B",
+        "adapterGGUFBaseModelRepoURL": (
+            "https://huggingface.co/Qwen/Qwen3-1.7B"
+        ),
+        "adapterGGUFChatTemplateSource": "shared_base",
+        "adapterGGUFChatTemplateSHA256": None,
     }
 
     gguf.write_bytes(b"NOPE" + _gguf_bytes()[4:])
@@ -3074,6 +4332,115 @@ def test_gguf_artifact_verifier_requires_regular_file_size_and_magic(
     gguf.symlink_to(target)
     with pytest.raises(RuntimeError, match="symlink"):
         ubuntu_pipeline.verify_gguf_artifact(gguf, reader_script=reader_script)
+
+
+@pytest.mark.parametrize(
+    ("key", "mutation", "value", "error"),
+    [
+        (
+            "general.architecture",
+            "value",
+            "qwen2",
+            "semantic metadata drifted",
+        ),
+        ("general.type", "value", "model", "semantic metadata drifted"),
+        ("adapter.type", "value", "ia3", "semantic metadata drifted"),
+        (
+            "general.base_model.count",
+            "value",
+            2,
+            "exactly one base model",
+        ),
+        (
+            "general.base_model.0.repo_url",
+            "value",
+            "https://huggingface.co/Qwen/Qwen3-4B",
+            "semantic metadata drifted",
+        ),
+        (
+            "general.base_model.count",
+            "type",
+            "INT32",
+            "invalid scalar metadata",
+        ),
+        (
+            "adapter.type",
+            "missing",
+            None,
+            "invalid scalar metadata",
+        ),
+    ],
+)
+def test_gguf_artifact_verifier_rejects_semantic_metadata_drift(
+    tmp_path: Path,
+    key: str,
+    mutation: str,
+    value: object,
+    error: str,
+) -> None:
+    metadata = _valid_gguf_semantic_metadata()
+    if mutation == "missing":
+        metadata.pop(key)
+    else:
+        metadata[key][mutation] = value
+    reader_script = _write_fake_gguf_reader(
+        tmp_path,
+        semantic_metadata=metadata,
+    )
+    gguf = tmp_path / "adapter.gguf"
+    gguf.write_bytes(_gguf_bytes())
+
+    with pytest.raises(RuntimeError, match=error):
+        ubuntu_pipeline.verify_gguf_artifact(
+            gguf,
+            reader_script=reader_script,
+        )
+
+
+def test_gguf_artifact_verifier_records_verified_embedded_chat_template(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chat_template = "{% for message in messages %}{{ message.content }}{% endfor %}"
+    expected_sha256 = hashlib.sha256(chat_template.encode("utf-8")).hexdigest()
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "PINNED_QWEN3_CHAT_TEMPLATE_SHA256",
+        expected_sha256,
+    )
+    metadata = _valid_gguf_semantic_metadata(chat_template=chat_template)
+    reader_script = _write_fake_gguf_reader(
+        tmp_path,
+        semantic_metadata=metadata,
+    )
+    gguf = tmp_path / "adapter.gguf"
+    gguf.write_bytes(_gguf_bytes(metadata_kv_count=len(metadata)))
+
+    verified = ubuntu_pipeline.verify_gguf_artifact(
+        gguf,
+        reader_script=reader_script,
+    )
+
+    assert verified["adapterGGUFChatTemplateSource"] == "adapter_gguf"
+    assert verified["adapterGGUFChatTemplateSHA256"] == expected_sha256
+
+
+def test_gguf_artifact_verifier_rejects_unpinned_embedded_chat_template(
+    tmp_path: Path,
+) -> None:
+    metadata = _valid_gguf_semantic_metadata(chat_template="drifted-template")
+    reader_script = _write_fake_gguf_reader(
+        tmp_path,
+        semantic_metadata=metadata,
+    )
+    gguf = tmp_path / "adapter.gguf"
+    gguf.write_bytes(_gguf_bytes(metadata_kv_count=len(metadata)))
+
+    with pytest.raises(RuntimeError, match="chat template drifted"):
+        ubuntu_pipeline.verify_gguf_artifact(
+            gguf,
+            reader_script=reader_script,
+        )
 
 
 def test_gguf_artifact_verifier_rejects_header_only_fake(
@@ -3397,6 +4764,224 @@ def test_upload_rejects_a_coherent_adapter_swap_after_summary_verification() -> 
         )
 
 
+def _prepare_minimal_upload_case(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, Any]:
+    agent = "cortex"
+    run_id = "recoverable-run"
+    repo_id = "owner/lumen-adapters"
+    source_fields = _source_integrity_fixture()
+    source_record = source_fields["ubuntuSourceIntegrity"]
+    training_environment = {"trainingEnvironmentSHA256": "e" * 64}
+    runtime_manifest_path = (
+        tmp_path / "generated/fine_tuning/adapter_runtime_manifest.json"
+    )
+    runtime_manifest_path.parent.mkdir(parents=True)
+    ubuntu_pipeline.write_object(runtime_manifest_path, {"adapterRepoID": repo_id})
+    run_manifest = {
+        "runID": run_id,
+        "adapterRepoID": repo_id,
+        "adapterRuntimeManifestFileSHA256": ubuntu_pipeline.file_sha256(
+            runtime_manifest_path
+        ),
+        "trainingEnvironment": training_environment,
+        "agents": [{"agent": agent}],
+        **source_fields,
+    }
+    ubuntu_pipeline.write_object(
+        tmp_path / "training_environment.json",
+        training_environment,
+    )
+    adapter_dir = tmp_path / "models/lora_qwen3_dpo/cortex"
+    adapter_dir.mkdir(parents=True)
+    adapter_file = adapter_dir / "adapter_model.safetensors"
+    adapter_file.write_bytes(b"recoverable-adapter")
+    adapter_payload = {
+        "schemaVersion": "lumen.peft-lora-adapter-artifact/1.0.0",
+        "artifactType": "peft_lora_directory",
+        "trainingPhase": "sft_dpo",
+        "parentSFTAdapterSHA256": "9" * 64,
+        "files": [
+            {
+                "path": adapter_file.name,
+                "sizeBytes": adapter_file.stat().st_size,
+                "sha256": ubuntu_pipeline.file_sha256(adapter_file),
+            }
+        ],
+    }
+    adapter_sha = ubuntu_pipeline.canonical_sha256(adapter_payload)
+    ubuntu_pipeline.write_object(
+        adapter_dir / "adapter_artifact_manifest.json",
+        {**adapter_payload, "adapterSHA256": adapter_sha},
+    )
+    finalized = tmp_path / "training/cortex/dpo/finalized_variant_manifest.json"
+    finalized.parent.mkdir(parents=True)
+    finalized_payload = {"agent": agent, "trainingPhase": "sft_dpo"}
+    finalized_sha = ubuntu_pipeline.canonical_sha256(finalized_payload)
+    ubuntu_pipeline.write_object(
+        finalized,
+        {**finalized_payload, "variantManifestSHA256": finalized_sha},
+    )
+    preference_record = {
+        "adapterSHA256": adapter_sha,
+        "finalizedVariantManifestSHA256": finalized_sha,
+    }
+    summary = {
+        "status": "complete_without_gguf",
+        "evaluationStatus": "quality_gate_passed",
+        "evaluationScope": "full",
+        "ggufStatus": "skipped_by_operator",
+        "ggufConversionStatus": "skipped_by_operator",
+        "ggufTensorEquivalenceStatus": "not_applicable",
+        "qualification": "quality_gate_passed",
+        "promotionEligible": True,
+        "executionPlanSHA256": _test_execution_plan(
+            gguf_requested=False
+        )["executionPlanSHA256"],
+        "agents": {
+            agent: {
+                "finalPhase": preference_record,
+                "evaluation": None,
+                "adapterGGUFExists": False,
+            }
+        },
+    }
+    ubuntu_pipeline.write_object(tmp_path / "aio_run_manifest.json", run_manifest)
+    ubuntu_pipeline.write_object(tmp_path / "aio_summary.json", summary)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_run_manifest",
+        lambda *_args: run_manifest,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_completed_summary",
+        lambda *_args: summary,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "current_source_integrity",
+        lambda *_args: source_record,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_preference",
+        lambda *_args: preference_record,
+    )
+    token = tmp_path / "token"
+    token.write_text("hf_test_token\n", encoding="utf-8")
+    receipt_dir = tmp_path / "receipts"
+    receipt_dir.mkdir(mode=0o700)
+    return {
+        "agent": agent,
+        "run_id": run_id,
+        "repo_id": repo_id,
+        "token": token,
+        "receipt": receipt_dir / "upload.json",
+    }
+
+
+def _install_fake_transactional_upload_hub(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, Any]:
+    parent = "1" * 40
+    state: dict[str, Any] = {
+        "head": parent,
+        "private": True,
+        "trees": {parent: {}},
+        "commits": [SimpleNamespace(commit_id=parent, title="Initial commit")],
+        "create_calls": 0,
+    }
+    download_root = tmp_path / "remote-downloads"
+    download_root.mkdir()
+
+    class _Operation:
+        def __init__(self, *, path_in_repo: str, path_or_fileobj: str) -> None:
+            self.path_in_repo = path_in_repo
+            self.path_or_fileobj = path_or_fileobj
+
+    class _API:
+        def __init__(self, *, token: str) -> None:
+            assert token == "hf_test_token"
+
+        def whoami(self) -> dict[str, str]:
+            return {"name": "lumen-test"}
+
+        def create_repo(self, **_kwargs: Any) -> None:
+            return None
+
+        def repo_info(self, **_kwargs: Any) -> SimpleNamespace:
+            return SimpleNamespace(private=state["private"], sha=state["head"])
+
+        def list_repo_files(self, *, revision: str | None = None, **_kwargs: Any) -> list[str]:
+            selected = revision or state["head"]
+            return sorted(state["trees"][selected])
+
+        def list_repo_commits(
+            self,
+            *,
+            revision: str | None = None,
+            **_kwargs: Any,
+        ) -> list[SimpleNamespace]:
+            commits = list(state["commits"])
+            if revision is None:
+                return commits
+            for index, commit in enumerate(commits):
+                if commit.commit_id == revision:
+                    return commits[index:]
+            return []
+
+        def create_commit(
+            self,
+            *,
+            operations: list[_Operation],
+            commit_message: str,
+            parent_commit: str | None,
+            **_kwargs: Any,
+        ) -> SimpleNamespace:
+            assert parent_commit == state["head"]
+            state["create_calls"] += 1
+            commit_oid = "2" * 40
+            tree = dict(state["trees"][state["head"]])
+            for operation in operations:
+                tree[operation.path_in_repo] = Path(
+                    operation.path_or_fileobj
+                ).read_bytes()
+            state["trees"][commit_oid] = tree
+            state["head"] = commit_oid
+            state["commits"].insert(
+                0,
+                SimpleNamespace(
+                    commit_id=commit_oid,
+                    title=commit_message,
+                    parents=[] if parent_commit is None else [parent_commit],
+                ),
+            )
+            return SimpleNamespace(oid=commit_oid)
+
+    def hf_hub_download(
+        *,
+        filename: str,
+        revision: str,
+        **_kwargs: Any,
+    ) -> str:
+        payload = state["trees"][revision][filename]
+        destination = download_root / hashlib.sha256(
+            f"{revision}:{filename}".encode("utf-8")
+        ).hexdigest()
+        destination.write_bytes(payload)
+        return str(destination)
+
+    hub = ModuleType("huggingface_hub")
+    hub.HfApi = _API
+    hub.CommitOperationAdd = _Operation
+    hub.hf_hub_download = hf_hub_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    return state
+
+
 def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3465,8 +5050,10 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     summary = {
         "status": "complete_without_gguf",
         "evaluationStatus": "quality_gate_passed",
-        "evaluationScope": "full",
-        "ggufStatus": "skipped_by_operator",
+            "evaluationScope": "full",
+            "ggufStatus": "skipped_by_operator",
+            "ggufConversionStatus": "skipped_by_operator",
+            "ggufTensorEquivalenceStatus": "not_applicable",
         "qualification": "quality_gate_passed",
         "promotionEligible": True,
         "executionPlanSHA256": _test_execution_plan(
@@ -3544,6 +5131,7 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     token.write_text("hf_test_token\n", encoding="utf-8")
     receipt_dir = tmp_path / "receipts"
     receipt_dir.mkdir()
+    receipt_dir.chmod(0o700)
     receipt_path = receipt_dir / "upload.json"
 
     receipt = ubuntu_pipeline.upload_run(
@@ -3560,6 +5148,151 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     assert not (tmp_path / "upload_receipts.json").exists()
     for field, expected in source_fields.items():
         assert receipt[field] == expected
+
+
+def test_upload_recovers_commit_after_post_commit_crash_and_head_advancement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upload = _prepare_minimal_upload_case(tmp_path, monkeypatch)
+    state = _install_fake_transactional_upload_hub(tmp_path, monkeypatch)
+    original_write_once = ubuntu_pipeline._write_once_upload_record
+    crash = {"armed": True}
+
+    def crash_before_commit_record(
+        path: Path,
+        record: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        if path.name == ubuntu_pipeline.UPLOAD_COMMIT_FILENAME and crash["armed"]:
+            crash["armed"] = False
+            raise RuntimeError("simulated crash after remote commit")
+        return original_write_once(path, record, **kwargs)
+
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_write_once_upload_record",
+        crash_before_commit_record,
+    )
+    with pytest.raises(RuntimeError, match="simulated crash after remote commit"):
+        ubuntu_pipeline.upload_run(
+            run_root=tmp_path,
+            agents=(upload["agent"],),
+            run_id=upload["run_id"],
+            private=True,
+            include_gguf=False,
+            token_file=upload["token"],
+            receipt_path=upload["receipt"],
+        )
+    assert state["create_calls"] == 1
+    assert not upload["receipt"].exists()
+    assert (upload["receipt"].parent / ubuntu_pipeline.UPLOAD_INTENT_FILENAME).is_file()
+    assert (upload["receipt"].parent / ubuntu_pipeline.UPLOAD_ATTEMPT_FILENAME).is_file()
+    assert not (
+        upload["receipt"].parent / ubuntu_pipeline.UPLOAD_COMMIT_FILENAME
+    ).exists()
+
+    transaction_oid = state["head"]
+    advanced_oid = "3" * 40
+    advanced_tree = dict(state["trees"][transaction_oid])
+    advanced_tree["unrelated/other-run.txt"] = b"later unrelated commit"
+    state["trees"][advanced_oid] = advanced_tree
+    state["commits"].insert(
+        0,
+        SimpleNamespace(
+            commit_id=advanced_oid,
+            title="Unrelated later upload",
+            parents=[transaction_oid],
+        ),
+    )
+    state["head"] = advanced_oid
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_write_once_upload_record",
+        original_write_once,
+    )
+
+    receipt = ubuntu_pipeline.upload_run(
+        run_root=tmp_path,
+        agents=(upload["agent"],),
+        run_id=upload["run_id"],
+        private=True,
+        include_gguf=False,
+        token_file=upload["token"],
+        receipt_path=upload["receipt"],
+    )
+
+    assert state["create_calls"] == 1
+    assert receipt["commitOID"] == transaction_oid
+    assert receipt["headRevision"] == advanced_oid
+    assert receipt["remoteVerification"] == "recovered_exact_remote_tree"
+    assert receipt["remotePrefix"].endswith(f"{upload['run_id']}/")
+    assert any(
+        path.endswith(ubuntu_pipeline.UPLOAD_REMOTE_MARKER_FILENAME)
+        for path in receipt["uploadedPaths"]
+    )
+    assert upload["receipt"].is_file()
+    for filename in (
+        ubuntu_pipeline.UPLOAD_INTENT_FILENAME,
+        ubuntu_pipeline.UPLOAD_ATTEMPT_FILENAME,
+        ubuntu_pipeline.UPLOAD_COMMIT_FILENAME,
+    ):
+        assert not (upload["receipt"].parent / filename).exists()
+
+    reverified = ubuntu_pipeline.upload_run(
+        run_root=tmp_path,
+        agents=(upload["agent"],),
+        run_id=upload["run_id"],
+        private=True,
+        include_gguf=False,
+        token_file=upload["token"],
+        receipt_path=upload["receipt"],
+    )
+    assert reverified == receipt
+    assert state["create_calls"] == 1
+
+    protected_path = next(
+        path
+        for path in receipt["uploadedPaths"]
+        if not path.endswith(ubuntu_pipeline.UPLOAD_REMOTE_MARKER_FILENAME)
+    )
+    state["trees"][advanced_oid][protected_path] = b"tampered at current head"
+    with pytest.raises(RuntimeError, match="current head content failed verification"):
+        ubuntu_pipeline.upload_run(
+            run_root=tmp_path,
+            agents=(upload["agent"],),
+            run_id=upload["run_id"],
+            private=True,
+            include_gguf=False,
+            token_file=upload["token"],
+            receipt_path=upload["receipt"],
+        )
+
+
+def test_upload_never_adopts_an_unjournaled_existing_remote_prefix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    upload = _prepare_minimal_upload_case(tmp_path, monkeypatch)
+    state = _install_fake_transactional_upload_hub(tmp_path, monkeypatch)
+    prefix = f"runs/{upload['run_id']}/"
+    state["trees"][state["head"]][f"{prefix}forged.bin"] = b"foreign"
+
+    with pytest.raises(
+        RuntimeError,
+        match="without a durable local upload attempt",
+    ):
+        ubuntu_pipeline.upload_run(
+            run_root=tmp_path,
+            agents=(upload["agent"],),
+            run_id=upload["run_id"],
+            private=True,
+            include_gguf=False,
+            token_file=upload["token"],
+            receipt_path=upload["receipt"],
+        )
+    assert state["create_calls"] == 0
+    assert not upload["receipt"].exists()
 
 
 def test_upload_cli_is_private_unless_public_is_explicit(
@@ -3650,8 +5383,10 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
     summary = {
         "status": "smoke_complete",
         "evaluationStatus": "smoke_complete",
-        "evaluationScope": "smoke",
-        "ggufStatus": "skipped_by_operator",
+            "evaluationScope": "smoke",
+            "ggufStatus": "skipped_by_operator",
+            "ggufConversionStatus": "skipped_by_operator",
+            "ggufTensorEquivalenceStatus": "not_applicable",
         "qualification": "diagnostic_only",
         "promotionEligible": False,
         "executionPlanSHA256": _test_execution_plan(
@@ -3790,7 +5525,7 @@ def test_trainers_save_only_the_unified_fast_tokenizer_format() -> None:
         assert "legacy_format=False" in source
 
 
-def test_controlled_trainers_evaluate_and_save_each_epoch() -> None:
+def test_controlled_trainers_evaluate_each_epoch_and_checkpoint_preference_steps() -> None:
     sft_source = (REPO_ROOT / "tools/fine_tuning/unsloth/train_sft.py").read_text(
         encoding="utf-8"
     )
@@ -3799,5 +5534,10 @@ def test_controlled_trainers_evaluate_and_save_each_epoch() -> None:
     )
     for source in (sft_source, dpo_source):
         assert 'eval_strategy="epoch"' in source or '"eval_strategy": "epoch"' in source
-        assert 'save_strategy="epoch"' in source or '"save_strategy": "epoch"' in source
         assert "trainer.evaluate()" in source
+    assert 'save_strategy="steps"' in sft_source
+    assert "save_steps=checkpoint_save_steps" in sft_source
+    assert "save_only_model=False" in sft_source
+    assert '"save_strategy": "steps"' in dpo_source
+    assert '"save_steps": checkpoint_save_steps' in dpo_source
+    assert '"save_only_model": False' in dpo_source

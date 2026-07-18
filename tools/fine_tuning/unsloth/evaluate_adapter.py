@@ -15,6 +15,21 @@ from types import ModuleType
 from typing import Any
 
 try:
+    from lumen_manifest_crawler.dataset.chat_template_contract import (
+        apply_non_thinking_chat_template,
+        canonical_non_thinking_messages,
+        strip_terminal_non_thinking_directive,
+        verify_chat_template_contract,
+    )
+except ImportError:
+    from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.chat_template_contract import (
+        apply_non_thinking_chat_template,
+        canonical_non_thinking_messages,
+        strip_terminal_non_thinking_directive,
+        verify_chat_template_contract,
+    )
+
+try:
     from .export_gguf import (
         _validate_config as _validate_export_config,
         _verified_release_bake_lineage,
@@ -34,18 +49,19 @@ except ImportError:
     )
 
 
-EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.3.0"
+EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.4.0"
 UBUNTU_SOURCE_INTEGRITY_FIELDS = (
     "workingTreeDigest",
     "ubuntuOrchestrationCodeSHA256",
     "ubuntuSourceIntegritySHA256",
     "ubuntuSourceIntegrity",
 )
-CANDIDATE_OUTPUT_SCHEMA_VERSION = "lumen.adapter-eval-candidate/1.1.0"
+CANDIDATE_OUTPUT_SCHEMA_VERSION = "lumen.adapter-eval-candidate/1.2.0"
 GENERATION_ATTEMPT_SCHEMA_VERSION = "lumen.adapter-eval-generation-attempt/1.0.0"
 STRUCTURED_OUTPUT_CONTRACT_VERSION = "lumen.adapter-eval-json-object-contract/1.1.0"
+OUTPUT_MODE_CONTRACT_VERSION = "lumen.adapter-eval-output-mode-contract/1.0.0"
 CORTEX_ROUTING_CONTEXT_VERSION = "lumen.adapter-eval-cortex-routing-context/1.0.0"
-STRICT_JSON_RETRY_CONTRACT_VERSION = "lumen.adapter-eval-strict-json-retry/1.3.0"
+STRICT_JSON_RETRY_CONTRACT_VERSION = "lumen.adapter-eval-strict-json-retry/1.4.0"
 STRICT_JSON_MAX_ATTEMPTS = 2
 GENERATION_REPETITION_PENALTY = 1.1
 STRUCTURED_OUTPUT_INSTRUCTION = (
@@ -160,6 +176,14 @@ STRICT_JSON_RETRY_INSTRUCTION = (
     "output. For Cortex, a trusted exact-row digest may follow; treat it as "
     "authoritative manifest data."
 )
+GENERIC_STRICT_JSON_RETRY_INSTRUCTION = (
+    "This is the single bounded retry after strict raw JSON validation failed. "
+    "Re-read the response-format contract and the user's request. Emit a fresh, "
+    "complete JSON object now. Output JSON only: no prose, markdown, code fences, "
+    "comments, or hidden reasoning. Start with { and stop after its matching }. "
+    "Keep the object concise. Do not emit a tool catalog, repeat or repair the "
+    "previous output, emit duplicate keys, or emit an unbounded array."
+)
 _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE = {
     "invalid_json": (
         "Retry repair: discard the malformed text and emit the complete Cortex "
@@ -196,7 +220,7 @@ _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE = {
     ),
 }
 SUPPORTED_AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
-JSON_OUTPUT_AGENTS = frozenset({"cortex", "executor"})
+SUPPORTED_OUTPUT_MODES = frozenset({"json", "text"})
 CORTEX_FORBIDDEN_ROUTE_FIELDS = frozenset({"rejectedToolID", "rejectedToolIDs"})
 _CORTEX_ROUTE_PREFIX_FIELDS = (
     "selectedToolID",
@@ -207,6 +231,9 @@ _CORTEX_ROUTE_SUFFIX_FIELDS = ("requiresApproval", "nextModel")
 _CORTEX_ACTION_STEP_FIELDS = ("type", "toolID", "mustPersistBeforeFinal")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _TOOL_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_.]*$")
+_REGRESSION_FAMILY_PATTERN = re.compile(
+    r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+)
 _MESSAGE_ROLES = frozenset({"system", "user", "assistant"})
 
 
@@ -275,32 +302,429 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _semantic_smoke_sort_key(record: Mapping[str, Any]) -> str:
-    """Return a stable scenario key that deliberately ignores system-prompt churn."""
+_SMOKE_METADATA_STRING_DIMENSIONS = (
+    "agent",
+    "evalType",
+    "name",
+    "scenarioKind",
+    "scenarioID",
+    "sourceClass",
+    "coverageFamily",
+)
+_SMOKE_EXPECTED_CATEGORICAL_FIELDS = (
+    "status",
+    "scenarioKind",
+    "permissionKey",
+    "repairAction",
+    "failureType",
+    "expectedTTLClass",
+    "strategy",
+    "expectedStopReason",
+    "tone",
+    "length",
+    "format",
+    "delegateTo",
+    "aggregationOwnerSlotID",
+    "expectedAggregationOwnerSlotID",
+)
+_SMOKE_EXPECTED_LIST_DIMENSIONS = (
+    "missingArguments",
+    "requiredEventTypes",
+    "expectedDelegatedSlotIDs",
+    "requiredContextKeys",
+    "forbiddenContextKeys",
+)
+_SMOKE_METRIC_CATEGORICAL_FIELDS = (
+    "mode",
+    "expectedIntent",
+    "expectedRepairAction",
+    "expectedTTLClass",
+    "expectedStopReason",
+)
+_SMOKE_TOOL_FIELDS = ("selectedToolID", "tool", "toolID")
+_SMOKE_METRIC_TOOL_FIELDS = ("expectedToolID", "forbiddenToolID")
+
+
+def _smoke_semantic_token(value: Any) -> str:
+    try:
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Evaluation record contains a non-JSON semantic smoke value"
+        ) from exc
+
+
+def _semantic_smoke_projection(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Return stable case semantics, excluding generated IDs and system text."""
 
     messages = record.get("messages")
     metadata = record.get("metadata")
+    metrics = record.get("metrics")
     if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
         raise ValueError("Evaluation record lacks messages for semantic smoke selection")
     if not isinstance(metadata, Mapping):
         raise ValueError("Evaluation record lacks metadata for semantic smoke selection")
-    scenario_messages = [
-        {"role": message.get("role"), "content": message.get("content")}
-        for message in messages
-        if isinstance(message, Mapping) and message.get("role") != "system"
-    ]
+    if not isinstance(metrics, Sequence) or isinstance(metrics, (str, bytes)) or not metrics:
+        raise ValueError("Evaluation record lacks metrics for semantic smoke selection")
+
+    eval_type = metadata.get("evalType")
+    agent = metadata.get("agent")
+    if not isinstance(agent, str) or not agent.strip():
+        raise ValueError("Evaluation record lacks an agent for semantic smoke selection")
+    if not isinstance(eval_type, str) or not eval_type.strip():
+        raise ValueError("Evaluation record lacks an evalType for semantic smoke selection")
+
+    semantic_metadata: dict[str, Any] = {}
+    for key in _SMOKE_METADATA_STRING_DIMENSIONS:
+        if key not in metadata or metadata[key] is None:
+            continue
+        value = metadata[key]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Evaluation record metadata.{key} is invalid for semantic smoke selection"
+            )
+        semantic_metadata[key] = value
+    for key in (
+        "critical",
+        "mustPass",
+        "approvalCoverage",
+        "permissionCoverage",
+    ):
+        if key not in metadata or metadata[key] is None:
+            continue
+        value = metadata[key]
+        if type(value) is not bool:
+            raise ValueError(
+                f"Evaluation record metadata.{key} is invalid for semantic smoke selection"
+            )
+        semantic_metadata[key] = value
+    if "argumentCoverage" in metadata and metadata["argumentCoverage"] is not None:
+        value = metadata["argumentCoverage"]
+        if (
+            not isinstance(value, Sequence)
+            or isinstance(value, (str, bytes))
+            or any(not isinstance(item, str) or not item for item in value)
+        ):
+            raise ValueError(
+                "Evaluation record metadata.argumentCoverage is invalid for "
+                "semantic smoke selection"
+            )
+        semantic_metadata["argumentCoverage"] = list(value)
+    if "regressionFamilies" in metadata:
+        value = metadata["regressionFamilies"]
+        if (
+            type(value) is not list
+            or not value
+            or any(
+                not isinstance(item, str)
+                or len(item) > 128
+                or _REGRESSION_FAMILY_PATTERN.fullmatch(item) is None
+                for item in value
+            )
+            or len(set(value)) != len(value)
+        ):
+            raise ValueError(
+                "Evaluation record metadata.regressionFamilies is invalid for "
+                "semantic smoke selection"
+            )
+        semantic_metadata["regressionFamilies"] = sorted(value)
+    if "scenario" in metadata and metadata["scenario"] is not None:
+        semantic_metadata["scenario"] = metadata["scenario"]
+
+    scenario_messages: list[dict[str, str]] = []
+    for index, message in enumerate(messages):
+        if not isinstance(message, Mapping):
+            raise ValueError(
+                f"Evaluation record messages[{index}] is invalid for semantic smoke selection"
+            )
+        role = message.get("role")
+        content = message.get("content")
+        if (
+            not isinstance(role, str)
+            or role not in {"system", "user", "assistant"}
+            or not isinstance(content, str)
+            or not content.strip()
+        ):
+            raise ValueError(
+                f"Evaluation record messages[{index}] is invalid for semantic smoke selection"
+            )
+        if role != "system":
+            scenario_messages.append({"role": role, "content": content})
     if not scenario_messages:
         raise ValueError(
             "Evaluation record lacks non-system messages for semantic smoke selection"
         )
-    return _canonical_sha256(
-        {
-            "agent": metadata.get("agent"),
-            "evalType": metadata.get("evalType"),
-            "name": metadata.get("name"),
-            "messages": scenario_messages,
-        }
+
+    semantic_metrics: list[dict[str, Any]] = []
+    for index, metric in enumerate(metrics):
+        if not isinstance(metric, Mapping):
+            raise ValueError(
+                f"Evaluation record metrics[{index}] is invalid for semantic smoke selection"
+            )
+        metric_type = metric.get("type")
+        if not isinstance(metric_type, str) or not metric_type.strip():
+            raise ValueError(
+                f"Evaluation record metrics[{index}] lacks a type for semantic smoke selection"
+            )
+        semantic_metrics.append(dict(metric))
+
+    expected = record.get("expected")
+    if expected is not None and not isinstance(expected, Mapping):
+        raise ValueError(
+            "Evaluation record expected contract is invalid for semantic smoke selection"
+        )
+
+    projection: dict[str, Any] = {
+        "metadata": semantic_metadata,
+        "messages": scenario_messages,
+        "metrics": semantic_metrics,
+    }
+    if expected is not None:
+        projection["expected"] = dict(expected)
+    output_mode = record.get("outputMode")
+    if output_mode is not None:
+        if not isinstance(output_mode, str) or not output_mode:
+            raise ValueError(
+                "Evaluation record outputMode is invalid for semantic smoke selection"
+            )
+        projection["outputMode"] = output_mode
+    return projection
+
+
+def _semantic_smoke_sort_key(record: Mapping[str, Any]) -> str:
+    """Return a stable scenario key that deliberately ignores ID/system churn."""
+
+    return _canonical_sha256(_semantic_smoke_projection(record))
+
+
+def _add_smoke_feature(
+    features: dict[tuple[str, str], int],
+    *,
+    priority: int,
+    dimension: str,
+    value: Any,
+) -> None:
+    features[(dimension, _smoke_semantic_token(value))] = priority
+
+
+def _add_smoke_string_list_features(
+    features: dict[tuple[str, str], int],
+    *,
+    priority: int,
+    dimension: str,
+    value: Any,
+) -> None:
+    if (
+        not isinstance(value, Sequence)
+        or isinstance(value, (str, bytes))
+        or any(not isinstance(item, str) or not item for item in value)
+    ):
+        raise ValueError(
+            f"Evaluation record {dimension} is invalid for semantic smoke selection"
+        )
+    values = list(value)
+    _add_smoke_feature(
+        features,
+        priority=priority,
+        dimension=f"{dimension}.signature",
+        value=values,
     )
+    _add_smoke_feature(
+        features,
+        priority=priority,
+        dimension=f"{dimension}.count",
+        value=len(values),
+    )
+    for item in values:
+        _add_smoke_feature(
+            features,
+            priority=max(1, priority - 1),
+            dimension=f"{dimension}.item",
+            value=item,
+        )
+
+
+def _semantic_smoke_coverage_features(
+    record: Mapping[str, Any],
+) -> dict[tuple[str, str], int]:
+    """Extract only behavior-relevant, frozen dimensions used for smoke coverage."""
+
+    projection = _semantic_smoke_projection(record)
+    metadata = projection["metadata"]
+    metrics = projection["metrics"]
+    expected = projection.get("expected", {})
+    features: dict[tuple[str, str], int] = {}
+
+    _add_smoke_feature(
+        features,
+        priority=4,
+        dimension="metadata.evalType",
+        value=metadata["evalType"],
+    )
+    if metadata.get("critical") is True or metadata.get("mustPass") is True:
+        _add_smoke_feature(
+            features,
+            priority=5,
+            dimension="metadata.criticalEvalType",
+            value=metadata["evalType"],
+        )
+    for key in ("scenarioKind", "scenarioID", "sourceClass"):
+        if key in metadata:
+            _add_smoke_feature(
+                features,
+                priority=4 if key == "scenarioKind" else 3,
+                dimension=f"metadata.{key}",
+                value=metadata[key],
+            )
+    for key in ("coverageFamily", "approvalCoverage", "permissionCoverage"):
+        if key in metadata:
+            _add_smoke_feature(
+                features,
+                priority=4 if key == "coverageFamily" else 3,
+                dimension=f"metadata.{key}",
+                value=metadata[key],
+            )
+    if "argumentCoverage" in metadata:
+        _add_smoke_string_list_features(
+            features,
+            priority=3,
+            dimension="metadata.argumentCoverage",
+            value=metadata["argumentCoverage"],
+        )
+    for regression_family in metadata.get("regressionFamilies", []):
+        _add_smoke_feature(
+            features,
+            priority=5,
+            dimension="metadata.regressionFamily",
+            value=regression_family,
+        )
+    if "scenario" in metadata:
+        _add_smoke_feature(
+            features,
+            priority=3,
+            dimension="metadata.scenario",
+            value=metadata["scenario"],
+        )
+    if "name" in metadata:
+        _add_smoke_feature(
+            features,
+            priority=1,
+            dimension="metadata.name",
+            value=metadata["name"],
+        )
+
+    for metric in metrics:
+        metric_type = metric["type"]
+        _add_smoke_feature(
+            features,
+            priority=4,
+            dimension="metric.type",
+            value=metric_type,
+        )
+        for key in _SMOKE_METRIC_CATEGORICAL_FIELDS:
+            if key in metric:
+                value = metric[key]
+                if not isinstance(value, str) or not value:
+                    raise ValueError(
+                        f"Evaluation metric {key} is invalid for semantic smoke selection"
+                    )
+                _add_smoke_feature(
+                    features,
+                    priority=4 if key == "mode" else 3,
+                    dimension=f"metric.{metric_type}.{key}",
+                    value=value,
+                )
+        for key in _SMOKE_METRIC_TOOL_FIELDS:
+            if key in metric:
+                value = metric[key]
+                if not isinstance(value, str) or not value:
+                    raise ValueError(
+                        f"Evaluation metric {key} is invalid for semantic smoke selection"
+                    )
+                _add_smoke_feature(
+                    features,
+                    priority=3,
+                    dimension=f"metric.{key}",
+                    value=value,
+                )
+        if "requiredArguments" in metric:
+            _add_smoke_string_list_features(
+                features,
+                priority=3,
+                dimension=f"metric.{metric_type}.requiredArguments",
+                value=metric["requiredArguments"],
+            )
+        for key, value in metric.items():
+            if key != "type" and type(value) is bool:
+                _add_smoke_feature(
+                    features,
+                    priority=3,
+                    dimension=f"metric.{metric_type}.{key}",
+                    value=value,
+                )
+
+    for key in _SMOKE_TOOL_FIELDS:
+        if key not in expected:
+            continue
+        value = expected[key]
+        if value is not None and (not isinstance(value, str) or not value):
+            raise ValueError(
+                f"Evaluation expected.{key} is invalid for semantic smoke selection"
+            )
+        _add_smoke_feature(
+            features,
+            priority=3,
+            dimension=f"expected.{key}",
+            value=value,
+        )
+    for key in _SMOKE_EXPECTED_CATEGORICAL_FIELDS:
+        if key not in expected:
+            continue
+        value = expected[key]
+        if value is not None and (not isinstance(value, str) or not value):
+            raise ValueError(
+                f"Evaluation expected.{key} is invalid for semantic smoke selection"
+            )
+        _add_smoke_feature(
+            features,
+            priority=4 if key in {"status", "scenarioKind"} else 3,
+            dimension=f"expected.{key}",
+            value=value,
+        )
+    if "boundaryContract" in expected:
+        value = expected["boundaryContract"]
+        if not isinstance(value, Mapping) or not value:
+            raise ValueError(
+                "Evaluation expected.boundaryContract is invalid for semantic smoke selection"
+            )
+        _add_smoke_feature(
+            features,
+            priority=3,
+            dimension="expected.boundaryContract",
+            value=value,
+        )
+    for key in _SMOKE_EXPECTED_LIST_DIMENSIONS:
+        if key in expected:
+            _add_smoke_string_list_features(
+                features,
+                priority=3,
+                dimension=f"expected.{key}",
+                value=expected[key],
+            )
+    for key, value in expected.items():
+        if type(value) is bool:
+            _add_smoke_feature(
+                features,
+                priority=3,
+                dimension=f"expected.boolean.{key}",
+                value=value,
+            )
+    return features
 
 
 def select_evaluation_records(
@@ -308,17 +732,66 @@ def select_evaluation_records(
     *,
     max_examples: int | None,
 ) -> list[dict[str, Any]]:
-    """Select a repeatable smoke cohort without coupling it to generated eval IDs."""
+    """Greedily select a stable cohort that maximizes behavioral coverage."""
 
     if max_examples is None:
         return list(records)
-    return sorted(
-        records,
-        key=lambda record: (
-            _semantic_smoke_sort_key(record),
-            str(record.get("evalID") or ""),
-        ),
-    )[:max_examples]
+    if type(max_examples) is not int or max_examples <= 0:
+        raise ValueError("max_examples must be a positive integer")
+    if max_examples > len(records):
+        raise ValueError("max_examples exceeds the frozen evaluation case count")
+
+    candidates: list[
+        tuple[str, dict[tuple[str, str], int], dict[str, Any]]
+    ] = []
+    for record in records:
+        semantic_key = _semantic_smoke_sort_key(record)
+        candidates.append(
+            (semantic_key, _semantic_smoke_coverage_features(record), record)
+        )
+
+    feature_frequencies: dict[tuple[str, str], int] = {}
+    for _, features, _ in candidates:
+        for feature in features:
+            feature_frequencies[feature] = feature_frequencies.get(feature, 0) + 1
+
+    def coverage_score(
+        features: Mapping[tuple[str, str], int],
+        *,
+        covered: set[tuple[str, str]],
+    ) -> tuple[int, ...]:
+        score: list[int] = []
+        for priority in (5, 4, 3, 2, 1):
+            uncovered = [
+                feature
+                for feature, feature_priority in features.items()
+                if feature_priority == priority and feature not in covered
+            ]
+            score.extend(
+                (
+                    -len(uncovered),
+                    -sum(
+                        1_000_000 // feature_frequencies[feature]
+                        for feature in uncovered
+                    ),
+                )
+            )
+        return tuple(score)
+
+    covered: set[tuple[str, str]] = set()
+    selected: list[dict[str, Any]] = []
+    while len(selected) < max_examples:
+        best_index = min(
+            range(len(candidates)),
+            key=lambda index: (
+                coverage_score(candidates[index][1], covered=covered),
+                candidates[index][0],
+            ),
+        )
+        _, features, record = candidates.pop(best_index)
+        selected.append(record)
+        covered.update(features)
+    return selected
 
 
 def _verified_evaluation_execution_plan(
@@ -858,13 +1331,13 @@ def generate_completion(
     torch_module: ModuleType | Any | None = None,
 ) -> tuple[str, int, int, int]:
     try:
-        encoded = tokenizer.apply_chat_template(
+        encoded = apply_non_thinking_chat_template(
+            tokenizer,
             list(messages),
             tokenize=True,
             add_generation_prompt=True,
             return_tensors="pt",
             return_dict=True,
-            enable_thinking=False,
         )
     except (AttributeError, TypeError, ValueError) as exc:
         raise RuntimeError("Tokenizer could not render the frozen evaluation prompt") from exc
@@ -934,14 +1407,37 @@ def generate_completion(
     )
 
 
+def _validate_output_mode_for_agent(agent: str, output_mode: Any) -> str:
+    if not isinstance(output_mode, str) or output_mode not in SUPPORTED_OUTPUT_MODES:
+        raise ValueError("Evaluation record has an invalid outputMode")
+    if agent in {"cortex", "executor", "fleet", "rem"} and output_mode != "json":
+        raise ValueError(f"{agent} evaluation outputMode must be json")
+    if agent == "mouth" and output_mode != "text":
+        raise ValueError("mouth evaluation outputMode must be text")
+    if agent not in SUPPORTED_AGENTS:
+        raise ValueError(f"Unsupported evaluation agent: {agent}")
+    return output_mode
+
+
+def _record_output_mode(record: Mapping[str, Any], *, agent: str) -> str:
+    record_agent = str((record.get("metadata") or {}).get("agent") or "").strip().lower()
+    if record_agent != agent:
+        raise ValueError(
+            f"Evaluation record belongs to agent {record_agent or '<missing>'}, expected {agent}"
+        )
+    return _validate_output_mode_for_agent(agent, record.get("outputMode"))
+
+
 def normalize_candidate_output(
     agent: str,
     completion: str,
     *,
+    output_mode: str,
     evaluation_module: ModuleType,
     tool_contracts: Mapping[str, Any] | None = None,
 ) -> tuple[Any, str, str | None]:
-    if agent not in JSON_OUTPUT_AGENTS:
+    resolved_output_mode = _validate_output_mode_for_agent(agent, output_mode)
+    if resolved_output_mode == "text":
         has_text = bool(completion.strip())
         return completion, "text" if has_text else "empty_text", (
             None if has_text else "empty_candidate_output"
@@ -1144,14 +1640,16 @@ def _structured_output_messages(
     agent: str,
     messages: Sequence[Mapping[str, str]],
     *,
+    output_mode: str,
     tool_contracts: Mapping[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     copied = [
         {"role": str(message["role"]), "content": str(message["content"])}
         for message in messages
     ]
-    if agent not in JSON_OUTPUT_AGENTS:
-        return copied
+    resolved_output_mode = _validate_output_mode_for_agent(agent, output_mode)
+    if resolved_output_mode == "text":
+        return canonical_non_thinking_messages(copied)
     if agent == "cortex" and not tool_contracts:
         raise ValueError("Cortex structured output requires manifest tool contracts")
     instructions = [STRUCTURED_OUTPUT_INSTRUCTION]
@@ -1168,7 +1666,7 @@ def _structured_output_messages(
     if copied and copied[0]["role"] == "system":
         existing = copied[0]["content"].rstrip()
         if existing == contract or existing.endswith("\n\n" + contract):
-            return copied
+            return canonical_non_thinking_messages(copied)
         if (
             STRUCTURED_OUTPUT_INSTRUCTION in existing
             or CORTEX_TOOL_CATALOG_HEADER in existing
@@ -1182,7 +1680,7 @@ def _structured_output_messages(
             0,
             {"role": "system", "content": contract},
         )
-    return copied
+    return canonical_non_thinking_messages(copied)
 
 
 def _cortex_tool_catalog_instruction(
@@ -1251,14 +1749,88 @@ def _cortex_tool_catalog_instruction(
 def _structured_output_contract_sha256(
     agent: str,
     *,
+    output_mode: str,
     tool_contracts: Mapping[str, Any] | None = None,
-) -> str:
+) -> str | None:
+    resolved_output_mode = _validate_output_mode_for_agent(agent, output_mode)
+    if resolved_output_mode == "text":
+        return None
     messages = _structured_output_messages(
         agent,
         [{"role": "user", "content": "contract hash sentinel"}],
+        output_mode=resolved_output_mode,
         tool_contracts=tool_contracts,
     )
     return _canonical_sha256(messages[0]["content"])
+
+
+def _strict_json_retry_instruction(agent: str) -> str:
+    if agent not in SUPPORTED_AGENTS:
+        raise ValueError(f"Unsupported evaluation agent: {agent}")
+    return (
+        STRICT_JSON_RETRY_INSTRUCTION
+        if agent == "cortex"
+        else GENERIC_STRICT_JSON_RETRY_INSTRUCTION
+    )
+
+
+def _strict_json_retry_contract_sha256(
+    agent: str,
+    *,
+    output_mode: str,
+) -> str | None:
+    resolved_output_mode = _validate_output_mode_for_agent(agent, output_mode)
+    if resolved_output_mode == "text":
+        return None
+    return hashlib.sha256(
+        _strict_json_retry_instruction(agent).encode("utf-8")
+    ).hexdigest()
+
+
+def _evaluation_output_mode_contract(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    agent: str,
+    tool_contracts: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    seen_eval_ids: set[str] = set()
+    for record in records:
+        eval_id = record.get("evalID")
+        if not isinstance(eval_id, str) or not eval_id or eval_id in seen_eval_ids:
+            raise ValueError("Output-mode contract requires unique stable evalID values")
+        seen_eval_ids.add(eval_id)
+        output_mode = _record_output_mode(record, agent=agent)
+        json_mode = output_mode == "json"
+        entries.append(
+            {
+                "evalID": eval_id,
+                "outputMode": output_mode,
+                "structuredOutputContractSHA256": _structured_output_contract_sha256(
+                    agent,
+                    output_mode=output_mode,
+                    tool_contracts=tool_contracts,
+                ),
+                "strictJSONRetryEligible": json_mode,
+                "strictJSONMaxAttempts": STRICT_JSON_MAX_ATTEMPTS if json_mode else 1,
+                "strictJSONRetryContractSHA256": _strict_json_retry_contract_sha256(
+                    agent,
+                    output_mode=output_mode,
+                ),
+            }
+        )
+    if not entries:
+        raise ValueError("Output-mode contract requires evaluation records")
+    contract = {
+        "schemaVersion": OUTPUT_MODE_CONTRACT_VERSION,
+        "structuredOutputContractVersion": STRUCTURED_OUTPUT_CONTRACT_VERSION,
+        "strictJSONRetryContractVersion": STRICT_JSON_RETRY_CONTRACT_VERSION,
+        "records": entries,
+    }
+    return {
+        **contract,
+        "outputModeContractSHA256": _canonical_sha256(contract),
+    }
 
 
 def _trusted_cortex_retry_manifest_row(
@@ -1429,19 +2001,21 @@ def _cortex_retry_locked_manifest_row(
 
 
 def _strict_json_retry_messages(
+    agent: str,
     messages: Sequence[Mapping[str, str]],
     *,
     validation_error: str | None = None,
     failed_candidate: Any = None,
     tool_contracts: Mapping[str, Any] | None = None,
 ) -> list[dict[str, str]]:
+    _validate_output_mode_for_agent(agent, "json")
     copied = [
         {"role": str(message["role"]), "content": str(message["content"])}
         for message in messages
     ]
     if not copied or copied[-1]["role"] != "user":
         raise RuntimeError("Strict JSON retry requires a prompt ending in a user message")
-    retry_instruction = STRICT_JSON_RETRY_INSTRUCTION
+    retry_instruction = _strict_json_retry_instruction(agent)
     if validation_error is not None:
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,127}", validation_error):
             raise ValueError("Strict JSON retry received an invalid failure code")
@@ -1449,28 +2023,30 @@ def _strict_json_retry_messages(
             " Validation failure code: "
             + validation_error
             + ". Use that code only to re-check the response contract; do not "
-            "invent missing user values. "
-            + _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE.get(
+            "invent missing user values."
+        )
+        if agent == "cortex":
+            retry_instruction += " " + _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE.get(
                 validation_error,
                 "Retry repair: re-read the selected manifest row and emit the exact "
                 "contracted route state.",
             )
+    if agent == "cortex":
+        trusted_candidate = _cortex_retry_locked_manifest_row(
+            copied,
+            failed_candidate,
+            tool_contracts,
         )
-    trusted_candidate = _cortex_retry_locked_manifest_row(
-        copied,
-        failed_candidate,
-        tool_contracts,
-    )
-    retry_instruction += _trusted_cortex_retry_row_instruction(
-        trusted_candidate,
-        tool_contracts,
-    )
+        retry_instruction += _trusted_cortex_retry_row_instruction(
+            trusted_candidate,
+            tool_contracts,
+        )
     copied[-1]["content"] = (
-        copied[-1]["content"].rstrip()
+        strip_terminal_non_thinking_directive(copied[-1]["content"])
         + "\n\n"
         + retry_instruction
     )
-    return copied
+    return canonical_non_thinking_messages(copied)
 
 
 def _generation_attempt_record(
@@ -1519,13 +2095,17 @@ def evaluate_records(
     format_failure_count = 0
     initial_format_failure_count = 0
     format_recovery_count = 0
-    for index, record in enumerate(records, start=1):
+    for index, raw_record in enumerate(records, start=1):
+        record = evaluation_module.upgrade_evaluation_record(raw_record)
+        output_mode = _record_output_mode(record, agent=agent)
+        json_mode = output_mode == "json"
         prompt_messages = _structured_output_messages(
             agent,
             record["messages"],
+            output_mode=output_mode,
             tool_contracts=tool_contracts,
         )
-        attempt_limit = STRICT_JSON_MAX_ATTEMPTS if agent in JSON_OUTPUT_AGENTS else 1
+        attempt_limit = STRICT_JSON_MAX_ATTEMPTS if json_mode else 1
         generation_attempts: list[dict[str, Any]] = []
         output: Any = ""
         output_kind = "empty_text"
@@ -1553,6 +2133,7 @@ def evaluate_records(
             output, output_kind, format_error = normalize_candidate_output(
                 agent,
                 completion,
+                output_mode=output_mode,
                 evaluation_module=evaluation_module,
                 tool_contracts=tool_contracts,
             )
@@ -1589,7 +2170,7 @@ def evaluate_records(
                 first_attempt_error = format_error
             if format_error is None:
                 break
-            if attempt_index == 1 and agent in JSON_OUTPUT_AGENTS:
+            if attempt_index == 1 and json_mode:
                 initial_format_failure_count += 1
                 if agent == "cortex":
                     cortex_retry_locked_row = _cortex_retry_locked_manifest_row(
@@ -1598,6 +2179,7 @@ def evaluate_records(
                         tool_contracts,
                     )
                 prompt_messages = _strict_json_retry_messages(
+                    agent,
                     prompt_messages,
                     validation_error=format_error,
                     failed_candidate=output,
@@ -1620,6 +2202,7 @@ def evaluate_records(
             "schemaVersion": CANDIDATE_OUTPUT_SCHEMA_VERSION,
             "evalID": eval_id,
             "agent": agent,
+            "outputMode": output_mode,
             "output": output,
             "outputKind": output_kind,
             "formatError": format_error,
@@ -1719,6 +2302,7 @@ def _validated_generation_attempts(
     row: Mapping[str, Any],
     *,
     agent: str,
+    output_mode: str,
     evaluation_module: ModuleType,
     tool_contracts: Mapping[str, Any] | None,
     cortex_retry_locked_row: Mapping[str, Any] | None,
@@ -1742,7 +2326,9 @@ def _validated_generation_attempts(
         "hitTokenBudget",
         "generationAttemptSHA256",
     }
-    maximum_attempts = STRICT_JSON_MAX_ATTEMPTS if agent in JSON_OUTPUT_AGENTS else 1
+    resolved_output_mode = _validate_output_mode_for_agent(agent, output_mode)
+    json_mode = resolved_output_mode == "json"
+    maximum_attempts = STRICT_JSON_MAX_ATTEMPTS if json_mode else 1
     if (
         not isinstance(attempts, list)
         or not attempts
@@ -1793,6 +2379,7 @@ def _validated_generation_attempts(
         normalized_output, expected_kind, expected_error = normalize_candidate_output(
             agent,
             raw_output,
+            output_mode=resolved_output_mode,
             evaluation_module=evaluation_module,
             tool_contracts=tool_contracts,
         )
@@ -1814,7 +2401,7 @@ def _validated_generation_attempts(
             raise ValueError(f"{path}:{line_number} has inconsistent generation attempt evidence")
         normalized_attempt_outputs.append(normalized_output)
 
-    if agent in JSON_OUTPUT_AGENTS:
+    if json_mode:
         if len(attempts) == 1 and attempts[0]["formatError"] is not None:
             raise ValueError(f"{path}:{line_number} omits the bounded strict JSON retry")
         if len(attempts) == STRICT_JSON_MAX_ATTEMPTS and attempts[0]["formatError"] is None:
@@ -1836,9 +2423,11 @@ def load_candidate_outputs(
 
     if not path.is_file():
         raise FileNotFoundError(f"Candidate output JSONL not found: {path}")
+    evaluation_module = _load_evaluation_module()
     expected_records: dict[str, Mapping[str, Any]] = {}
     expected_record_order: list[str] = []
-    for index, record in enumerate(evaluation_records):
+    for index, raw_record in enumerate(evaluation_records):
+        record = evaluation_module.upgrade_evaluation_record(raw_record)
         eval_id = record.get("evalID")
         record_agent = str((record.get("metadata") or {}).get("agent") or "").strip().lower()
         messages = record.get("messages")
@@ -1863,6 +2452,7 @@ def load_candidate_outputs(
         "schemaVersion",
         "evalID",
         "agent",
+        "outputMode",
         "output",
         "outputKind",
         "formatError",
@@ -1872,7 +2462,6 @@ def load_candidate_outputs(
         "generationAttempts",
         "candidateRecordSHA256",
     }
-    evaluation_module = _load_evaluation_module()
     for line_number, raw_line in enumerate(
         path.read_text(encoding="utf-8").splitlines(),
         start=1,
@@ -1888,6 +2477,12 @@ def load_candidate_outputs(
         unsigned = dict(row)
         unsigned.pop("candidateRecordSHA256", None)
         eval_id = row.get("evalID")
+        expected_record = expected_records.get(eval_id) if isinstance(eval_id, str) else None
+        expected_output_mode = (
+            _record_output_mode(expected_record, agent=agent)
+            if isinstance(expected_record, Mapping)
+            else None
+        )
         if (
             row.get("schemaVersion") != CANDIDATE_OUTPUT_SCHEMA_VERSION
             or row.get("agent") != agent
@@ -1895,6 +2490,7 @@ def load_candidate_outputs(
             or not eval_id
             or eval_id not in expected_records
             or eval_id in outputs
+            or row.get("outputMode") != expected_output_mode
             or not isinstance(expected_sha256, str)
             or _SHA256_PATTERN.fullmatch(expected_sha256) is None
             or _canonical_sha256(unsigned) != expected_sha256
@@ -1908,11 +2504,12 @@ def load_candidate_outputs(
         primary_messages = _structured_output_messages(
             agent,
             record_messages,
+            output_mode=expected_output_mode,
             tool_contracts=tool_contracts,
         )
         expected_prompt_sha256 = [_canonical_sha256(primary_messages)]
         cortex_retry_locked_row: Mapping[str, Any] | None = None
-        if agent in JSON_OUTPUT_AGENTS:
+        if expected_output_mode == "json":
             raw_attempts = row.get("generationAttempts")
             first_attempt = (
                 raw_attempts[0]
@@ -1933,6 +2530,7 @@ def load_candidate_outputs(
                 first_output, _, first_error = normalize_candidate_output(
                     agent,
                     first_raw_output,
+                    output_mode=expected_output_mode,
                     evaluation_module=evaluation_module,
                     tool_contracts=tool_contracts,
                 )
@@ -1945,6 +2543,7 @@ def load_candidate_outputs(
             expected_prompt_sha256.append(
                 _canonical_sha256(
                     _strict_json_retry_messages(
+                        agent,
                         primary_messages,
                         validation_error=first_error,
                         failed_candidate=first_output,
@@ -1955,6 +2554,7 @@ def load_candidate_outputs(
         attempts, selected_output = _validated_generation_attempts(
             row,
             agent=agent,
+            output_mode=expected_output_mode,
             evaluation_module=evaluation_module,
             tool_contracts=tool_contracts,
             cortex_retry_locked_row=cortex_retry_locked_row,
@@ -2010,6 +2610,9 @@ def run(args: argparse.Namespace) -> int:
 
     config_path = Path(args.config).resolve()
     cfg, config_file_sha256 = _load_evaluation_config_snapshot(config_path)
+    chat_template_contract_sha256 = verify_chat_template_contract(
+        cfg.get("chatTemplateContract")
+    )
     from tools.fine_tuning.unsloth.ubuntu_source_integrity import (
         validate_attestation_record,
     )
@@ -2109,6 +2712,14 @@ def run(args: argparse.Namespace) -> int:
         else len(selected_records) == len(all_records)
     )
     model, tokenizer = load_inference_model(cfg, adapter_dir=adapter_dir)
+    if (
+        verify_chat_template_contract(
+            cfg.get("chatTemplateContract"),
+            tokenizer=tokenizer,
+        )
+        != chat_template_contract_sha256
+    ):
+        raise RuntimeError("Loaded tokenizer chat-template contract digest drifted")
     (
         outputs,
         output_rows,
@@ -2180,6 +2791,7 @@ def run(args: argparse.Namespace) -> int:
         "variant": cfg["variant"],
         "configPath": str(config_path),
         "configSHA256": config_file_sha256,
+        "chatTemplateContract": cfg["chatTemplateContract"],
         "adapterDirectory": str(adapter_dir),
         "adapterSHA256": artifact_sha256,
         "finalizedVariantManifestPath": str(finalized_path),
@@ -2212,20 +2824,11 @@ def run(args: argparse.Namespace) -> int:
             "maxNewTokens": int(args.max_new_tokens),
             "maxSequenceLength": int(cfg["max_seq_length"]),
             "seed": int(cfg["seed"]),
-            "structuredOutputContractEligible": agent in JSON_OUTPUT_AGENTS,
-            "structuredOutputContractVersion": STRUCTURED_OUTPUT_CONTRACT_VERSION,
-            "structuredOutputContractSHA256": _structured_output_contract_sha256(
-                agent,
+            "outputModeContract": _evaluation_output_mode_contract(
+                selected_records,
+                agent=agent,
                 tool_contracts=tool_contracts,
             ),
-            "strictJSONRetryEligible": agent in JSON_OUTPUT_AGENTS,
-            "strictJSONMaxAttempts": (
-                STRICT_JSON_MAX_ATTEMPTS if agent in JSON_OUTPUT_AGENTS else 1
-            ),
-            "strictJSONRetryContractVersion": STRICT_JSON_RETRY_CONTRACT_VERSION,
-            "strictJSONRetryContractSHA256": hashlib.sha256(
-                STRICT_JSON_RETRY_INSTRUCTION.encode("utf-8")
-            ).hexdigest(),
         },
     }
     run_manifest["runManifestSHA256"] = _canonical_sha256(run_manifest)

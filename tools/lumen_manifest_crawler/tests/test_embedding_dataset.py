@@ -9,6 +9,10 @@ from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.embedding import EMBEDDING_MODEL_ID, compile_embedding_datasets
 from lumen_manifest_crawler.output.writer import write_outputs
+from lumen_manifest_crawler.runtime_prompt_contract import (
+    RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+    prompt_sha256,
+)
 from lumen_manifest_crawler.validators import validate_manifest
 
 
@@ -167,6 +171,15 @@ def test_runtime_grounding_bundle_is_written_for_build_injection(tmp_path: Path)
     assert bundle["artifactKind"] == "agent_grounding_runtime_bundle"
     assert bundle["sourceIntegrity"] == manifest.sourceIntegrity.lineage_dict()
     assert bundle["injectionPolicy"]["target"] == "AgentGroundingPromptComposer"
+    assert bundle["promptContract"]["composerPolicySHA256"] == (
+        RUNTIME_PROMPT_COMPOSER_POLICY_SHA256
+    )
+    assert bundle["promptContract"]["promptSHA256"] == prompt_sha256(
+        prompt_path.read_text(encoding="utf-8")
+    )
+    assert bundle["promptContract"]["promptUTF8ByteCount"] == len(
+        prompt_path.read_bytes()
+    )
     assert bundle["codebaseHome"]["recordCount"] == len(datasets["codebase_home_corpus"])
     assert bundle["codebaseHome"]["selectedFiles"]
     assert "Bundled source grounding" not in prompt_path.read_text(encoding="utf-8")

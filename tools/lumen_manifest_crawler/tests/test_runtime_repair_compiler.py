@@ -3,7 +3,10 @@
 import json
 
 from lumen_manifest_crawler.dataset.compiler import compile_state_of_art_datasets
-from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
+from lumen_manifest_crawler.dataset.fine_tuning import (
+    FineTuningDatasetConfig,
+    compile_agent_fine_tuning_datasets,
+)
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 
 
@@ -98,6 +101,7 @@ def test_final_validator_replacement_repair_reaches_rem_sft() -> None:
         manifest,
         compiled.records,
         runtime_audit_reports=runtime_reports,
+        config=FineTuningDatasetConfig(include_unsloth_config=False),
     )
 
     rem_records = fine_tuning["rem"].train_sft + fine_tuning["rem"].val_sft
