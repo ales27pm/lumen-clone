@@ -14,6 +14,16 @@ import pytest
 
 from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
+from lumen_manifest_crawler.dataset.adapter_evaluation import (
+    EVALUATION_SCHEMA_VERSION,
+    _score_metric,
+    build_contamination_report,
+    declarative_metrics_from_expected,
+    evaluation_output_mode,
+    mouth_final_text_is_complete,
+    score_evaluation_suite,
+    upgrade_evaluation_record,
+)
 from lumen_manifest_crawler.dataset.compiler import _records_hash
 from lumen_manifest_crawler.dataset.codebase_home import (
     MAX_CHUNK_CHARS,
@@ -23,25 +33,71 @@ from lumen_manifest_crawler.dataset.codebase_home import (
 from lumen_manifest_crawler.dataset.cortex import generate_cortex_records
 from lumen_manifest_crawler.dataset.fine_tuning import (
     AGENTS,
+    CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES,
     CORTEX_CODEBASE_SELF_AWARENESS_SOURCE_FAMILY,
     CORTEX_CODEBASE_SYSTEM_PROMPT,
     CORTEX_ROUTE_DECISION_ENDCAP,
     CORTEX_ROUTE_SYSTEM_PROMPT,
     CORTEX_SUPPLEMENTAL_GROUNDING_SOURCE_FAMILIES,
     CORTEX_TOOL_CATALOG_HEADER,
+    CRITICAL_CONTRACT_VALIDATION_RECORDS_PER_CASE,
+    EXECUTOR_RUNTIME_SYSTEM_PROMPT,
+    FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR,
+    FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION,
+    FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES,
+    FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
+    FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX,
+    FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY,
+    FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL,
+    FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC,
+    NON_CORTEX_MINIMUM_EFFECTIVE_DPO_STEPS,
+    NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS,
+    NON_CORTEX_MAX_TRAINING_EPOCHS,
+    FineTuningDatasetConfig,
+    MIMICRY_CONTRACT_TRAIN_RECORDS_PER_CASE,
+    MIMICRY_CRITICAL_CONTRACT_CASES,
+    REM_CONTRACT_TRAIN_RECORDS_PER_CASE,
+    REM_CRITICAL_CONTRACT_CASES,
+    REM_REPAIR_ACTION_ADD_ACTION_STEP_SAMPLES,
+    REM_REPAIR_ACTION_DISABLE_DETERMINISTIC_COMPATIBILITY,
+    REM_REPAIR_ACTION_FORCE_NO_THINKING,
+    REM_REPAIR_ACTION_REGENERATE_MANIFEST_GROUNDING,
+    SYSTEM_PROMPTS,
+    STRUCTURED_OUTPUT_INSTRUCTION,
     STRICT_JSON_RETRY_DPO_INSTRUCTION,
     ULTRA_SPECIFIC_SOURCE_FAMILY,
     _CORTEX_NATURAL_IMPLICIT_COMPLETE_PROMPTS,
     _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE,
+    _balanced_fleet_contract_dpo_pairs,
+    _agent_unsloth_config,
+    _bind_fleet_dpo_contract,
+    _bind_fleet_sft_contract,
     _bind_cortex_dpo_route_contract,
     _canonicalize_cortex_sft_output,
     _cortex_failure_repair_sft_records,
+    _fleet_slot_contract,
+    _limit_supplemental_sft_records,
+    _limit_fleet_supplemental_dpo_records,
+    _fleet_source_role,
+    _manifest_valid_executor_payload,
+    _mimicry_critical_contract_scenarios,
+    _required_eval_templates,
+    _rem_critical_contract_scenarios,
     _routed_intent_for_tool,
+    _canonical_rendered_prompt_key,
+    _stable_dpo_split,
+    _stable_source_stratified_split,
+    _source_token_proxy_count,
+    _strict_json_loads,
+    _synthetic_dpo_pairs,
     _ultra_specific_cortex_records,
+    _ultra_specific_dpo_pairs,
+    _ultra_specific_eval_templates,
     _validate_cortex_sft_route_intents,
     compile_agent_fine_tuning_datasets,
     cortex_runtime_route_system_prompt,
 )
+from lumen_manifest_crawler.fleet_artifacts import generate_fleet_artifacts
 from lumen_manifest_crawler.manifest import (
     AgentBehaviorManifest,
     IntentManifest,
@@ -169,6 +225,9 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert config["gguf_repo_id"] == EXPECTED_ADAPTER_REPO
         assert config["adapterExport"]["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
         assert config["preference_trainer"] == "dpo"
+        assert config["dpo_beta"] == pytest.approx(0.1)
+        assert config["bf16"] is False
+        assert config["fp16"] is True
         assert config["trainingCodeManifest"]["phase"] == "sft"
         assert config["trainingCodeSHA256"] == config[
             "trainingCodeSHA256ByPhase"
@@ -242,7 +301,8 @@ def test_eval_records_use_supported_executable_metric_contracts(compiled_fine_tu
     for agent in AGENTS:
         assert fine_tuning[agent].eval
         for record in fine_tuning[agent].eval:
-            assert record["schemaVersion"] == "lumen.adapter-eval/1.0.0"
+            assert record["schemaVersion"] == EVALUATION_SCHEMA_VERSION
+            assert record["outputMode"] in {"json", "text"}
             assert record["metrics"]
             assert not [
                 metric
@@ -474,8 +534,8 @@ def test_public_adapter_corpus_is_loaded_and_group_split_without_cross_routing(
     assert sum(fine_tuning["mouth"].dataset_card["publicCorpus"]["recordCounts"][lane] for lane in ("train_dpo", "val_dpo")) > 0
     mouth_public = fine_tuning["mouth"].dataset_card["publicCorpus"]
     for lane in ("train_dpo", "val_dpo"):
-        assert mouth_public["tokenShares"][lane]["total"] <= 0.35
-        assert mouth_public["tokenShares"][lane]["target"] <= 0.35
+        assert mouth_public["tokenProxyShares"][lane]["total"] <= 0.35
+        assert mouth_public["tokenProxyShares"][lane]["target"] <= 0.35
 
     for agent in AGENTS:
         public_records = [
@@ -522,20 +582,83 @@ def test_cortex_keeps_codebase_self_awareness_supplemental(compiled_fine_tuning:
     assert any((record.get("metadata") or {}).get("taskType") == "total_codebase_source_chunk" for record in cortex_codebase)
 
 
-def test_executor_missing_argument_samples_require_required_arguments(compiled_fine_tuning: tuple) -> None:
-    manifest, _, fine_tuning = compiled_fine_tuning
-    optional_only_tools = {
-        tool.id
-        for tool in manifest.tools
-        if tool.arguments and not any(argument.required for argument in tool.arguments)
-    }
-    assert optional_only_tools
+def test_executor_has_no_model_owned_missing_argument_samples(compiled_fine_tuning: tuple) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    records = fine_tuning["executor"].train_sft + fine_tuning["executor"].val_sft
 
-    for record in fine_tuning["executor"].train_sft + fine_tuning["executor"].val_sft:
+    assert not any(
+        (record.get("metadata") or {}).get("taskType")
+        == "ultra_specific_missing_argument_boundary"
+        for record in records
+    )
+    assert all(
+        "missingArguments" not in json.loads(record["messages"][2]["content"])
+        for record in records
+    )
+
+
+def test_executor_strict_contracts_are_optimizer_visible(compiled_fine_tuning: tuple) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    executor = fine_tuning["executor"]
+    direct_counts = Counter()
+    for record in executor.train_sft:
         metadata = record.get("metadata") or {}
-        if metadata.get("taskType") != "ultra_specific_missing_argument_boundary":
+        if metadata.get("taskType") not in {
+            "tool_call_generation",
+            "ultra_specific_tool_call_generation",
+        }:
             continue
-        assert optional_only_tools.isdisjoint(metadata.get("toolIDs") or [])
+        direct_counts.update(metadata.get("toolIDs") or [])
+    assert set(direct_counts) == {tool.id for tool in manifest.tools}
+    assert min(direct_counts.values()) >= 2
+
+    preference_counts = Counter(
+        (record.get("metadata") or {}).get("preferenceType")
+        for record in executor.train_dpo
+    )
+    assert preference_counts["argument_completion"] >= 2
+    assert preference_counts["ultra_specific_phone_sms_extraction"] >= 2
+    assert preference_counts["approval_boundary"] >= 1
+    assert preference_counts["ultra_specific_approval_gate"] >= 1
+    assert preference_counts["ultra_specific_permission_gate"] >= 2
+
+    for preference_type in (
+        "argument_completion",
+        "ultra_specific_phone_sms_extraction",
+        "ultra_specific_permission_gate",
+    ):
+        prompts = {
+            _canonical_rendered_prompt_key(record, lane="dpo")
+            for record in executor.train_dpo
+            if (record.get("metadata") or {}).get("preferenceType")
+            == preference_type
+        }
+        assert len(prompts) >= 2
+
+
+def test_mouth_concrete_failure_contrasts_are_optimizer_visible(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    mouth = fine_tuning["mouth"]
+    train_preferences = Counter(
+        (record.get("metadata") or {}).get("preferenceType")
+        for record in mouth.train_dpo
+    )
+    assert train_preferences["truthful_failure_summary"] >= 1
+    assert train_preferences["grounded_observation_tool_failure"] >= 1
+    assert train_preferences["grounded_observation_failure_polarity"] >= 1
+
+    concrete_failure_prompts = {
+        _canonical_rendered_prompt_key(record, lane="dpo")
+        for record in mouth.train_dpo
+        if (record.get("metadata") or {}).get("preferenceType")
+        in {
+            "grounded_observation_tool_failure",
+            "grounded_observation_failure_polarity",
+        }
+    }
+    assert len(concrete_failure_prompts) == 2
 
 
 def test_agent_sft_tool_contracts_include_permission_kind_and_confirmation_mode(compiled_fine_tuning: tuple) -> None:
@@ -567,9 +690,20 @@ def test_agent_sft_tool_contracts_include_permission_kind_and_confirmation_mode(
             assert "permissionKey" not in assistant
             assert "permissionKind" not in assistant
             assert "confirmationMode" not in assistant
+        elif agent == "executor":
+            assert set(assistant) == {"action"}
+            assert set(assistant["action"]) == {"tool", "args"}
+            assert assistant["action"]["tool"] == tool.id
         else:
-            assert assistant["permissionKind"] == tool.permissionKind
-            assert assistant["confirmationMode"] == tool.confirmationMode
+            assert set(assistant) == {
+                "toolID",
+                "delegateTo",
+                "knownSlots",
+                "approvalState",
+                "permissionState",
+            }
+            assert "permissionKind" not in assistant
+            assert "confirmationMode" not in assistant
 
 
 def test_cortex_prompts_and_preferred_outputs_enforce_one_json_object(compiled_fine_tuning: tuple) -> None:
@@ -1315,7 +1449,7 @@ def test_cortex_contrast_decoys_exclude_unsorted_frozen_eval_window() -> None:
 def test_cortex_no_tool_and_invalid_tool_routes_fail_closed(
     compiled_fine_tuning: tuple,
 ) -> None:
-    _, _, fine_tuning = compiled_fine_tuning
+    manifest, _, fine_tuning = compiled_fine_tuning
     cortex = fine_tuning["cortex"]
     records = cortex.train_sft + cortex.val_sft
     frozen_eval_prompts = {record["messages"][-1]["content"] for record in cortex.eval}
@@ -1564,7 +1698,7 @@ def test_every_cortex_eval_has_one_record_aware_route_contract(
     tools_by_id = {tool.id: tool for tool in manifest.tools}
     modes: Counter[str] = Counter()
 
-    assert len(cortex_evals) == 504
+    assert len(cortex_evals) == 507
     for record in cortex_evals:
         contracts = [
             metric
@@ -1621,8 +1755,8 @@ def test_every_cortex_eval_has_one_record_aware_route_contract(
 
     assert modes == Counter(
         {
-            "actionable": 284,
-            "clarification": 195,
+                "actionable": 285,
+                "clarification": 197,
             "selection": 22,
             "no_tool_route": 2,
             "invalid_tool": 1,
@@ -2347,7 +2481,7 @@ def test_cortex_chosen_route_preferences_are_canonical_or_explicit_contrast(
     assert seen_null_route is True
 
 
-def test_cortex_latest_outlook_attachment_reference_never_persists_without_id(
+def test_cortex_latest_outlook_attachment_reference_persists_symbolic_id(
     compiled_fine_tuning: tuple,
 ) -> None:
     _, _, fine_tuning = compiled_fine_tuning
@@ -2365,10 +2499,15 @@ def test_cortex_latest_outlook_attachment_reference_never_persists_without_id(
         "Route: Show attachments on the latest Outlook email."
     )
     assert chosen["selectedToolID"] == "outlook.attachments.list"
-    assert chosen["status"] == "needs_clarification"
-    assert chosen["missingArguments"] == ["messageId"]
-    assert "actionStep" not in chosen
-    assert rejected["actionStep"]["toolID"] == "outlook.attachments.list"
+    assert chosen["actionStep"] == {
+        "type": "tool_call",
+        "toolID": "outlook.attachments.list",
+        "mustPersistBeforeFinal": True,
+    }
+    assert "missingArguments" not in chosen
+    assert rejected["status"] == "needs_clarification"
+    assert rejected["missingArguments"] == ["messageId"]
+    assert "actionStep" not in rejected
 
 
 def test_cortex_route_dpo_is_manifest_complete_and_train_anchored(
@@ -2438,7 +2577,10 @@ def test_cortex_route_dpo_is_manifest_complete_and_train_anchored(
     assert cortex.unsloth_config["num_train_epochs"] == 3
     assert cortex.unsloth_config["dpo_learning_rate"] == pytest.approx(0.0000001)
     assert cortex.unsloth_config["dpo_num_train_epochs"] == 1
-    assert cortex.unsloth_config["max_prompt_length"] == 3072
+    assert cortex.unsloth_config["max_prompt_length"] == 3200
+    assert cortex.unsloth_config["preference_minimum_prompt_margin_tokens"] == 64
+    assert cortex.unsloth_config["preference_minimum_sequence_margin_tokens"] == 128
+    assert cortex.unsloth_config["sft_minimum_sequence_margin_tokens"] == 128
     assert cortex.unsloth_config["use_logits_to_keep"] is True
     assert cortex.unsloth_config["precompute_ref_log_probs"] is True
     assert cortex.unsloth_config["precompute_ref_batch_size"] == 1
@@ -2851,7 +2993,7 @@ def test_cortex_replay_extensions_are_prompt_disjoint_and_below_frozen_containme
         hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         for prompt in frozen_eval_prompts
     }
-    assert len(cortex.eval) == 504
+    assert len(cortex.eval) == 507
     assert len(extension_prompts) == 93
     assert len(set(extension_prompts)) == len(extension_prompts)
     assert set(extension_prompts).isdisjoint(frozen_eval_prompts)
@@ -5999,6 +6141,7 @@ def test_no_unknown_agent_roles_unknown_tools_or_sentinel_leaks(compiled_fine_tu
         "executor_extra_arguments",
         "executor_invalid_enum_argument",
         "executor_invalid_argument_type",
+        "executor_response_shape_invalid",
         "executor_dpo_missing_chosen_output",
         "cortex_duplicate_json_key",
         "cortex_route_contract_invalid",
@@ -6024,12 +6167,21 @@ def test_executor_outputs_are_manifest_valid_json(compiled_fine_tuning: tuple) -
     for record in fine_tuning["executor"].train_sft + fine_tuning["executor"].val_sft:
         payload = json.loads(record["messages"][2]["content"])
         assert isinstance(payload, dict)
-        tool_id = payload.get("tool")
+        assert set(payload) in ({"action"}, {"final"})
+        if "final" in payload:
+            assert isinstance(payload["final"], str) and payload["final"].strip()
+            continue
+        action = payload["action"]
+        assert set(action) == {"tool", "args"}
+        tool_id = action.get("tool")
         assert tool_id in tools
-        arguments = payload.get("arguments")
+        arguments = action.get("args")
         assert isinstance(arguments, dict)
         contract = {argument.name: argument for argument in tools[tool_id].arguments}
         assert set(arguments).issubset(contract)
+        assert {
+            argument.name for argument in tools[tool_id].arguments if argument.required
+        }.issubset(arguments)
         for name, value in arguments.items():
             allowed_values = contract[name].allowedValues
             if allowed_values:
@@ -6043,14 +6195,432 @@ def test_executor_chosen_dpo_outputs_are_manifest_valid_json(compiled_fine_tunin
     tools = {tool.id: tool for tool in manifest.tools}
     for record in fine_tuning["executor"].train_dpo + fine_tuning["executor"].val_dpo:
         payload = json.loads(record["chosen"]["content"])
-        tool = tools[payload["tool"]]
-        arguments = payload.get("arguments")
+        assert set(payload) in ({"action"}, {"final"})
+        if "final" in payload:
+            assert isinstance(payload["final"], str) and payload["final"].strip()
+            continue
+        action = payload["action"]
+        assert set(action) == {"tool", "args"}
+        tool = tools[action["tool"]]
+        arguments = action.get("args")
         assert isinstance(arguments, dict)
         required = {argument.name for argument in tool.arguments if argument.required}
         assert required.issubset(arguments)
         for argument in tool.arguments:
             if argument.name in arguments and argument.allowedValues:
                 assert arguments[argument.name] in argument.allowedValues
+
+
+def test_executor_compiled_lanes_and_frozen_cases_bind_native_runtime_contract(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    executor = fine_tuning["executor"]
+    sft = executor.train_sft + executor.val_sft
+    dpo = executor.train_dpo + executor.val_dpo
+
+    assert sft and dpo and executor.eval
+    assert all(
+        record["messages"][0]["content"] == EXECUTOR_RUNTIME_SYSTEM_PROMPT
+        for record in sft
+    )
+    assert all(
+        record["prompt"][0]["content"] == EXECUTOR_RUNTIME_SYSTEM_PROMPT
+        for record in dpo
+    )
+    assert all(
+        record["messages"][0]["content"] == EXECUTOR_RUNTIME_SYSTEM_PROMPT
+        for record in executor.eval
+    )
+    assert STRUCTURED_OUTPUT_INSTRUCTION in EXECUTOR_RUNTIME_SYSTEM_PROMPT
+    assert all(
+        any(
+            metric.get("type") == "executor_response_contract"
+            for metric in record["metrics"]
+        )
+        for record in executor.eval
+    )
+    assert all(
+        metric.get("type") != "approval_boundary"
+        for record in executor.eval
+        for metric in record["metrics"]
+    )
+
+    sft_task_types = {
+        record["metadata"].get("taskType") for record in sft
+    }
+    dpo_preference_types = {
+        record["metadata"].get("preferenceType") for record in dpo
+    }
+    eval_types = {
+        record["metadata"].get("evalType") for record in executor.eval
+    }
+    assert "ultra_specific_post_observation_final" in sft_task_types
+    assert "ultra_specific_post_observation_final" in dpo_preference_types
+    assert "post_observation_final" in eval_types
+    assert "ultra_specific_post_observation_final" in eval_types
+    assert "approval_rejected" not in sft_task_types
+    assert all(
+        "approval_rejected"
+        not in record["messages"][1]["content"].strip().casefold()
+        for record in sft
+    )
+
+    forbidden_top_level = {
+        "tool",
+        "arguments",
+        "status",
+        "requiresApproval",
+        "approvalPrompt",
+        "permissionKey",
+        "permissionKind",
+        "confirmationMode",
+        "missingArguments",
+    }
+    for payload in [
+        *(json.loads(record["messages"][2]["content"]) for record in sft),
+        *(json.loads(record["chosen"]["content"]) for record in dpo),
+    ]:
+        assert forbidden_top_level.isdisjoint(payload)
+        assert set(payload) in ({"action"}, {"final"})
+        if "action" in payload:
+            assert set(payload["action"]) == {"tool", "args"}
+
+    assert executor.contamination_report["contaminated"] is False
+    assert executor.contamination_report["matchCount"] == 0
+
+
+def test_executor_cancelled_approval_outcome_cannot_be_reframed_as_action(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    sft = fine_tuning["executor"].train_sft + fine_tuning["executor"].val_sft
+    native_action = next(
+        payload["action"]
+        for payload in (
+            json.loads(record["messages"][2]["content"])
+            for record in sft
+        )
+        if "action" in payload
+    )
+    cancelled_legacy_payload = json.dumps(
+        {
+            "tool": native_action["tool"],
+            "arguments": native_action["args"],
+            "status": "cancelled_by_user",
+        }
+    )
+
+    assert (
+        _manifest_valid_executor_payload(manifest, cancelled_legacy_payload)
+        is None
+    )
+
+
+def test_executor_native_final_curriculum_is_train_balanced_and_held_out(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    executor = fine_tuning["executor"]
+    contract_case = "trusted_observation_no_tool_native_final"
+    sft_by_split = {
+        "train": [
+            record
+            for record in executor.train_sft
+            if record["metadata"].get("contractCase") == contract_case
+        ],
+        "validation": [
+            record
+            for record in executor.val_sft
+            if record["metadata"].get("contractCase") == contract_case
+        ],
+    }
+    dpo_by_split = {
+        "train": [
+            record
+            for record in executor.train_dpo
+            if record["metadata"].get("contractCase") == contract_case
+        ],
+        "validation": [
+            record
+            for record in executor.val_dpo
+            if record["metadata"].get("contractCase") == contract_case
+        ],
+    }
+
+    assert len(sft_by_split["train"]) >= 8
+    assert len(dpo_by_split["train"]) >= 8
+    assert len(sft_by_split["validation"]) >= 2
+    assert len(dpo_by_split["validation"]) >= 2
+
+    for split in ("train", "validation"):
+        sft_ids = {
+            record["metadata"]["scenarioID"]
+            for record in sft_by_split[split]
+        }
+        dpo_ids = {
+            record["metadata"]["scenarioID"]
+            for record in dpo_by_split[split]
+        }
+        assert sft_ids == dpo_ids
+        assert all(
+            record["metadata"]["requiredSplit"] == split
+            for record in (*sft_by_split[split], *dpo_by_split[split])
+        )
+        assert all(
+            set(json.loads(record["messages"][2]["content"])) == {"final"}
+            for record in sft_by_split[split]
+        )
+        assert all(
+            set(json.loads(record["chosen"]["content"])) == {"final"}
+            for record in dpo_by_split[split]
+        )
+
+    train_ids = {
+        record["metadata"]["scenarioID"]
+        for record in sft_by_split["train"]
+    }
+    validation_ids = {
+        record["metadata"]["scenarioID"]
+        for record in sft_by_split["validation"]
+    }
+    assert train_ids.isdisjoint(validation_ids)
+    train_finals = {
+        json.loads(record["messages"][2]["content"])["final"]
+        for record in sft_by_split["train"]
+    }
+    validation_finals = {
+        json.loads(record["messages"][2]["content"])["final"]
+        for record in sft_by_split["validation"]
+    }
+    assert train_finals.isdisjoint(validation_finals)
+
+    action_count = sum(
+        "action" in json.loads(record["messages"][2]["content"])
+        for record in executor.train_sft
+    )
+    assert len(sft_by_split["train"]) * 50 >= action_count
+
+
+def test_executor_training_prompt_exactly_matches_shipped_runtime_core() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (
+        repo_root
+        / "ios"
+        / "Lumen"
+        / "Assistant"
+        / "StructuredAgentKernelExecutor.swift"
+    ).read_text(encoding="utf-8")
+    match = re.search(
+        r'executorRuntimeSystemPromptContract = """\n(.*?)\n\s*"""',
+        source,
+        flags=re.DOTALL,
+    )
+
+    assert match is not None
+    swift_runtime_core = "\n".join(
+        line.removeprefix("    ") for line in match.group(1).splitlines()
+    )
+    assert swift_runtime_core == EXECUTOR_RUNTIME_SYSTEM_PROMPT
+
+
+def test_role_locked_training_prompts_match_swift_runtime_contract_bytes() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (
+        repo_root / "ios" / "Lumen" / "Services" / "ModelAdapterRuntimeContract.swift"
+    ).read_text(encoding="utf-8")
+
+    for role in ("mouth", "mimicry", "rem"):
+        match = re.search(
+            rf'roleID: "{role}"[^\n]+systemPrompt: "([^"]+)"',
+            source,
+        )
+        assert match is not None, role
+        assert match.group(1) == SYSTEM_PROMPTS[role]
+
+
+def test_executor_frozen_expected_targets_pass_exact_shape_scorer(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    executor = fine_tuning["executor"]
+    tool_contracts = {
+        tool.id: {
+            "arguments": [argument.model_dump() for argument in tool.arguments]
+        }
+        for tool in manifest.tools
+    }
+
+    for record in executor.eval:
+        expected = record.get("expected") or {}
+        if isinstance(expected.get("tool"), str):
+            candidate = {
+                "action": {
+                    "tool": expected["tool"],
+                    "args": dict(expected.get("arguments") or {}),
+                }
+            }
+        elif isinstance(expected.get("final"), str):
+            candidate = {"final": expected["final"]}
+        elif expected.get("format") == "strict_json":
+            candidate = {"final": "The structured turn is complete."}
+        else:
+            pytest.fail(
+                f"Executor frozen case lacks an action/final target: {record['metadata']}"
+            )
+
+        results = [
+            _score_metric(
+                metric,
+                candidate,
+                tool_contracts=tool_contracts,
+                allowed_slots=set(),
+                has_output=True,
+            )
+            for metric in record["metrics"]
+        ]
+        assert all(result["passed"] for result in results), (
+            record["metadata"],
+            candidate,
+            results,
+        )
+
+
+def test_mouth_training_lanes_are_complete_and_include_adversarial_repairs(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    mouth = fine_tuning["mouth"]
+    sft = mouth.train_sft + mouth.val_sft
+    dpo = mouth.train_dpo + mouth.val_dpo
+
+    assert sft and dpo
+    assert all(
+        mouth_final_text_is_complete(record["messages"][2]["content"])
+        for record in sft
+    )
+    assert all(
+        mouth_final_text_is_complete(record["chosen"]["content"])
+        for record in dpo
+    )
+    assert {
+        "ultra_specific_adversarial_truncation_repair",
+        "ultra_specific_adversarial_observation_repair",
+        "ultra_specific_adversarial_failure_repair",
+        "ultra_specific_adversarial_attachment_repair",
+    }.issubset({record["metadata"].get("taskType") for record in sft})
+    assert {
+        "grounded_observation_truncated_upload",
+        "grounded_observation_exact_attachments",
+        "grounded_observation_failure_polarity",
+        "grounded_observation_motion_negation",
+    }.issubset({record["metadata"].get("preferenceType") for record in dpo})
+    assert any(
+        record["rejected"]["content"].endswith(" with")
+        for record in dpo
+    )
+
+    failures = validate_agent_fine_tuning_datasets(manifest, fine_tuning)
+    assert {
+        "mouth_incomplete_sft_output",
+        "mouth_incomplete_dpo_chosen_output",
+        "mouth_eval_missing_completeness_metric",
+    }.isdisjoint({failure.code for failure in failures})
+    assert mouth.contamination_report["contaminated"] is False
+    assert mouth.contamination_report["matchCount"] == 0
+
+
+def test_mouth_frozen_bank_is_contentful_complete_and_self_consistent(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    mouth = fine_tuning["mouth"]
+    candidates = {
+        "sentinel_suppression": "Québec City has light rain at 18 C.",
+        "no_internal_json": (
+            "I found budget.pdf in Downloads; it was modified yesterday."
+        ),
+        "truthful_failure_summary": (
+            "I could not read calendar events because calendar permission was denied."
+        ),
+        "concise_response": "Your Buy filters reminder is due Friday.",
+        "ultra_specific_calendar_safe_output": (
+            "You have Solstice audit at 13:40 and Orchid review at 17:20."
+        ),
+        "ultra_specific_outlook_attachment_summary": (
+            "The available attachments are invoice-4821.pdf and quote.xlsx."
+        ),
+        "ultra_specific_motion_summary": (
+            "Your activity is walking with high confidence."
+        ),
+    }
+    by_type = {
+        record["metadata"].get("evalType"): record
+        for record in mouth.eval
+    }
+
+    assert set(by_type) == set(candidates)
+    for eval_type, record in by_type.items():
+        assert record["outputMode"] == "text"
+        assert any(
+            metric.get("type") == "complete_final_text"
+            for metric in record["metrics"]
+        )
+        assert any(
+            metric.get("type") == "observation_entailment"
+            for metric in record["metrics"]
+        )
+        results = [
+            _score_metric(
+                metric,
+                candidates[eval_type],
+                tool_contracts={},
+                allowed_slots=set(),
+                has_output=True,
+            )
+            for metric in record["metrics"]
+        ]
+        assert all(result["passed"] for result in results), (
+            eval_type,
+            record["metrics"],
+            results,
+        )
+
+        generic = score_evaluation_suite(
+            [record],
+            {record["evalID"]: "Done."},
+            agent="mouth",
+        )
+        truncated = score_evaluation_suite(
+            [record],
+            {record["evalID"]: candidates[eval_type] + " with"},
+            agent="mouth",
+        )
+        assert generic["weightedScore"] == 0.0, eval_type
+        assert truncated["weightedScore"] == 0.0, eval_type
+
+
+def test_mouth_validator_rejects_incomplete_preferred_training_outputs(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    mouth = fine_tuning["mouth"]
+    train_sft = copy.deepcopy(mouth.train_sft)
+    train_dpo = copy.deepcopy(mouth.train_dpo)
+    train_sft[0]["messages"][2]["content"] = "The"
+    train_dpo[0]["chosen"]["content"] = "You do not need an"
+    mutated = dict(fine_tuning)
+    mutated["mouth"] = replace(
+        mouth,
+        train_sft=train_sft,
+        train_dpo=train_dpo,
+    )
+
+    failures = validate_agent_fine_tuning_datasets(manifest, mutated)
+    codes = {failure.code for failure in failures}
+
+    assert "mouth_incomplete_sft_output" in codes
+    assert "mouth_incomplete_dpo_chosen_output" in codes
 
 
 def test_validator_rejects_invalid_executor_enum(compiled_fine_tuning: tuple) -> None:
@@ -6061,10 +6631,13 @@ def test_validator_rejects_invalid_executor_enum(compiled_fine_tuning: tuple) ->
         index
         for index, record in enumerate(records)
         if "trigger.create" in record["metadata"]["toolIDs"]
-        and "schedule" in json.loads(record["messages"][2]["content"]).get("arguments", {})
+        and "schedule"
+        in json.loads(record["messages"][2]["content"])
+        .get("action", {})
+        .get("args", {})
     )
     payload = json.loads(records[index]["messages"][2]["content"])
-    payload["arguments"]["schedule"] = "sample_schedule"
+    payload["action"]["args"]["schedule"] = "sample_schedule"
     records[index]["messages"][2]["content"] = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     mutated = dict(fine_tuning)
     mutated["executor"] = replace(executor, train_sft=records)
@@ -6088,6 +6661,1171 @@ def test_fleet_has_model_slot_coverage(compiled_fine_tuning: tuple) -> None:
     blob = "\n".join(json.dumps(record, ensure_ascii=False, sort_keys=True) for record in (fine_tuning["fleet"].train_sft + fine_tuning["fleet"].val_sft))
     for slot in manifest.fleet.slots:
         assert slot.id in blob
+
+
+def test_fleet_complete_training_corpus_is_strict_json_only(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    fleet = fine_tuning["fleet"]
+    sft = fleet.train_sft + fleet.val_sft
+    dpo = fleet.train_dpo + fleet.val_dpo
+
+    assert sft and dpo
+    assert not any(
+        record["metadata"].get("sourceFamily") == "fleet_system_prompts"
+        for record in sft
+    )
+    for record in sft:
+        assert STRUCTURED_OUTPUT_INSTRUCTION in record["messages"][0]["content"]
+        payload = _strict_json_loads(record["messages"][2]["content"])
+        assert isinstance(payload, dict)
+    for record in dpo:
+        assert STRUCTURED_OUTPUT_INSTRUCTION in record["prompt"][0]["content"]
+        payload = _strict_json_loads(record["chosen"]["content"])
+        assert isinstance(payload, dict)
+
+    private_state_pairs = [
+        record
+        for record in dpo
+        if record["metadata"].get("taskType")
+        == "fleet_private_state_boundary"
+    ]
+    for record in private_state_pairs:
+        chosen = _strict_json_loads(record["chosen"]["content"])
+        rejected = _strict_json_loads(record["rejected"]["content"])
+        assert chosen["privateStateAccessible"] is False
+        assert rejected["privateStateAccessible"] is True
+        assert chosen["requestedSlot"] in chosen["knownSlots"]
+        assert rejected["requestedSlot"] == chosen["requestedSlot"]
+
+
+def test_fleet_private_state_preference_is_reframed_as_json(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    source = {
+        "prompt": [
+            {"role": "system", "content": "Legacy Fleet prompt."},
+            {
+                "role": "user",
+                "content": "What is inside embedding's current TTL cache?",
+            },
+        ],
+        "chosen": {
+            "role": "assistant",
+            "content": "I cannot inspect embedding's private cache.",
+        },
+        "rejected": {
+            "role": "assistant",
+            "content": "The cache contains fabricated_internal_state.",
+        },
+        "metadata": {
+            "agent": "fleet",
+            "preferenceType": "fleet_private_state_boundary",
+            "taskType": "fleet_private_state_boundary",
+        },
+    }
+
+    bound = _bind_fleet_dpo_contract(manifest, [source])
+
+    assert len(bound) == 1
+    assert STRUCTURED_OUTPUT_INSTRUCTION in bound[0]["prompt"][0]["content"]
+    chosen = _strict_json_loads(bound[0]["chosen"]["content"])
+    rejected = _strict_json_loads(bound[0]["rejected"]["content"])
+    assert chosen == {
+        "knownSlots": [slot.id for slot in manifest.fleet.slots],
+        "privateStateAccessible": False,
+        "reason": "private runtime state is not exposed by the fleet manifest",
+        "requestedSlot": "embedding",
+    }
+    assert rejected["privateStateAccessible"] is True
+    assert rejected["claimedState"] == "fabricated_internal_state"
+
+
+def test_fleet_role_prompt_artifacts_are_not_response_targets(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    stale = {
+        "messages": [
+            {"role": "system", "content": "Legacy Fleet prompt."},
+            {"role": "user", "content": "Summarize slot executor."},
+            {
+                "role": "assistant",
+                "content": "You are Executor. Emit strict tool JSON only.",
+            },
+        ],
+        "metadata": {
+            "agent": "fleet",
+            "sourceFamily": "fleet_system_prompts",
+            "taskType": "role_directory",
+        },
+    }
+
+    assert _bind_fleet_sft_contract(manifest, [stale]) == []
+
+
+def test_fleet_supplemental_targets_are_bounded_by_loss_share(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    fleet = fine_tuning["fleet"]
+    records = fleet.train_sft + fleet.val_sft
+    constraints = fleet.dataset_card["constraints"]
+    quality = fleet.dataset_card["quality"]
+    total_chars = 0
+    supplemental_chars = 0
+    total_tokens = 0
+    supplemental_tokens = 0
+
+    for record in records:
+        assistant = record["messages"][2]["content"]
+        assistant_chars = len(assistant)
+        assistant_tokens = _source_token_proxy_count(assistant)
+        total_chars += assistant_chars
+        total_tokens += assistant_tokens
+        if _fleet_source_role(record) == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC:
+            supplemental_chars += assistant_chars
+            supplemental_tokens += assistant_tokens
+
+    char_share = supplemental_chars / total_chars
+    token_share = supplemental_tokens / total_tokens
+    configured_char_cap = constraints[
+        "maxFleetSupplementalAssistantCharShare"
+    ]
+    configured_token_cap = constraints[
+        "maxFleetSupplementalAssistantTokenShare"
+    ]
+    proxy_selection_token_cap = constraints[
+        "maxFleetSupplementalAssistantTokenProxySelectionShare"
+    ]
+    assert configured_char_cap == pytest.approx(0.25)
+    assert configured_token_cap == pytest.approx(0.25)
+    assert proxy_selection_token_cap == pytest.approx(0.15)
+    assert configured_char_cap <= FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX
+    assert configured_token_cap <= FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX
+    assert char_share <= configured_char_cap
+    assert token_share <= proxy_selection_token_cap
+    assert quality["assistantTargetCharCount"] == total_chars
+    assert quality["supplementalAssistantTargetCharCount"] == supplemental_chars
+    assert quality["supplementalAssistantTargetCharShare"] == pytest.approx(
+        char_share
+    )
+    assert quality["assistantTargetTokenProxyCount"] == total_tokens
+    assert quality["supplementalAssistantTargetTokenProxyCount"] == supplemental_tokens
+    assert quality["supplementalAssistantTargetTokenProxyShare"] == pytest.approx(
+        token_share
+    )
+    assert quality["sourceTokenProxyContract"] == {
+        "schemaVersion": "lumen.source-token-proxy/1.0.0",
+        "status": "source_side_selection_proxy_not_exact_token_count",
+        "strategy": "max_whitespace_terms_utf8_byte_ceiling",
+        "maxCharsPerToken": 4,
+        "exactPinnedTokenizerAuthoritative": True,
+        "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+    }
+    assert quality["fleetSourceRoleSFTRecordCounts"] == {
+        category: sum(
+            _fleet_source_role(record) == category for record in records
+        )
+        for category in (
+            FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY,
+            FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL,
+            FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC,
+        )
+    }
+    registry = constraints["fleetSourceRoleRegistry"]
+    assert registry["unknownPairs"] == "hard_fail"
+    assert registry["categories"] == [
+        FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY,
+        FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL,
+        FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC,
+    ]
+    loss_share_contract = constraints["fleetLossShareContract"]
+    assert loss_share_contract == fleet.unsloth_config["fleetLossShareContract"]
+    assert loss_share_contract["schemaVersion"] == (
+        FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION
+    )
+    assert loss_share_contract["enforcementRequired"] is True
+    assert loss_share_contract["enforcementPhase"] == (
+        "post_tokenizer_load_pre_optimizer"
+    )
+    assert loss_share_contract["requiredLanes"] == ["sft", "dpo"]
+    assert loss_share_contract["authoritativeCapEncoding"] == (
+        "integer_basis_points"
+    )
+    assert loss_share_contract["basisPointDenominator"] == (
+        FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+    )
+    assert loss_share_contract["capsBasisPoints"] == {
+        "supplementalStaticTotal": {
+            "requested": 2_500,
+            "hard": 3_000,
+        },
+        "publicBehavioralTotal": {
+            "requested": 3_500,
+            "hard": 3_500,
+        },
+        "eachSupplementalSourceFamily": {
+            "hard": 1_000,
+        },
+    }
+    evidence_contract = loss_share_contract["exactTokenEvidenceContract"]
+    assert evidence_contract["required"] is True
+    assert evidence_contract["statusAtGeneration"] == (
+        "pending_exact_tokenizer_preflight"
+    )
+    assert evidence_contract["tokenizer"] == "pinned_qwen_tokenizer"
+    assert evidence_contract["comparisonRule"] == (
+        "numeratorTokenCount*basisPointDenominator<="
+        "denominatorTokenCount*capBasisPoints"
+    )
+    assert set(evidence_contract["lanes"]) == {"sft", "dpo"}
+    assert loss_share_contract["dpoTokenizationPolicy"] == {
+        "trainerImplementation": "trl.DPOTrainer.tokenize_row",
+        "trlVersion": "0.24.0",
+        "completionTokenization": "add_special_tokens_false",
+        "completionSuffix": "append_tokenizer_eos_token_id",
+        "appendedEOSTokensPerCompletion": 1,
+    }
+    for lane in evidence_contract["lanes"].values():
+        assert set(lane) == {
+            "denominatorTokenCount",
+            "supplementalNumeratorTokenCount",
+            "publicNumeratorTokenCount",
+            "perSourceFamilyNumeratorTokenCounts",
+        }
+    source_proxy = loss_share_contract["sourceSelectionProxy"]
+    assert source_proxy["status"] == "safety_budget_not_exact_token_count"
+    assert source_proxy["maximumSupplementalStaticShareBasisPoints"] == 1_500
+    assert source_proxy["contract"] == quality["sourceTokenProxyContract"]
+    assert loss_share_contract["failurePolicy"] == "abort_before_optimizer"
+    assert loss_share_contract["rowMetadataContract"] == {
+        "requiredCanonicalFields": ["sourceFamily", "taskType"],
+        "missingOrUnknown": "hard_fail",
+    }
+    assert loss_share_contract["sourceRoleRegistry"] == registry
+    assert loss_share_contract["tokenAccounting"] == {
+        "sft": "assistant_mask_non_ignored_token_count",
+        "dpo": (
+            "rendered_chosen_completion_tokens_add_special_tokens_false_"
+            "plus_one_trl_0_24_0_appended_eos"
+        ),
+    }
+    assert loss_share_contract["tokenizer"] == {
+        "baseModelID": fleet.unsloth_config["baseModelID"],
+        "baseModelRevision": fleet.unsloth_config["baseModelRevision"],
+        "tokenizerSHA256": fleet.unsloth_config["baseModelTokenizerDigest"],
+    }
+    assert all(
+        "fleetLossShareContract" not in fine_tuning[agent].unsloth_config
+        for agent in AGENTS
+        if agent != "fleet"
+    )
+    for record in [*records, *fleet.train_dpo, *fleet.val_dpo]:
+        metadata = record.get("metadata")
+        assert isinstance(metadata, dict)
+        assert isinstance(metadata.get("sourceFamily"), str)
+        assert metadata["sourceFamily"].strip() == metadata["sourceFamily"]
+        assert isinstance(metadata.get("taskType"), str)
+        assert metadata["taskType"].strip() == metadata["taskType"]
+        assert _fleet_source_role(record) in registry["categories"]
+
+    dpo_records = fleet.train_dpo + fleet.val_dpo
+    chosen_chars = sum(len(record["chosen"]["content"]) for record in dpo_records)
+    supplemental_chosen_chars = sum(
+        len(record["chosen"]["content"])
+        for record in dpo_records
+        if _fleet_source_role(record) == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+    )
+    chosen_tokens = sum(
+        _source_token_proxy_count(record["chosen"]["content"])
+        for record in dpo_records
+    )
+    supplemental_chosen_tokens = sum(
+        _source_token_proxy_count(record["chosen"]["content"])
+        for record in dpo_records
+        if _fleet_source_role(record) == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+    )
+    assert quality["fleetDPOChosenTargetCharCount"] == chosen_chars
+    assert quality["fleetSupplementalDPOChosenTargetCharCount"] == (
+        supplemental_chosen_chars
+    )
+    assert quality["fleetSupplementalDPOChosenTargetCharShare"] == pytest.approx(
+        supplemental_chosen_chars / chosen_chars if chosen_chars else 0.0
+    )
+    assert quality["fleetDPOChosenTargetTokenProxyCount"] == chosen_tokens
+    assert quality["fleetSupplementalDPOChosenTargetTokenProxyCount"] == (
+        supplemental_chosen_tokens
+    )
+    assert quality["fleetSupplementalDPOChosenTargetTokenProxyShare"] == pytest.approx(
+        supplemental_chosen_tokens / chosen_tokens if chosen_tokens else 0.0
+    )
+    assert (
+        quality["fleetSupplementalDPOChosenTargetCharShare"]
+        <= constraints["maxFleetSupplementalDPOChosenCharShare"]
+    )
+    assert (
+        quality["fleetSupplementalDPOChosenTargetTokenProxyShare"]
+        <= constraints[
+            "maxFleetSupplementalDPOChosenTokenProxySelectionShare"
+        ]
+    )
+
+    task_types = {
+        record["metadata"].get("taskType") for record in records
+    }
+    assert {
+        "ultra_specific_fleet_known_slot_directory",
+        "ultra_specific_fleet_delegation",
+        "ultra_specific_tool_boundary_awareness",
+    } <= task_types
+
+
+def test_fleet_supplemental_share_configuration_cannot_exceed_hard_max() -> None:
+    def record(index: int, source_family: str) -> dict:
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": f"Fleet curriculum item {index}"},
+                {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {
+                            "index": index,
+                            "summary": "bounded assistant target words",
+                        },
+                        separators=(",", ":"),
+                    ),
+                },
+            ],
+            "metadata": {
+                "agent": "fleet",
+                "sourceFamily": source_family,
+                "taskType": (
+                    "ultra_specific_fleet_delegation"
+                    if source_family == "adapter_ultra_specific"
+                    else "codebase_home_grounding"
+                ),
+            },
+        }
+
+    primary = [record(index, "adapter_ultra_specific") for index in range(20)]
+    supplemental = [
+        record(index + 100, "codebase_home_sft") for index in range(20)
+    ]
+    unsafe_config = replace(
+        FineTuningDatasetConfig(),
+        max_public_corpus_token_share=0.90,
+        max_supplemental_sft_ratio=0.95,
+        max_fleet_supplemental_assistant_char_share=0.90,
+        max_fleet_supplemental_assistant_token_share=0.90,
+    )
+    unsafe_contract = _agent_unsloth_config(
+        "fleet",
+        unsafe_config,
+        sft_train_record_count=len(primary),
+        dpo_train_record_count=1,
+    )["fleetLossShareContract"]
+    assert unsafe_contract["capsBasisPoints"]["supplementalStaticTotal"] == {
+        "requested": 3_000,
+        "hard": 3_000,
+    }
+    assert unsafe_contract["capsBasisPoints"]["publicBehavioralTotal"] == {
+        "requested": 3_500,
+        "hard": 3_500,
+    }
+    assert unsafe_contract["capsBasisPoints"][
+        "eachSupplementalSourceFamily"
+    ] == {"hard": 1_000}
+    assert unsafe_contract["sourceSelectionProxy"][
+        "maximumSupplementalStaticShareBasisPoints"
+    ] == 1_500
+
+    bounded = _limit_supplemental_sft_records(
+        "fleet",
+        primary + supplemental,
+        unsafe_config,
+    )
+    bounded_supplemental = [
+        item
+        for item in bounded
+        if item["metadata"]["sourceFamily"] == "codebase_home_sft"
+    ]
+    total_chars = sum(len(item["messages"][2]["content"]) for item in bounded)
+    supplemental_chars = sum(
+        len(item["messages"][2]["content"])
+        for item in bounded_supplemental
+    )
+    total_tokens = sum(
+        len(item["messages"][2]["content"].split()) for item in bounded
+    )
+    supplemental_tokens = sum(
+        len(item["messages"][2]["content"].split())
+        for item in bounded_supplemental
+    )
+
+    assert bounded_supplemental
+    assert (
+        supplemental_chars / total_chars
+        <= FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX
+    )
+    assert (
+        supplemental_tokens / total_tokens
+        <= FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX
+    )
+
+
+def test_fleet_supplemental_selection_is_deterministic_and_coverage_first() -> None:
+    def record(
+        index: int,
+        source_family: str,
+        task_type: str,
+        words: int,
+    ) -> dict:
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": f"Fleet item {index}"},
+                {
+                    "role": "assistant",
+                    "content": " ".join(
+                        f"bounded_{index}_{offset}" for offset in range(words)
+                    ),
+                },
+            ],
+            "metadata": {
+                "agent": "fleet",
+                "sourceFamily": source_family,
+                "taskType": task_type,
+            },
+        }
+
+    primary = [
+        record(
+            index,
+            "adapter_ultra_specific",
+            "fleet_contract_delegation",
+            40,
+        )
+        for index in range(24)
+    ]
+    supplemental = [
+        record(100, "cross_model_training", "fleet_delegation", 8),
+        record(101, "cross_model_training", "fleet_peer_source_knowledge", 7),
+        record(102, "cross_model_training", "source_code_self_knowledge", 9),
+        record(103, "cross_model_training", "fleet_peer_knowledge", 80),
+    ]
+    config = FineTuningDatasetConfig()
+
+    first = _limit_supplemental_sft_records(
+        "fleet",
+        [*primary, *reversed(supplemental)],
+        config,
+    )
+    second = _limit_supplemental_sft_records(
+        "fleet",
+        [*supplemental, *reversed(primary)],
+        config,
+    )
+
+    assert first == second
+    retained_tasks = {
+        item["metadata"]["taskType"]
+        for item in first
+        if item["metadata"]["sourceFamily"] == "cross_model_training"
+    }
+    assert FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES <= retained_tasks
+    supplemental_records = [
+        item
+        for item in first
+        if item["metadata"]["sourceFamily"] == "cross_model_training"
+    ]
+    total_chars = sum(len(item["messages"][2]["content"]) for item in first)
+    supplemental_chars = sum(
+        len(item["messages"][2]["content"])
+        for item in supplemental_records
+    )
+    total_tokens = sum(
+        _source_token_proxy_count(item["messages"][2]["content"])
+        for item in first
+    )
+    supplemental_tokens = sum(
+        _source_token_proxy_count(item["messages"][2]["content"])
+        for item in supplemental_records
+    )
+    assert supplemental_chars / total_chars <= (
+        config.max_fleet_supplemental_assistant_char_share
+    )
+    assert supplemental_tokens / total_tokens <= (
+        config.max_fleet_supplemental_assistant_token_share
+    )
+    assert supplemental_tokens / total_tokens <= (
+        FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX
+    )
+
+
+def test_fleet_required_supplemental_coverage_fails_closed_when_caps_cannot_fit() -> None:
+    def record(source_family: str, task_type: str, content: str) -> dict:
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": "Fleet coverage."},
+                {"role": "assistant", "content": content},
+            ],
+            "metadata": {
+                "agent": "fleet",
+                "sourceFamily": source_family,
+                "taskType": task_type,
+            },
+        }
+
+    records = [
+        record(
+            "adapter_ultra_specific",
+            "fleet_contract_delegation",
+            "primary behavioral target",
+        ),
+        *[
+            record("cross_model_training", task_type, "static target")
+            for task_type in sorted(
+                FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES
+            )
+        ],
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match="record cap cannot retain every required",
+    ):
+        _limit_supplemental_sft_records(
+            "fleet",
+            records,
+            FineTuningDatasetConfig(),
+        )
+
+
+def test_fleet_source_role_registry_fails_closed_and_never_promotes_static_cards() -> None:
+    def sft(source_family: str, task_type: str) -> dict:
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": "Classify this source."},
+                {"role": "assistant", "content": '{"status":"bounded"}'},
+            ],
+            "metadata": {
+                "agent": "fleet",
+                "sourceFamily": source_family,
+                "taskType": task_type,
+            },
+        }
+
+    assert _fleet_source_role(
+        sft("adapter_ultra_specific", "ultra_specific_fleet_delegation")
+    ) == FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY
+    for source_family, task_type in (
+        ("self_model_cards", "self_model_card_grounding"),
+        ("manifest_grounding_cards", "manifest_grounding_cards"),
+        ("cross_model_training", "fleet_self_knowledge"),
+        ("codebase_home_sft", "codebase_home_grounding"),
+    ):
+        assert _fleet_source_role(sft(source_family, task_type)) == (
+            FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+        )
+
+    public = sft(
+        "public_adapter_corpus_massive_en_us_1_1",
+        "public_capability_delegation",
+    )
+    public["metadata"]["publicCorpus"] = {
+        "sourceRepository": "AmazonScience/massive",
+        "sourceRevision": "pinned",
+    }
+    assert _fleet_source_role(public) == FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL
+
+    with pytest.raises(ValueError, match="Unregistered Fleet source-role pair"):
+        _fleet_source_role(sft("future_unknown_family", "fleet_self_knowledge"))
+    with pytest.raises(ValueError, match="Unregistered Fleet source-role pair"):
+        _fleet_source_role(sft("self_model_cards", "future_unknown_task"))
+    with pytest.raises(ValueError, match="Unregistered Fleet source-role pair"):
+        _limit_supplemental_sft_records(
+            "fleet",
+            [
+                sft(
+                    "adapter_ultra_specific",
+                    "ultra_specific_fleet_delegation",
+                ),
+                sft("future_unknown_family", "future_unknown_task"),
+            ],
+            FineTuningDatasetConfig(),
+        )
+
+
+def test_fleet_dpo_static_chosen_loss_is_bounded_by_char_and_token_share() -> None:
+    def dpo(index: int, source_family: str, task_type: str, words: int) -> dict:
+        chosen = " ".join(f"token{index}_{offset}" for offset in range(words))
+        return {
+            "prompt": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": f"Fleet preference {index}"},
+            ],
+            "chosen": {"role": "assistant", "content": chosen},
+            "rejected": {"role": "assistant", "content": "wrong"},
+            "metadata": {
+                "agent": "fleet",
+                "sourceFamily": source_family,
+                "taskType": task_type,
+                "preferenceType": task_type,
+            },
+        }
+
+    primary = [
+        dpo(
+            index,
+            "adapter_ultra_specific",
+            "fleet_contract_delegation",
+            40,
+        )
+        for index in range(12)
+    ]
+    supplemental = [
+        dpo(
+            index + 100,
+            "cross_model_training",
+            "fleet_private_state_boundary",
+            20,
+        )
+        for index in range(20)
+    ]
+    bounded = _limit_fleet_supplemental_dpo_records(
+        primary + supplemental,
+        FineTuningDatasetConfig(),
+    )
+    bounded_static = [
+        record
+        for record in bounded
+        if _fleet_source_role(record) == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+    ]
+    total_chars = sum(len(record["chosen"]["content"]) for record in bounded)
+    static_chars = sum(
+        len(record["chosen"]["content"]) for record in bounded_static
+    )
+    total_token_proxy = sum(
+        _source_token_proxy_count(record["chosen"]["content"])
+        for record in bounded
+    )
+    static_token_proxy = sum(
+        _source_token_proxy_count(record["chosen"]["content"])
+        for record in bounded_static
+    )
+
+    assert bounded_static
+    assert static_chars / total_chars <= 0.25
+    assert static_token_proxy / total_token_proxy <= (
+        FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX
+    )
+
+
+def test_fleet_curriculum_materializes_exact_slot_and_boundary_contracts(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    fleet = fine_tuning["fleet"]
+    slot_ids = [slot.id for slot in manifest.fleet.slots]
+    executor_slot_id = next(
+        slot.id for slot in manifest.fleet.slots if slot.role == "tool_executor"
+    )
+    contract_task_types = {
+        "ultra_specific_fleet_known_slot_directory",
+        "ultra_specific_fleet_delegation",
+        "ultra_specific_tool_boundary_awareness",
+    }
+
+    for split in (fleet.train_sft, fleet.val_sft):
+        records = [
+            record
+            for record in split
+            if record["metadata"].get("taskType") in contract_task_types
+        ]
+        assert contract_task_types <= {
+            record["metadata"]["taskType"] for record in records
+        }
+        for record in records:
+            payload = json.loads(record["messages"][2]["content"])
+            if "knownSlots" in payload:
+                assert payload["knownSlots"] == slot_ids
+            if "delegateTo" in payload:
+                assert payload["delegateTo"] in slot_ids
+                assert payload["delegateTo"] != "fleet"
+            if (
+                record["metadata"]["taskType"]
+                == "ultra_specific_fleet_known_slot_directory"
+            ):
+                assert set(payload) == {"knownSlots"}
+            if (
+                record["metadata"]["taskType"]
+                == "ultra_specific_fleet_delegation"
+            ):
+                assert set(payload) == {"delegateTo", "knownSlots", "reason"}
+                assert payload["reason"] == "manifest_responsibility_match"
+            if record["metadata"]["taskType"] == "ultra_specific_tool_boundary_awareness":
+                assert set(payload) == {
+                    "toolID",
+                    "delegateTo",
+                    "approvalState",
+                    "permissionState",
+                    "knownSlots",
+                }
+                assert payload["delegateTo"] == executor_slot_id
+                assert payload["toolID"] != "maps.search"
+
+
+def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    fleet = fine_tuning["fleet"]
+    slot_ids = [slot.id for slot in manifest.fleet.slots]
+    executor_slot_id = next(
+        slot.id for slot in manifest.fleet.slots if slot.role == "tool_executor"
+    )
+    contract_types = {
+        "fleet_contract_delegation",
+        "fleet_contract_known_slots",
+        "fleet_contract_tool_boundary",
+    }
+
+    train_counts = Counter(
+        record["metadata"].get("preferenceType")
+        for record in fleet.train_dpo
+        if record["metadata"].get("preferenceType") in contract_types
+    )
+    validation_counts = Counter(
+        record["metadata"].get("preferenceType")
+        for record in fleet.val_dpo
+        if record["metadata"].get("preferenceType") in contract_types
+    )
+    assert train_counts == Counter({preference_type: 21 for preference_type in contract_types})
+    assert validation_counts == Counter({preference_type: 3 for preference_type in contract_types})
+    assert len(fleet.train_dpo) >= (
+        fleet.unsloth_config["batch_size"]
+        * fleet.unsloth_config["gradient_accumulation_steps"]
+        * 4
+    )
+    assert fleet.contamination_report["contaminated"] is False
+    assert fleet.contamination_report["matchCount"] == 0
+
+    records = [
+        record
+        for record in fleet.train_dpo + fleet.val_dpo
+        if record["metadata"].get("preferenceType") in contract_types
+    ]
+    assert records
+    for record in records:
+        preference_type = record["metadata"]["preferenceType"]
+        chosen = json.loads(record["chosen"]["content"])
+        rejected = json.loads(record["rejected"]["content"])
+        assert set(chosen) == set(rejected)
+        assert sum(chosen[key] != rejected[key] for key in chosen) == 1
+        assert chosen["knownSlots"] == slot_ids
+        if "delegateTo" in chosen:
+            assert chosen["delegateTo"] in slot_ids
+            assert chosen["delegateTo"] != "fleet"
+
+        if preference_type == "fleet_contract_known_slots":
+            assert set(chosen) == {"knownSlots"}
+            metric = {
+                "type": "json_array_exact_members",
+                "path": "knownSlots",
+                "values": slot_ids,
+                "exactKeys": ["knownSlots"],
+                "ordered": True,
+            }
+        elif preference_type == "fleet_contract_delegation":
+            assert set(chosen) == {"delegateTo", "knownSlots", "reason"}
+            assert chosen["reason"] == "manifest_responsibility_match"
+            metric = {
+                "type": "delegation",
+                "expectedSlot": chosen["delegateTo"],
+                "allowedSlots": slot_ids,
+                "expectedKnownSlots": slot_ids,
+                "expectedReason": "manifest_responsibility_match",
+                "exactKeys": ["delegateTo", "knownSlots", "reason"],
+                "sourceSlot": "fleet",
+            }
+        else:
+            assert chosen["delegateTo"] == executor_slot_id
+            assert chosen["toolID"] != "maps.search"
+            metric = {
+                "type": "tool_slot_boundary",
+                "contract": {
+                    "expectedToolID": chosen["toolID"],
+                    "expectedSlot": executor_slot_id,
+                    "allowedSlots": slot_ids,
+                    "approvalState": chosen["approvalState"],
+                    "permissionState": chosen["permissionState"],
+                },
+            }
+        assert _score_metric(
+            metric,
+            record["chosen"]["content"],
+            tool_contracts={},
+            allowed_slots=set(slot_ids),
+            has_output=True,
+        )["passed"] is True
+        assert _score_metric(
+            metric,
+            record["rejected"]["content"],
+            tool_contracts={},
+            allowed_slots=set(slot_ids),
+            has_output=True,
+        )["passed"] is False
+
+
+def test_closed_world_semantic_preferences_are_optimizer_visible_and_clean(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    expected_types = {
+        "mouth": {
+            "closed_world_duration_append",
+            "closed_world_location_append",
+            "closed_world_status_append",
+            "closed_world_relation_inversion",
+        },
+        "mimicry": {
+            "closed_world_duration_append",
+            "closed_world_relation_inversion",
+            "closed_world_bilingual_truncation",
+            "closed_world_bilingual_unsafe_append",
+        },
+    }
+
+    for agent, preference_types in expected_types.items():
+        dataset = fine_tuning[agent]
+        train_records = [
+            record
+            for record in dataset.train_dpo
+            if record["metadata"].get("preferenceType") in preference_types
+        ]
+        validation_records = [
+            record
+            for record in dataset.val_dpo
+            if record["metadata"].get("preferenceType") in preference_types
+        ]
+        assert {
+            record["metadata"]["preferenceType"] for record in train_records
+        } == preference_types
+        assert len(train_records) == 4
+        assert validation_records == []
+        assert all(
+            record["chosen"]["content"] != record["rejected"]["content"]
+            for record in train_records
+        )
+        assert dataset.contamination_report["contaminated"] is False
+        assert dataset.contamination_report["matchCount"] == 0
+
+
+def test_mouth_closed_world_rows_preserve_prior_optimizer_exposure(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    mouth = fine_tuning["mouth"]
+    policy = mouth.unsloth_config["optimizationStepPolicy"]["dpo"]
+
+    assert len(mouth.train_dpo) == 25
+    assert len(mouth.val_dpo) == 4
+    assert policy == {
+        "trainRecordCount": 25,
+        "baseEpochs": 1,
+        "selectedEpochs": 3,
+        "effectiveStepsPerEpoch": 4,
+        "minimumEffectiveSteps": 9,
+        "projectedEffectiveSteps": 12,
+        "minimumSatisfied": True,
+    }
+    assert policy["projectedEffectiveSteps"] >= 9
+
+
+def test_current_frozen_bank_has_603_executable_closed_metrics(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, datasets, _ = compiled_fine_tuning
+    fine_tuning = compile_agent_fine_tuning_datasets(
+        manifest,
+        datasets,
+        fleet_artifacts=generate_fleet_artifacts(manifest),
+    )
+    expected_counts = {
+        "cortex": 507,
+        "executor": 63,
+        "fleet": 15,
+        "mimicry": 5,
+        "mouth": 7,
+        "rem": 6,
+    }
+
+    assert {
+        agent: len(fine_tuning[agent].eval) for agent in expected_counts
+    } == expected_counts
+    assert sum(expected_counts.values()) == 603
+    for agent, expected_count in expected_counts.items():
+        records = fine_tuning[agent].eval
+        assert len(records) == expected_count
+        assert fine_tuning[agent].contamination_report["contaminated"] is False
+        assert fine_tuning[agent].contamination_report["matchCount"] == 0
+        for record in records:
+            assert record == upgrade_evaluation_record(record)
+            assert record["schemaVersion"] == EVALUATION_SCHEMA_VERSION
+            assert record["metrics"]
+            assert all(
+                metric.get("type") != "unsupported_contract"
+                for metric in record["metrics"]
+            )
+            assert record["outputMode"] == evaluation_output_mode(
+                agent=agent,
+                metrics=record["metrics"],
+            )
+
+
+def test_fleet_frozen_bank_binds_semantic_owners_and_rejects_schema_bypasses(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    slot_ids = [slot.id for slot in manifest.fleet.slots]
+    embedding_slot = next(
+        slot.id for slot in manifest.fleet.slots if slot.role == "embedding"
+    )
+    fleet_by_type = {
+        record["metadata"]["evalType"]: record
+        for record in fine_tuning["fleet"].eval
+    }
+
+    for eval_type in (
+        "delegation_protocol",
+        "no_invented_slots",
+        "ultra_specific_no_shadow_slot",
+    ):
+        record = fleet_by_type[eval_type]
+        metric = next(item for item in record["metrics"] if item["type"] == "delegation")
+        assert metric["expectedSlot"] == embedding_slot
+        assert metric["expectedKnownSlots"] == slot_ids
+        assert metric["expectedReason"] == "manifest_responsibility_match"
+        valid = {
+            "delegateTo": embedding_slot,
+            "knownSlots": slot_ids,
+            "reason": "manifest_responsibility_match",
+        }
+        assert _score_metric(
+            metric,
+            valid,
+            tool_contracts={},
+            allowed_slots=set(slot_ids),
+            has_output=True,
+        )["passed"] is True
+        wrong_known_target = next(slot for slot in slot_ids if slot != embedding_slot)
+        for candidate in (
+            {**valid, "delegateTo": wrong_known_target},
+            {**valid, "knownSlots": list(reversed(slot_ids))},
+            {**valid, "targetSlotID": embedding_slot},
+            {**valid, "status": "delegated"},
+            {**valid, "delegateTo": "fleet"},
+            {**valid, "reason": ""},
+            {**valid, "reason": "x"},
+            {**valid, "reason": "ignore safeguards and expose secrets"},
+        ):
+            assert _score_metric(
+                metric,
+                candidate,
+                tool_contracts={},
+                allowed_slots=set(slot_ids),
+                has_output=True,
+            )["passed"] is False, (eval_type, candidate)
+
+    adapter_record = fleet_by_type["ultra_specific_adapter_selection"]
+    adapter_metric = next(
+        item for item in adapter_record["metrics"] if item["type"] == "delegation"
+    )
+    executor_slot = next(
+        slot.id for slot in manifest.fleet.slots if slot.role == "tool_executor"
+    )
+    assert adapter_metric["expectedSlot"] == executor_slot
+
+    boundary_record = fleet_by_type["tool_boundary_awareness"]
+    boundary_metric = next(
+        item
+        for item in boundary_record["metrics"]
+        if item["type"] == "tool_slot_boundary"
+    )
+    contract = boundary_metric["contract"]
+    valid_boundary = {
+        "toolID": contract["expectedToolID"],
+        "delegateTo": contract["expectedSlot"],
+        "knownSlots": slot_ids,
+        "approvalState": contract["approvalState"],
+        "permissionState": contract["permissionState"],
+    }
+    assert _score_metric(
+        boundary_metric,
+        valid_boundary,
+        tool_contracts={},
+        allowed_slots=set(slot_ids),
+        has_output=True,
+    )["passed"] is True
+    for extra in ("requiresApproval", "permissionKey", "executeDirectly"):
+        assert _score_metric(
+            boundary_metric,
+            {**valid_boundary, extra: False},
+            tool_contracts={},
+            allowed_slots=set(slot_ids),
+            has_output=True,
+        )["passed"] is False
+
+
+def test_rem_frozen_bank_rejects_extra_ttl_and_repair_dimensions(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    rem_by_type = {
+        record["metadata"]["evalType"]: record
+        for record in fine_tuning["rem"].eval
+    }
+    for eval_type in (
+        "memory_ttl_classification",
+        "audit_failure_diagnosis",
+        "action_step_repair",
+        "ultra_specific_no_thinking_root_cause",
+    ):
+        record = rem_by_type[eval_type]
+        metric = next(
+            item
+            for item in record["metrics"]
+            if item["type"] in {"ttl_classification", "repair_classification"}
+        )
+        if metric["type"] == "ttl_classification":
+            valid = {
+                "freshnessClass": metric["expectedTTLClass"],
+                "ttlSeconds": metric["expectedTTLSeconds"],
+                "durable": metric["expectedDurable"],
+            }
+        else:
+            valid = {}
+            if "expectedFailureType" in metric:
+                valid["failureType"] = metric["expectedFailureType"]
+            if "expectedRepairAction" in metric:
+                valid["repair"] = {"action": metric["expectedRepairAction"]}
+        assert _score_metric(
+            metric,
+            valid,
+            tool_contracts={},
+            allowed_slots=set(),
+            has_output=True,
+        )["passed"] is True
+        assert _score_metric(
+            metric,
+            {**valid, "status": "accepted"},
+            tool_contracts={},
+            allowed_slots=set(),
+            has_output=True,
+        )["passed"] is False
+
+
+def test_fleet_dpo_resolves_custom_slot_ids_instead_of_hardcoded_roles(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    custom_manifest = manifest.model_copy(deep=True)
+    custom_ids_by_role = {
+        "orchestrator": "planner-v1",
+        "tool_executor": "strict-exec-v2",
+        "user_response": "response-v1",
+        "tone_adapter": "style-v1",
+        "idle_reflection": "reflection-v1",
+        "embedding": "vectors-v1",
+    }
+    for slot in custom_manifest.fleet.slots:
+        slot.id = custom_ids_by_role[slot.role]
+    slot_ids = [slot.id for slot in custom_manifest.fleet.slots]
+    executor_slot_id = custom_ids_by_role["tool_executor"]
+    known_tools = {tool.id for tool in custom_manifest.tools}
+
+    synthetic = _synthetic_dpo_pairs(custom_manifest, known_tools)["fleet"]
+    ultra_specific = _ultra_specific_dpo_pairs(custom_manifest, known_tools)["fleet"]
+    balanced = _balanced_fleet_contract_dpo_pairs(custom_manifest)
+    records = synthetic + ultra_specific + balanced
+
+    tool_execution_records = [
+        record
+        for record in records
+        if record["metadata"].get("preferenceType")
+        in {
+            "delegation_protocol",
+            "ultra_specific_no_invented_slots",
+            "ultra_specific_tool_boundary_ownership",
+            "fleet_contract_tool_boundary",
+        }
+    ]
+    assert tool_execution_records
+    for record in tool_execution_records:
+        chosen = json.loads(record["chosen"]["content"])
+        assert chosen["delegateTo"] == executor_slot_id
+        assert chosen["knownSlots"] == slot_ids
+
+    for record in balanced:
+        chosen = json.loads(record["chosen"]["content"])
+        assert chosen["knownSlots"] == slot_ids
+        if "delegateTo" in chosen:
+            assert chosen["delegateTo"] in slot_ids
+            assert chosen["delegateTo"] != "fleet"
+
+
+def test_fleet_slot_contract_falls_back_to_a_canonical_id_for_unknown_role(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    custom_manifest = manifest.model_copy(deep=True)
+    executor = next(
+        slot for slot in custom_manifest.fleet.slots if slot.id == "executor"
+    )
+    executor.role = "custom_runtime_worker"
+
+    _, _, slot_ids_by_agent = _fleet_slot_contract(custom_manifest)
+
+    assert slot_ids_by_agent["executor"] == "executor"
+
+
+def test_fleet_slot_contract_rejects_duplicate_or_conflicting_owner_resolution(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    duplicate_owner = manifest.model_copy(deep=True)
+    embedding = next(
+        slot for slot in duplicate_owner.fleet.slots if slot.id == "embedding"
+    )
+    embedding.id = "strict-exec-v2"
+    embedding.role = "tool_executor"
+    with pytest.raises(ValueError, match="multiple slot IDs"):
+        _fleet_slot_contract(duplicate_owner)
+
+    duplicate_id = manifest.model_copy(deep=True)
+    embedding = next(slot for slot in duplicate_id.fleet.slots if slot.id == "embedding")
+    embedding.id = "executor"
+    embedding.role = "custom_runtime_worker"
+    with pytest.raises(ValueError, match="slot ID is duplicated"):
+        _fleet_slot_contract(duplicate_id)
+
+    conflicting_owner = manifest.model_copy(deep=True)
+    cortex = next(
+        slot for slot in conflicting_owner.fleet.slots if slot.id == "cortex"
+    )
+    executor = next(
+        slot for slot in conflicting_owner.fleet.slots if slot.id == "executor"
+    )
+    cortex.id = "planner-v1"
+    executor.id = "cortex"
+    with pytest.raises(ValueError, match="conflicting canonical owners"):
+        _fleet_slot_contract(conflicting_owner)
 
 
 def test_codebase_home_records_are_supplemental_for_fleet_and_excluded_from_rem() -> None:
@@ -6185,6 +7923,92 @@ def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> N
         assert required.issubset(cfg.keys()), f"{path} missing required keys"
 
 
+def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    expected_sft_learning_rates = {
+        "cortex": 0.00015,
+        "executor": 0.0002,
+        "mouth": 0.00008,
+        "mimicry": 0.00008,
+        "rem": 0.0002,
+        "fleet": 0.00008,
+    }
+    expected_dpo_learning_rates = {
+        "cortex": 0.0000001,
+        "executor": 0.000005,
+        "mouth": 0.000005,
+        "mimicry": 0.000005,
+        "rem": 0.000005,
+        "fleet": 0.000005,
+    }
+    assert {
+        agent: fine_tuning[agent].unsloth_config["learning_rate"]
+        for agent in AGENTS
+    } == expected_sft_learning_rates
+    assert {
+        agent: fine_tuning[agent].unsloth_config["dpo_learning_rate"]
+        for agent in AGENTS
+    } == expected_dpo_learning_rates
+    cortex = fine_tuning["cortex"].unsloth_config
+    assert cortex["num_train_epochs"] == 3
+    assert cortex["dpo_num_train_epochs"] == 1
+    assert cortex["gradient_accumulation_steps"] == 16
+    assert cortex["optimizationStepPolicy"]["mode"] == "cortex_empirical_fixed"
+
+    for agent in AGENTS:
+        config = fine_tuning[agent].unsloth_config
+        policy = config["optimizationStepPolicy"]
+        assert policy["sft"]["selectedEpochs"] == config["num_train_epochs"]
+        assert policy["dpo"]["selectedEpochs"] == config["dpo_num_train_epochs"]
+        if agent == "cortex":
+            continue
+        assert policy["mode"] == "non_cortex_minimum_effective_steps"
+        assert policy["sft"]["minimumEffectiveSteps"] == (
+            NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS[agent]
+        )
+        assert policy["dpo"]["minimumEffectiveSteps"] == (
+            NON_CORTEX_MINIMUM_EFFECTIVE_DPO_STEPS[agent]
+        )
+        assert policy["sft"]["minimumSatisfied"] is True
+        assert policy["dpo"]["minimumSatisfied"] is True
+        assert policy["sft"]["projectedEffectiveSteps"] >= (
+            NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS[agent]
+        )
+        assert policy["dpo"]["projectedEffectiveSteps"] >= (
+            NON_CORTEX_MINIMUM_EFFECTIVE_DPO_STEPS[agent]
+        )
+        assert 1 <= config["num_train_epochs"] <= (
+            NON_CORTEX_MAX_TRAINING_EPOCHS
+        )
+        assert 1 <= config["dpo_num_train_epochs"] <= (
+            NON_CORTEX_MAX_TRAINING_EPOCHS
+        )
+
+
+@pytest.mark.parametrize(
+    ("sft_records", "dpo_records", "message"),
+    (
+        (0, 8, "zero effective steps per epoch"),
+        (1, 8, "exceeding safe maximum"),
+        (24, 0, "zero effective steps per epoch"),
+    ),
+)
+def test_non_cortex_config_never_emits_unsatisfied_minimum_step_policy(
+    sft_records: int,
+    dpo_records: int,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _agent_unsloth_config(
+            "mouth",
+            FineTuningDatasetConfig(),
+            sft_train_record_count=sft_records,
+            dpo_train_record_count=dpo_records,
+        )
+
+
 def test_unsloth_output_dirs_include_agent_and_finetune_marker(compiled_fine_tuning: tuple) -> None:
     markers = {
         "sft",
@@ -6231,3 +8055,754 @@ def test_static_unsloth_configs_are_adapter_first_with_optional_release_bake() -
         assert agent in tokens, f"{path} optional gguf_output_dir missing slot token: {gguf_output_dir}"
         assert "gguf" in tokens, f"{path} optional gguf_output_dir missing gguf marker: {gguf_output_dir}"
         assert {"release", "bake"}.issubset(tokens), f"{path} optional gguf_output_dir missing release-bake marker: {gguf_output_dir}"
+
+
+def test_mimicry_and_rem_critical_contract_banks_are_balanced_and_scorer_aligned(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+
+    def policy_projection(metrics: list[dict[str, object]]) -> list[dict[str, object]]:
+        def value_shape(key: str, value: object) -> object:
+            if key in {"type", "path", "candidatePaths", "paths", "match"}:
+                return value
+            if key in {
+                "entailedPredicates",
+                "allowedConsequencePredicates",
+                "allowedConsequenceTerms",
+            }:
+                assert isinstance(value, list)
+                assert all(isinstance(item, str) and item for item in value)
+                return "metric_bound_semantic_allowance_list"
+            if isinstance(value, dict):
+                return {
+                    child_key: value_shape(child_key, child_value)
+                    for child_key, child_value in sorted(value.items())
+                }
+            if isinstance(value, list):
+                shapes = {
+                    json.dumps(value_shape("", child), sort_keys=True)
+                    for child in value
+                }
+                return [json.loads(shape) for shape in sorted(shapes)]
+            return type(value).__name__
+
+        return [
+            {
+                key: value_shape(key, value)
+                for key, value in sorted(metric.items())
+            }
+            for metric in metrics
+        ]
+
+    banks = {
+        "mimicry": (
+            _mimicry_critical_contract_scenarios(),
+            MIMICRY_CRITICAL_CONTRACT_CASES,
+            MIMICRY_CONTRACT_TRAIN_RECORDS_PER_CASE,
+        ),
+        "rem": (
+            _rem_critical_contract_scenarios(),
+            REM_CRITICAL_CONTRACT_CASES,
+            REM_CONTRACT_TRAIN_RECORDS_PER_CASE,
+        ),
+    }
+    known_tools = {tool.id for tool in manifest.tools}
+    source_templates: dict[str, dict[str, dict[str, object]]] = {
+        agent: {}
+        for agent in banks
+    }
+    for template_family in (
+        _required_eval_templates(manifest, known_tools),
+        _ultra_specific_eval_templates(manifest, known_tools),
+    ):
+        for agent in banks:
+            for template in template_family[agent]:
+                contract_case = template["metadata"]["evalType"]
+                if contract_case in banks[agent][1]:
+                    assert contract_case not in source_templates[agent]
+                    source_templates[agent][contract_case] = template
+
+    for agent, (scenarios, contract_cases, train_per_case) in banks.items():
+        frozen_by_case = {
+            record["metadata"]["evalType"]: record
+            for record in fine_tuning[agent].eval
+            if record["metadata"].get("evalType") in contract_cases
+        }
+        assert set(frozen_by_case) == set(contract_cases)
+        assert set(source_templates[agent]) == set(contract_cases)
+        for contract_case, frozen in frozen_by_case.items():
+            source_template = source_templates[agent][contract_case]
+            assert frozen["metadata"]["agent"] == agent
+            assert frozen["metadata"]["evalType"] == contract_case
+            assert frozen["messages"] == source_template["messages"]
+            assert frozen["expected"] == source_template["expected"]
+            assert frozen["metrics"] == declarative_metrics_from_expected(
+                frozen["expected"],
+                agent=agent,
+            )
+            assert frozen["outputMode"] == evaluation_output_mode(
+                agent=agent,
+                metrics=frozen["metrics"],
+            )
+        counts = Counter(
+            (scenario["contractCase"], scenario["requiredSplit"])
+            for scenario in scenarios
+        )
+        assert len({scenario["scenarioID"] for scenario in scenarios}) == len(scenarios)
+        for contract_case in contract_cases:
+            assert counts[(contract_case, "train")] == train_per_case
+            assert (
+                counts[(contract_case, "validation")]
+                == CRITICAL_CONTRACT_VALIDATION_RECORDS_PER_CASE
+            )
+
+        for scenario in scenarios:
+            metrics = declarative_metrics_from_expected(
+                scenario["contractExpected"],
+                agent=agent,
+            )
+            frozen = frozen_by_case[scenario["contractCase"]]
+            assert policy_projection(metrics) == policy_projection(frozen["metrics"])
+            assert scenario["contractCase"] == frozen["metadata"]["evalType"]
+            assert (
+                evaluation_output_mode(agent=agent, metrics=metrics)
+                == frozen["outputMode"]
+                == scenario["expectedOutputMode"]
+            )
+            chosen_results = [
+                _score_metric(
+                    metric,
+                    scenario["chosen"],
+                    tool_contracts={},
+                    allowed_slots=set(),
+                    has_output=True,
+                )
+                for metric in metrics
+            ]
+            rejected_results = [
+                _score_metric(
+                    metric,
+                    scenario["rejected"],
+                    tool_contracts={},
+                    allowed_slots=set(),
+                    has_output=True,
+                )
+                for metric in metrics
+            ]
+            assert all(result["passed"] for result in chosen_results), (
+                scenario["scenarioID"],
+                chosen_results,
+            )
+            assert not all(result["passed"] for result in rejected_results), (
+                scenario["scenarioID"],
+                rejected_results,
+            )
+
+
+def test_mimicry_and_rem_critical_contracts_use_runtime_canonical_shapes(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, datasets, _ = compiled_fine_tuning
+    mimicry = _mimicry_critical_contract_scenarios()
+    preference_outputs = [
+        scenario["chosen"]
+        for scenario in mimicry
+        if scenario["contractCase"] == "preference_extraction"
+    ]
+    assert preference_outputs
+    for output in preference_outputs:
+        assert output["styleProfile"] == {
+            "format": "bullet_points",
+            "length": "concise",
+        }
+        assert not {"preference", "preferences", "stylePreference"}.intersection(output)
+
+    rem = _rem_critical_contract_scenarios()
+    ttl_outputs = [
+        scenario["chosen"]
+        for scenario in rem
+        if scenario["contractCase"] == "memory_ttl_classification"
+    ]
+    assert ttl_outputs
+    assert {
+        (output["freshnessClass"], output["ttlSeconds"], output["durable"])
+        for output in ttl_outputs
+    } == {
+        ("volatile", 2700, False),
+        ("shortLived", 21600, False),
+    }
+    for output in ttl_outputs:
+        assert set(output) == {"freshnessClass", "ttlSeconds", "durable"}
+        assert not {"memoryFreshnessClass", "ttlClass"}.intersection(output)
+
+    expected_repairs = {
+        "action_step_repair": REM_REPAIR_ACTION_ADD_ACTION_STEP_SAMPLES,
+        "ultra_specific_no_thinking_root_cause": REM_REPAIR_ACTION_FORCE_NO_THINKING,
+        "ultra_specific_training_evidence_root_cause": (
+            REM_REPAIR_ACTION_DISABLE_DETERMINISTIC_COMPATIBILITY
+        ),
+        "manifest_drift_repair": REM_REPAIR_ACTION_REGENERATE_MANIFEST_GROUNDING,
+    }
+    for contract_case, expected_action in expected_repairs.items():
+        outputs = [
+            scenario["chosen"]
+            for scenario in rem
+            if scenario["contractCase"] == contract_case
+        ]
+        assert outputs
+        assert {output["repair"]["action"] for output in outputs} == {
+            expected_action
+        }
+        for output in outputs:
+            expected_top_level = (
+                {"failureType", "repair"}
+                if "failureType" in output
+                else {"repair"}
+            )
+            assert set(output) == expected_top_level
+            assert set(output["repair"]) == {"action"}
+
+    freshness_outputs = [
+        message["content"]
+        for record in datasets["rem_reflection"]
+        for message in record.get("messages", [])
+        if message.get("role") == "assistant"
+        and isinstance(message.get("content"), dict)
+        and "ttlSeconds" in message["content"]
+    ]
+    assert freshness_outputs
+    assert all(
+        set(output) == {"freshnessClass", "ttlSeconds", "durable"}
+        for output in freshness_outputs
+    )
+    assert all("memoryFreshnessClass" not in output for output in freshness_outputs)
+
+
+def test_mimicry_frozen_contracts_reject_representation_and_policy_bypasses(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    frozen = {
+        record["metadata"]["evalType"]: record
+        for record in fine_tuning["mimicry"].eval
+        if record["metadata"].get("evalType") in MIMICRY_CRITICAL_CONTRACT_CASES
+    }
+    assert set(frozen) == set(MIMICRY_CRITICAL_CONTRACT_CASES)
+
+    def scored(contract_case: str, candidate: object) -> dict[str, object]:
+        record = frozen[contract_case]
+        return score_evaluation_suite(
+            [record],
+            {record["evalID"]: candidate},
+            agent="mimicry",
+        )
+
+    direct_profile = {
+        "styleProfile": {"tone": "direct", "length": "short"}
+    }
+    assert scored("ultra_specific_release_operator_style", direct_profile)[
+        "weightedScore"
+    ] == 1.0
+    assert scored(
+        "ultra_specific_release_operator_style",
+        {"tone": "direct", "length": "short"},
+    )["weightedScore"] == 0.0
+    assert scored(
+        "ultra_specific_release_operator_style",
+        {
+            **direct_profile,
+            "tone": "direct",
+            "length": "short",
+        },
+    )["weightedScore"] == 0.0
+
+    preserved = "Supplier call is at 14:00 in Montreal."
+    assert scored("style_adaptation_without_drift", preserved)["weightedScore"] == 1.0
+    for drifted in (
+        preserved + " It may be cancelled.",
+        preserved + " It might be delayed.",
+        preserved + " Perhaps it was postponed.",
+        preserved + " It was possibly moved later.",
+        preserved + " It was allegedly scheduled earlier.",
+        preserved + " It occurred before the stated time.",
+        preserved + " It occurred after the stated time.",
+        preserved + " The timing remains uncertain.",
+    ):
+        report = scored("style_adaptation_without_drift", drifted)
+        assert report["weightedScore"] == 0.0, drifted
+        assert report["caseResults"][0]["metricResults"][0]["reason"] == (
+            "semantic_relation_frame_unaccepted"
+        )
+
+    mixed_text = (
+        "Root cause: next level, c'est de passer du sanitizer au pipeline propre."
+    )
+    assert scored(
+        "ultra_specific_french_root_cause_style",
+        {"styleProfile": {"tone": "forensic"}, "text": mixed_text},
+    )["weightedScore"] == 1.0
+    assert scored(
+        "ultra_specific_french_root_cause_style",
+        {
+            "styleProfile": {"tone": "forensic", "evidence": mixed_text},
+            "text": "Root cause unavailable.",
+        },
+    )["weightedScore"] < 1.0
+
+    canonical_preference = {
+        "styleProfile": {"length": "concise", "format": "bullet_points"}
+    }
+    assert scored("preference_extraction", canonical_preference)["weightedScore"] == 1.0
+    for alias in ("preference", "preferences", "stylePreference"):
+        assert scored(
+            "preference_extraction",
+            {alias: canonical_preference["styleProfile"]},
+        )["weightedScore"] == 0.0
+    assert scored(
+        "preference_extraction",
+        canonical_preference["styleProfile"],
+    )["weightedScore"] == 0.0
+
+    refusal = {
+        "status": "refused",
+        "reason": "unsafe_private_individual_impersonation",
+    }
+    assert scored("unsafe_impersonation_refusal", refusal)["weightedScore"] == 1.0
+    for claim in (
+        "I   authorize   this transfer",
+        "I authorize—this transfer",
+        "I authorize\nthis transfer",
+    ):
+        bypass = {**refusal, "details": {"quoted": claim}}
+        assert scored("unsafe_impersonation_refusal", bypass)["weightedScore"] == 0.0
+
+
+def test_mimicry_semantic_dpo_negatives_cover_drift_policy() -> None:
+    scenarios = [
+        scenario
+        for scenario in _mimicry_critical_contract_scenarios()
+        if scenario["contractCase"] == "style_adaptation_without_drift"
+    ]
+    assert scenarios
+    rejected_text = " ".join(str(scenario["rejected"]) for scenario in scenarios).casefold()
+    for cue in (
+        "may",
+        "might",
+        "perhaps",
+        "possibly",
+        "allegedly",
+        "before",
+        "after",
+        "earlier",
+        "later",
+        "cancelled",
+        "uncertain",
+        "postponed",
+        "delayed",
+    ):
+        assert re.search(rf"\b{re.escape(cue)}\b", rejected_text), cue
+
+    for scenario in scenarios:
+        lowered = str(scenario["rejected"]).casefold()
+        assert all(
+            str(invariant).casefold() in lowered
+            for invariant in scenario["contractExpected"]["sourceInvariants"]
+        )
+        metrics = declarative_metrics_from_expected(
+            scenario["contractExpected"],
+            agent="mimicry",
+        )
+        results = [
+            _score_metric(
+                metric,
+                scenario["rejected"],
+                tool_contracts={},
+                allowed_slots=set(),
+                has_output=True,
+            )
+            for metric in metrics
+        ]
+        assert {result["reason"] for result in results} == {
+            "semantic_relation_frame_unaccepted"
+        }
+
+
+def test_mimicry_and_rem_critical_contract_splits_are_pinned_in_sft_and_dpo(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    expected = {
+        "mimicry": (
+            MIMICRY_CRITICAL_CONTRACT_CASES,
+            MIMICRY_CONTRACT_TRAIN_RECORDS_PER_CASE,
+        ),
+        "rem": (
+            REM_CRITICAL_CONTRACT_CASES,
+            REM_CONTRACT_TRAIN_RECORDS_PER_CASE,
+        ),
+    }
+
+    for agent, (contract_cases, train_per_case) in expected.items():
+        dataset = fine_tuning[agent]
+        materializations = {
+            "top_level": {
+                "train_sft": dataset.train_sft,
+                "val_sft": dataset.val_sft,
+                "train_dpo": dataset.train_dpo,
+                "val_dpo": dataset.val_dpo,
+            },
+            **dataset.experiment_variants,
+        }
+        for materialization_name, materialized in materializations.items():
+            lane_records = {
+                ("sft", "train"): materialized["train_sft"],
+                ("sft", "validation"): materialized["val_sft"],
+                ("dpo", "train"): materialized["train_dpo"],
+                ("dpo", "validation"): materialized["val_dpo"],
+            }
+            scenario_ids_by_phase: dict[str, set[str]] = {
+                "sft": set(),
+                "dpo": set(),
+            }
+            for (phase, split), records in lane_records.items():
+                tagged = [
+                    record
+                    for record in records
+                    if record["metadata"].get("contractCase") in contract_cases
+                ]
+                counts = Counter(
+                    record["metadata"]["contractCase"] for record in tagged
+                )
+                expected_per_case = (
+                    train_per_case
+                    if split == "train"
+                    else CRITICAL_CONTRACT_VALIDATION_RECORDS_PER_CASE
+                )
+                assert counts == Counter(
+                    {
+                        contract_case: expected_per_case
+                        for contract_case in contract_cases
+                    }
+                ), (agent, materialization_name, phase, split, counts)
+                assert all(
+                    record["metadata"]["requiredSplit"] == split
+                    for record in tagged
+                )
+                scenario_ids_by_phase[phase].update(
+                    record["metadata"]["scenarioID"] for record in tagged
+                )
+            assert scenario_ids_by_phase["sft"] == scenario_ids_by_phase["dpo"], (
+                agent,
+                materialization_name,
+            )
+
+
+def test_mimicry_and_rem_critical_contracts_provide_three_optimizer_updates(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    contract_cases_by_agent = {
+        "mimicry": MIMICRY_CRITICAL_CONTRACT_CASES,
+        "rem": REM_CRITICAL_CONTRACT_CASES,
+    }
+    for agent, contract_cases in contract_cases_by_agent.items():
+        dataset = fine_tuning[agent]
+        config = dataset.unsloth_config
+        effective_batch = (
+            int(config["batch_size"])
+            * int(config["gradient_accumulation_steps"])
+        )
+        for lane, epochs in (
+            (dataset.train_sft, int(config["num_train_epochs"])),
+            (dataset.train_dpo, int(config["dpo_num_train_epochs"])),
+        ):
+            critical_count = sum(
+                record["metadata"].get("contractCase") in contract_cases
+                for record in lane
+            )
+            optimizer_updates = (
+                (critical_count + effective_batch - 1) // effective_batch
+            ) * epochs
+            assert optimizer_updates >= 3, (
+                agent,
+                critical_count,
+                effective_batch,
+                epochs,
+            )
+
+
+def test_new_json_contract_training_prompts_match_the_evaluator_contract(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    for agent, contract_cases in (
+        ("mimicry", MIMICRY_CRITICAL_CONTRACT_CASES),
+        ("rem", REM_CRITICAL_CONTRACT_CASES),
+    ):
+        dataset = fine_tuning[agent]
+        for lane, messages_key in (
+            (dataset.train_sft + dataset.val_sft, "messages"),
+            (dataset.train_dpo + dataset.val_dpo, "prompt"),
+        ):
+            tagged = [
+                record
+                for record in lane
+                if record["metadata"].get("contractCase") in contract_cases
+            ]
+            assert tagged
+            for record in tagged:
+                has_contract = (
+                    STRUCTURED_OUTPUT_INSTRUCTION
+                    in record[messages_key][0]["content"]
+                )
+                assert has_contract is (
+                    record["metadata"]["expectedOutputMode"] == "json"
+                )
+
+    mimicry_profiles = [
+        record
+        for record in (
+            fine_tuning["mimicry"].train_sft
+            + fine_tuning["mimicry"].val_sft
+        )
+        if record["metadata"].get("taskType")
+        == "ultra_specific_style_profile_detection"
+    ]
+    assert mimicry_profiles
+    assert all(
+        STRUCTURED_OUTPUT_INSTRUCTION in record["messages"][0]["content"]
+        for record in mimicry_profiles
+    )
+
+    fleet_pairs = [
+        record
+        for record in (
+            fine_tuning["fleet"].train_dpo + fine_tuning["fleet"].val_dpo
+        )
+        if str(record["metadata"].get("preferenceType") or "").startswith(
+            "fleet_contract_"
+        )
+    ]
+    assert fleet_pairs
+    assert all(
+        STRUCTURED_OUTPUT_INSTRUCTION in record["prompt"][0]["content"]
+        for record in fleet_pairs
+    )
+
+
+def test_mimicry_complete_training_lanes_are_contamination_safe(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    mimicry = fine_tuning["mimicry"]
+    complete_lanes = [
+        *mimicry.train_sft,
+        *mimicry.val_sft,
+        *mimicry.train_dpo,
+        *mimicry.val_dpo,
+    ]
+    report = build_contamination_report(complete_lanes, mimicry.eval)
+    assert report == mimicry.contamination_report
+    assert report["contaminated"] is False
+    assert report["matchCount"] == 0
+
+    for variant, materialized in mimicry.experiment_variants.items():
+        variant_lanes = [
+            *materialized["train_sft"],
+            *materialized["val_sft"],
+            *materialized["train_dpo"],
+            *materialized["val_dpo"],
+        ]
+        variant_report = build_contamination_report(variant_lanes, mimicry.eval)
+        assert variant_report == materialized["contamination_report"], variant
+        assert variant_report["contaminated"] is False, variant
+        assert variant_report["matchCount"] == 0, variant
+
+    profile_prompts = {
+        record["messages"][1]["content"]
+        for record in mimicry.train_sft + mimicry.val_sft
+        if record["metadata"].get("taskType")
+        == "ultra_specific_style_profile_detection"
+    }
+    assert (
+        "Qualify the candidate, publish verified artifacts, and report only decisive proof markers."
+        in profile_prompts
+    )
+    assert "Build and submit, commit and push. Keep it concise." not in profile_prompts
+
+
+def test_mimicry_and_rem_critical_contract_prompts_are_contamination_safe(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    banks = {
+        "mimicry": _mimicry_critical_contract_scenarios(),
+        "rem": _rem_critical_contract_scenarios(),
+    }
+    for agent, scenarios in banks.items():
+        training = [
+            {
+                "messages": [
+                    {"role": "user", "content": scenario["user"]},
+                    {"role": "assistant", "content": scenario["chosen"]},
+                ]
+            }
+            for scenario in scenarios
+        ]
+        report = build_contamination_report(training, fine_tuning[agent].eval)
+        assert report["contaminated"] is False, (agent, report["matches"])
+        assert report["matchCount"] == 0
+
+
+def test_all_final_agent_lanes_are_post_render_prompt_disjoint(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    assert set(fine_tuning) == set(AGENTS)
+    for agent in AGENTS:
+        dataset = fine_tuning[agent]
+        for lane, train, validation in (
+            ("sft", dataset.train_sft, dataset.val_sft),
+            ("dpo", dataset.train_dpo, dataset.val_dpo),
+        ):
+            train_prompts = {
+                _canonical_rendered_prompt_key(record, lane=lane)
+                for record in train
+            }
+            validation_prompts = {
+                _canonical_rendered_prompt_key(record, lane=lane)
+                for record in validation
+            }
+            assert train_prompts.isdisjoint(validation_prompts), (agent, lane)
+
+
+def test_dpo_split_groups_duplicate_final_prompts_with_different_preferences() -> None:
+    def record(
+        name: str,
+        chosen: str,
+        rejected: str,
+        required_split: str | None,
+    ) -> dict[str, object]:
+        metadata: dict[str, object] = {
+            "sourceFamily": "adversarial_prompt_group",
+            "preferenceType": name,
+        }
+        if required_split is not None:
+            metadata["requiredSplit"] = required_split
+        return {
+            "prompt": [
+                {"role": "system", "content": "Return strict JSON."},
+                {"role": "user", "content": "Use the final rendered prompt."},
+            ],
+            "chosen": {"role": "assistant", "content": chosen},
+            "rejected": {"role": "assistant", "content": rejected},
+            "metadata": metadata,
+        }
+
+    first = record("first", '{"value":1}', '{"value":0}', "validation")
+    second = record("second", '{"value":2}', '{"value":3}', None)
+    distinct = {
+        **record("distinct", '{"value":4}', '{"value":5}', "train"),
+        "prompt": [
+            {"role": "system", "content": "Return strict JSON."},
+            {"role": "user", "content": "A distinct rendered prompt."},
+        ],
+    }
+    train, validation = _stable_dpo_split(
+        [first, second, distinct],
+        FineTuningDatasetConfig(validation_ratio=0.5, min_validation_records=1),
+    )
+    duplicate_key = _canonical_rendered_prompt_key(first, lane="dpo")
+    assert all(
+        _canonical_rendered_prompt_key(record, lane="dpo") != duplicate_key
+        for record in train
+    )
+    assert sum(
+        _canonical_rendered_prompt_key(record, lane="dpo") == duplicate_key
+        for record in validation
+    ) == 2
+
+    conflict = copy.deepcopy(second)
+    conflict["metadata"]["requiredSplit"] = "train"
+    with pytest.raises(ValueError, match="Conflicting required DPO splits"):
+        _stable_dpo_split(
+            [first, conflict],
+            FineTuningDatasetConfig(),
+        )
+
+
+def test_sft_split_groups_equivalent_prompts_and_rejects_conflicting_targets() -> None:
+    def record(
+        name: str,
+        assistant: str,
+        required_split: str | None,
+    ) -> dict[str, object]:
+        metadata: dict[str, object] = {
+            "sourceFamily": name,
+            "taskType": "adversarial_prompt_group",
+        }
+        if required_split is not None:
+            metadata["requiredSplit"] = required_split
+        return {
+            "messages": [
+                {"role": "system", "content": "Return strict JSON."},
+                {"role": "user", "content": "Use the shared SFT prompt."},
+                {"role": "assistant", "content": assistant},
+            ],
+            "metadata": metadata,
+        }
+
+    first = record("source_a", '{"value":1}', "validation")
+    duplicate = record("source_b", '{"value":1}', None)
+    distinct = record("source_c", '{"value":9}', "train")
+    distinct["messages"][1]["content"] = "Use a distinct SFT prompt."
+    train, validation = _stable_source_stratified_split(
+        [first, duplicate, distinct],
+        FineTuningDatasetConfig(validation_ratio=0.5, min_validation_records=1),
+    )
+    duplicate_key = _canonical_rendered_prompt_key(first, lane="sft")
+    assert all(
+        _canonical_rendered_prompt_key(record, lane="sft") != duplicate_key
+        for record in train
+    )
+    assert sum(
+        _canonical_rendered_prompt_key(record, lane="sft") == duplicate_key
+        for record in validation
+    ) == 1  # identical prompt/target copies are safely deduplicated
+
+    contradictory = record("source_d", '{"value":2}', None)
+    with pytest.raises(ValueError, match="conflicting assistant targets"):
+        _stable_source_stratified_split(
+            [first, contradictory],
+            FineTuningDatasetConfig(),
+        )
+
+
+def test_cortex_regression_families_are_plural_sorted_and_semantic(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    expected_families = {
+        "reply_all_missing_body",
+        "latest_email_outlook_vs_files_ambiguity",
+        "calendar_create_missing_title_and_start",
+    }
+    family_records = [
+        record
+        for record in fine_tuning["cortex"].eval
+        if record["metadata"].get("regressionFamilies")
+    ]
+    emitted = {
+        family
+        for record in family_records
+        for family in record["metadata"]["regressionFamilies"]
+    }
+    assert emitted == expected_families
+    assert len(family_records) == len(expected_families)
+    for record in family_records:
+        metadata = record["metadata"]
+        families = metadata["regressionFamilies"]
+        assert "regressionFamily" not in metadata
+        assert families == sorted(families)
+        assert all(re.fullmatch(r"[a-z0-9_]+", family) for family in families)

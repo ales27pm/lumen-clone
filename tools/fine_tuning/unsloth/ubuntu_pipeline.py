@@ -16,6 +16,15 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
+try:
+    from lumen_manifest_crawler.dataset.chat_template_contract import (
+        PINNED_QWEN3_CHAT_TEMPLATE_SHA256,
+    )
+except ImportError:  # pragma: no cover - repository-root module execution.
+    from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.chat_template_contract import (
+        PINNED_QWEN3_CHAT_TEMPLATE_SHA256,
+    )
+
 from tools.fine_tuning.unsloth.training_lineage import (
     DEFAULT_LLAMA_CPP_REVISION,
 )
@@ -89,12 +98,84 @@ NON_CONTROLLED_CONFIG_FIELDS = {
 }
 GGUF_FIXED_HEADER_SIZE = 24
 GGUF_SUPPORTED_VERSIONS = frozenset({2, 3})
+GGUF_CONVERTER_RELATIVE_PATH = Path("convert_lora_to_gguf.py")
 GGUF_READER_RELATIVE_PATH = Path("gguf-py/gguf/scripts/gguf_dump.py")
 GGUF_READER_TIMEOUT_SECONDS = 120
-SUMMARY_SCHEMA_VERSION = "lumen.ubuntu-training-summary/3.0.0"
-UPLOAD_SCHEMA_VERSION = "lumen.ubuntu-training-upload/2.1.0"
+EXPECTED_ADAPTER_GGUF_ARCHITECTURE = "qwen3"
+EXPECTED_ADAPTER_GGUF_GENERAL_TYPE = "adapter"
+EXPECTED_ADAPTER_GGUF_ADAPTER_TYPE = "lora"
+EXPECTED_ADAPTER_GGUF_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
+EXPECTED_ADAPTER_GGUF_BASE_MODEL_REPO_URL = (
+    f"https://huggingface.co/{EXPECTED_ADAPTER_GGUF_BASE_MODEL_ID}"
+)
+ADAPTER_GGUF_SEMANTIC_FIELDS = (
+    "adapterGGUFArchitecture",
+    "adapterGGUFType",
+    "adapterGGUFAdapterType",
+    "adapterGGUFBaseModelID",
+    "adapterGGUFBaseModelRepoURL",
+    "adapterGGUFChatTemplateSource",
+    "adapterGGUFChatTemplateSHA256",
+)
+GGUF_CONVERSION_RECEIPT_SCHEMA_VERSION = (
+    "lumen.gguf-conversion-receipt/1.0.0"
+)
+GGUF_CONVERSION_QUALIFICATION = "attested_converter_execution"
+GGUF_TENSOR_EQUIVALENCE_STATUS = "not_independently_verified"
+GGUF_CONVERSION_SUMMARY_FIELDS = (
+    "adapterGGUFConversionReceipt",
+    "adapterGGUFConversionReceiptSHA256",
+    "adapterGGUFConversionQualification",
+    "adapterGGUFTensorEquivalenceStatus",
+)
+GGUF_CONVERSION_RECEIPT_FIELDS = (
+    "schema",
+    "agent",
+    "qualification",
+    "tensorEquivalenceStatus",
+    "adapterGGUF",
+    "adapterGGUFSHA256",
+    "adapterGGUFSizeBytes",
+    *ADAPTER_GGUF_SEMANTIC_FIELDS,
+    "preferenceAdapter",
+    "preferenceAdapterSHA256",
+    "preferenceAdapterManifestFileSHA256",
+    "preferenceFinalizedVariantManifest",
+    "preferenceFinalizedVariantManifestSHA256",
+    "preferenceFinalizedVariantManifestFileSHA256",
+    "config",
+    "configSHA256",
+    "baseModelID",
+    "baseModelRevision",
+    "baseModelIndexDigest",
+    "baseModelIndexShardBindingSHA256",
+    "baseModelArtifactDigest",
+    "baseModelTokenizerDigest",
+    "trainingContainerImageDigest",
+    "ubuntuOrchestrationCodeSHA256",
+    "ubuntuSourceIntegritySHA256",
+    "llamaCppRevision",
+    "converterPath",
+    "converterGitBlobSHA1",
+    "converterFileSHA256",
+    "readerPath",
+    "readerGitBlobSHA1",
+    "readerFileSHA256",
+    "conversionReceiptSHA256",
+)
+SUMMARY_SCHEMA_VERSION = "lumen.ubuntu-training-summary/3.2.0"
+UPLOAD_SCHEMA_VERSION = "lumen.ubuntu-training-upload/2.3.0"
+UPLOAD_INTENT_SCHEMA_VERSION = "lumen.ubuntu-upload-intent/1.0.0"
+UPLOAD_ATTEMPT_SCHEMA_VERSION = "lumen.ubuntu-upload-attempt/1.0.0"
+UPLOAD_COMMIT_SCHEMA_VERSION = "lumen.ubuntu-upload-commit/1.0.0"
+UPLOAD_INTENT_FILENAME = ".lumen-upload-intent.json"
+UPLOAD_ATTEMPT_FILENAME = ".lumen-upload-attempt.json"
+UPLOAD_COMMIT_FILENAME = ".lumen-upload-commit.json"
+UPLOAD_REMOTE_MARKER_FILENAME = ".lumen-upload-intent.json"
+PREPARATION_OWNER_SCHEMA_VERSION = "lumen.ubuntu-preparation-owner/1.1.0"
+PREPARATION_OWNER_FILENAME = ".lumen-preparation-owner.json"
 EXECUTION_PLAN_SCHEMA_VERSION = "lumen.ubuntu-training-execution-plan/1.0.0"
-RUN_SCHEMA_VERSION = "lumen.ubuntu-training-run/3.0.0"
+RUN_SCHEMA_VERSION = "lumen.ubuntu-training-run/3.1.0"
 _GGUF_READER_FD_BOOTSTRAP = """
 import os
 import sys
@@ -127,6 +208,7 @@ exec(compile(source, reader_path, "exec"), namespace, namespace)
 class _VerifiedGGUFReaderScript:
     path: Path
     git_blob_sha1: str
+    file_sha256: str
 
 
 @dataclass(frozen=True)
@@ -535,43 +617,176 @@ def _git_output(checkout: Path, *arguments: str) -> str:
         ) from exc
 
 
-def _verified_pinned_gguf_reader_script(
+def _verified_pinned_gguf_script(
     run_root: Path,
+    *,
+    relative_path: Path,
+    label: str,
 ) -> _VerifiedGGUFReaderScript:
     checkout = run_root / "llama.cpp"
-    reader_script = checkout / GGUF_READER_RELATIVE_PATH
+    script = checkout / relative_path
     if checkout.is_symlink() or not checkout.is_dir():
         raise RuntimeError(
-            f"Missing regular pinned llama.cpp checkout for GGUF verification: {checkout}"
+            f"Missing regular pinned llama.cpp checkout for {label}: {checkout}"
         )
-    if reader_script.is_symlink() or not reader_script.is_file():
-        raise RuntimeError(
-            f"Missing regular pinned llama.cpp GGUF reader: {reader_script}"
-        )
-    if checkout.resolve() not in reader_script.resolve().parents:
-        raise RuntimeError(f"Pinned GGUF reader escapes its checkout: {reader_script}")
+    if script.is_symlink() or not script.is_file():
+        raise RuntimeError(f"Missing regular pinned llama.cpp {label}: {script}")
+    if checkout.resolve() not in script.resolve().parents:
+        raise RuntimeError(f"Pinned {label} escapes its checkout: {script}")
     head = _git_output(checkout, "rev-parse", "HEAD")
     if head != DEFAULT_LLAMA_CPP_REVISION:
-        raise RuntimeError("llama.cpp GGUF reader revision drifted")
+        raise RuntimeError(f"llama.cpp {label} revision drifted")
     if _git_output(
         checkout,
         "status",
         "--porcelain=v1",
         "--untracked-files=all",
     ):
-        raise RuntimeError("llama.cpp GGUF reader checkout is dirty")
-    relative_reader = GGUF_READER_RELATIVE_PATH.as_posix()
+        raise RuntimeError(f"llama.cpp {label} checkout is dirty")
+    relative_script = relative_path.as_posix()
     expected_blob = _git_output(
         checkout,
         "rev-parse",
-        f"HEAD:{relative_reader}",
+        f"HEAD:{relative_script}",
     )
     if re.fullmatch(r"[0-9a-f]{40}", expected_blob) is None:
-        raise RuntimeError("llama.cpp GGUF reader has an invalid pinned blob identity")
+        raise RuntimeError(f"llama.cpp {label} has an invalid pinned blob identity")
+    handle, script_stat = _open_regular_readonly(script, label=f"Pinned {label}")
+    try:
+        payload = _read_descriptor_bytes(handle)
+        if _git_blob_sha1(payload) != expected_blob:
+            raise RuntimeError(f"llama.cpp {label} drifted from the pinned revision")
+        _require_stable_descriptor(handle, script_stat, label=f"Pinned {label}")
+        _require_path_matches_descriptor(script, script_stat, label=f"Pinned {label}")
+    finally:
+        handle.close()
     return _VerifiedGGUFReaderScript(
-        path=reader_script,
+        path=script,
         git_blob_sha1=expected_blob,
+        file_sha256=hashlib.sha256(payload).hexdigest(),
     )
+
+
+def _verified_pinned_gguf_reader_script(
+    run_root: Path,
+) -> _VerifiedGGUFReaderScript:
+    return _verified_pinned_gguf_script(
+        run_root,
+        relative_path=GGUF_READER_RELATIVE_PATH,
+        label="GGUF reader",
+    )
+
+
+def _verified_pinned_gguf_converter_script(
+    run_root: Path,
+) -> _VerifiedGGUFReaderScript:
+    return _verified_pinned_gguf_script(
+        run_root,
+        relative_path=GGUF_CONVERTER_RELATIVE_PATH,
+        label="LoRA-to-GGUF converter",
+    )
+
+
+def _gguf_scalar_metadata_value(
+    metadata: Mapping[str, Any],
+    key: str,
+    *,
+    expected_type: str,
+    path: Path,
+) -> Any:
+    field = metadata.get(key)
+    if (
+        not isinstance(field, Mapping)
+        or set(field) != {"index", "type", "offset", "value"}
+        or type(field.get("index")) is not int
+        or field["index"] < 0
+        or field.get("type") != expected_type
+        or type(field.get("offset")) is not int
+        or field["offset"] < 0
+    ):
+        raise RuntimeError(
+            "Pinned llama.cpp GGUF reader returned invalid scalar metadata "
+            f"for {key}: {path}"
+        )
+    return field["value"]
+
+
+def _verified_adapter_gguf_semantics(
+    metadata: Mapping[str, Any],
+    *,
+    path: Path,
+) -> dict[str, Any]:
+    required_strings = {
+        "general.architecture": EXPECTED_ADAPTER_GGUF_ARCHITECTURE,
+        "general.type": EXPECTED_ADAPTER_GGUF_GENERAL_TYPE,
+        "adapter.type": EXPECTED_ADAPTER_GGUF_ADAPTER_TYPE,
+        "general.base_model.0.repo_url": (
+            EXPECTED_ADAPTER_GGUF_BASE_MODEL_REPO_URL
+        ),
+    }
+    verified_strings: dict[str, str] = {}
+    for key, expected in required_strings.items():
+        observed = _gguf_scalar_metadata_value(
+            metadata,
+            key,
+            expected_type="STRING",
+            path=path,
+        )
+        if not isinstance(observed, str) or observed != expected:
+            raise RuntimeError(
+                "Adapter GGUF semantic metadata drifted from the pinned "
+                f"Qwen3 contract for {key}: {path}"
+            )
+        verified_strings[key] = observed
+
+    base_model_count = _gguf_scalar_metadata_value(
+        metadata,
+        "general.base_model.count",
+        expected_type="UINT32",
+        path=path,
+    )
+    if type(base_model_count) is not int or base_model_count != 1:
+        raise RuntimeError(
+            "Adapter GGUF semantic metadata must bind exactly one base model: "
+            f"{path}"
+        )
+
+    template_field = metadata.get("tokenizer.chat_template")
+    if template_field is None:
+        chat_template_source = "shared_base"
+        chat_template_sha256: str | None = None
+    else:
+        chat_template = _gguf_scalar_metadata_value(
+            metadata,
+            "tokenizer.chat_template",
+            expected_type="STRING",
+            path=path,
+        )
+        if not isinstance(chat_template, str) or not chat_template:
+            raise RuntimeError(
+                f"Adapter GGUF contains an invalid chat template: {path}"
+            )
+        chat_template_sha256 = hashlib.sha256(
+            chat_template.encode("utf-8")
+        ).hexdigest()
+        if chat_template_sha256 != PINNED_QWEN3_CHAT_TEMPLATE_SHA256:
+            raise RuntimeError(
+                "Adapter GGUF chat template drifted from the pinned Qwen3 "
+                f"contract: {path}"
+            )
+        chat_template_source = "adapter_gguf"
+
+    return {
+        "adapterGGUFArchitecture": verified_strings["general.architecture"],
+        "adapterGGUFType": verified_strings["general.type"],
+        "adapterGGUFAdapterType": verified_strings["adapter.type"],
+        "adapterGGUFBaseModelID": EXPECTED_ADAPTER_GGUF_BASE_MODEL_ID,
+        "adapterGGUFBaseModelRepoURL": verified_strings[
+            "general.base_model.0.repo_url"
+        ],
+        "adapterGGUFChatTemplateSource": chat_template_source,
+        "adapterGGUFChatTemplateSHA256": chat_template_sha256,
+    }
 
 
 def _verify_gguf_with_reader(
@@ -581,7 +796,7 @@ def _verify_gguf_with_reader(
     reader_script: Path | _VerifiedGGUFReaderScript,
     tensor_count: int,
     metadata_kv_count: int,
-) -> None:
+) -> dict[str, Any]:
     if isinstance(reader_script, _VerifiedGGUFReaderScript):
         reader_path = reader_script.path
         expected_reader_blob = reader_script.git_blob_sha1
@@ -676,6 +891,7 @@ def _verify_gguf_with_reader(
         raise RuntimeError(
             f"Pinned llama.cpp GGUF reader evidence mismatches the fixed header: {path}"
         )
+    return _verified_adapter_gguf_semantics(metadata, path=path)
 
 
 def verify_gguf_artifact(
@@ -721,7 +937,7 @@ def verify_gguf_artifact(
             file_stat,
             label="GGUF artifact",
         )
-        _verify_gguf_with_reader(
+        semantic_verification = _verify_gguf_with_reader(
             path,
             artifact_handle=handle,
             reader_script=reader_script,
@@ -746,6 +962,7 @@ def verify_gguf_artifact(
         "adapterGGUF": str(path),
         "adapterGGUFSHA256": digest.hexdigest(),
         "adapterGGUFSizeBytes": file_stat.st_size,
+        **semantic_verification,
     }
 
 
@@ -762,6 +979,22 @@ def read_object(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"Expected a JSON object: {path}")
     return value
+
+
+def _fsync_directory(path: Path, *, label: str) -> None:
+    try:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError as exc:
+        raise RuntimeError(f"Unable to durably commit {label}") from exc
 
 
 def write_object(path: Path, value: Mapping[str, Any]) -> None:
@@ -784,6 +1017,7 @@ def write_object(path: Path, value: Mapping[str, Any]) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary, path)
         temporary = None
+        _fsync_directory(path.parent, label=f"JSON object {path}")
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -926,6 +1160,129 @@ def validate_run_root(run_root: Path, *, allowed_parent: Path) -> Path:
     if resolved == Path("/") or len(resolved.parts) < 3:
         raise RuntimeError(f"Unsafe run root: {resolved}")
     return resolved
+
+
+def _private_directory_identity(
+    path: Path,
+    *,
+    label: str,
+    require_parent_device: bool = True,
+) -> str:
+    """Return a stable identity for one private process-owned directory.
+
+    The identity is deliberately made from the inode metadata Docker preserves
+    across a bind mount.  Callers can therefore bind the host-side directory to
+    the launch contract and have the inner launcher prove it received that
+    exact inode, rather than merely a directory with the expected spelling.
+    """
+
+    try:
+        observed = os.stat(path, follow_symlinks=False)
+        parent = os.stat(path.parent, follow_symlinks=False)
+    except OSError as exc:
+        raise RuntimeError(f"{label} is unavailable: {path}") from exc
+    if (
+        path.is_symlink()
+        or not stat.S_ISDIR(observed.st_mode)
+        or observed.st_uid != os.geteuid()
+        or observed.st_gid != os.getegid()
+        or stat.S_IMODE(observed.st_mode) != 0o700
+        or (require_parent_device and observed.st_dev != parent.st_dev)
+    ):
+        raise RuntimeError(
+            f"{label} must be a same-filesystem process-owned mode-0700 "
+            f"regular directory: {path}"
+        )
+    return (
+        f"{observed.st_dev}:{observed.st_ino}:{observed.st_uid}:"
+        f"{observed.st_gid}:{stat.S_IMODE(observed.st_mode):04o}"
+    )
+
+
+def initialize_bind_root(
+    run_root: Path,
+    *,
+    allowed_parent: Path,
+    create_if_missing: bool,
+) -> dict[str, Any]:
+    """Exclusively reserve and durably commit an exact host bind root."""
+
+    resolved = validate_run_root(run_root, allowed_parent=allowed_parent)
+    parent = allowed_parent.expanduser().resolve()
+    if resolved.parent != parent:
+        raise RuntimeError("Bind root must be an exact child of its allowed parent")
+    try:
+        parent_stat = os.stat(parent, follow_symlinks=False)
+    except OSError as exc:
+        raise RuntimeError(f"Bind-root parent is unavailable: {parent}") from exc
+    if (
+        parent.is_symlink()
+        or not stat.S_ISDIR(parent_stat.st_mode)
+        or parent_stat.st_uid != os.geteuid()
+        or stat.S_IMODE(parent_stat.st_mode) & 0o022
+    ):
+        raise RuntimeError(
+            "Bind-root parent must be a process-owned directory that is not "
+            "group/world writable"
+        )
+    created = False
+    if not resolved.exists() and not resolved.is_symlink():
+        if not create_if_missing:
+            raise RuntimeError(f"Exact bind root does not exist: {resolved}")
+        try:
+            os.mkdir(resolved, mode=0o700)
+        except OSError as exc:
+            raise RuntimeError(f"Unable to reserve exact bind root: {resolved}") from exc
+        os.chmod(resolved, 0o700, follow_symlinks=False)
+        _fsync_directory(parent, label="the precreated bind root")
+        created = True
+    identity = _private_directory_identity(
+        resolved,
+        label="Exact bind root",
+    )
+    return {
+        "schema": "lumen.ubuntu-bind-root/1.0.0",
+        "status": "bind_root_ready",
+        "runRoot": str(resolved),
+        "rootIdentity": identity,
+        "created": created,
+    }
+
+
+def verify_bind_root(
+    run_root: Path,
+    *,
+    allowed_parent: Path,
+    expected_identity: str,
+    mounted_bind: bool = False,
+) -> dict[str, Any]:
+    if mounted_bind:
+        resolved = validate_run_root(run_root, allowed_parent=allowed_parent)
+        if resolved.parent != allowed_parent.expanduser().resolve():
+            raise RuntimeError("Mounted bind root escaped its exact container parent")
+        observed = {
+            "schema": "lumen.ubuntu-bind-root/1.0.0",
+            "status": "bind_root_ready",
+            "runRoot": str(resolved),
+            "rootIdentity": _private_directory_identity(
+                resolved,
+                label="Mounted bind root",
+                require_parent_device=False,
+            ),
+            "created": False,
+        }
+    else:
+        observed = initialize_bind_root(
+            run_root,
+            allowed_parent=allowed_parent,
+            create_if_missing=False,
+        )
+    if observed["rootIdentity"] != expected_identity:
+        raise RuntimeError("Exact bind-root device/inode/ownership/mode changed")
+    return {
+        **observed,
+        "status": "bind_root_identity_verified",
+    }
 
 
 def _require_dataset_contract(
@@ -1079,6 +1436,11 @@ def validate_variant(
     seed: int,
     base_model_override: str,
 ) -> tuple[dict[str, Any], dict[str, Any], Path]:
+    from tools.fine_tuning.unsloth.train_dpo import (
+        _validate_preference_training_config,
+    )
+    from tools.fine_tuning.unsloth.train_sft import _resolve_training_precision
+
     agent_root = source_root / agent
     variant_root = agent_root / "experiments" / variant
     for filename in DATASET_FILES:
@@ -1088,6 +1450,8 @@ def validate_variant(
     config_path = agent_root / "unsloth_config.json"
     manifest = read_object(manifest_path)
     config = read_object(config_path)
+    _resolve_training_precision(config)
+    _validate_preference_training_config(config)
     if manifest.get("agent") != agent or manifest.get("variant") != variant:
         raise RuntimeError(f"Variant manifest identity mismatch: {manifest_path}")
     declared_manifest_digest = manifest.get("variantManifestSHA256")
@@ -1165,6 +1529,24 @@ def validate_variant(
         raise RuntimeError(f"Generated config drifted from the controlled variant:{detail} {config_path}")
     if config.get("agent") != agent:
         raise RuntimeError(f"Generated config agent mismatch: {config_path}")
+    if agent == "fleet":
+        fleet_contract = _pipeline_validated_fleet_loss_share_contract(
+            config.get("fleetLossShareContract"),
+            config=config,
+        )
+        for lane_name, rows in lanes.items():
+            for row_index, row in enumerate(rows):
+                try:
+                    _pipeline_fleet_source_role(row, contract=fleet_contract)
+                except RuntimeError as exc:
+                    raise RuntimeError(
+                        "Fleet source-role preflight rejected "
+                        f"{lane_name} row {row_index}"
+                    ) from exc
+    elif config.get("fleetLossShareContract") is not None:
+        raise RuntimeError(
+            f"Non-Fleet generated config contains Fleet loss-share state: {config_path}"
+        )
     if manifest.get("seed") != seed:
         raise RuntimeError(f"Seed {seed} would break the controlled variant for {agent}")
     base_model = base_model_override or str(config.get("base_model_name") or "")
@@ -1227,6 +1609,7 @@ def static_preflight(
     evaluation_scope: str = "full",
     evaluation_max_examples: int | None = None,
     gguf_requested: bool = True,
+    precreated_bind_root: bool = False,
 ) -> dict[str, Any]:
     require_variant(variant)
     require_container_digest(container_digest)
@@ -1238,6 +1621,23 @@ def static_preflight(
             or resolved_run_root != allowed_parent.expanduser().resolve() / expected_run_id
         ):
             raise RuntimeError("Run root must be the exact expected child of its allowed parent")
+    if precreated_bind_root:
+        _private_directory_identity(
+            resolved_run_root,
+            label="Precreated bind root",
+            require_parent_device=False,
+        )
+        entries = list(resolved_run_root.iterdir())
+        if entries and not any(
+            entry.name in {PREPARATION_OWNER_FILENAME, "aio_run_manifest.json"}
+            and entry.is_file()
+            and not entry.is_symlink()
+            for entry in entries
+        ):
+            raise RuntimeError(
+                "Precreated bind root contains unexpected state without an "
+                "ownership record"
+            )
     if not dataset_source.is_dir():
         raise RuntimeError(f"Dataset source does not exist: {dataset_source}")
     runtime_manifest = read_object(dataset_source / "adapter_runtime_manifest.json")
@@ -1279,6 +1679,11 @@ def static_preflight(
         "executionPlan": prepared_execution_plan,
         "agents": checked,
         "runRoot": str(run_root.resolve()),
+        "runRootInitializationMode": (
+            "precreated_bind_root"
+            if precreated_bind_root
+            else "atomic_sibling_promotion"
+        ),
         "adapterRepoID": runtime_manifest.get("adapterRepoID"),
     }
 
@@ -1433,6 +1838,649 @@ def _training_attestation(
     }
 
 
+def _preparation_owner_record(
+    *,
+    root: Path,
+    dataset_source: Path,
+    run_root: Path,
+    agents: Sequence[str],
+    variant: str,
+    seed: int,
+    base_model_override: str,
+    container_digest: str,
+    prepared_execution_plan: Mapping[str, Any],
+    source_integrity: Mapping[str, Any],
+    precreated_bind_root: bool = False,
+) -> dict[str, Any]:
+    runtime_source = local_runtime_source(
+        root,
+        source_integrity=source_integrity,
+    )
+    unsigned: dict[str, Any] = {
+        "schema": PREPARATION_OWNER_SCHEMA_VERSION,
+        "runID": run_root.name,
+        "runRoot": str(run_root),
+        "sourceDatasetRoot": str(dataset_source.resolve()),
+        "agents": list(agents),
+        "variant": variant,
+        "seed": seed,
+        "baseModelOverride": base_model_override,
+        "containerImageDigest": container_digest,
+        "executionPlanSHA256": prepared_execution_plan["executionPlanSHA256"],
+        "runRootInitializationMode": (
+            "precreated_bind_root"
+            if precreated_bind_root
+            else "atomic_sibling_promotion"
+        ),
+        **runtime_source,
+        **source_integrity_fields(source_integrity),
+    }
+    return {
+        **unsigned,
+        "preparationOwnerSHA256": canonical_sha256(unsigned),
+    }
+
+
+def _initialize_preparation_root(
+    run_root: Path,
+    owner: Mapping[str, Any],
+    *,
+    precreated_bind_root: bool = False,
+) -> None:
+    if precreated_bind_root:
+        identity = _private_directory_identity(
+            run_root,
+            label="Precreated preparation bind root",
+            require_parent_device=False,
+        )
+        if any(run_root.iterdir()):
+            raise RuntimeError(
+                "Precreated preparation bind root must be empty before its owner "
+                "record is committed"
+            )
+        write_object(run_root / PREPARATION_OWNER_FILENAME, owner)
+        if (
+            _private_directory_identity(
+                run_root,
+                label="Precreated preparation bind root",
+                require_parent_device=False,
+            )
+            != identity
+        ):
+            raise RuntimeError("Precreated preparation bind root changed during initialization")
+        _fsync_directory(run_root, label="the precreated preparation owner")
+        return
+    if run_root.exists() or run_root.is_symlink():
+        raise RuntimeError(f"Run root already exists: {run_root}")
+    parent = run_root.parent
+    if parent.is_symlink() or not parent.is_dir():
+        raise RuntimeError(f"Run-root parent is not a regular directory: {parent}")
+    staging: Path | None = Path(
+        tempfile.mkdtemp(
+            prefix=f".{run_root.name}.prepare-",
+            dir=parent,
+        )
+    )
+    try:
+        write_object(staging / PREPARATION_OWNER_FILENAME, owner)
+        os.replace(staging, run_root)
+        staging = None
+        _fsync_directory(parent, label="the initialized run root")
+    finally:
+        if staging is not None and staging.exists():
+            shutil.rmtree(staging)
+
+
+def _make_private_owned_directory(path: Path) -> None:
+    """Create one destination directory with recovery-safe permissions."""
+
+    if path.exists() or path.is_symlink():
+        raise RuntimeError(f"Private snapshot directory already exists: {path}")
+    path.mkdir(mode=0o700)
+    os.chmod(path, 0o700, follow_symlinks=False)
+    directory_stat = path.stat(follow_symlinks=False)
+    if (
+        not stat.S_ISDIR(directory_stat.st_mode)
+        or directory_stat.st_uid != os.getuid()
+        or stat.S_IMODE(directory_stat.st_mode) != 0o700
+    ):
+        raise RuntimeError(
+            f"Private snapshot directory is not process-owned mode 0700: {path}"
+        )
+
+
+def _copy_private_regular_file(source: Path, destination: Path) -> None:
+    """Copy one regular file without carrying read-only source metadata.
+
+    A partial destination deliberately remains mode 0600 if copying is
+    interrupted. The preparation-owner recovery path can therefore remove the
+    incomplete tree without first trusting or changing source-derived modes.
+    """
+
+    if destination.exists() or destination.is_symlink():
+        raise RuntimeError(f"Private snapshot destination already exists: {destination}")
+    source_handle, source_stat = _open_regular_readonly(
+        source,
+        label="Prepared snapshot source file",
+    )
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        source_handle.close()
+        raise RuntimeError("Prepared snapshot copying requires O_NOFOLLOW support")
+    destination_descriptor: int | None = None
+    try:
+        destination_descriptor = os.open(
+            destination,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0)
+            | nofollow,
+            0o600,
+        )
+        offset = 0
+        while True:
+            chunk = os.pread(source_handle.fileno(), 1 << 20, offset)
+            if not chunk:
+                break
+            written_offset = 0
+            while written_offset < len(chunk):
+                written = os.write(
+                    destination_descriptor,
+                    chunk[written_offset:],
+                )
+                if written <= 0:
+                    raise OSError("Short write while copying a prepared snapshot")
+                written_offset += written
+            offset += len(chunk)
+        os.fchmod(destination_descriptor, 0o600)
+        os.fsync(destination_descriptor)
+        destination_stat = os.fstat(destination_descriptor)
+        current_destination = os.stat(destination, follow_symlinks=False)
+        if (
+            not stat.S_ISREG(destination_stat.st_mode)
+            or destination_stat.st_uid != os.getuid()
+            or stat.S_IMODE(destination_stat.st_mode) != 0o600
+            or current_destination.st_dev != destination_stat.st_dev
+            or current_destination.st_ino != destination_stat.st_ino
+        ):
+            raise RuntimeError(
+                f"Prepared snapshot destination is not a private regular file: {destination}"
+            )
+        _require_stable_descriptor(
+            source_handle,
+            source_stat,
+            label="Prepared snapshot source file",
+        )
+        _require_path_matches_descriptor(
+            source,
+            source_stat,
+            label="Prepared snapshot source file",
+        )
+    finally:
+        if destination_descriptor is not None:
+            os.close(destination_descriptor)
+        source_handle.close()
+
+
+def _copy_private_regular_tree(source: Path, destination: Path) -> None:
+    """Snapshot a same-device regular tree into private writable paths.
+
+    Unlike ``shutil.copytree``, this never applies source directory metadata to
+    the destination. Image-baked inputs are intentionally read-only, but every
+    partially copied run directory must remain removable after a process kill.
+    """
+
+    try:
+        source_root_stat = os.stat(source, follow_symlinks=False)
+    except OSError as exc:
+        raise RuntimeError(f"Prepared snapshot source is unavailable: {source}") from exc
+    if source.is_symlink() or not stat.S_ISDIR(source_root_stat.st_mode):
+        raise RuntimeError(
+            f"Prepared snapshot source must be a regular directory: {source}"
+        )
+    source_device = source_root_stat.st_dev
+    _make_private_owned_directory(destination)
+
+    def copy_directory(current_source: Path, current_destination: Path) -> None:
+        before = os.stat(current_source, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(before.st_mode)
+            or before.st_dev != source_device
+            or current_source.is_symlink()
+        ):
+            raise RuntimeError(
+                f"Prepared snapshot contains an unsafe directory: {current_source}"
+            )
+        try:
+            with os.scandir(current_source) as scanner:
+                entries = sorted(scanner, key=lambda item: item.name)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Unable to enumerate prepared snapshot source: {current_source}"
+            ) from exc
+        for entry in entries:
+            source_child = current_source / entry.name
+            destination_child = current_destination / entry.name
+            child_stat = os.stat(source_child, follow_symlinks=False)
+            if stat.S_ISLNK(child_stat.st_mode):
+                raise RuntimeError(
+                    f"Prepared snapshot source contains a symlink: {source_child}"
+                )
+            if child_stat.st_dev != source_device:
+                raise RuntimeError(
+                    f"Prepared snapshot source crosses a filesystem boundary: {source_child}"
+                )
+            if stat.S_ISDIR(child_stat.st_mode):
+                _make_private_owned_directory(destination_child)
+                copy_directory(source_child, destination_child)
+            elif stat.S_ISREG(child_stat.st_mode):
+                _copy_private_regular_file(source_child, destination_child)
+            else:
+                raise RuntimeError(
+                    f"Prepared snapshot source contains a special file: {source_child}"
+                )
+        after = os.stat(current_source, follow_symlinks=False)
+        if _file_stability_signature(after) != _file_stability_signature(before):
+            raise RuntimeError(
+                f"Prepared snapshot source changed while copying: {current_source}"
+            )
+        _fsync_directory(
+            current_destination,
+            label=f"prepared snapshot directory {current_destination}",
+        )
+
+    copy_directory(source, destination)
+    _fsync_directory(destination.parent, label=f"prepared snapshot {destination}")
+
+
+def _verified_preparation_owner(
+    path: Path,
+    expected: Mapping[str, Any],
+) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("Incomplete run lacks a regular preparation owner record")
+    observed = read_object(path)
+    declared = observed.get("preparationOwnerSHA256")
+    unsigned = dict(observed)
+    unsigned.pop("preparationOwnerSHA256", None)
+    if (
+        set(observed) != {*expected, "preparationOwnerSHA256"}
+        or observed.get("schema") != PREPARATION_OWNER_SCHEMA_VERSION
+        or re.fullmatch(r"[0-9a-f]{64}", str(declared or "")) is None
+        or canonical_sha256(unsigned) != declared
+        or unsigned != dict(expected)
+    ):
+        raise RuntimeError("Incomplete preparation owner record failed verification")
+    return observed
+
+
+def _assert_incomplete_preparation_has_no_progress(
+    run_root: Path,
+    *,
+    agents: Sequence[str],
+) -> None:
+    """Permit deletion only for inputs that `prepare_run` itself can create.
+
+    The preparation-owner record is deliberately insufficient authorization to
+    remove a directory: a stale record must never turn loss of the final run
+    manifest into loss of checkpoints or completed artifacts.
+    """
+
+    stat_result = run_root.stat(follow_symlinks=False)
+    if stat_result.st_uid != os.getuid() or stat.S_IMODE(stat_result.st_mode) != 0o700:
+        raise RuntimeError(
+            "Incomplete preparation root is not privately owned by this process user"
+        )
+    def is_owned_atomic_temp(entry: Path, targets: set[str]) -> bool:
+        matching_target = next(
+            (
+                target
+                for target in targets
+                if entry.name.startswith(f".{target}.")
+                and entry.name.endswith(".tmp")
+                and len(entry.name) > len(target) + len("..tmp")
+            ),
+            None,
+        )
+        if matching_target is None or entry.is_symlink() or not entry.is_file():
+            return False
+        entry_stat = entry.stat(follow_symlinks=False)
+        return (
+            entry_stat.st_uid == os.getuid()
+            and stat.S_IMODE(entry_stat.st_mode) & 0o077 == 0
+        )
+
+    allowed_top_level = {
+        PREPARATION_OWNER_FILENAME,
+        "generated",
+        "configs",
+        "checkpoint_lineage",
+        "logs",
+        "training",
+        "models",
+        "evaluation",
+        "training_environment.json",
+    }
+    entries = list(run_root.iterdir())
+    top_level_temp_targets = {
+        "aio_run_manifest.json",
+        "training_environment.json",
+    }
+    unexpected = sorted(
+        entry.name
+        for entry in entries
+        if entry.name not in allowed_top_level
+        and not is_owned_atomic_temp(entry, top_level_temp_targets)
+    )
+    if unexpected:
+        raise RuntimeError(
+            "Refusing to remove incomplete preparation with unexpected or progressed "
+            f"state: {', '.join(unexpected)}"
+        )
+    if any(entry.is_symlink() for entry in entries):
+        raise RuntimeError("Incomplete preparation root contains a top-level symlink")
+
+    for name in ("logs", "training", "evaluation"):
+        directory = run_root / name
+        if directory.exists() and any(directory.iterdir()):
+            raise RuntimeError(
+                f"Refusing to remove incomplete preparation with {name} progress"
+            )
+
+    models = run_root / "models"
+    allowed_model_directories = {
+        "lora_qwen3_bootstrap",
+        "lora_qwen3_dpo",
+        "lora_qwen3_gguf",
+        "lora_qwen3_gguf_receipts",
+    }
+    if models.exists():
+        model_entries = list(models.iterdir())
+        if any(
+            entry.name not in allowed_model_directories
+            or entry.is_symlink()
+            or not entry.is_dir()
+            or any(entry.iterdir())
+            for entry in model_entries
+        ):
+            raise RuntimeError(
+                "Refusing to remove incomplete preparation with model or GGUF progress"
+            )
+
+    configs = run_root / "configs"
+    allowed_configs = {f"{agent}.json" for agent in agents}
+    if configs.exists() and any(
+        (
+            entry.name not in allowed_configs
+            and not is_owned_atomic_temp(entry, allowed_configs)
+        )
+        or entry.is_symlink()
+        or not entry.is_file()
+        for entry in configs.iterdir()
+    ):
+        raise RuntimeError(
+            "Refusing to remove incomplete preparation with unexpected config state"
+        )
+
+    lineage = run_root / "checkpoint_lineage"
+    allowed_lineage = {
+        *(f"{agent}.sft.json" for agent in agents),
+        *(f"{agent}.preference.json" for agent in agents),
+    }
+    if lineage.exists():
+        lineage_entries = list(lineage.iterdir())
+        if any(
+            (
+                entry.name not in allowed_lineage
+                and not is_owned_atomic_temp(entry, allowed_lineage)
+            )
+            or entry.is_symlink()
+            or not entry.is_file()
+            for entry in lineage_entries
+        ):
+            raise RuntimeError(
+                "Refusing to remove incomplete preparation with unexpected checkpoint state"
+            )
+        from tools.fine_tuning.unsloth.train_dpo import (
+            _initial_preference_checkpoint_lineage,
+            _validate_preference_training_config,
+        )
+        preference_config = _validate_preference_training_config(config)
+        from tools.fine_tuning.unsloth.train_sft import _initial_sft_checkpoint_lineage
+
+        for entry in (
+            candidate
+            for candidate in lineage_entries
+            if candidate.name in allowed_lineage
+        ):
+            suffix = ".preference.json" if entry.name.endswith(".preference.json") else ".sft.json"
+            agent = entry.name[: -len(suffix)]
+            config_path = configs / f"{agent}.json"
+            if not config_path.is_file() or config_path.is_symlink():
+                raise RuntimeError(
+                    "Refusing to remove checkpoint state without its prepared config"
+                )
+            config = read_object(config_path)
+            expected = (
+                _initial_preference_checkpoint_lineage(config, cfg_path=config_path)
+                if suffix == ".preference.json"
+                else _initial_sft_checkpoint_lineage(config, cfg_path=config_path)
+            )
+            if read_object(entry) != expected:
+                raise RuntimeError(
+                    "Refusing to remove progressed or drifted checkpoint lineage"
+                )
+
+
+def _durably_remove_preparation_owner(run_root: Path) -> None:
+    owner_path = run_root / PREPARATION_OWNER_FILENAME
+    if owner_path.is_symlink() or not owner_path.is_file():
+        raise RuntimeError("Prepared run lost its regular preparation owner record")
+    owner_path.unlink()
+    _fsync_directory(run_root, label="the preparation-owner removal")
+
+
+def _mounted_descendants(path: Path) -> list[Path]:
+    """Return Linux mount points strictly below ``path`` without resolving them."""
+
+    mountinfo = Path("/proc/self/mountinfo")
+    if not mountinfo.is_file():
+        return []
+
+    def decode_mount_path(value: str) -> str:
+        return re.sub(
+            r"\\([0-7]{3})",
+            lambda match: chr(int(match.group(1), 8)),
+            value,
+        )
+
+    root = Path(os.path.abspath(path))
+    descendants: list[Path] = []
+    try:
+        lines = mountinfo.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise RuntimeError("Unable to inspect nested mount boundaries") from exc
+    for line in lines:
+        fields = line.split()
+        if len(fields) < 5:
+            raise RuntimeError("Malformed Linux mountinfo record")
+        candidate = Path(decode_mount_path(fields[4]))
+        if candidate != root and root in candidate.parents:
+            descendants.append(candidate)
+    return descendants
+
+
+def _clear_private_owned_directory_contents(path: Path, *, label: str) -> None:
+    """Clear an owned directory in place without following links or mounts."""
+
+    identity = _private_directory_identity(
+        path,
+        label=label,
+        require_parent_device=False,
+    )
+    mounted = _mounted_descendants(path)
+    if mounted:
+        raise RuntimeError(
+            f"Refusing to clear {label} with nested mounts: "
+            + ", ".join(str(item) for item in sorted(mounted))
+        )
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise RuntimeError(f"Clearing {label} requires O_NOFOLLOW support")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_DIRECTORY", 0)
+        | nofollow
+    )
+    root_descriptor = os.open(path, flags)
+    root_stat = os.fstat(root_descriptor)
+
+    def clear_descriptor(descriptor: int, *, device: int) -> None:
+        entries = list(os.scandir(descriptor))
+        for entry in entries:
+            entry_stat = os.stat(
+                entry.name,
+                dir_fd=descriptor,
+                follow_symlinks=False,
+            )
+            if entry_stat.st_uid != os.geteuid():
+                raise RuntimeError(
+                    f"Refusing to clear non-owned entry from {label}: {entry.name}"
+                )
+            if stat.S_ISLNK(entry_stat.st_mode) or stat.S_ISREG(entry_stat.st_mode):
+                os.unlink(entry.name, dir_fd=descriptor)
+                continue
+            if not stat.S_ISDIR(entry_stat.st_mode) or entry_stat.st_dev != device:
+                raise RuntimeError(
+                    f"Refusing to clear special or cross-device entry from {label}: "
+                    f"{entry.name}"
+                )
+            child_descriptor = os.open(entry.name, flags, dir_fd=descriptor)
+            try:
+                opened = os.fstat(child_descriptor)
+                current = os.stat(
+                    entry.name,
+                    dir_fd=descriptor,
+                    follow_symlinks=False,
+                )
+                if (
+                    opened.st_dev != entry_stat.st_dev
+                    or opened.st_ino != entry_stat.st_ino
+                    or current.st_dev != entry_stat.st_dev
+                    or current.st_ino != entry_stat.st_ino
+                ):
+                    raise RuntimeError(
+                        f"Directory entry changed while clearing {label}: {entry.name}"
+                    )
+                clear_descriptor(child_descriptor, device=device)
+                os.fsync(child_descriptor)
+            finally:
+                os.close(child_descriptor)
+            os.rmdir(entry.name, dir_fd=descriptor)
+
+    try:
+        clear_descriptor(root_descriptor, device=root_stat.st_dev)
+        os.fsync(root_descriptor)
+        current = os.stat(path, follow_symlinks=False)
+        if current.st_dev != root_stat.st_dev or current.st_ino != root_stat.st_ino:
+            raise RuntimeError(f"{label} changed while it was being cleared")
+    finally:
+        os.close(root_descriptor)
+    if _private_directory_identity(
+        path,
+        label=label,
+        require_parent_device=False,
+    ) != identity:
+        raise RuntimeError(f"{label} identity changed after it was cleared")
+
+
+def reset_owned_run_root(run_root: Path, *, variant: str) -> dict[str, Any]:
+    """Verify a completed run's ownership, then clear only its mounted contents."""
+
+    owned = verify_owned_run(run_root, variant=variant)
+    if owned.get("runRootInitializationMode") != "precreated_bind_root":
+        raise RuntimeError(
+            "Only an explicitly precreated bind root may be reset in place"
+        )
+    _clear_private_owned_directory_contents(
+        run_root,
+        label="owned precreated run root",
+    )
+    return {
+        "status": "owned_bind_root_reset",
+        "runRoot": str(run_root),
+        "previousRunManifestSHA256": owned["runManifestSHA256"],
+    }
+
+
+def recover_incomplete_preparation(
+    *,
+    root: Path,
+    dataset_source: Path,
+    run_root: Path,
+    allowed_parent: Path,
+    agents: Sequence[str],
+    variant: str,
+    seed: int,
+    base_model_override: str,
+    container_digest: str,
+    evaluation_scope: str,
+    evaluation_max_examples: int | None,
+    gguf_requested: bool,
+    precreated_bind_root: bool = False,
+) -> dict[str, Any]:
+    if run_root.is_symlink() or not run_root.is_dir():
+        raise RuntimeError("Recoverable preparation root must be a regular directory")
+    allowed_parent = allowed_parent.resolve()
+    if allowed_parent.is_symlink() or run_root.parent != allowed_parent:
+        raise RuntimeError("Recoverable preparation root escaped its allowed parent")
+    if (run_root / "aio_run_manifest.json").exists():
+        raise RuntimeError("Refusing to reset a run that has a prepared manifest")
+    prepared_execution_plan = execution_plan(
+        evaluation_scope=evaluation_scope,
+        evaluation_max_examples=evaluation_max_examples,
+        gguf_requested=gguf_requested,
+    )
+    source_integrity = current_source_integrity(root)
+    expected = _preparation_owner_record(
+        root=root,
+        dataset_source=dataset_source,
+        run_root=run_root,
+        agents=agents,
+        variant=variant,
+        seed=seed,
+        base_model_override=base_model_override,
+        container_digest=container_digest,
+        prepared_execution_plan=prepared_execution_plan,
+        source_integrity=source_integrity,
+        precreated_bind_root=precreated_bind_root,
+    )
+    expected_unsigned = dict(expected)
+    expected_unsigned.pop("preparationOwnerSHA256")
+    _verified_preparation_owner(
+        run_root / PREPARATION_OWNER_FILENAME,
+        expected_unsigned,
+    )
+    _reject_managed_symlinks(run_root)
+    _assert_incomplete_preparation_has_no_progress(run_root, agents=agents)
+    if precreated_bind_root:
+        _clear_private_owned_directory_contents(
+            run_root,
+            label="incomplete precreated preparation root",
+        )
+        status = "incomplete_preparation_cleared"
+    else:
+        shutil.rmtree(run_root)
+        _fsync_directory(allowed_parent, label="the incomplete preparation removal")
+        status = "incomplete_preparation_removed"
+    return {
+        "status": status,
+        "runRoot": str(run_root),
+    }
+
+
 def prepare_run(
     *,
     root: Path,
@@ -1446,9 +2494,16 @@ def prepare_run(
     evaluation_scope: str = "full",
     evaluation_max_examples: int | None = None,
     gguf_requested: bool = True,
+    precreated_bind_root: bool = False,
 ) -> dict[str, Any]:
-    if run_root.exists():
+    if run_root.exists() and not precreated_bind_root:
         raise RuntimeError(f"Run root already exists: {run_root}")
+    if precreated_bind_root:
+        _private_directory_identity(
+            run_root,
+            label="Precreated preparation bind root",
+            require_parent_device=False,
+        )
     prepared_execution_plan = execution_plan(
         evaluation_scope=evaluation_scope,
         evaluation_max_examples=evaluation_max_examples,
@@ -1473,31 +2528,69 @@ def prepare_run(
         container_digest=container_digest,
         source_integrity=source_integrity,
     )
-    run_root.mkdir(parents=True)
+    owner = _preparation_owner_record(
+        root=root,
+        dataset_source=dataset_source,
+        run_root=run_root,
+        agents=agents,
+        variant=variant,
+        seed=seed,
+        base_model_override=base_model_override,
+        container_digest=container_digest,
+        prepared_execution_plan=prepared_execution_plan,
+        source_integrity=source_integrity,
+        precreated_bind_root=precreated_bind_root,
+    )
+    _initialize_preparation_root(
+        run_root,
+        owner,
+        precreated_bind_root=precreated_bind_root,
+    )
+    initialized_entries = list(run_root.iterdir())
+    if (
+        len(initialized_entries) != 1
+        or initialized_entries[0].name != PREPARATION_OWNER_FILENAME
+        or initialized_entries[0].is_symlink()
+        or not initialized_entries[0].is_file()
+    ):
+        raise RuntimeError(
+            "Preparation root gained unexpected contents before input snapshotting"
+        )
     snapshot_root = run_root / "generated" / "fine_tuning"
-    shutil.copytree(dataset_source, snapshot_root)
+    generated_root = run_root / "generated"
+    _make_private_owned_directory(generated_root)
+    _copy_private_regular_tree(dataset_source, snapshot_root)
     behavior_manifest_source = (
         root / "generated" / "agent_manifest" / "AgentBehaviorManifest.json"
     )
-    if not behavior_manifest_source.is_file():
-        raise RuntimeError(
-            f"Missing frozen behavior manifest: {behavior_manifest_source}"
-        )
     behavior_manifest_snapshot = (
         run_root
         / "generated"
         / "agent_manifest"
         / "AgentBehaviorManifest.json"
     )
-    behavior_manifest_snapshot.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(behavior_manifest_source, behavior_manifest_snapshot)
+    _make_private_owned_directory(behavior_manifest_snapshot.parent)
+    _copy_private_regular_file(
+        behavior_manifest_source,
+        behavior_manifest_snapshot,
+    )
+    _fsync_directory(
+        behavior_manifest_snapshot.parent,
+        label="the frozen behavior-manifest snapshot",
+    )
+    _fsync_directory(
+        generated_root,
+        label="the prepared generated-input snapshots",
+    )
     for directory in (
         run_root / "configs",
+        run_root / "checkpoint_lineage",
         run_root / "logs",
         run_root / "training",
         run_root / "models" / "lora_qwen3_bootstrap",
         run_root / "models" / "lora_qwen3_dpo",
         run_root / "models" / "lora_qwen3_gguf",
+        run_root / "models" / "lora_qwen3_gguf_receipts",
         run_root / "evaluation",
     ):
         directory.mkdir(parents=True, exist_ok=True)
@@ -1540,6 +2633,12 @@ def prepare_run(
         adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
         preference_adapter_dir = run_root / "models" / "lora_qwen3_dpo" / agent
         training_dir = run_root / "training" / agent
+        sft_checkpoint_lineage_path = (
+            run_root / "checkpoint_lineage" / f"{agent}.sft.json"
+        )
+        preference_checkpoint_lineage_path = (
+            run_root / "checkpoint_lineage" / f"{agent}.preference.json"
+        )
         gguf_path = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
         config["base_model_name"] = base_model
         config["baseModelID"] = base_model
@@ -1577,6 +2676,16 @@ def prepare_run(
         config["output_dir"] = str(training_dir)
         config["adapter_output_dir"] = str(adapter_dir)
         config["dpo_output_dir"] = str(preference_adapter_dir)
+        config["sftCheckpointLineagePath"] = str(sft_checkpoint_lineage_path)
+        config["preferenceCheckpointLineagePath"] = str(
+            preference_checkpoint_lineage_path
+        )
+        config["sftTokenLengthPreflightPath"] = str(
+            training_dir / "sft_token_length_preflight.json"
+        )
+        config["preferenceTokenLengthPreflightPath"] = str(
+            training_dir / "dpo" / "token_length_preflight.json"
+        )
         config["adapter_gguf_output_path"] = str(gguf_path)
         config["gguf_output_dir"] = str(
             run_root
@@ -1602,6 +2711,27 @@ def prepare_run(
         config["variantAttestation"] = _training_attestation(config, manifest)
         config_path = run_root / "configs" / f"{agent}.json"
         write_object(config_path, config)
+        from tools.fine_tuning.unsloth.train_sft import (
+            _initial_sft_checkpoint_lineage,
+        )
+        from tools.fine_tuning.unsloth.train_dpo import (
+            _initial_preference_checkpoint_lineage,
+        )
+
+        write_object(
+            sft_checkpoint_lineage_path,
+            _initial_sft_checkpoint_lineage(
+                config,
+                cfg_path=config_path,
+            ),
+        )
+        write_object(
+            preference_checkpoint_lineage_path,
+            _initial_preference_checkpoint_lineage(
+                config,
+                cfg_path=config_path,
+            ),
+        )
         prepared.append(
             {
                 "agent": agent,
@@ -1613,8 +2743,18 @@ def prepare_run(
                 "sftFinalizedVariantManifest": str(
                     training_dir / "finalized_variant_manifest.json"
                 ),
-                "preferenceTrainer": config.get("preference_trainer", "dpo"),
+                "sftCheckpointLineagePath": str(sft_checkpoint_lineage_path),
+                "sftTokenLengthPreflight": str(
+                    training_dir / "sft_token_length_preflight.json"
+                ),
+                "preferenceTrainer": preference_config["preferenceTrainer"],
                 "preferenceAdapterDir": str(preference_adapter_dir),
+                "preferenceCheckpointLineagePath": str(
+                    preference_checkpoint_lineage_path
+                ),
+                "preferenceTokenLengthPreflight": str(
+                    training_dir / "dpo" / "token_length_preflight.json"
+                ),
                 "preferenceFinalizedVariantManifest": str(
                     training_dir / "dpo" / "finalized_variant_manifest.json"
                 ),
@@ -1625,6 +2765,11 @@ def prepare_run(
         "schema": RUN_SCHEMA_VERSION,
         "runID": run_root.name,
         "runRoot": str(run_root),
+        "runRootInitializationMode": (
+            "precreated_bind_root"
+            if precreated_bind_root
+            else "atomic_sibling_promotion"
+        ),
         "adapterFirst": True,
         "trainBaseModelWeights": False,
         "freshRun": True,
@@ -1646,8 +2791,28 @@ def prepare_run(
         "agents": prepared,
     }
     run_manifest["runManifestSHA256"] = canonical_sha256(run_manifest)
-    write_object(run_root / "aio_run_manifest.json", run_manifest)
     write_object(run_root / "training_environment.json", runtime_environment)
+    expected_precommit_entries = {
+        PREPARATION_OWNER_FILENAME,
+        "generated",
+        "configs",
+        "checkpoint_lineage",
+        "logs",
+        "training",
+        "models",
+        "evaluation",
+        "training_environment.json",
+    }
+    observed_precommit_entries = {entry.name for entry in run_root.iterdir()}
+    if observed_precommit_entries != expected_precommit_entries:
+        raise RuntimeError(
+            "Preparation root contains unexpected state before manifest commit"
+        )
+    _reject_managed_symlinks(run_root)
+    # The self-hashed manifest is the preparation commit record and is written
+    # last. Its presence therefore proves every earlier prepared input exists.
+    write_object(run_root / "aio_run_manifest.json", run_manifest)
+    _durably_remove_preparation_owner(run_root)
     return run_manifest
 
 
@@ -1672,6 +2837,8 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
         or manifest.get("trainBaseModelWeights") is not False
         or manifest.get("runID") != run_root.name
         or manifest.get("runRoot") != str(run_root)
+        or manifest.get("runRootInitializationMode")
+        not in {"atomic_sibling_promotion", "precreated_bind_root"}
         or not isinstance(manifest_agents, list)
         or not manifest_agents
         or any(
@@ -1701,6 +2868,21 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
                 f"Prepared run config binding failed verification for {agent}"
             )
         prepared_config = read_object(config_path)
+        from tools.fine_tuning.unsloth.train_sft import (
+            _validate_sft_checkpoint_lineage_static,
+        )
+        from tools.fine_tuning.unsloth.train_dpo import (
+            _validate_preference_checkpoint_lineage_static,
+        )
+
+        _validate_sft_checkpoint_lineage_static(
+            prepared_config,
+            cfg_path=config_path,
+        )
+        _validate_preference_checkpoint_lineage_static(
+            prepared_config,
+            cfg_path=config_path,
+        )
         variant_attestation = prepared_config.get("variantAttestation")
         if (
             prepared_config.get("runExecutionPlan") != prepared_execution_plan
@@ -1723,12 +2905,14 @@ def verify_owned_run(run_root: Path, *, variant: str) -> dict[str, Any]:
         "runID": manifest["runID"],
         "variant": variant,
         "runManifestSHA256": manifest["runManifestSHA256"],
+        "runRootInitializationMode": manifest["runRootInitializationMode"],
     }
 
 
 def _reject_managed_symlinks(run_root: Path) -> None:
     for name in (
         "configs",
+        "checkpoint_lineage",
         "logs",
         "training",
         "models",
@@ -1757,6 +2941,18 @@ def _expected_agent_paths(run_root: Path, agent: str) -> dict[str, Path]:
         "output_dir": run_root / "training" / agent,
         "adapter_output_dir": run_root / "models" / "lora_qwen3_bootstrap" / agent,
         "dpo_output_dir": run_root / "models" / "lora_qwen3_dpo" / agent,
+        "sftCheckpointLineagePath": (
+            run_root / "checkpoint_lineage" / f"{agent}.sft.json"
+        ),
+        "preferenceCheckpointLineagePath": (
+            run_root / "checkpoint_lineage" / f"{agent}.preference.json"
+        ),
+        "sftTokenLengthPreflightPath": (
+            run_root / "training" / agent / "sft_token_length_preflight.json"
+        ),
+        "preferenceTokenLengthPreflightPath": (
+            run_root / "training" / agent / "dpo" / "token_length_preflight.json"
+        ),
         "adapter_gguf_output_path": (
             run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
         ),
@@ -1790,8 +2986,16 @@ def _verify_prepared_agent_entry(
         "sftFinalizedVariantManifest": str(
             paths["output_dir"] / "finalized_variant_manifest.json"
         ),
+        "sftCheckpointLineagePath": str(paths["sftCheckpointLineagePath"]),
+        "sftTokenLengthPreflight": str(paths["sftTokenLengthPreflightPath"]),
         "preferenceTrainer": preference_trainer,
         "preferenceAdapterDir": str(paths["dpo_output_dir"]),
+        "preferenceCheckpointLineagePath": str(
+            paths["preferenceCheckpointLineagePath"]
+        ),
+        "preferenceTokenLengthPreflight": str(
+            paths["preferenceTokenLengthPreflightPath"]
+        ),
         "preferenceFinalizedVariantManifest": str(
             paths["output_dir"] / "dpo" / "finalized_variant_manifest.json"
         ),
@@ -1821,7 +3025,12 @@ def validate_prepared_runtime(
     evaluation_scope: str = "full",
     evaluation_max_examples: int | None = None,
     gguf_requested: bool = True,
+    observe_runtime: bool = True,
 ) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.train_dpo import (
+        _validate_preference_training_config,
+    )
+
     manifest = _verified_run_manifest(run_root)
     requested_execution_plan = execution_plan(
         evaluation_scope=evaluation_scope,
@@ -1887,6 +3096,9 @@ def validate_prepared_runtime(
         ):
             raise RuntimeError(f"Prepared config integrity check failed for {agent}")
         prepared_config = read_object(config_path)
+        preference_config = _validate_preference_training_config(
+            prepared_config
+        )
         verify_embedded_source_integrity(prepared_config)
         _, pending_manifest, variant_root = validate_variant(
             snapshot_root,
@@ -1904,9 +3116,7 @@ def validate_prepared_runtime(
             variant_manifest_sha256=str(
                 pending_manifest.get("variantManifestSHA256") or ""
             ),
-            preference_trainer=str(
-                prepared_config.get("preference_trainer", "dpo")
-            ),
+            preference_trainer=preference_config["preferenceTrainer"],
         )
         expected_paths = {
             **paths,
@@ -1955,6 +3165,23 @@ def validate_prepared_runtime(
             raise RuntimeError(
                 f"Prepared config or dataset snapshot drifted for {agent}{detail}"
             )
+    if not observe_runtime:
+        training_environment = manifest.get("trainingEnvironment")
+        if not isinstance(training_environment, Mapping):
+            raise RuntimeError("Prepared training environment is unavailable")
+        environment_digest = training_environment.get("trainingEnvironmentSHA256")
+        observed_accelerator = training_environment.get("observedAccelerator")
+        if (
+            re.fullmatch(r"[0-9a-f]{64}", str(environment_digest or "")) is None
+            or not isinstance(observed_accelerator, Mapping)
+        ):
+            raise RuntimeError("Prepared training environment evidence is invalid")
+        return {
+            "status": "postexit_artifacts_ready",
+            "trainingEnvironmentSHA256": environment_digest,
+            "observedAccelerator": dict(observed_accelerator),
+        }
+
     config = read_object(run_root / "configs" / f"{agents[0]}.json")
     lineage, environment = _runtime_lineage(
         root=root,
@@ -1973,6 +3200,41 @@ def validate_prepared_runtime(
     }
 
 
+def _gguf_artifact_name(agent: str) -> str:
+    return f"lumen-{agent}-lora.gguf"
+
+
+def _gguf_conversion_receipt_name(agent: str) -> str:
+    return f"lumen-{agent}-lora.conversion.json"
+
+
+def _gguf_owned_paths(run_root: Path, agent: str) -> tuple[Path, Path]:
+    return (
+        run_root / "models" / "lora_qwen3_gguf" / _gguf_artifact_name(agent),
+        run_root
+        / "models"
+        / "lora_qwen3_gguf_receipts"
+        / _gguf_conversion_receipt_name(agent),
+    )
+
+
+def _prepared_gguf_agents(run_root: Path) -> tuple[dict[str, Any], tuple[str, ...]]:
+    prepared_run = _verified_run_manifest(run_root)
+    prepared_entries = prepared_run.get("agents")
+    if not isinstance(prepared_entries, list) or any(
+        not isinstance(item, Mapping) for item in prepared_entries
+    ):
+        raise RuntimeError("Prepared run lacks exact agent ownership")
+    prepared_agents = tuple(str(item.get("agent") or "") for item in prepared_entries)
+    if (
+        not prepared_agents
+        or any(agent not in AGENTS for agent in prepared_agents)
+        or len(set(prepared_agents)) != len(prepared_agents)
+    ):
+        raise RuntimeError("Prepared run has invalid GGUF agent ownership")
+    return prepared_run, prepared_agents
+
+
 def _verify_gguf_inventory(
     run_root: Path,
     agents: Sequence[str],
@@ -1982,8 +3244,19 @@ def _verify_gguf_inventory(
     gguf_dir = run_root / "models" / "lora_qwen3_gguf"
     if gguf_dir.is_symlink() or not gguf_dir.is_dir():
         raise RuntimeError(f"Missing regular GGUF artifact directory: {gguf_dir}")
+    receipt_dir = run_root / "models" / "lora_qwen3_gguf_receipts"
+    if receipt_dir.is_symlink() or not receipt_dir.is_dir():
+        raise RuntimeError(
+            f"Missing regular GGUF conversion-receipt directory: {receipt_dir}"
+        )
     expected = {
-        f"lumen-{agent}-lora.gguf": gguf_dir / f"lumen-{agent}-lora.gguf"
+        _gguf_artifact_name(agent): gguf_dir / _gguf_artifact_name(agent)
+        for agent in agents
+    }
+    expected_receipts = {
+        _gguf_conversion_receipt_name(agent): (
+            receipt_dir / _gguf_conversion_receipt_name(agent)
+        )
         for agent in agents
     }
     entries = list(gguf_dir.iterdir())
@@ -2003,7 +3276,39 @@ def _verify_gguf_inventory(
             "GGUF artifact directory contains non-regular entries: "
             + ", ".join(unsafe)
         )
+    receipt_entries = list(receipt_dir.iterdir())
+    unexpected_receipts = sorted(
+        entry.name for entry in receipt_entries if entry.name not in expected_receipts
+    )
+    if unexpected_receipts:
+        raise RuntimeError(
+            "GGUF conversion-receipt directory contains unexpected entries: "
+            + ", ".join(unexpected_receipts)
+        )
+    unsafe_receipts = sorted(
+        entry.name
+        for entry in receipt_entries
+        if entry.is_symlink() or not entry.is_file()
+    )
+    if unsafe_receipts:
+        raise RuntimeError(
+            "GGUF conversion-receipt directory contains non-regular entries: "
+            + ", ".join(unsafe_receipts)
+        )
     observed = {entry.name for entry in entries}
+    observed_receipts = {entry.name for entry in receipt_entries}
+    observed_agents = {
+        agent for agent in agents if _gguf_artifact_name(agent) in observed
+    }
+    receipt_agents = {
+        agent
+        for agent in agents
+        if _gguf_conversion_receipt_name(agent) in observed_receipts
+    }
+    if observed_agents != receipt_agents:
+        raise RuntimeError(
+            "GGUF artifacts and conversion receipts are not a complete per-agent pair"
+        )
     if require_all and observed != set(expected):
         missing = sorted(set(expected) - observed)
         raise RuntimeError(
@@ -2013,14 +3318,276 @@ def _verify_gguf_inventory(
     return {name: path for name, path in expected.items() if name in observed}
 
 
-def verify_gguf_file(run_root: Path, path: Path) -> dict[str, Any]:
-    prepared_run = _verified_run_manifest(run_root)
-    prepared_entries = prepared_run.get("agents")
-    if not isinstance(prepared_entries, list) or any(
-        not isinstance(item, Mapping) for item in prepared_entries
+def _gguf_conversion_receipt_payload(
+    run_root: Path,
+    agent: str,
+    artifact_path: Path,
+) -> dict[str, Any]:
+    prepared_run, prepared_agents = _prepared_gguf_agents(run_root)
+    if agent not in prepared_agents:
+        raise RuntimeError(f"Prepared run does not own agent {agent}")
+    prepared_entry = next(
+        item for item in prepared_run["agents"] if item.get("agent") == agent
+    )
+    config_path = run_root / "configs" / f"{agent}.json"
+    if (
+        config_path.is_symlink()
+        or not config_path.is_file()
+        or prepared_entry.get("config") != str(config_path)
     ):
-        raise RuntimeError("Prepared run lacks exact agent ownership")
-    prepared_agents = tuple(str(item.get("agent") or "") for item in prepared_entries)
+        raise RuntimeError(f"Prepared GGUF config path drifted for {agent}")
+    config_sha256 = file_sha256(config_path)
+    if prepared_entry.get("configSHA256") != config_sha256:
+        raise RuntimeError(f"Prepared GGUF config digest drifted for {agent}")
+    config = read_object(config_path)
+
+    preference = verify_preference(run_root, agent)
+    preference_adapter = run_root / "models" / "lora_qwen3_dpo" / agent
+    preference_manifest = preference_adapter / "adapter_artifact_manifest.json"
+    finalized_path = (
+        run_root / "training" / agent / "dpo" / "finalized_variant_manifest.json"
+    )
+    finalized = _verify_manifest_integrity(finalized_path)
+    if (
+        preference_adapter.is_symlink()
+        or not preference_adapter.is_dir()
+        or preference_manifest.is_symlink()
+        or not preference_manifest.is_file()
+        or finalized_path.is_symlink()
+        or finalized.get("variantManifestSHA256")
+        != preference.get("finalizedVariantManifestSHA256")
+    ):
+        raise RuntimeError(f"Current preference lineage drifted before GGUF conversion: {agent}")
+
+    base_model_id = config.get("base_model_name")
+    base_revision = config.get("baseModelRevision")
+    container_digest = config.get("trainingContainerImageDigest")
+    base_digest_fields = {
+        field: config.get(field)
+        for field in (
+            "baseModelIndexDigest",
+            "baseModelIndexShardBindingSHA256",
+            "baseModelArtifactDigest",
+            "baseModelTokenizerDigest",
+        )
+    }
+    if (
+        base_model_id != EXPECTED_ADAPTER_GGUF_BASE_MODEL_ID
+        or re.fullmatch(r"[0-9a-f]{40}", str(base_revision or "")) is None
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value or "")) is None
+            for value in base_digest_fields.values()
+        )
+        or container_digest != prepared_run.get("containerImageDigest")
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", str(container_digest or ""))
+        is None
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(prepared_run.get(field) or ""))
+            is None
+            or config.get(field) != prepared_run.get(field)
+            for field in (
+                "ubuntuOrchestrationCodeSHA256",
+                "ubuntuSourceIntegritySHA256",
+            )
+        )
+    ):
+        raise RuntimeError(f"Prepared base or runtime lineage is invalid for GGUF: {agent}")
+
+    converter = _verified_pinned_gguf_converter_script(run_root)
+    reader = _verified_pinned_gguf_reader_script(run_root)
+    artifact = verify_gguf_artifact(artifact_path, reader_script=reader)
+    final_artifact, _ = _gguf_owned_paths(run_root, agent)
+    receipt: dict[str, Any] = {
+        "schema": GGUF_CONVERSION_RECEIPT_SCHEMA_VERSION,
+        "agent": agent,
+        "qualification": GGUF_CONVERSION_QUALIFICATION,
+        "tensorEquivalenceStatus": GGUF_TENSOR_EQUIVALENCE_STATUS,
+        "adapterGGUF": str(final_artifact),
+        "adapterGGUFSHA256": artifact["adapterGGUFSHA256"],
+        "adapterGGUFSizeBytes": artifact["adapterGGUFSizeBytes"],
+        **{field: artifact[field] for field in ADAPTER_GGUF_SEMANTIC_FIELDS},
+        "preferenceAdapter": str(preference_adapter),
+        "preferenceAdapterSHA256": preference["adapterSHA256"],
+        "preferenceAdapterManifestFileSHA256": file_sha256(preference_manifest),
+        "preferenceFinalizedVariantManifest": str(finalized_path),
+        "preferenceFinalizedVariantManifestSHA256": preference[
+            "finalizedVariantManifestSHA256"
+        ],
+        "preferenceFinalizedVariantManifestFileSHA256": file_sha256(finalized_path),
+        "config": str(config_path),
+        "configSHA256": config_sha256,
+        "baseModelID": base_model_id,
+        "baseModelRevision": base_revision,
+        **base_digest_fields,
+        "trainingContainerImageDigest": container_digest,
+        "ubuntuOrchestrationCodeSHA256": prepared_run[
+            "ubuntuOrchestrationCodeSHA256"
+        ],
+        "ubuntuSourceIntegritySHA256": prepared_run[
+            "ubuntuSourceIntegritySHA256"
+        ],
+        "llamaCppRevision": DEFAULT_LLAMA_CPP_REVISION,
+        "converterPath": GGUF_CONVERTER_RELATIVE_PATH.as_posix(),
+        "converterGitBlobSHA1": converter.git_blob_sha1,
+        "converterFileSHA256": converter.file_sha256,
+        "readerPath": GGUF_READER_RELATIVE_PATH.as_posix(),
+        "readerGitBlobSHA1": reader.git_blob_sha1,
+        "readerFileSHA256": reader.file_sha256,
+    }
+    receipt["conversionReceiptSHA256"] = canonical_sha256(receipt)
+    return receipt
+
+
+def _verified_gguf_conversion_receipt(
+    run_root: Path,
+    agent: str,
+    *,
+    artifact_path: Path,
+    receipt_path: Path,
+) -> dict[str, Any]:
+    if receipt_path.is_symlink() or not receipt_path.is_file():
+        raise RuntimeError(
+            f"Missing regular GGUF conversion receipt for {agent}: {receipt_path}"
+        )
+    receipt = read_object(receipt_path)
+    declared = receipt.get("conversionReceiptSHA256")
+    unsigned = dict(receipt)
+    unsigned.pop("conversionReceiptSHA256", None)
+    if (
+        set(receipt) != set(GGUF_CONVERSION_RECEIPT_FIELDS)
+        or receipt.get("schema") != GGUF_CONVERSION_RECEIPT_SCHEMA_VERSION
+        or receipt.get("agent") != agent
+        or re.fullmatch(r"[0-9a-f]{64}", str(declared or "")) is None
+        or canonical_sha256(unsigned) != declared
+    ):
+        raise RuntimeError(f"GGUF conversion receipt failed integrity checks: {receipt_path}")
+    expected = _gguf_conversion_receipt_payload(run_root, agent, artifact_path)
+    if receipt != expected:
+        raise RuntimeError(
+            f"GGUF conversion receipt drifted from current lineage: {receipt_path}"
+        )
+    return receipt
+
+
+def _gguf_verification_evidence(
+    receipt: Mapping[str, Any],
+    *,
+    receipt_path: Path,
+) -> dict[str, Any]:
+    return {
+        "adapterGGUF": receipt["adapterGGUF"],
+        "adapterGGUFSHA256": receipt["adapterGGUFSHA256"],
+        "adapterGGUFSizeBytes": receipt["adapterGGUFSizeBytes"],
+        **{field: receipt[field] for field in ADAPTER_GGUF_SEMANTIC_FIELDS},
+        "adapterGGUFConversionReceipt": str(receipt_path),
+        "adapterGGUFConversionReceiptSHA256": receipt[
+            "conversionReceiptSHA256"
+        ],
+        "adapterGGUFConversionQualification": receipt["qualification"],
+        "adapterGGUFTensorEquivalenceStatus": receipt[
+            "tensorEquivalenceStatus"
+        ],
+    }
+
+
+def _verify_private_gguf_staging(
+    run_root: Path,
+    agent: str,
+    *,
+    expected_names: set[str],
+) -> Path:
+    staging_root = run_root / ".gguf-staging"
+    staging_dir = staging_root / agent
+    for path, label in (
+        (staging_root, "GGUF staging root"),
+        (staging_dir, "per-agent GGUF staging directory"),
+    ):
+        if path.is_symlink() or not path.is_dir():
+            raise RuntimeError(f"{label} must be a regular directory: {path}")
+        directory_stat = path.stat(follow_symlinks=False)
+        if (
+            directory_stat.st_uid != os.getuid()
+            or stat.S_IMODE(directory_stat.st_mode) != 0o700
+        ):
+            raise RuntimeError(f"{label} must be private and process-owned: {path}")
+    entries = list(staging_dir.iterdir())
+    if {entry.name for entry in entries} != expected_names or any(
+        entry.is_symlink()
+        or not entry.is_file()
+        or entry.stat(follow_symlinks=False).st_uid != os.getuid()
+        or stat.S_IMODE(entry.stat(follow_symlinks=False).st_mode) & 0o077 != 0
+        for entry in entries
+    ):
+        raise RuntimeError(
+            "Per-agent GGUF staging directory has unsafe or unexpected entries: "
+            f"{staging_dir}"
+        )
+    return staging_dir
+
+
+def write_gguf_conversion_receipt(
+    run_root: Path,
+    agent: str,
+    staging_path: Path,
+) -> dict[str, Any]:
+    """Bind one staged conversion to the current adapter and toolchain lineage."""
+
+    _, prepared_agents = _prepared_gguf_agents(run_root)
+    if agent not in prepared_agents:
+        raise RuntimeError(f"Prepared run does not own agent {agent}")
+    _reject_managed_symlinks(run_root)
+    staging_dir = run_root / ".gguf-staging" / agent
+    expected_name = _gguf_artifact_name(agent)
+    if staging_path != staging_dir / expected_name:
+        raise RuntimeError(
+            f"Staged GGUF is not at the owned per-agent path: {staging_path}"
+        )
+    _verify_private_gguf_staging(
+        run_root,
+        agent,
+        expected_names={expected_name},
+    )
+    final_artifact, final_receipt = _gguf_owned_paths(run_root, agent)
+    staged_receipt = staging_dir / "conversion_receipt.json"
+    if any(
+        path.exists() or path.is_symlink()
+        for path in (final_artifact, final_receipt, staged_receipt)
+    ):
+        raise RuntimeError(f"Refusing to replace existing GGUF lineage for {agent}")
+    _verify_gguf_inventory(run_root, prepared_agents, require_all=False)
+    receipt = _gguf_conversion_receipt_payload(run_root, agent, staging_path)
+    write_object(staged_receipt, receipt)
+    _verify_private_gguf_staging(
+        run_root,
+        agent,
+        expected_names={expected_name, staged_receipt.name},
+    )
+    if (
+        _verified_gguf_conversion_receipt(
+            run_root,
+            agent,
+            artifact_path=staging_path,
+            receipt_path=staged_receipt,
+        )
+        != receipt
+    ):
+        raise RuntimeError(f"Staged GGUF conversion receipt drifted for {agent}")
+    return {
+        "agent": agent,
+        "adapterGGUF": str(final_artifact),
+        "adapterGGUFConversionReceipt": str(staged_receipt),
+        "adapterGGUFConversionReceiptSHA256": receipt[
+            "conversionReceiptSHA256"
+        ],
+        "adapterGGUFConversionQualification": receipt["qualification"],
+        "adapterGGUFTensorEquivalenceStatus": receipt[
+            "tensorEquivalenceStatus"
+        ],
+    }
+
+
+def verify_gguf_file(run_root: Path, path: Path) -> dict[str, Any]:
+    _, prepared_agents = _prepared_gguf_agents(run_root)
     inventory = _verify_gguf_inventory(
         run_root,
         prepared_agents,
@@ -2032,22 +3599,118 @@ def verify_gguf_file(run_root: Path, path: Path) -> dict[str, Any]:
     if (
         path.resolve() != expected_path
         or path.name not in inventory
-        or path.name
-        not in {f"lumen-{agent}-lora.gguf" for agent in prepared_agents}
+        or path.name not in {_gguf_artifact_name(agent) for agent in prepared_agents}
     ):
         raise RuntimeError(f"GGUF artifact is not owned by the prepared run: {path}")
-    reader_script = _verified_pinned_gguf_reader_script(run_root)
-    return verify_gguf_artifact(path, reader_script=reader_script)
+    agent = next(
+        agent for agent in prepared_agents if _gguf_artifact_name(agent) == path.name
+    )
+    _, receipt_path = _gguf_owned_paths(run_root, agent)
+    receipt = _verified_gguf_conversion_receipt(
+        run_root,
+        agent,
+        artifact_path=path,
+        receipt_path=receipt_path,
+    )
+    return _gguf_verification_evidence(receipt, receipt_path=receipt_path)
+
+
+def install_gguf_file(
+    run_root: Path,
+    agent: str,
+    staging_path: Path,
+) -> dict[str, Any]:
+    """Verify and durably install one staged GGUF without summary evidence."""
+
+    _, prepared_agents = _prepared_gguf_agents(run_root)
+    if agent not in prepared_agents:
+        raise RuntimeError(f"Prepared run does not own agent {agent}")
+
+    _reject_managed_symlinks(run_root)
+    staging_root = run_root / ".gguf-staging"
+    staging_dir = staging_root / agent
+    expected_name = _gguf_artifact_name(agent)
+    expected_staging_path = staging_dir / expected_name
+    staged_receipt = staging_dir / "conversion_receipt.json"
+    final_path, final_receipt = _gguf_owned_paths(run_root, agent)
+    final_dir = final_path.parent
+    final_receipt_dir = final_receipt.parent
+    if staging_path != expected_staging_path:
+        raise RuntimeError(
+            f"Staged GGUF is not at the owned per-agent path: {staging_path}"
+        )
+    _verify_private_gguf_staging(
+        run_root,
+        agent,
+        expected_names={expected_name, staged_receipt.name},
+    )
+    for path, label in (
+        (final_dir, "GGUF artifact directory"),
+        (final_receipt_dir, "GGUF conversion-receipt directory"),
+    ):
+        if path.is_symlink() or not path.is_dir():
+            raise RuntimeError(f"{label} must be regular: {path}")
+    _verify_gguf_inventory(run_root, prepared_agents, require_all=False)
+    if any(
+        path.exists() or path.is_symlink() for path in (final_path, final_receipt)
+    ):
+        raise RuntimeError(f"Refusing to replace existing GGUF lineage for {agent}")
+
+    staged_receipt_value = _verified_gguf_conversion_receipt(
+        run_root,
+        agent,
+        artifact_path=staging_path,
+        receipt_path=staged_receipt,
+    )
+    for path, label in (
+        (staging_path, "Staged GGUF artifact"),
+        (staged_receipt, "Staged GGUF conversion receipt"),
+    ):
+        staged_handle, staged_stat = _open_regular_readonly(path, label=label)
+        try:
+            os.fsync(staged_handle.fileno())
+            _require_stable_descriptor(staged_handle, staged_stat, label=label)
+            _require_path_matches_descriptor(path, staged_stat, label=label)
+        except OSError as exc:
+            raise RuntimeError(f"Unable to durably commit {label}: {path}") from exc
+        finally:
+            staged_handle.close()
+    if any(
+        path.exists() or path.is_symlink() for path in (final_path, final_receipt)
+    ):
+        raise RuntimeError(f"Refusing to replace existing GGUF lineage for {agent}")
+    os.replace(staging_path, final_path)
+    _fsync_directory(staging_dir, label=f"staged GGUF removal {staging_path}")
+    _fsync_directory(final_dir, label=f"installed GGUF artifact {final_path}")
+    os.replace(staged_receipt, final_receipt)
+    _fsync_directory(
+        staging_dir,
+        label=f"staged GGUF receipt removal {staged_receipt}",
+    )
+    _fsync_directory(
+        final_receipt_dir,
+        label=f"installed GGUF conversion receipt {final_receipt}",
+    )
+
+    installed_evidence = verify_gguf_file(run_root, final_path)
+    expected_evidence = _gguf_verification_evidence(
+        staged_receipt_value,
+        receipt_path=final_receipt,
+    )
+    if installed_evidence != expected_evidence:
+        raise RuntimeError(
+            f"Installed GGUF evidence drifted during atomic promotion: {final_path}"
+        )
+    staging_dir.rmdir()
+    _fsync_directory(staging_root, label="per-agent GGUF staging cleanup")
+    if not any(staging_root.iterdir()):
+        staging_root.rmdir()
+    _fsync_directory(run_root, label="GGUF staging cleanup")
+    return {"agent": agent, **installed_evidence}
 
 
 def verify_gguf(run_root: Path, agent: str) -> dict[str, Any]:
-    prepared_run = _verified_run_manifest(run_root)
-    prepared_agent_entries = prepared_run.get("agents")
-    if not isinstance(prepared_agent_entries, list) or any(
-        not isinstance(item, Mapping) for item in prepared_agent_entries
-    ):
-        raise RuntimeError("Prepared run lacks exact agent ownership")
-    prepared_agents = tuple(str(item["agent"]) for item in prepared_agent_entries)
+    _, prepared_agents = _prepared_gguf_agents(run_root)
     if agent not in prepared_agents:
         raise RuntimeError(f"Prepared run does not own agent {agent}")
     summary = _verified_completed_summary(run_root, prepared_agents)
@@ -2061,17 +3724,23 @@ def verify_gguf(run_root: Path, agent: str) -> dict[str, Any]:
         or agent_summary.get("adapterGGUFExists") is not True
     ):
         raise RuntimeError(f"Existing summary lacks verified GGUF evidence for {agent}")
-    path = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
+    path, _ = _gguf_owned_paths(run_root, agent)
     expected_digest = agent_summary.get("adapterGGUFSHA256")
     expected_size = agent_summary.get("adapterGGUFSizeBytes")
-    reader_script = _verified_pinned_gguf_reader_script(run_root)
-    gguf = verify_gguf_artifact(path, reader_script=reader_script)
+    gguf = verify_gguf_file(run_root, path)
     if (
         type(expected_size) is not int
         or expected_size <= 0
         or gguf["adapterGGUFSizeBytes"] != expected_size
         or re.fullmatch(r"[0-9a-f]{64}", str(expected_digest or "")) is None
         or gguf["adapterGGUFSHA256"] != expected_digest
+        or any(
+            agent_summary.get(field) != gguf[field]
+            for field in (
+                *ADAPTER_GGUF_SEMANTIC_FIELDS,
+                *GGUF_CONVERSION_SUMMARY_FIELDS,
+            )
+        )
     ):
         raise RuntimeError(f"Existing GGUF does not match the completed summary: {path}")
     return {
@@ -2093,12 +3762,37 @@ def _verify_manifest_integrity(path: Path) -> dict[str, Any]:
     return value
 
 
+def _reconstructed_training_precision(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Independently reconstruct the canonical precision contract."""
+
+    bf16 = config.get("bf16")
+    fp16 = config.get("fp16")
+    if type(bf16) is not bool or type(fp16) is not bool or bf16 == fp16:
+        raise RuntimeError(
+            "Training config must enable exactly one explicit precision mode"
+        )
+    return {
+        "schemaVersion": "lumen.training-precision/1.0.0",
+        "bf16": bf16,
+        "fp16": fp16,
+        "dtype": "bfloat16" if bf16 else "float16",
+    }
+
+
 def _verify_training_report(
     path: Path,
     *,
     phase: str,
     expected: Mapping[str, Any],
+    configured_num_train_epochs: float,
+    per_device_train_batch_size: int,
+    configured_gradient_accumulation_steps: int,
+    expected_precision: Mapping[str, Any],
 ) -> dict[str, Any]:
+    if dict(expected_precision) != _reconstructed_training_precision(
+        expected_precision
+    ):
+        raise RuntimeError(f"{phase} expected precision contract is not canonical")
     if path.is_symlink() or not path.is_file():
         raise RuntimeError(f"Missing regular {phase} training report: {path}")
     report = read_object(path)
@@ -2116,7 +3810,251 @@ def _verify_training_report(
     ):
         detail = f": {', '.join(drifted)}" if drifted else ""
         raise RuntimeError(f"{phase} training report failed lineage validation{detail}")
+
+    def verify_metrics(
+        value: Mapping[str, Any],
+        *,
+        name: str,
+        required: frozenset[str],
+    ) -> None:
+        if not value:
+            raise RuntimeError(f"{phase} {name} are empty")
+        missing = sorted(required - set(value))
+        if missing:
+            raise RuntimeError(
+                f"{phase} {name} lack required values: {', '.join(missing)}"
+            )
+
+        def verify_metric(metric: Any, metric_path: str) -> None:
+            if isinstance(metric, Mapping):
+                if not metric:
+                    raise RuntimeError(f"{phase} metric {metric_path} is empty")
+                for key, nested in metric.items():
+                    if not isinstance(key, str) or not key:
+                        raise RuntimeError(f"{phase} metric name is invalid")
+                    verify_metric(nested, f"{metric_path}.{key}")
+                return
+            if (
+                isinstance(metric, bool)
+                or not isinstance(metric, (int, float))
+                or not math.isfinite(float(metric))
+            ):
+                raise RuntimeError(
+                    f"{phase} metric {metric_path} is not finite numeric evidence"
+                )
+
+        verify_metric(value, name)
+
+    metrics = report["metrics"]
+    evaluation_metrics = report["evaluation_metrics"]
+    verify_metrics(
+        metrics,
+        name="training metrics",
+        required=frozenset({"train_loss", "epoch"}),
+    )
+    verify_metrics(
+        evaluation_metrics,
+        name="evaluation metrics",
+        required=frozenset({"eval_loss", "epoch"}),
+    )
+    completion = report.get("trainingCompletion")
+    completion_fields = {
+        "schema",
+        "status",
+        "globalStep",
+        "maxSteps",
+        "expectedMaxSteps",
+        "trainResultGlobalStep",
+        "configuredNumTrainEpochs",
+        "observedEpoch",
+        "trainRecordCount",
+        "perDeviceTrainBatchSize",
+        "gradientAccumulationSteps",
+        "worldSize",
+        "trainDataloaderBatchCount",
+        "updateStepsPerEpoch",
+        "trainMetricsVerified",
+        "evaluationMetricsVerified",
+        "resolvedPrecision",
+    }
+    if not isinstance(completion, Mapping) or set(completion) != completion_fields:
+        raise RuntimeError(f"{phase} training completion evidence is not canonical")
+    global_step = completion.get("globalStep")
+    max_steps = completion.get("maxSteps")
+    train_result_global_step = completion.get("trainResultGlobalStep")
+    configured_epochs = completion.get("configuredNumTrainEpochs")
+    observed_epoch = completion.get("observedEpoch")
+    per_device_batch_size = completion.get("perDeviceTrainBatchSize")
+    gradient_accumulation_steps = completion.get("gradientAccumulationSteps")
+    if (
+        type(per_device_batch_size) is int
+        and per_device_batch_size > 0
+        and type(gradient_accumulation_steps) is int
+        and gradient_accumulation_steps > 0
+    ):
+        expected_batch_count = math.ceil(
+            report["train_records"] / per_device_batch_size
+        )
+        expected_updates_per_epoch = max(
+            math.ceil(expected_batch_count / gradient_accumulation_steps),
+            1,
+        )
+        expected_max_steps = math.ceil(
+            float(configured_num_train_epochs) * expected_updates_per_epoch
+        )
+    else:
+        expected_batch_count = None
+        expected_updates_per_epoch = None
+        expected_max_steps = None
+    if (
+        completion.get("schema") != "lumen.training_completion/1.1.0"
+        or completion.get("status") != "completed"
+        or completion.get("trainMetricsVerified") is not True
+        or completion.get("evaluationMetricsVerified") is not True
+        or report.get("precision") != dict(expected_precision)
+        or completion.get("resolvedPrecision") != dict(expected_precision)
+        or type(global_step) is not int
+        or global_step <= 0
+        or type(max_steps) is not int
+        or max_steps != global_step
+        or completion.get("expectedMaxSteps") != expected_max_steps
+        or max_steps != expected_max_steps
+        or type(train_result_global_step) is not int
+        or train_result_global_step != global_step
+        or isinstance(configured_epochs, bool)
+        or not isinstance(configured_epochs, (int, float))
+        or isinstance(observed_epoch, bool)
+        or not isinstance(observed_epoch, (int, float))
+        or not math.isfinite(float(configured_epochs))
+        or not math.isfinite(float(observed_epoch))
+        or not math.isclose(
+            float(configured_epochs),
+            float(configured_num_train_epochs),
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        )
+        or completion.get("trainRecordCount") != report["train_records"]
+        or per_device_batch_size != per_device_train_batch_size
+        or gradient_accumulation_steps
+        != configured_gradient_accumulation_steps
+        or completion.get("worldSize") != 1
+        or completion.get("trainDataloaderBatchCount") != expected_batch_count
+        or completion.get("updateStepsPerEpoch")
+        != expected_updates_per_epoch
+        or not math.isclose(
+            float(observed_epoch),
+            float(configured_num_train_epochs),
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        )
+        or not math.isclose(
+            float(metrics["epoch"]),
+            float(observed_epoch),
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        )
+        or not math.isclose(
+            float(evaluation_metrics["epoch"]),
+            float(observed_epoch),
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        )
+    ):
+        raise RuntimeError(f"{phase} training completion evidence is false or incomplete")
     return report
+
+
+def _verify_dpo_reference_log_prob_report(
+    *,
+    run_root: Path,
+    agent: str,
+    config: Mapping[str, Any],
+    report: Mapping[str, Any],
+    parent_sft_adapter_sha256: str,
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.train_dpo import (
+        DPO_REFERENCE_LOG_PROB_EVIDENCE_FILENAME,
+        _read_preference_checkpoint_lineage,
+        _read_reference_log_prob_evidence,
+        _reference_log_prob_static_contract,
+        _verify_reference_log_prob_lineage,
+        row_to_preference,
+    )
+
+    output_dir = run_root / "training" / agent / "dpo"
+    evidence_path = output_dir / DPO_REFERENCE_LOG_PROB_EVIDENCE_FILENAME
+    config_path = run_root / "configs" / f"{agent}.json"
+    dataset_dir = Path(str(config.get("dataset_dir") or "")).resolve()
+    source_rows_by_split = {
+        "train": [
+            row_to_preference(row)
+            for row in read_jsonl(dataset_dir / "train_dpo.jsonl")
+        ],
+        "validation": [
+            row_to_preference(row)
+            for row in read_jsonl(dataset_dir / "val_dpo.jsonl")
+        ],
+    }
+    evidence = _read_reference_log_prob_evidence(evidence_path)
+    expected = _reference_log_prob_static_contract(
+        config,
+        cfg_path=config_path,
+        parent_sft_adapter_sha256=parent_sft_adapter_sha256,
+        source_rows_by_split=source_rows_by_split,
+    )
+    _verify_reference_log_prob_lineage(evidence, expected=expected)
+    lineage_path = Path(
+        str(config.get("preferenceCheckpointLineagePath") or "")
+    ).resolve()
+    checkpoint_record = _read_preference_checkpoint_lineage(lineage_path)
+    digest = evidence["referenceLogProbEvidenceSHA256"]
+    report_evidence = report.get("reference_log_prob_evidence")
+    expected_report_fields = {
+        "path",
+        "referenceLogProbEvidenceSHA256",
+        "fileSHA256",
+        "reusedFromCheckpointLineage",
+        "trainRowCount",
+        "validationRowCount",
+    }
+    if (
+        report.get("reference_log_probs_precomputed")
+        != {"train": True, "evaluation": True}
+        or report.get("checkpoint_adapter_contract")
+        != {
+            "referenceAdapterRemovedAfterPrecompute": True,
+            "checkpointAdapterNames": ["default"],
+        }
+        or not isinstance(report_evidence, Mapping)
+        or set(report_evidence) != expected_report_fields
+        or report_evidence.get("path") != str(evidence_path)
+        or report_evidence.get("referenceLogProbEvidenceSHA256") != digest
+        or report_evidence.get("fileSHA256") != file_sha256(evidence_path)
+        or type(report_evidence.get("reusedFromCheckpointLineage")) is not bool
+        or report_evidence.get("trainRowCount")
+        != evidence["splits"]["train"]["rowCount"]
+        or report_evidence.get("validationRowCount")
+        != evidence["splits"]["validation"]["rowCount"]
+        or report_evidence.get("trainRowCount") != report.get("train_records")
+        or report_evidence.get("validationRowCount") != report.get("val_records")
+        or checkpoint_record.get("referenceLogProbEvidencePath")
+        != str(evidence_path)
+        or checkpoint_record.get("referenceLogProbEvidenceSHA256") != digest
+        or checkpoint_record.get("parentSFTAdapterSHA256")
+        != parent_sft_adapter_sha256
+        or checkpoint_record.get("referenceSFTAdapterSHA256")
+        != parent_sft_adapter_sha256
+    ):
+        raise RuntimeError(
+            "DPO reference log-probability qualification evidence is incomplete"
+        )
+    return {
+        "path": str(evidence_path),
+        "referenceLogProbEvidenceSHA256": digest,
+        "fileSHA256": file_sha256(evidence_path),
+        "trainRowCount": evidence["splits"]["train"]["rowCount"],
+        "validationRowCount": evidence["splits"]["validation"]["rowCount"],
+    }
 
 
 def _verify_finalized_variant_binding(
@@ -2277,10 +4215,1090 @@ def _verify_finalized_variant_binding(
     return artifact, attestation
 
 
+def _valid_token_length_statistics(value: Any, *, require_positive: bool) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {"min", "p50", "p95", "max"}:
+        return False
+    values = [value[field] for field in ("min", "p50", "p95", "max")]
+    minimum = 1 if require_positive else 0
+    return (
+        all(type(item) is int and item >= minimum for item in values)
+        and values == sorted(values)
+    )
+
+
+GLOBAL_TOKENIZER_PREFLIGHT_SCHEMA = (
+    "lumen.global-tokenizer-preflight/1.0.0"
+)
+GLOBAL_TOKENIZER_PREFLIGHT_FILENAME = "global_tokenizer_preflight.json"
+
+
+def _load_exact_global_preflight_tokenizer(
+    config: Mapping[str, Any],
+) -> tuple[Any, str]:
+    """Load only the pinned tokenizer and prove its tokenizer.json digest."""
+
+    from huggingface_hub import hf_hub_download  # type: ignore
+    from transformers import AutoTokenizer  # type: ignore
+
+    model_id = config.get("base_model_name")
+    revision = config.get("baseModelRevision")
+    expected_digest = config.get("baseModelTokenizerDigest")
+    if (
+        not isinstance(model_id, str)
+        or not model_id
+        or re.fullmatch(r"[0-9a-f]{40}", str(revision or "")) is None
+        or re.fullmatch(r"[0-9a-f]{64}", str(expected_digest or "")) is None
+    ):
+        raise RuntimeError("Global tokenizer preflight has invalid model lineage")
+    tokenizer_json = Path(
+        hf_hub_download(
+            repo_id=model_id,
+            filename="tokenizer.json",
+            revision=revision,
+        )
+    )
+    observed_digest = file_sha256(tokenizer_json)
+    if observed_digest != expected_digest:
+        raise RuntimeError("Pinned tokenizer.json digest failed global preflight")
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_id,
+        revision=revision,
+        trust_remote_code=False,
+        use_fast=True,
+    )
+    if getattr(tokenizer, "is_fast", None) is not True:
+        raise RuntimeError("Global tokenizer preflight requires the pinned fast tokenizer")
+    return tokenizer, observed_digest
+
+
+def global_tokenizer_preflight(
+    *,
+    run_root: Path,
+    agents: Sequence[str],
+    tokenizer: Any | None = None,
+    tokenizer_file_sha256: str | None = None,
+    preference_renderer: Any | None = None,
+    chat_contract_verifier: Any | None = None,
+) -> dict[str, Any]:
+    """Fail all requested agents before the first model/optimizer allocation.
+
+    The trainers intentionally repeat these calculations and bind their own
+    authoritative evidence. This global audit exists to surface any exact
+    length, margin, metadata, or Fleet loss-share defect before agent one
+    starts an expensive optimization run.
+    """
+
+    manifest = _verified_run_manifest(run_root)
+    prepared_agents = manifest.get("agents")
+    if (
+        not isinstance(prepared_agents, list)
+        or any(not isinstance(item, Mapping) for item in prepared_agents)
+        or [item.get("agent") for item in prepared_agents] != list(agents)
+    ):
+        raise RuntimeError(
+            "Global tokenizer preflight agents drifted from the prepared run"
+        )
+    if not agents:
+        raise RuntimeError("Global tokenizer preflight requires at least one agent")
+
+    from tools.fine_tuning.unsloth import train_dpo, train_sft
+
+    first_config = read_object(run_root / "configs" / f"{agents[0]}.json")
+    if tokenizer is None:
+        if tokenizer_file_sha256 is not None:
+            raise RuntimeError("Observed tokenizer digest cannot be supplied without a tokenizer")
+        tokenizer, observed_tokenizer_digest = (
+            _load_exact_global_preflight_tokenizer(first_config)
+        )
+    else:
+        observed_tokenizer_digest = tokenizer_file_sha256
+        if observed_tokenizer_digest != first_config.get(
+            "baseModelTokenizerDigest"
+        ):
+            raise RuntimeError("Injected global-preflight tokenizer digest drifted")
+    if preference_renderer is None:
+        from trl.data_utils import maybe_apply_chat_template  # type: ignore
+
+        preference_renderer = maybe_apply_chat_template
+    if not callable(preference_renderer):
+        raise RuntimeError("Global preference renderer is unavailable")
+    if chat_contract_verifier is None:
+        chat_contract_verifier = train_sft.verify_chat_template_contract
+    if not callable(chat_contract_verifier):
+        raise RuntimeError("Global chat-template verifier is unavailable")
+
+    base_binding = {
+        "baseModelID": first_config.get("base_model_name"),
+        "baseModelRevision": first_config.get("baseModelRevision"),
+        "baseModelTokenizerDigest": first_config.get("baseModelTokenizerDigest"),
+    }
+    entries: list[dict[str, Any]] = []
+    for agent in agents:
+        config_path = run_root / "configs" / f"{agent}.json"
+        config = read_object(config_path)
+        if (
+            config.get("agent") != agent
+            or {
+                "baseModelID": config.get("base_model_name"),
+                "baseModelRevision": config.get("baseModelRevision"),
+                "baseModelTokenizerDigest": config.get(
+                    "baseModelTokenizerDigest"
+                ),
+            }
+            != base_binding
+        ):
+            raise RuntimeError(
+                f"Global tokenizer preflight model binding drifted for {agent}"
+            )
+        chat_contract_verifier(
+            config.get("chatTemplateContract"),
+            tokenizer=tokenizer,
+        )
+        dataset_dir = Path(str(config.get("dataset_dir") or "")).resolve()
+        expected_dataset_root = (
+            run_root
+            / "generated"
+            / "fine_tuning"
+            / agent
+            / "experiments"
+            / str(config.get("variant") or "")
+        ).resolve()
+        if dataset_dir != expected_dataset_root:
+            raise RuntimeError(
+                f"Global tokenizer preflight dataset path drifted for {agent}"
+            )
+        train_sft_path = dataset_dir / "train_sft.jsonl"
+        val_sft_path = dataset_dir / "val_sft.jsonl"
+        train_dpo_path = dataset_dir / "train_dpo.jsonl"
+        val_dpo_path = dataset_dir / "val_dpo.jsonl"
+        train_sft_rows = train_sft._limit_records(
+            read_jsonl(train_sft_path),
+            config.get("max_train_records"),
+        )
+        val_sft_rows = train_sft._limit_records(
+            read_jsonl(val_sft_path),
+            config.get("max_val_records"),
+        )
+        train_dpo_source = read_jsonl(train_dpo_path)
+        val_dpo_source = read_jsonl(val_dpo_path)
+        train_preference_rows = [
+            train_dpo.row_to_preference(row) for row in train_dpo_source
+        ]
+        val_preference_rows = [
+            train_dpo.row_to_preference(row) for row in val_dpo_source
+        ]
+        preference_config = train_dpo._validate_preference_training_config(
+            config
+        )
+        max_sequence_length = config.get("max_seq_length")
+        max_prompt_length = preference_config["maxPromptLength"]
+        sft_preflight = train_sft._preflight_sft_token_lengths(
+            {
+                "train": (train_sft_rows, train_sft_path),
+                "validation": (val_sft_rows, val_sft_path),
+            },
+            tokenizer=tokenizer,
+            max_sequence_length=max_sequence_length,
+            minimum_sequence_margin_tokens=config.get(
+                "sft_minimum_sequence_margin_tokens",
+                train_sft.SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            ),
+            agent=agent,
+            fleet_loss_share_contract=config.get("fleetLossShareContract"),
+            fleet_config=config,
+        )
+        preference_preflight = train_dpo._preflight_preference_token_lengths(
+            {
+                "train": train_preference_rows,
+                "validation": val_preference_rows,
+            },
+            tokenizer=tokenizer,
+            render_preference=preference_renderer,
+            max_prompt_length=max_prompt_length,
+            max_sequence_length=max_sequence_length,
+            minimum_prompt_margin_tokens=config.get(
+                "preference_minimum_prompt_margin_tokens",
+                train_dpo.PREFERENCE_MINIMUM_PROMPT_MARGIN_TOKENS,
+            ),
+            minimum_sequence_margin_tokens=config.get(
+                "preference_minimum_sequence_margin_tokens",
+                train_dpo.PREFERENCE_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            ),
+            source_splits=(
+                {"train": train_dpo_source, "validation": val_dpo_source}
+                if agent == "fleet"
+                else None
+            ),
+            agent=agent,
+            fleet_loss_share_contract=config.get("fleetLossShareContract"),
+            fleet_config=config,
+        )
+        sft_dataset_hashes = train_sft._sft_checkpoint_dataset_sha256(config)
+        dpo_dataset_hashes = train_dpo._preference_dataset_file_sha256(config)
+        phase_code = config.get("trainingCodeSHA256ByPhase")
+        if not isinstance(phase_code, Mapping):
+            raise RuntimeError(
+                f"Global tokenizer preflight lacks phase code lineage for {agent}"
+            )
+        entries.append(
+            {
+                "agent": agent,
+                "configSHA256": file_sha256(config_path),
+                "sftDatasetFileSHA256": sft_dataset_hashes,
+                "preferenceDatasetFileSHA256": dpo_dataset_hashes,
+                "sftTrainingCodeSHA256": phase_code.get("sft"),
+                "preferenceTrainingCodeSHA256": phase_code.get(
+                    preference_config["preferenceTrainer"]
+                ),
+                "sft": sft_preflight,
+                "preference": preference_preflight,
+            }
+        )
+
+    unsigned = {
+        "schemaVersion": GLOBAL_TOKENIZER_PREFLIGHT_SCHEMA,
+        "status": "passed",
+        "runManifestSHA256": manifest.get("runManifestSHA256"),
+        **base_binding,
+        "observedTokenizerFileSHA256": observed_tokenizer_digest,
+        "agents": entries,
+    }
+    audit = {
+        **unsigned,
+        "globalPreflightSHA256": canonical_sha256(unsigned),
+    }
+    audit_path = run_root / "training" / GLOBAL_TOKENIZER_PREFLIGHT_FILENAME
+    write_object(audit_path, audit)
+    return {
+        "status": "global_tokenizer_preflight_passed",
+        "path": str(audit_path),
+        "globalPreflightSHA256": audit["globalPreflightSHA256"],
+        "agents": list(agents),
+        **base_binding,
+    }
+
+
+def _verified_global_tokenizer_preflight(
+    *,
+    run_root: Path,
+    agent: str,
+    config: Mapping[str, Any],
+    phase: str,
+    bound_preflight: Mapping[str, Any],
+) -> dict[str, Any]:
+    path = run_root / "training" / GLOBAL_TOKENIZER_PREFLIGHT_FILENAME
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("Global tokenizer preflight audit is missing")
+    audit = read_object(path)
+    digest = audit.get("globalPreflightSHA256")
+    unsigned = dict(audit)
+    unsigned.pop("globalPreflightSHA256", None)
+    manifest = _verified_run_manifest(run_root)
+    if (
+        set(audit)
+        != {
+            "schemaVersion",
+            "status",
+            "runManifestSHA256",
+            "baseModelID",
+            "baseModelRevision",
+            "baseModelTokenizerDigest",
+            "observedTokenizerFileSHA256",
+            "agents",
+            "globalPreflightSHA256",
+        }
+        or audit.get("schemaVersion") != GLOBAL_TOKENIZER_PREFLIGHT_SCHEMA
+        or audit.get("status") != "passed"
+        or re.fullmatch(r"[0-9a-f]{64}", str(digest or "")) is None
+        or canonical_sha256(unsigned) != digest
+        or audit.get("runManifestSHA256") != manifest.get("runManifestSHA256")
+        or audit.get("baseModelID") != config.get("base_model_name")
+        or audit.get("baseModelRevision") != config.get("baseModelRevision")
+        or audit.get("baseModelTokenizerDigest")
+        != config.get("baseModelTokenizerDigest")
+        or audit.get("observedTokenizerFileSHA256")
+        != config.get("baseModelTokenizerDigest")
+    ):
+        raise RuntimeError("Global tokenizer preflight audit binding drifted")
+    entries = audit.get("agents")
+    manifest_agents = manifest.get("agents")
+    expected_agents = (
+        [item.get("agent") for item in manifest_agents]
+        if isinstance(manifest_agents, list)
+        and all(isinstance(item, Mapping) for item in manifest_agents)
+        else None
+    )
+    if (
+        not isinstance(entries, list)
+        or expected_agents is None
+        or [
+            item.get("agent") if isinstance(item, Mapping) else None
+            for item in entries
+        ]
+        != expected_agents
+        or any(
+            set(item)
+            != {
+                "agent",
+                "configSHA256",
+                "sftDatasetFileSHA256",
+                "preferenceDatasetFileSHA256",
+                "sftTrainingCodeSHA256",
+                "preferenceTrainingCodeSHA256",
+                "sft",
+                "preference",
+            }
+            for item in entries
+            if isinstance(item, Mapping)
+        )
+    ):
+        raise RuntimeError("Global tokenizer preflight agents are invalid")
+    matching = [
+        item
+        for item in entries
+        if isinstance(item, Mapping) and item.get("agent") == agent
+    ]
+    if len(matching) != 1:
+        raise RuntimeError(f"Global tokenizer preflight lacks {agent}")
+    entry = matching[0]
+    config_path = run_root / "configs" / f"{agent}.json"
+    dataset_hash_field = (
+        "sftDatasetFileSHA256"
+        if phase == "sft"
+        else "preferenceDatasetFileSHA256"
+    )
+    training_code_field = (
+        "sftTrainingCodeSHA256"
+        if phase == "sft"
+        else "preferenceTrainingCodeSHA256"
+    )
+    checkpoint_code = bound_preflight.get("trainingCodeSHA256")
+    global_phase = "sft" if phase == "sft" else "preference"
+    global_preflight = entry.get(global_phase)
+    bound_dataset_hashes = bound_preflight.get("datasetFileSHA256")
+    if (
+        entry.get("configSHA256") != file_sha256(config_path)
+        or entry.get(dataset_hash_field) != bound_dataset_hashes
+        or entry.get(training_code_field) != checkpoint_code
+        or not isinstance(global_preflight, Mapping)
+        or any(
+            bound_preflight.get(key) != value
+            for key, value in global_preflight.items()
+        )
+    ):
+        raise RuntimeError(
+            f"Global {phase} tokenizer preflight drifted from authoritative evidence"
+        )
+    return audit
+
+
+_FLEET_LOSS_SHARE_FIELD_NAMES = {
+    "sft": {
+        "denominatorTokenCount": "assistantTargetTokenCount",
+        "supplementalNumeratorTokenCount": (
+            "supplementalStaticAssistantTargetTokenCount"
+        ),
+        "publicNumeratorTokenCount": (
+            "publicBehavioralAssistantTargetTokenCount"
+        ),
+        "perSourceFamilyNumeratorTokenCounts": (
+            "supplementalStaticAssistantTargetTokenCountsBySourceFamily"
+        ),
+    },
+    "dpo": {
+        "denominatorTokenCount": "chosenTargetTokenCount",
+        "supplementalNumeratorTokenCount": (
+            "supplementalStaticChosenTargetTokenCount"
+        ),
+        "publicNumeratorTokenCount": (
+            "publicBehavioralChosenTargetTokenCount"
+        ),
+        "perSourceFamilyNumeratorTokenCounts": (
+            "supplementalStaticChosenTargetTokenCountsBySourceFamily"
+        ),
+    },
+}
+_FLEET_SOURCE_ROLES = (
+    "behavioral_primary",
+    "public_behavioral",
+    "supplemental_static",
+)
+_FLEET_DPO_TOKENIZATION_POLICY = {
+    "trainerImplementation": "trl.DPOTrainer.tokenize_row",
+    "trlVersion": "0.24.0",
+    "completionTokenization": "add_special_tokens_false",
+    "completionSuffix": "append_tokenizer_eos_token_id",
+    "appendedEOSTokensPerCompletion": 1,
+}
+
+
+def _pipeline_exact_mapping(
+    value: Any,
+    keys: set[str],
+    *,
+    label: str,
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != keys:
+        raise RuntimeError(f"{label} has an invalid schema")
+    return value
+
+
+def _pipeline_validated_fleet_loss_share_contract(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    contract = _pipeline_exact_mapping(
+        value,
+        {
+            "schemaVersion",
+            "enforcementRequired",
+            "enforcementPhase",
+            "requiredLanes",
+            "authoritativeCapEncoding",
+            "basisPointDenominator",
+            "capsBasisPoints",
+            "dpoTokenizationPolicy",
+            "exactTokenEvidenceContract",
+            "failurePolicy",
+            "rowMetadataContract",
+            "sourceSelectionProxy",
+            "sourceRoleRegistry",
+            "tokenizer",
+            "tokenAccounting",
+        },
+        label="Fleet loss-share contract",
+    )
+    if (
+        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.1.0"
+        or contract.get("enforcementRequired") is not True
+        or contract.get("enforcementPhase")
+        != "post_tokenizer_load_pre_optimizer"
+        or contract.get("requiredLanes") != ["sft", "dpo"]
+        or contract.get("authoritativeCapEncoding") != "integer_basis_points"
+        or type(contract.get("basisPointDenominator")) is not int
+        or contract.get("basisPointDenominator") != 10_000
+        or contract.get("failurePolicy") != "abort_before_optimizer"
+    ):
+        raise RuntimeError("Fleet loss-share contract controls drifted")
+    caps = _pipeline_exact_mapping(
+        contract.get("capsBasisPoints"),
+        {
+            "supplementalStaticTotal",
+            "publicBehavioralTotal",
+            "eachSupplementalSourceFamily",
+        },
+        label="Fleet loss-share caps",
+    )
+    if (
+        not all(
+            type(value) is int
+            for group in caps.values()
+            if isinstance(group, Mapping)
+            for value in group.values()
+        )
+        or caps.get("supplementalStaticTotal")
+        != {"requested": 2_500, "hard": 3_000}
+        or caps.get("publicBehavioralTotal")
+        != {"requested": 3_500, "hard": 3_500}
+        or caps.get("eachSupplementalSourceFamily") != {"hard": 1_000}
+    ):
+        raise RuntimeError("Fleet loss-share caps drifted")
+    if contract.get("rowMetadataContract") != {
+        "requiredCanonicalFields": ["sourceFamily", "taskType"],
+        "missingOrUnknown": "hard_fail",
+    }:
+        raise RuntimeError("Fleet row-metadata contract drifted")
+    source_selection_proxy = _pipeline_exact_mapping(
+        contract.get("sourceSelectionProxy"),
+        {
+            "status",
+            "maximumSupplementalStaticShareBasisPoints",
+            "contract",
+        },
+        label="Fleet source-selection proxy",
+    )
+    source_proxy_contract = _pipeline_exact_mapping(
+        source_selection_proxy.get("contract"),
+        {
+            "schemaVersion",
+            "status",
+            "strategy",
+            "maxCharsPerToken",
+            "exactPinnedTokenizerAuthoritative",
+            "authoritativeEnforcementPhase",
+        },
+        label="Fleet source-token proxy contract",
+    )
+    if (
+        source_selection_proxy.get("status")
+        != "safety_budget_not_exact_token_count"
+        or source_selection_proxy.get("maximumSupplementalStaticShareBasisPoints")
+        != 1_500
+        or source_proxy_contract.get("schemaVersion")
+        != "lumen.source-token-proxy/1.0.0"
+        or source_proxy_contract.get("status")
+        != "source_side_selection_proxy_not_exact_token_count"
+        or source_proxy_contract.get("strategy")
+        != "max_whitespace_terms_utf8_byte_ceiling"
+        or type(source_proxy_contract.get("maxCharsPerToken")) is not int
+        or source_proxy_contract["maxCharsPerToken"] <= 0
+        or source_proxy_contract.get("exactPinnedTokenizerAuthoritative") is not True
+        or source_proxy_contract.get("authoritativeEnforcementPhase")
+        != "post_tokenizer_load_pre_optimizer"
+    ):
+        raise RuntimeError("Fleet source-selection proxy contract drifted")
+    dpo_tokenization_policy = _pipeline_exact_mapping(
+        contract.get("dpoTokenizationPolicy"),
+        set(_FLEET_DPO_TOKENIZATION_POLICY),
+        label="Fleet DPO tokenization policy",
+    )
+    if dict(dpo_tokenization_policy) != _FLEET_DPO_TOKENIZATION_POLICY:
+        raise RuntimeError("Fleet DPO tokenization policy drifted")
+    if contract.get("tokenAccounting") != {
+        "sft": "assistant_mask_non_ignored_token_count",
+        "dpo": (
+            "rendered_chosen_completion_tokens_add_special_tokens_false_"
+            "plus_one_trl_0_24_0_appended_eos"
+        ),
+    }:
+        raise RuntimeError("Fleet token-accounting contract drifted")
+    tokenizer = _pipeline_exact_mapping(
+        contract.get("tokenizer"),
+        {"baseModelID", "baseModelRevision", "tokenizerSHA256"},
+        label="Fleet tokenizer binding",
+    )
+    if (
+        tokenizer.get("baseModelID") != config.get("base_model_name")
+        or tokenizer.get("baseModelRevision") != config.get("baseModelRevision")
+        or tokenizer.get("tokenizerSHA256")
+        != config.get("baseModelTokenizerDigest")
+        or re.fullmatch(r"[0-9a-f]{40}", str(tokenizer.get("baseModelRevision") or ""))
+        is None
+        or re.fullmatch(r"[0-9a-f]{64}", str(tokenizer.get("tokenizerSHA256") or ""))
+        is None
+    ):
+        raise RuntimeError("Fleet tokenizer binding drifted")
+
+    exact = _pipeline_exact_mapping(
+        contract.get("exactTokenEvidenceContract"),
+        {
+            "required",
+            "schemaVersion",
+            "statusAtGeneration",
+            "tokenizer",
+            "comparisonRule",
+            "lanes",
+        },
+        label="Fleet exact-token evidence contract",
+    )
+    if (
+        exact.get("required") is not True
+        or exact.get("schemaVersion")
+        != "lumen.fleet-loss-share-evidence/1.1.0"
+        or exact.get("statusAtGeneration")
+        != "pending_exact_tokenizer_preflight"
+        or exact.get("tokenizer") != "pinned_qwen_tokenizer"
+        or exact.get("comparisonRule")
+        != (
+            "numeratorTokenCount*basisPointDenominator<="
+            "denominatorTokenCount*capBasisPoints"
+        )
+    ):
+        raise RuntimeError("Fleet exact-token evidence contract drifted")
+    lanes = _pipeline_exact_mapping(
+        exact.get("lanes"),
+        {"sft", "dpo"},
+        label="Fleet exact-token evidence lanes",
+    )
+    for lane, fields in _FLEET_LOSS_SHARE_FIELD_NAMES.items():
+        if lanes.get(lane) != fields:
+            raise RuntimeError(f"Fleet {lane} exact-token fields drifted")
+
+    registry = _pipeline_exact_mapping(
+        contract.get("sourceRoleRegistry"),
+        {
+            "schemaVersion",
+            "unknownPairs",
+            "categories",
+            "registeredPairs",
+            "publicBehavioralRule",
+        },
+        label="Fleet source-role registry",
+    )
+    if (
+        registry.get("schemaVersion") != "lumen.fleet-source-role/1.0.0"
+        or registry.get("unknownPairs") != "hard_fail"
+        or registry.get("categories") != list(_FLEET_SOURCE_ROLES)
+        or registry.get("publicBehavioralRule")
+        != {
+            "sourceFamilyPrefix": "public_adapter_corpus_",
+            "taskType": "public_capability_delegation",
+            "requiresPublicCorpusLineage": True,
+        }
+    ):
+        raise RuntimeError("Fleet source-role registry controls drifted")
+    registered_pairs = registry.get("registeredPairs")
+    if not isinstance(registered_pairs, list) or not registered_pairs:
+        raise RuntimeError("Fleet source-role registry is empty")
+    observed: set[tuple[str, str]] = set()
+    observed_registered_categories: set[str] = set()
+    for item in registered_pairs:
+        pair = _pipeline_exact_mapping(
+            item,
+            {"sourceFamily", "taskType", "category"},
+            label="Fleet source-role pair",
+        )
+        source_family = pair.get("sourceFamily")
+        task_type = pair.get("taskType")
+        category = pair.get("category")
+        if (
+            not isinstance(source_family, str)
+            or not source_family
+            or source_family.strip() != source_family
+            or not isinstance(task_type, str)
+            or not task_type
+            or task_type.strip() != task_type
+            or category not in _FLEET_SOURCE_ROLES
+            or category == "public_behavioral"
+            or source_family.startswith("public_adapter_corpus_")
+            or (source_family, task_type) in observed
+        ):
+            raise RuntimeError("Fleet source-role registry contains an invalid pair")
+        observed.add((source_family, task_type))
+        observed_registered_categories.add(category)
+    if observed_registered_categories != {
+        "behavioral_primary",
+        "supplemental_static",
+    }:
+        raise RuntimeError(
+            "Fleet source-role registry must contain primary and static pairs"
+        )
+    return dict(contract)
+
+
+def _pipeline_fleet_source_role(
+    row: Mapping[str, Any],
+    *,
+    contract: Mapping[str, Any],
+) -> tuple[str, str, str]:
+    metadata = row.get("metadata")
+    if not isinstance(metadata, Mapping):
+        raise RuntimeError("Fleet evidence source row has invalid metadata")
+    source_family = metadata.get("sourceFamily")
+    task_type = metadata.get("taskType")
+    if (
+        not isinstance(source_family, str)
+        or not source_family
+        or source_family.strip() != source_family
+        or not isinstance(task_type, str)
+        or not task_type
+        or task_type.strip() != task_type
+    ):
+        raise RuntimeError("Fleet evidence source row metadata is not canonical")
+    registry = contract["sourceRoleRegistry"]
+    registered = {
+        (item["sourceFamily"], item["taskType"]): item["category"]
+        for item in registry["registeredPairs"]
+    }
+    category = registered.get((source_family, task_type))
+    rule = registry["publicBehavioralRule"]
+    if category is None and (
+        source_family.startswith(rule["sourceFamilyPrefix"])
+        and task_type == rule["taskType"]
+        and isinstance(metadata.get("publicCorpus"), Mapping)
+        and bool(metadata["publicCorpus"])
+    ):
+        category = "public_behavioral"
+    if category not in _FLEET_SOURCE_ROLES:
+        raise RuntimeError(
+            "Fleet evidence contains an unregistered source-role pair: "
+            f"{source_family!r}, {task_type!r}"
+        )
+    return source_family, task_type, category
+
+
+def _pipeline_fleet_cap_passes(
+    numerator: Any,
+    denominator: Any,
+    cap: Any,
+) -> bool:
+    return (
+        type(numerator) is int
+        and numerator >= 0
+        and type(denominator) is int
+        and denominator > 0
+        and type(cap) is int
+        and 0 <= cap <= 10_000
+        and numerator * 10_000 <= denominator * cap
+    )
+
+
+def _verify_fleet_loss_share_evidence(
+    *,
+    value: Any,
+    config: Mapping[str, Any],
+    phase: str,
+    dataset_dir: Path,
+) -> dict[str, Any] | None:
+    agent = config.get("agent")
+    if agent != "fleet":
+        if value is not None or config.get("fleetLossShareContract") is not None:
+            raise RuntimeError("Non-Fleet training contains Fleet loss-share state")
+        return None
+    if phase not in {"sft", "preference"}:
+        raise RuntimeError(f"Unsupported Fleet loss-share phase: {phase}")
+    lane = "sft" if phase == "sft" else "dpo"
+    contract = _pipeline_validated_fleet_loss_share_contract(
+        config.get("fleetLossShareContract"),
+        config=config,
+    )
+    evidence = _pipeline_exact_mapping(
+        value,
+        {
+            "schemaVersion",
+            "status",
+            "lane",
+            "enforcementScope",
+            "basisPointDenominator",
+            "capsBasisPoints",
+            "tokenizer",
+            "tokenAccounting",
+            "dpoTokenizationPolicy",
+            "contractSHA256",
+            "sourceRoleRegistrySHA256",
+            "splits",
+        },
+        label="Fleet loss-share evidence",
+    )
+    if (
+        evidence.get("schemaVersion")
+        != "lumen.fleet-loss-share-evidence/1.1.0"
+        or evidence.get("status") != "passed"
+        or evidence.get("lane") != lane
+        or evidence.get("enforcementScope")
+        != "optimizer_train_with_validation_observation"
+        or type(evidence.get("basisPointDenominator")) is not int
+        or evidence.get("basisPointDenominator") != 10_000
+        or evidence.get("capsBasisPoints") != contract["capsBasisPoints"]
+        or canonical_sha256(evidence.get("capsBasisPoints"))
+        != canonical_sha256(contract["capsBasisPoints"])
+        or evidence.get("tokenizer") != contract["tokenizer"]
+        or evidence.get("tokenAccounting") != contract["tokenAccounting"][lane]
+        or evidence.get("dpoTokenizationPolicy")
+        != (contract["dpoTokenizationPolicy"] if lane == "dpo" else None)
+        or evidence.get("contractSHA256") != canonical_sha256(contract)
+        or evidence.get("sourceRoleRegistrySHA256")
+        != canonical_sha256(contract["sourceRoleRegistry"])
+    ):
+        raise RuntimeError("Fleet loss-share evidence bindings drifted")
+    split_values = _pipeline_exact_mapping(
+        evidence.get("splits"),
+        {"train", "validation"},
+        label="Fleet loss-share evidence splits",
+    )
+    filenames = (
+        {"train": "train_sft.jsonl", "validation": "val_sft.jsonl"}
+        if lane == "sft"
+        else {"train": "train_dpo.jsonl", "validation": "val_dpo.jsonl"}
+    )
+    fields = _FLEET_LOSS_SHARE_FIELD_NAMES[lane]
+    for split in ("train", "validation"):
+        split_evidence = _pipeline_exact_mapping(
+            split_values.get(split),
+            {
+                "records",
+                "capEnforcementStatus",
+                "sourceRowsSHA256",
+                "rowTokenEvidence",
+                "targetTokenCountsByCategory",
+                *fields.values(),
+            },
+            label=f"Fleet {lane} {split} loss-share evidence",
+        )
+        source_rows = read_jsonl(dataset_dir / filenames[split])
+        expected_enforcement_status = (
+            "optimizer_enforced"
+            if split == "train"
+            else "observed_non_optimizer_split"
+        )
+        row_values = split_evidence.get("rowTokenEvidence")
+        if (
+            not source_rows
+            or not isinstance(row_values, list)
+            or len(row_values) != len(source_rows)
+            or split_evidence.get("records") != len(source_rows)
+            or split_evidence.get("capEnforcementStatus")
+            != expected_enforcement_status
+        ):
+            raise RuntimeError(f"Fleet {lane} {split} evidence row count drifted")
+        target_by_category = {category: 0 for category in _FLEET_SOURCE_ROLES}
+        supplemental_by_family: dict[str, int] = {}
+        row_hashes: list[str] = []
+        for index, (source_row, row_value) in enumerate(zip(source_rows, row_values)):
+            row_evidence = _pipeline_exact_mapping(
+                row_value,
+                {
+                    "rowIndex",
+                    "sourceRowSHA256",
+                    "sourceFamily",
+                    "taskType",
+                    "category",
+                    "targetTokenCount",
+                },
+                label=f"Fleet {lane} {split} row evidence",
+            )
+            row_hash = canonical_sha256(source_row)
+            source_family, task_type, category = _pipeline_fleet_source_role(
+                source_row,
+                contract=contract,
+            )
+            target_tokens = row_evidence.get("targetTokenCount")
+            if (
+                type(row_evidence.get("rowIndex")) is not int
+                or row_evidence.get("rowIndex") != index
+                or row_evidence.get("sourceRowSHA256") != row_hash
+                or row_evidence.get("sourceFamily") != source_family
+                or row_evidence.get("taskType") != task_type
+                or row_evidence.get("category") != category
+                or type(target_tokens) is not int
+                or target_tokens <= 0
+            ):
+                raise RuntimeError(f"Fleet {lane} {split} row evidence drifted")
+            row_hashes.append(row_hash)
+            target_by_category[category] += target_tokens
+            if category == "supplemental_static":
+                supplemental_by_family[source_family] = (
+                    supplemental_by_family.get(source_family, 0) + target_tokens
+                )
+        denominator = sum(target_by_category.values())
+        supplemental = target_by_category["supplemental_static"]
+        public = target_by_category["public_behavioral"]
+        observed_categories = split_evidence.get("targetTokenCountsByCategory")
+        observed_families = split_evidence.get(
+            fields["perSourceFamilyNumeratorTokenCounts"]
+        )
+        if (
+            type(split_evidence.get("records")) is not int
+            or not isinstance(observed_categories, Mapping)
+            or set(observed_categories) != set(_FLEET_SOURCE_ROLES)
+            or any(type(item) is not int for item in observed_categories.values())
+            or not isinstance(observed_families, Mapping)
+            or any(
+                not isinstance(key, str) or type(item) is not int
+                for key, item in observed_families.items()
+            )
+            or any(
+                type(split_evidence.get(field_name)) is not int
+                for field_name in (
+                    fields["denominatorTokenCount"],
+                    fields["supplementalNumeratorTokenCount"],
+                    fields["publicNumeratorTokenCount"],
+                )
+            )
+            or split_evidence.get("sourceRowsSHA256")
+            != canonical_sha256(row_hashes)
+            or observed_categories != target_by_category
+            or split_evidence.get(fields["denominatorTokenCount"])
+            != denominator
+            or split_evidence.get(fields["supplementalNumeratorTokenCount"])
+            != supplemental
+            or split_evidence.get(fields["publicNumeratorTokenCount"]) != public
+            or observed_families != dict(sorted(supplemental_by_family.items()))
+        ):
+            raise RuntimeError(
+                f"Fleet {lane} {split} loss-share totals failed reconstruction"
+            )
+        caps = contract["capsBasisPoints"]
+        checks = (
+            (supplemental, caps["supplementalStaticTotal"]["requested"]),
+            (supplemental, caps["supplementalStaticTotal"]["hard"]),
+            (public, caps["publicBehavioralTotal"]["requested"]),
+            (public, caps["publicBehavioralTotal"]["hard"]),
+        )
+        if split == "train" and any(
+            not _pipeline_fleet_cap_passes(numerator, denominator, cap)
+            for numerator, cap in checks
+        ):
+            raise RuntimeError(f"Fleet {lane} {split} total token cap failed")
+        family_cap = caps["eachSupplementalSourceFamily"]["hard"]
+        if split == "train" and any(
+            not _pipeline_fleet_cap_passes(numerator, denominator, family_cap)
+            for numerator in supplemental_by_family.values()
+        ):
+            raise RuntimeError(
+                f"Fleet {lane} {split} per-source-family token cap failed"
+            )
+    return dict(evidence)
+
+
+def _verify_training_token_length_preflight(
+    *,
+    run_root: Path,
+    agent: str,
+    config: Mapping[str, Any],
+    report: Mapping[str, Any],
+    phase: str,
+) -> dict[str, Any]:
+    config_path = run_root / "configs" / f"{agent}.json"
+    if phase == "sft":
+        from tools.fine_tuning.unsloth.train_sft import (
+            SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA,
+            _validate_sft_checkpoint_lineage_static,
+        )
+
+        path_field = "sftTokenLengthPreflightPath"
+        expected_path = run_root / "training" / agent / "sft_token_length_preflight.json"
+        schema = SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA
+        checkpoint_record = _validate_sft_checkpoint_lineage_static(
+            config,
+            cfg_path=config_path,
+        )
+        required_sequence_margin = max(
+            SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            int(config.get("sft_minimum_sequence_margin_tokens", 0)),
+        )
+        required_prompt_margin = None
+    elif phase == "preference":
+        from tools.fine_tuning.unsloth.train_dpo import (
+            PREFERENCE_MINIMUM_PROMPT_MARGIN_TOKENS,
+            PREFERENCE_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            PREFERENCE_TOKEN_LENGTH_PREFLIGHT_SCHEMA,
+            _validate_preference_checkpoint_lineage_static,
+        )
+
+        path_field = "preferenceTokenLengthPreflightPath"
+        expected_path = run_root / "training" / agent / "dpo" / "token_length_preflight.json"
+        schema = PREFERENCE_TOKEN_LENGTH_PREFLIGHT_SCHEMA
+        checkpoint_record = _validate_preference_checkpoint_lineage_static(
+            config,
+            cfg_path=config_path,
+        )
+        required_prompt_margin = max(
+            PREFERENCE_MINIMUM_PROMPT_MARGIN_TOKENS,
+            int(config.get("preference_minimum_prompt_margin_tokens", 0)),
+        )
+        required_sequence_margin = max(
+            PREFERENCE_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            int(config.get("preference_minimum_sequence_margin_tokens", 0)),
+        )
+    else:
+        raise RuntimeError(f"Unsupported token-length preflight phase: {phase}")
+    declared_path = config.get(path_field)
+    if (
+        declared_path != str(expected_path)
+        or expected_path.is_symlink()
+        or not expected_path.is_file()
+    ):
+        raise RuntimeError(f"Missing controlled {phase} token-length preflight evidence")
+    evidence = read_object(expected_path)
+    digest = evidence.get("preflightSHA256")
+    unsigned = dict(evidence)
+    unsigned.pop("preflightSHA256", None)
+    dataset_hashes = evidence.get("datasetFileSHA256")
+    dataset_dir = Path(str(config.get("dataset_dir") or "")).resolve()
+    actual_dataset_hashes = (
+        {
+            filename: file_sha256(dataset_dir / filename)
+            for filename in sorted(dataset_hashes)
+        }
+        if isinstance(dataset_hashes, Mapping)
+        else None
+    )
+    observed_sequence_margin = evidence.get("smallestSequenceMarginTokens")
+    declared_sequence_margin = evidence.get("minimumSequenceMarginTokens")
+    common_valid = (
+        evidence.get("schemaVersion") == schema
+        and re.fullmatch(r"[0-9a-f]{64}", str(digest or "")) is not None
+        and canonical_sha256(unsigned) == digest
+        and checkpoint_record.get("tokenLengthPreflightSHA256") == digest
+        and report.get("token_length_preflight") == evidence
+        and report.get("token_length_preflight_path") == str(expected_path)
+        and report.get("token_length_preflight_sha256") == digest
+        and evidence.get("agent") == agent
+        and evidence.get("variant") == config.get("variant")
+        and evidence.get("configPath") == str(config_path)
+        and evidence.get("configSHA256") == file_sha256(config_path)
+        and dataset_hashes == checkpoint_record.get("datasetFileSHA256")
+        and actual_dataset_hashes == dataset_hashes
+        and evidence.get("trainingCodeSHA256")
+        == checkpoint_record.get("trainingCodeSHA256")
+        and evidence.get("baseModelID") == config.get("base_model_name")
+        and evidence.get("baseModelRevision") == config.get("baseModelRevision")
+        and evidence.get("baseModelTokenizerDigest")
+        == config.get("baseModelTokenizerDigest")
+        and evidence.get("chatTemplateContract") == config.get("chatTemplateContract")
+        and evidence.get("truncationRequired") is False
+        and type(observed_sequence_margin) is int
+        and observed_sequence_margin >= required_sequence_margin
+        and type(declared_sequence_margin) is int
+        and declared_sequence_margin >= required_sequence_margin
+        and _valid_token_length_statistics(
+            evidence.get("totalTokens")
+            if phase == "sft"
+            else evidence.get("maximumTotalTokens"),
+            require_positive=True,
+        )
+    )
+    if not common_valid:
+        raise RuntimeError(f"{phase} token-length preflight evidence failed verification")
+    if phase == "sft":
+        if (
+            not _valid_token_length_statistics(
+                evidence.get("assistantTargetTokens"),
+                require_positive=True,
+            )
+            or evidence["totalTokens"]["max"]
+            + evidence["smallestSequenceMarginTokens"]
+            != evidence.get("maxSequenceLength")
+        ):
+            raise RuntimeError("SFT token-length preflight statistics are inconsistent")
+    else:
+        observed_prompt_margin = evidence.get("smallestPromptMarginTokens")
+        declared_prompt_margin = evidence.get("minimumPromptMarginTokens")
+        if (
+            type(observed_prompt_margin) is not int
+            or observed_prompt_margin < required_prompt_margin
+            or type(declared_prompt_margin) is not int
+            or declared_prompt_margin < required_prompt_margin
+            or not _valid_token_length_statistics(
+                evidence.get("promptTokens"),
+                require_positive=True,
+            )
+            or evidence["promptTokens"]["max"]
+            + observed_prompt_margin
+            != evidence.get("maxPromptLength")
+            or evidence["maximumTotalTokens"]["max"]
+            + evidence["smallestSequenceMarginTokens"]
+            != evidence.get("maxSequenceLength")
+        ):
+            raise RuntimeError(
+                "Preference token-length preflight statistics are inconsistent"
+            )
+    if agent != "fleet" and "fleetLossShareEvidence" in evidence:
+        raise RuntimeError("Non-Fleet token preflight contains Fleet evidence")
+    _verify_fleet_loss_share_evidence(
+        value=evidence.get("fleetLossShareEvidence"),
+        config=config,
+        phase=phase,
+        dataset_dir=dataset_dir,
+    )
+    _verified_global_tokenizer_preflight(
+        run_root=run_root,
+        agent=agent,
+        config=config,
+        phase=phase,
+        bound_preflight=evidence,
+    )
+    return evidence
+
+
 def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
     from tools.fine_tuning.unsloth.adapter_artifact import verify_adapter_artifact
 
     config = read_object(run_root / "configs" / f"{agent}.json")
+    precision = _reconstructed_training_precision(config)
     adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
     finalized_path = run_root / "training" / agent / "finalized_variant_manifest.json"
     report_path = run_root / "training" / agent / "training_report.json"
@@ -2309,9 +5327,15 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
         expected_adapter_sha256=str(artifact.get("adapterSHA256") or ""),
         expected_training_phase="sft",
     )
-    _verify_training_report(
+    training_report = _verify_training_report(
         report_path,
         phase="SFT",
+        configured_num_train_epochs=float(config.get("num_train_epochs")),
+        per_device_train_batch_size=int(config.get("batch_size")),
+        configured_gradient_accumulation_steps=int(
+            config.get("gradient_accumulation_steps")
+        ),
+        expected_precision=precision,
         expected={
             "schema": "lumen.train_sft.manifest/1.0.0",
             "agent": agent,
@@ -2329,26 +5353,56 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
             "trainingEnvironmentSHA256": finalized[
                 "trainingEnvironmentSHA256"
             ],
+            "precision": precision,
         },
+    )
+    token_length_preflight = _verify_training_token_length_preflight(
+        run_root=run_root,
+        agent=agent,
+        config=config,
+        report=training_report,
+        phase="sft",
     )
     return {
         "phase": "sft",
         "adapterSHA256": adapter_manifest["adapterSHA256"],
         "finalizedVariantManifestSHA256": finalized["variantManifestSHA256"],
         "report": str(report_path),
+        "trainingCompletion": training_report["trainingCompletion"],
+        "precision": precision,
+        "tokenLengthPreflight": str(
+            run_root / "training" / agent / "sft_token_length_preflight.json"
+        ),
+        "tokenLengthPreflightSHA256": token_length_preflight["preflightSHA256"],
+        "fleetLossShareEvidence": token_length_preflight.get(
+            "fleetLossShareEvidence"
+        ),
+        "tokenLengthStatistics": {
+            field: token_length_preflight[field]
+            for field in (
+                "totalTokens",
+                "assistantTargetTokens",
+                "smallestSequenceMarginTokens",
+            )
+        },
     }
 
 
 def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
     from tools.fine_tuning.unsloth.adapter_artifact import verify_adapter_artifact
+    from tools.fine_tuning.unsloth.train_dpo import (
+        _validate_preference_training_config,
+    )
 
     config = read_object(run_root / "configs" / f"{agent}.json")
+    preference_config = _validate_preference_training_config(config)
+    precision = _reconstructed_training_precision(config)
     sft = verify_sft(run_root, agent)
     adapter_dir = run_root / "models" / "lora_qwen3_dpo" / agent
     finalized_path = run_root / "training" / agent / "dpo" / "finalized_variant_manifest.json"
     report_path = run_root / "training" / agent / "dpo" / "dpo_report.json"
     finalized = _verify_manifest_integrity(finalized_path)
-    trainer = str(config.get("preference_trainer", "dpo")).lower()
+    trainer = preference_config["preferenceTrainer"]
     phase_digests = config.get("trainingCodeSHA256ByPhase")
     if not isinstance(phase_digests, Mapping):
         raise RuntimeError(f"Preference manifest lacks lineage: {finalized_path}")
@@ -2374,15 +5428,25 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
         expected_training_phase="sft_dpo",
         expected_parent_sft_adapter_sha256=sft["adapterSHA256"],
     )
-    _verify_training_report(
+    training_report = _verify_training_report(
         report_path,
         phase=trainer.upper(),
+        configured_num_train_epochs=preference_config["numTrainEpochs"],
+        per_device_train_batch_size=int(config.get("batch_size")),
+        configured_gradient_accumulation_steps=int(
+            config.get("gradient_accumulation_steps")
+        ),
+        expected_precision=precision,
         expected={
             "agent": agent,
             "trainer": "ORPOTrainer" if trainer == "orpo" else "DPOTrainer",
             "training_phase": "sft_dpo",
             "seed": config.get("seed"),
             "variantManifestSHA256": config.get("variantManifestSHA256"),
+            "config_sha256": file_sha256(
+                run_root / "configs" / f"{agent}.json"
+            ),
+            "preferenceTrainingConfig": preference_config,
             "output_dir": str(run_root / "training" / agent / "dpo"),
             "adapter_output_dir": str(adapter_dir),
             "adapterSHA256": adapter_manifest["adapterSHA256"],
@@ -2394,7 +5458,33 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
             "trainingEnvironmentSHA256": finalized[
                 "trainingEnvironmentSHA256"
             ],
+            "precision": precision,
         },
+    )
+    reference_log_prob_evidence = None
+    if trainer == "dpo":
+        reference_log_prob_evidence = _verify_dpo_reference_log_prob_report(
+            run_root=run_root,
+            agent=agent,
+            config=config,
+            report=training_report,
+            parent_sft_adapter_sha256=sft["adapterSHA256"],
+        )
+    elif any(
+        training_report.get(field) is not None
+        for field in (
+            "reference_log_probs_precomputed",
+            "reference_log_prob_evidence",
+            "checkpoint_adapter_contract",
+        )
+    ):
+        raise RuntimeError("ORPO training report contains invalid DPO reference evidence")
+    token_length_preflight = _verify_training_token_length_preflight(
+        run_root=run_root,
+        agent=agent,
+        config=config,
+        report=training_report,
+        phase="preference",
     )
     return {
         "phase": trainer,
@@ -2402,6 +5492,25 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
         "parentSFTAdapterSHA256": sft["adapterSHA256"],
         "finalizedVariantManifestSHA256": finalized["variantManifestSHA256"],
         "report": str(report_path),
+        "trainingCompletion": training_report["trainingCompletion"],
+        "precision": precision,
+        "referenceLogProbEvidence": reference_log_prob_evidence,
+        "tokenLengthPreflight": str(
+            run_root / "training" / agent / "dpo" / "token_length_preflight.json"
+        ),
+        "tokenLengthPreflightSHA256": token_length_preflight["preflightSHA256"],
+        "fleetLossShareEvidence": token_length_preflight.get(
+            "fleetLossShareEvidence"
+        ),
+        "tokenLengthStatistics": {
+            field: token_length_preflight[field]
+            for field in (
+                "promptTokens",
+                "maximumTotalTokens",
+                "smallestPromptMarginTokens",
+                "smallestSequenceMarginTokens",
+            )
+        },
     }
 
 
@@ -2414,11 +5523,17 @@ def _final_evaluation_config_payload(
     preference: Mapping[str, Any],
     behavior_file_sha: str,
 ) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.train_dpo import (
+        _validate_preference_training_config,
+    )
+
     config = dict(base_config)
     finalized_path = (
         run_root / "training" / agent / "dpo" / "finalized_variant_manifest.json"
     )
-    trainer = str(config.get("preference_trainer", "dpo")).lower()
+    trainer = _validate_preference_training_config(config)[
+        "preferenceTrainer"
+    ]
     phase_manifests = config.get("trainingCodeManifestsByPhase")
     phase_digests = config.get("trainingCodeSHA256ByPhase")
     if not isinstance(phase_manifests, Mapping) or not isinstance(
@@ -2444,6 +5559,12 @@ def _final_evaluation_config_payload(
             "finalized_variant_manifest": str(finalized_path),
             "adapter_training_phase": "sft_dpo",
             "parent_sft_adapter_sha256": preference["parentSFTAdapterSHA256"],
+            "preferenceTokenLengthPreflightSHA256": preference[
+                "tokenLengthPreflightSHA256"
+            ],
+            "preferenceTokenLengthStatistics": preference[
+                "tokenLengthStatistics"
+            ],
             "trainingEnvironmentSHA256": finalized[
                 "trainingEnvironmentSHA256"
             ],
@@ -2548,8 +5669,10 @@ def clean_phase(run_root: Path, agent: str, phase: str) -> None:
     ):
         raise RuntimeError(f"Agent is not owned by this prepared run: {agent}")
     _reject_managed_symlinks(run_root)
+    _, gguf_receipt = _gguf_owned_paths(run_root, agent)
     targets: list[Path] = [
-        run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf",
+        run_root / "models" / "lora_qwen3_gguf" / _gguf_artifact_name(agent),
+        gguf_receipt,
         run_root / "evaluation" / agent,
     ]
     if phase == "sft":
@@ -2574,6 +5697,19 @@ def clean_phase(run_root: Path, agent: str, phase: str) -> None:
             shutil.rmtree(target)
         elif target.exists():
             target.unlink()
+    config_path = run_root / "configs" / f"{agent}.json"
+    config = read_object(config_path)
+    if phase == "sft":
+        from tools.fine_tuning.unsloth.train_sft import (
+            _reset_sft_checkpoint_lineage,
+        )
+
+        _reset_sft_checkpoint_lineage(config, cfg_path=config_path)
+    from tools.fine_tuning.unsloth.train_dpo import (
+        _reset_preference_checkpoint_lineage,
+    )
+
+    _reset_preference_checkpoint_lineage(config, cfg_path=config_path)
 
 
 def _require_declared_run_file(
@@ -2671,6 +5807,7 @@ def _verify_evaluation_outputs(
         "variant",
         "configPath",
         "configSHA256",
+        "chatTemplateContract",
         "adapterDirectory",
         "adapterSHA256",
         "finalizedVariantManifestPath",
@@ -2772,6 +5909,9 @@ def _verify_evaluation_outputs(
     evaluation_module = evaluate_adapter._load_evaluation_module()
     try:
         config = evaluate_adapter.load_evaluation_config(config_path)
+        evaluate_adapter.verify_chat_template_contract(
+            config.get("chatTemplateContract")
+        )
         base_config_path = run_root / "configs" / f"{agent}.json"
         if base_config_path.is_symlink() or not base_config_path.is_file():
             raise ValueError("Prepared base config is not a regular file")
@@ -2965,7 +6105,18 @@ def _verify_evaluation_outputs(
     candidate_outputs_sha256 = canonical_sha256(candidate_outputs)
     evaluator_path = Path(evaluate_adapter.__file__).resolve()
     generation = evaluation_run.get("generation")
-    structured_eligible = agent in evaluate_adapter.JSON_OUTPUT_AGENTS
+    try:
+        expected_output_mode_contract = (
+            evaluate_adapter._evaluation_output_mode_contract(
+                selected_records,
+                agent=agent,
+                tool_contracts=tool_contracts,
+            )
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"Evaluation output-mode contract failed reconstruction: {run_path}"
+        ) from exc
     expected_generation_keys = {
         "doSample",
         "numBeams",
@@ -2974,13 +6125,7 @@ def _verify_evaluation_outputs(
         "maxNewTokens",
         "maxSequenceLength",
         "seed",
-        "structuredOutputContractEligible",
-        "structuredOutputContractVersion",
-        "structuredOutputContractSHA256",
-        "strictJSONRetryEligible",
-        "strictJSONMaxAttempts",
-        "strictJSONRetryContractVersion",
-        "strictJSONRetryContractSHA256",
+        "outputModeContract",
     }
     generation_max_new_tokens = (
         generation.get("maxNewTokens") if isinstance(generation, Mapping) else None
@@ -2994,31 +6139,9 @@ def _verify_evaluation_outputs(
         and generation.get("maxSequenceLength") == config_max_sequence_length
         and type(generation.get("seed")) is int
         and generation.get("seed") == config_seed
+        and generation.get("outputModeContract") == expected_output_mode_contract
         and (
-            generation.get("structuredOutputContractEligible")
-            is structured_eligible
-            and generation.get("structuredOutputContractVersion")
-            == evaluate_adapter.STRUCTURED_OUTPUT_CONTRACT_VERSION
-            and generation.get("structuredOutputContractSHA256")
-            == evaluate_adapter._structured_output_contract_sha256(
-                agent,
-                tool_contracts=tool_contracts,
-            )
-            and generation.get("strictJSONRetryEligible") is structured_eligible
-            and type(generation.get("strictJSONMaxAttempts")) is int
-            and generation.get("strictJSONMaxAttempts")
-            == (
-                evaluate_adapter.STRICT_JSON_MAX_ATTEMPTS
-                if structured_eligible
-                else 1
-            )
-            and generation.get("strictJSONRetryContractVersion")
-            == evaluate_adapter.STRICT_JSON_RETRY_CONTRACT_VERSION
-            and generation.get("strictJSONRetryContractSHA256")
-            == hashlib.sha256(
-                evaluate_adapter.STRICT_JSON_RETRY_INSTRUCTION.encode("utf-8")
-            ).hexdigest()
-            and generation.get("doSample") is False
+            generation.get("doSample") is False
             and type(generation.get("numBeams")) is int
             and generation.get("numBeams") == 1
             and type(generation.get("repetitionPenalty")) is float
@@ -3096,6 +6219,8 @@ def _verify_evaluation_outputs(
         or evaluation_run.get("agent") != agent
         or evaluation_run.get("variant") != config.get("variant")
         or evaluation_run.get("configSHA256") != file_sha256(config_path)
+        or evaluation_run.get("chatTemplateContract")
+        != config.get("chatTemplateContract")
         or evaluation_run.get("evaluatorCodePath") != str(evaluator_path)
         or evaluation_run.get("evaluatorCodeSHA256") != file_sha256(evaluator_path)
         or evaluation_run.get("adapterSHA256") != final_phase.get("adapterSHA256")
@@ -3155,6 +6280,17 @@ def _verify_evaluation_outputs(
     return evaluation_run
 
 
+def verify_evaluation(run_root: Path, agent: str) -> dict[str, Any]:
+    """Replay and verify one agent's final evaluation before summary creation."""
+
+    final_phase = verify_preference(run_root, agent)
+    return _verify_evaluation_outputs(
+        run_root,
+        agent,
+        final_phase=final_phase,
+    )
+
+
 def _derived_summary_state(
     *,
     plan: Mapping[str, Any],
@@ -3195,8 +6331,12 @@ def _derived_summary_state(
 
     if verified_plan["ggufRequested"] is True and gguf_count == agent_count:
         gguf_status = "verified"
+        gguf_conversion_status = GGUF_CONVERSION_QUALIFICATION
+        gguf_tensor_equivalence_status = GGUF_TENSOR_EQUIVALENCE_STATUS
     elif verified_plan["ggufRequested"] is False and gguf_count == 0:
         gguf_status = "skipped_by_operator"
+        gguf_conversion_status = "skipped_by_operator"
+        gguf_tensor_equivalence_status = "not_applicable"
     else:
         raise RuntimeError(
             "Summary GGUF inventory does not match the execution plan"
@@ -3217,6 +6357,8 @@ def _derived_summary_state(
         "evaluationStatus": evaluation_status,
         "evaluationScope": evaluation_scope,
         "ggufStatus": gguf_status,
+        "ggufConversionStatus": gguf_conversion_status,
+        "ggufTensorEquivalenceStatus": gguf_tensor_equivalence_status,
         "qualification": qualification,
         "promotionEligible": promotion_eligible,
     }
@@ -3259,17 +6401,14 @@ def write_summary(
         agents,
         require_all=require_gguf,
     )
-    reader_script = (
-        _verified_pinned_gguf_reader_script(run_root)
-        if require_gguf or gguf_inventory
-        else None
-    )
     summary: dict[str, Any] = {
         "schema": SUMMARY_SCHEMA_VERSION,
         "status": "pending_verification",
         "evaluationStatus": "pending_verification",
         "evaluationScope": "pending_verification",
         "ggufStatus": "pending_verification",
+        "ggufConversionStatus": "pending_verification",
+        "ggufTensorEquivalenceStatus": "pending_verification",
         "qualification": "pending_verification",
         "promotionEligible": False,
         "executionPlanSHA256": prepared_execution_plan["executionPlanSHA256"],
@@ -3287,8 +6426,8 @@ def write_summary(
         final_phase = verify_preference(run_root, agent) if preference else sft
         gguf = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
         gguf_metadata = (
-            verify_gguf_artifact(gguf, reader_script=reader_script)
-            if gguf.name in gguf_inventory and reader_script is not None
+            verify_gguf_file(run_root, gguf)
+            if gguf.name in gguf_inventory
             else None
         )
         gguf_exists = gguf_metadata is not None
@@ -3321,6 +6460,14 @@ def write_summary(
             "adapterGGUFSizeBytes": (
                 gguf_metadata["adapterGGUFSizeBytes"] if gguf_metadata else 0
             ),
+            **{
+                field: gguf_metadata[field] if gguf_metadata else None
+                for field in ADAPTER_GGUF_SEMANTIC_FIELDS
+            },
+            **{
+                field: gguf_metadata[field] if gguf_metadata else None
+                for field in GGUF_CONVERSION_SUMMARY_FIELDS
+            },
             "evaluationReport": str(evaluation),
             "evaluationReportExists": evaluation.is_file(),
             "evaluation": evaluation_status,
@@ -3378,6 +6525,8 @@ def _verified_completed_summary(
             "evaluationStatus",
             "evaluationScope",
             "ggufStatus",
+            "ggufConversionStatus",
+            "ggufTensorEquivalenceStatus",
             "qualification",
             "promotionEligible",
             "executionPlanSHA256",
@@ -3408,6 +6557,10 @@ def _verified_completed_summary(
         or summary.get("evaluationScope") not in {"full", "smoke", "none"}
         or summary.get("ggufStatus")
         not in {"verified", "skipped_by_operator"}
+        or summary.get("ggufConversionStatus")
+        not in {GGUF_CONVERSION_QUALIFICATION, "skipped_by_operator"}
+        or summary.get("ggufTensorEquivalenceStatus")
+        not in {GGUF_TENSOR_EQUIVALENCE_STATUS, "not_applicable"}
         or summary.get("qualification")
         not in {"quality_gate_passed", "diagnostic_only"}
         or type(summary.get("promotionEligible")) is not bool
@@ -3422,11 +6575,6 @@ def _verified_completed_summary(
         agents,
         require_all=False,
     )
-    reader_script = (
-        _verified_pinned_gguf_reader_script(run_root)
-        if gguf_inventory
-        else None
-    )
     evaluation_statuses: list[str] = []
     for agent in agents:
         item = summary_agents.get(agent)
@@ -3440,6 +6588,8 @@ def _verified_completed_summary(
                 "adapterGGUFExists",
                 "adapterGGUFSHA256",
                 "adapterGGUFSizeBytes",
+                *ADAPTER_GGUF_SEMANTIC_FIELDS,
+                *GGUF_CONVERSION_SUMMARY_FIELDS,
                 "evaluationReport",
                 "evaluationReportExists",
                 "evaluation",
@@ -3477,8 +6627,8 @@ def _verified_completed_summary(
             raise RuntimeError(f"Completed summary evaluation flag drifted for {agent}")
         gguf = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
         gguf_metadata = (
-            verify_gguf_artifact(gguf, reader_script=reader_script)
-            if gguf.name in gguf_inventory and reader_script is not None
+            verify_gguf_file(run_root, gguf)
+            if gguf.name in gguf_inventory
             else None
         )
         gguf_exists = gguf_metadata is not None
@@ -3500,6 +6650,13 @@ def _verified_completed_summary(
                 != item["adapterGGUFSizeBytes"]
                 or gguf_metadata["adapterGGUFSHA256"]
                 != item.get("adapterGGUFSHA256")
+                or any(
+                    item.get(field) != gguf_metadata[field]
+                    for field in (
+                        *ADAPTER_GGUF_SEMANTIC_FIELDS,
+                        *GGUF_CONVERSION_SUMMARY_FIELDS,
+                    )
+                )
             ):
                 raise RuntimeError(f"Completed summary GGUF drifted for {agent}")
         elif (
@@ -3507,6 +6664,13 @@ def _verified_completed_summary(
             or gguf.is_symlink()
             or item.get("adapterGGUFSizeBytes") != 0
             or item.get("adapterGGUFSHA256") is not None
+            or any(
+                item.get(field) is not None
+                for field in (
+                    *ADAPTER_GGUF_SEMANTIC_FIELDS,
+                    *GGUF_CONVERSION_SUMMARY_FIELDS,
+                )
+            )
         ):
             raise RuntimeError(f"Unbound or unsafe GGUF exists for {agent}")
     expected_state = _derived_summary_state(
@@ -3561,6 +6725,10 @@ def _upload_publication_contract(
         "evaluationStatus": summary["evaluationStatus"],
         "evaluationScope": summary["evaluationScope"],
         "ggufStatus": summary["ggufStatus"],
+        "ggufConversionStatus": summary["ggufConversionStatus"],
+        "ggufTensorEquivalenceStatus": summary[
+            "ggufTensorEquivalenceStatus"
+        ],
         "executionPlanSHA256": summary["executionPlanSHA256"],
     }
 
@@ -3587,6 +6755,319 @@ def _verified_upload_final_phase(
     return observed_phase
 
 
+def _self_hashed_upload_record(
+    payload: Mapping[str, Any],
+    *,
+    digest_field: str,
+) -> dict[str, Any]:
+    if digest_field in payload:
+        raise RuntimeError(f"Upload record already contains {digest_field}")
+    result = dict(payload)
+    result[digest_field] = canonical_sha256(result)
+    return result
+
+
+def _verified_self_hashed_upload_record(
+    path: Path,
+    *,
+    schema: str,
+    digest_field: str,
+) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError(f"Upload transaction record is not a regular file: {path}")
+    record_stat = path.stat(follow_symlinks=False)
+    if (
+        record_stat.st_uid != os.geteuid()
+        or stat.S_IMODE(record_stat.st_mode) != 0o600
+    ):
+        raise RuntimeError(f"Upload transaction record is not private: {path}")
+    record = read_object(path)
+    digest = record.get(digest_field)
+    unsigned = dict(record)
+    unsigned.pop(digest_field, None)
+    if (
+        record.get("schema") != schema
+        or re.fullmatch(r"[0-9a-f]{64}", str(digest or "")) is None
+        or canonical_sha256(unsigned) != digest
+    ):
+        raise RuntimeError(f"Upload transaction record is invalid: {path}")
+    return record
+
+
+def _write_once_upload_record(
+    path: Path,
+    record: Mapping[str, Any],
+    *,
+    schema: str,
+    digest_field: str,
+) -> dict[str, Any]:
+    expected = dict(record)
+    if path.exists() or path.is_symlink():
+        observed = _verified_self_hashed_upload_record(
+            path,
+            schema=schema,
+            digest_field=digest_field,
+        )
+        if observed != expected:
+            raise RuntimeError(f"Upload transaction record drifted: {path}")
+        return observed
+    write_object(path, expected)
+    path.chmod(0o600)
+    _fsync_directory(path.parent, label=f"upload transaction record {path}")
+    return expected
+
+
+def _upload_intent_payload(
+    *,
+    repo_id: str,
+    private: bool,
+    run_id: str,
+    publication_root: str,
+    publication: Mapping[str, Any],
+    include_gguf: bool,
+    summary_status: str,
+    snapshotted_files: Sequence[_SnapshottedUploadInput],
+    image_source_fields: Mapping[str, Any],
+) -> dict[str, Any]:
+    prefix = f"{publication_root}/"
+    files = [
+        {
+            "path": item.remote_path,
+            "sha256": item.sha256,
+            "sizeBytes": item.size_bytes,
+        }
+        for item in sorted(snapshotted_files, key=lambda item: item.remote_path)
+    ]
+    return _self_hashed_upload_record(
+        {
+            "schema": UPLOAD_INTENT_SCHEMA_VERSION,
+            "repository": repo_id,
+            "private": private,
+            "runID": run_id,
+            **publication,
+            "publicationRoot": publication_root,
+            "remotePrefix": prefix,
+            "remoteMarkerPath": f"{prefix}{UPLOAD_REMOTE_MARKER_FILENAME}",
+            "ggufIncluded": include_gguf,
+            "summaryStatus": summary_status,
+            "files": files,
+            **image_source_fields,
+        },
+        digest_field="uploadIntentSHA256",
+    )
+
+
+def _upload_attempt_payload(
+    intent: Mapping[str, Any],
+    *,
+    parent_revision: str | None,
+) -> dict[str, Any]:
+    intent_digest = intent.get("uploadIntentSHA256")
+    if re.fullmatch(r"[0-9a-f]{64}", str(intent_digest or "")) is None:
+        raise RuntimeError("Upload intent lacks an immutable digest")
+    if parent_revision is not None and (
+        not isinstance(parent_revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", parent_revision) is None
+    ):
+        raise RuntimeError("Remote parent revision is not immutable")
+    return _self_hashed_upload_record(
+        {
+            "schema": UPLOAD_ATTEMPT_SCHEMA_VERSION,
+            "uploadIntentSHA256": intent_digest,
+            "repository": intent["repository"],
+            "private": intent["private"],
+            "remotePrefix": intent["remotePrefix"],
+            "parentRevision": parent_revision,
+            "commitMessage": f"Lumen upload transaction {intent_digest}",
+        },
+        digest_field="uploadAttemptSHA256",
+    )
+
+
+def _upload_commit_payload(
+    attempt: Mapping[str, Any],
+    *,
+    commit_oid: str,
+) -> dict[str, Any]:
+    if re.fullmatch(r"[0-9a-f]{40}", commit_oid) is None:
+        raise RuntimeError("Hugging Face upload did not return an immutable commit OID")
+    return _self_hashed_upload_record(
+        {
+            "schema": UPLOAD_COMMIT_SCHEMA_VERSION,
+            "uploadIntentSHA256": attempt["uploadIntentSHA256"],
+            "uploadAttemptSHA256": attempt["uploadAttemptSHA256"],
+            "parentRevision": attempt["parentRevision"],
+            "commitMessage": attempt["commitMessage"],
+            "commitOID": commit_oid,
+        },
+        digest_field="uploadCommitSHA256",
+    )
+
+
+def _upload_marker_snapshot(
+    snapshot_root: Path,
+    intent: Mapping[str, Any],
+) -> _SnapshottedUploadInput:
+    marker_path = snapshot_root / "upload-intent.remote.json"
+    write_object(marker_path, intent)
+    marker_path.chmod(0o400)
+    return _SnapshottedUploadInput(
+        path=marker_path,
+        remote_path=str(intent["remoteMarkerPath"]),
+        sha256=file_sha256(marker_path),
+        size_bytes=marker_path.stat().st_size,
+    )
+
+
+def _commit_metadata(commit: Any) -> tuple[str | None, str | None]:
+    commit_oid = getattr(commit, "commit_id", None) or getattr(commit, "oid", None)
+    title = getattr(commit, "title", None)
+    if title is None:
+        message = getattr(commit, "message", None)
+        if isinstance(message, str):
+            title = message.splitlines()[0]
+    return commit_oid, title
+
+
+def _remote_commit_has_expected_parent(
+    *,
+    api: Any,
+    repo_id: str,
+    commit_oid: str,
+    expected_parent: str | None,
+) -> bool:
+    history = api.list_repo_commits(
+        repo_id=repo_id,
+        repo_type="model",
+        revision=commit_oid,
+    )
+    history_ids = [_commit_metadata(commit)[0] for commit in history]
+    if not history_ids or history_ids[0] != commit_oid:
+        return False
+    if expected_parent is None:
+        return len(history_ids) == 1
+    return len(history_ids) >= 2 and history_ids[1] == expected_parent
+
+
+def _verify_remote_upload_commit(
+    *,
+    api: Any,
+    hub_module: Any,
+    token: str,
+    repo_id: str,
+    private: bool,
+    attempt: Mapping[str, Any],
+    commit_oid: str,
+    expected_files: Sequence[_SnapshottedUploadInput],
+    prefix: str,
+) -> Any:
+    if re.fullmatch(r"[0-9a-f]{40}", commit_oid) is None:
+        raise RuntimeError("Recovered upload commit OID is invalid")
+    commits = api.list_repo_commits(repo_id=repo_id, repo_type="model")
+    matching_metadata = []
+    expected_parent = attempt.get("parentRevision")
+    for commit in commits:
+        observed_oid, title = _commit_metadata(commit)
+        if observed_oid == commit_oid:
+            matching_metadata.append(title)
+    if matching_metadata != [attempt.get("commitMessage")] or not (
+        _remote_commit_has_expected_parent(
+            api=api,
+            repo_id=repo_id,
+            commit_oid=commit_oid,
+            expected_parent=expected_parent,
+        )
+    ):
+        raise RuntimeError("Remote upload commit lineage failed verification")
+
+    download = getattr(hub_module, "hf_hub_download", None)
+    if not callable(download):
+        raise RuntimeError("huggingface_hub lacks immutable download support")
+    expected_by_path = {item.remote_path: item for item in expected_files}
+
+    def verify_revision(revision: str, *, label: str) -> None:
+        remote_files = api.list_repo_files(
+            repo_id=repo_id,
+            repo_type="model",
+            revision=revision,
+        )
+        observed_prefix_paths = {
+            path for path in remote_files if path.startswith(prefix)
+        }
+        if observed_prefix_paths != set(expected_by_path):
+            raise RuntimeError(f"Remote upload {label} path set failed verification")
+        for remote_path, expected in expected_by_path.items():
+            downloaded = Path(
+                download(
+                    repo_id=repo_id,
+                    filename=remote_path,
+                    repo_type="model",
+                    revision=revision,
+                    token=token,
+                )
+            )
+            resolved = downloaded.resolve(strict=True)
+            if (
+                not resolved.is_file()
+                or resolved.stat().st_size != expected.size_bytes
+                or file_sha256(resolved) != expected.sha256
+            ):
+                raise RuntimeError(
+                    f"Remote upload {label} content failed verification: {remote_path}"
+                )
+
+    verify_revision(commit_oid, label="transaction commit")
+    final_info = api.repo_info(repo_id=repo_id, repo_type="model")
+    final_revision = getattr(final_info, "sha", None)
+    if (
+        re.fullmatch(r"[0-9a-f]{40}", str(final_revision or "")) is None
+        or bool(final_info.private) != private
+    ):
+        raise RuntimeError("Recovered upload repository head or visibility is invalid")
+    if final_revision != commit_oid:
+        verify_revision(str(final_revision), label="current head")
+    return final_info
+
+
+def _discover_recoverable_upload_commit(
+    *,
+    api: Any,
+    attempt: Mapping[str, Any],
+) -> str:
+    candidates: list[str] = []
+    for commit in api.list_repo_commits(
+        repo_id=attempt["repository"],
+        repo_type="model",
+    ):
+        commit_oid, title = _commit_metadata(commit)
+        if (
+            re.fullmatch(r"[0-9a-f]{40}", str(commit_oid or "")) is not None
+            and title == attempt.get("commitMessage")
+            and _remote_commit_has_expected_parent(
+                api=api,
+                repo_id=str(attempt["repository"]),
+                commit_oid=str(commit_oid),
+                expected_parent=attempt.get("parentRevision"),
+            )
+        ):
+            candidates.append(str(commit_oid))
+    if len(candidates) != 1:
+        raise RuntimeError("Remote upload transaction commit is missing or ambiguous")
+    return candidates[0]
+
+
+def _cleanup_upload_transaction_records(paths: Sequence[Path]) -> None:
+    changed = False
+    for path in paths:
+        if path.exists() or path.is_symlink():
+            if path.is_symlink() or not path.is_file():
+                raise RuntimeError(f"Upload transaction cleanup path is unsafe: {path}")
+            path.unlink()
+            changed = True
+    if changed:
+        _fsync_directory(paths[0].parent, label="upload transaction cleanup")
+
+
 def upload_run(
     *,
     run_root: Path,
@@ -3599,7 +7080,10 @@ def upload_run(
     receipt_path: Path | None = None,
 ) -> dict[str, Any]:
     try:
-        from huggingface_hub import CommitOperationAdd, HfApi
+        import huggingface_hub as hub_module
+
+        CommitOperationAdd = hub_module.CommitOperationAdd
+        HfApi = hub_module.HfApi
     except ImportError as exc:
         raise RuntimeError("huggingface_hub is required for upload") from exc
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,255}", run_id) is None:
@@ -3778,6 +7262,36 @@ def upload_run(
                     expected_size=gguf_size,
                 )
             )
+            conversion_receipt_relative = (
+                "models/lora_qwen3_gguf_receipts/"
+                f"{_gguf_conversion_receipt_name(agent)}"
+            )
+            conversion_receipt = read_object(
+                run_root / conversion_receipt_relative
+            )
+            if (
+                agent_summary.get("adapterGGUFConversionReceipt")
+                != str(run_root / conversion_receipt_relative)
+                or agent_summary.get("adapterGGUFConversionReceiptSHA256")
+                != conversion_receipt.get("conversionReceiptSHA256")
+                or agent_summary.get("adapterGGUFConversionQualification")
+                != GGUF_CONVERSION_QUALIFICATION
+                or agent_summary.get("adapterGGUFTensorEquivalenceStatus")
+                != GGUF_TENSOR_EQUIVALENCE_STATUS
+            ):
+                raise RuntimeError(
+                    f"Upload GGUF conversion receipt drifted for {agent}"
+                )
+            upload_contracts.append(
+                _UploadInputContract(
+                    relative_path=conversion_receipt_relative,
+                    remote_path=(
+                        f"{publication_root}/gguf/"
+                        f"{_gguf_conversion_receipt_name(agent)}"
+                    ),
+                    expected_json=conversion_receipt,
+                )
+            )
     upload_contracts.extend(
         (
             _UploadInputContract(
@@ -3804,8 +7318,20 @@ def upload_run(
     )
     if receipt_path.parent.is_symlink() or not receipt_path.parent.is_dir():
         raise RuntimeError("Upload receipt parent must be a regular directory")
-    if receipt_path.exists() or receipt_path.is_symlink():
-        raise RuntimeError(f"Upload receipt path already exists: {receipt_path}")
+    receipt_parent_stat = receipt_path.parent.stat(follow_symlinks=False)
+    if (
+        receipt_parent_stat.st_uid != os.geteuid()
+        or stat.S_IMODE(receipt_parent_stat.st_mode) & 0o077
+    ):
+        raise RuntimeError("Upload receipt parent must be private and process-owned")
+    if receipt_path.is_symlink() or (
+        receipt_path.exists() and not receipt_path.is_file()
+    ):
+        raise RuntimeError(f"Upload receipt path is unsafe: {receipt_path}")
+    intent_path = receipt_path.parent / UPLOAD_INTENT_FILENAME
+    attempt_path = receipt_path.parent / UPLOAD_ATTEMPT_FILENAME
+    commit_path = receipt_path.parent / UPLOAD_COMMIT_FILENAME
+    transaction_paths = (intent_path, attempt_path, commit_path)
 
     with tempfile.TemporaryDirectory(
         prefix="lumen-upload-snapshot-",
@@ -3818,7 +7344,28 @@ def upload_run(
             upload_contracts,
             snapshot_root,
         )
-        remote_paths = [item.remote_path for item in snapshotted_files]
+        intent = _upload_intent_payload(
+            repo_id=repo_id,
+            private=private,
+            run_id=run_id,
+            publication_root=publication_root,
+            publication=publication,
+            include_gguf=include_gguf,
+            summary_status=str(summary["status"]),
+            snapshotted_files=snapshotted_files,
+            image_source_fields=image_source_fields,
+        )
+        marker = _upload_marker_snapshot(snapshot_root, intent)
+        remote_files = [*snapshotted_files, marker]
+        remote_paths = [item.remote_path for item in remote_files]
+        prefix = str(intent["remotePrefix"])
+        if not receipt_path.exists():
+            _write_once_upload_record(
+                intent_path,
+                intent,
+                schema=UPLOAD_INTENT_SCHEMA_VERSION,
+                digest_field="uploadIntentSHA256",
+            )
 
         token_handle, token_stat = _open_regular_readonly(
             token_file,
@@ -3860,40 +7407,176 @@ def upload_run(
                 "Remote repository visibility does not match the requested policy"
             )
         existing_files = api.list_repo_files(repo_id=repo_id, repo_type="model")
-        prefix = f"{publication_root}/"
-        if any(path.startswith(prefix) for path in existing_files):
-            raise RuntimeError(f"Remote run prefix already exists: {prefix}")
-        parent_revision = getattr(info, "sha", None)
-        if parent_revision is not None and re.fullmatch(
-            r"[0-9a-f]{40}", str(parent_revision)
-        ) is None:
-            raise RuntimeError("Remote parent revision is not immutable")
-        commit = api.create_commit(
-            repo_id=repo_id,
-            repo_type="model",
-            operations=[
-                CommitOperationAdd(
-                    path_in_repo=item.remote_path,
-                    path_or_fileobj=str(item.path),
-                )
-                for item in snapshotted_files
-            ],
-            commit_message=(
-                f"Upload verified Lumen training run {run_id}"
-                if promotion_eligible
-                else f"Upload diagnostic-only Lumen training run {run_id}"
-            ),
-            parent_commit=parent_revision,
-        )
-        commit_oid = getattr(commit, "oid", None)
-        if re.fullmatch(r"[0-9a-f]{40}", str(commit_oid or "")) is None:
-            raise RuntimeError("Hugging Face upload did not return an immutable commit OID")
-        final_info = api.repo_info(repo_id=repo_id, repo_type="model")
-        final_revision = getattr(final_info, "sha", None)
-        if final_revision != commit_oid or bool(final_info.private) != private:
-            raise RuntimeError(
-                "Remote upload head or visibility failed post-commit verification"
+        prefix_exists = any(path.startswith(prefix) for path in existing_files)
+
+        if receipt_path.exists():
+            existing_receipt = _verified_self_hashed_upload_record(
+                receipt_path,
+                schema=UPLOAD_SCHEMA_VERSION,
+                digest_field="uploadSHA256",
             )
+            parent_revision = existing_receipt.get("parentRevision")
+            attempt = _upload_attempt_payload(
+                intent,
+                parent_revision=(
+                    str(parent_revision) if parent_revision is not None else None
+                ),
+            )
+            commit_oid = str(existing_receipt.get("commitOID") or "")
+            required_receipt_fields: dict[str, Any] = {
+                "repository": repo_id,
+                "private": private,
+                "runID": run_id,
+                **publication,
+                "remotePrefix": prefix,
+                "ggufIncluded": include_gguf,
+                "summaryStatus": summary["status"],
+                "uploadedFileCount": len(remote_files),
+                "uploadedPaths": remote_paths,
+                "commitOID": commit_oid,
+                "parentRevision": parent_revision,
+                "uploadIntentSHA256": intent["uploadIntentSHA256"],
+                "uploadAttemptSHA256": attempt["uploadAttemptSHA256"],
+                **image_source_fields,
+            }
+            if any(
+                existing_receipt.get(field) != expected
+                for field, expected in required_receipt_fields.items()
+            ) or re.fullmatch(
+                r"[0-9a-f]{40}", str(existing_receipt.get("headRevision") or "")
+            ) is None:
+                raise RuntimeError("Existing upload receipt drifted from this run")
+            if not prefix_exists:
+                raise RuntimeError("Existing upload receipt has no remote run prefix")
+            _verify_remote_upload_commit(
+                api=api,
+                hub_module=hub_module,
+                token=token,
+                repo_id=repo_id,
+                private=private,
+                attempt=attempt,
+                commit_oid=commit_oid,
+                expected_files=remote_files,
+                prefix=prefix,
+            )
+            _cleanup_upload_transaction_records(transaction_paths)
+            return existing_receipt
+
+        if attempt_path.exists() or attempt_path.is_symlink():
+            attempt = _verified_self_hashed_upload_record(
+                attempt_path,
+                schema=UPLOAD_ATTEMPT_SCHEMA_VERSION,
+                digest_field="uploadAttemptSHA256",
+            )
+            expected_attempt = _upload_attempt_payload(
+                intent,
+                parent_revision=attempt.get("parentRevision"),
+            )
+            if attempt != expected_attempt:
+                raise RuntimeError("Upload attempt drifted from its durable intent")
+        else:
+            if prefix_exists:
+                raise RuntimeError(
+                    "Remote run prefix exists without a durable local upload attempt"
+                )
+            parent_revision = getattr(info, "sha", None)
+            if parent_revision is not None:
+                parent_revision = str(parent_revision)
+            attempt = _upload_attempt_payload(
+                intent,
+                parent_revision=parent_revision,
+            )
+            _write_once_upload_record(
+                attempt_path,
+                attempt,
+                schema=UPLOAD_ATTEMPT_SCHEMA_VERSION,
+                digest_field="uploadAttemptSHA256",
+            )
+
+        parent_revision = attempt.get("parentRevision")
+        if prefix_exists:
+            if commit_path.exists() or commit_path.is_symlink():
+                commit_record = _verified_self_hashed_upload_record(
+                    commit_path,
+                    schema=UPLOAD_COMMIT_SCHEMA_VERSION,
+                    digest_field="uploadCommitSHA256",
+                )
+                expected_commit = _upload_commit_payload(
+                    attempt,
+                    commit_oid=str(commit_record.get("commitOID") or ""),
+                )
+                if commit_record != expected_commit:
+                    raise RuntimeError("Upload commit record drifted from its attempt")
+                commit_oid = str(commit_record["commitOID"])
+            else:
+                commit_oid = _discover_recoverable_upload_commit(
+                    api=api,
+                    attempt=attempt,
+                )
+                commit_record = _upload_commit_payload(
+                    attempt,
+                    commit_oid=commit_oid,
+                )
+                _write_once_upload_record(
+                    commit_path,
+                    commit_record,
+                    schema=UPLOAD_COMMIT_SCHEMA_VERSION,
+                    digest_field="uploadCommitSHA256",
+                )
+            final_info = _verify_remote_upload_commit(
+                api=api,
+                hub_module=hub_module,
+                token=token,
+                repo_id=repo_id,
+                private=private,
+                attempt=attempt,
+                commit_oid=commit_oid,
+                expected_files=remote_files,
+                prefix=prefix,
+            )
+            remote_verification = "recovered_exact_remote_tree"
+        else:
+            current_parent = getattr(info, "sha", None)
+            if current_parent is not None:
+                current_parent = str(current_parent)
+            if current_parent != parent_revision:
+                raise RuntimeError(
+                    "Remote repository head changed after the upload attempt was staged"
+                )
+            commit = api.create_commit(
+                repo_id=repo_id,
+                repo_type="model",
+                operations=[
+                    CommitOperationAdd(
+                        path_in_repo=item.remote_path,
+                        path_or_fileobj=str(item.path),
+                    )
+                    for item in remote_files
+                ],
+                commit_message=str(attempt["commitMessage"]),
+                parent_commit=parent_revision,
+            )
+            commit_oid = str(getattr(commit, "oid", None) or "")
+            commit_record = _upload_commit_payload(
+                attempt,
+                commit_oid=commit_oid,
+            )
+            _write_once_upload_record(
+                commit_path,
+                commit_record,
+                schema=UPLOAD_COMMIT_SCHEMA_VERSION,
+                digest_field="uploadCommitSHA256",
+            )
+            final_info = api.repo_info(repo_id=repo_id, repo_type="model")
+            if (
+                getattr(final_info, "sha", None) != commit_oid
+                or bool(final_info.private) != private
+            ):
+                raise RuntimeError(
+                    "Remote upload head or visibility failed post-commit verification"
+                )
+            remote_verification = "atomic_create_commit_head"
+        final_revision = getattr(final_info, "sha", None)
     result: dict[str, Any] = {
         "schema": UPLOAD_SCHEMA_VERSION,
         "repository": repo_id,
@@ -3905,13 +7588,19 @@ def upload_run(
         "remotePrefix": prefix,
         "ggufIncluded": include_gguf,
         "summaryStatus": summary["status"],
-        "uploadedFileCount": len(snapshotted_files),
+        "uploadedFileCount": len(remote_files),
         "uploadedPaths": remote_paths,
         "commitOID": commit_oid,
+        "uploadIntentSHA256": intent["uploadIntentSHA256"],
+        "uploadAttemptSHA256": attempt["uploadAttemptSHA256"],
+        "remoteVerification": remote_verification,
         **image_source_fields,
     }
     result["uploadSHA256"] = canonical_sha256(result)
     write_object(receipt_path, result)
+    receipt_path.chmod(0o600)
+    _fsync_directory(receipt_path.parent, label="upload receipt")
+    _cleanup_upload_transaction_records(transaction_paths)
     return result
 
 
@@ -3948,12 +7637,20 @@ def parse_args() -> argparse.Namespace:
     static.add_argument("--run-root", type=Path, required=True)
     static.add_argument("--allowed-run-parent", type=Path, required=True)
     static.add_argument("--run-id")
+    static.add_argument("--precreated-bind-root", action="store_true")
     runtime = subparsers.add_parser("runtime-preflight")
     _common_parser(runtime)
     prepare = subparsers.add_parser("prepare")
     _common_parser(prepare)
     _execution_plan_parser(prepare)
     prepare.add_argument("--run-root", type=Path, required=True)
+    prepare.add_argument("--precreated-bind-root", action="store_true")
+    recover_prepare = subparsers.add_parser("recover-incomplete-preparation")
+    _common_parser(recover_prepare)
+    _execution_plan_parser(recover_prepare)
+    recover_prepare.add_argument("--run-root", type=Path, required=True)
+    recover_prepare.add_argument("--allowed-run-parent", type=Path, required=True)
+    recover_prepare.add_argument("--precreated-bind-root", action="store_true")
     validate = subparsers.add_parser("validate-prepared-runtime")
     validate.add_argument("--root", type=Path, required=True)
     validate.add_argument("--run-root", type=Path, required=True)
@@ -3961,19 +7658,53 @@ def parse_args() -> argparse.Namespace:
     validate.add_argument("--variant", required=True)
     validate.add_argument("--container-digest", required=True)
     _execution_plan_parser(validate)
+    tokenizer_preflight = subparsers.add_parser("global-tokenizer-preflight")
+    tokenizer_preflight.add_argument("--run-root", type=Path, required=True)
+    tokenizer_preflight.add_argument("--agents", required=True)
     owned = subparsers.add_parser("verify-owned-run")
     owned.add_argument("--run-root", type=Path, required=True)
     owned.add_argument("--variant", required=True)
+    reset_owned = subparsers.add_parser("reset-owned-run-root")
+    reset_owned.add_argument("--run-root", type=Path, required=True)
+    reset_owned.add_argument("--variant", required=True)
+    initialize_root = subparsers.add_parser("initialize-bind-root")
+    initialize_root.add_argument("--run-root", type=Path, required=True)
+    initialize_root.add_argument("--allowed-run-parent", type=Path, required=True)
+    initialize_root.add_argument("--create-if-missing", action="store_true")
+    verify_root = subparsers.add_parser("verify-bind-root")
+    verify_root.add_argument("--run-root", type=Path, required=True)
+    verify_root.add_argument("--allowed-run-parent", type=Path, required=True)
+    verify_root.add_argument("--expected-identity", required=True)
+    verify_root.add_argument("--mounted-bind", action="store_true")
     verify = subparsers.add_parser("verify-phase")
     verify.add_argument("--run-root", type=Path, required=True)
     verify.add_argument("--agent", choices=AGENTS, required=True)
     verify.add_argument("--phase", choices=("sft", "preference"), required=True)
+    verify_evaluation_parser = subparsers.add_parser("verify-evaluation")
+    verify_evaluation_parser.add_argument("--run-root", type=Path, required=True)
+    verify_evaluation_parser.add_argument("--agent", choices=AGENTS, required=True)
     verify_gguf_parser = subparsers.add_parser("verify-gguf")
     verify_gguf_parser.add_argument("--run-root", type=Path, required=True)
     verify_gguf_parser.add_argument("--agent", choices=AGENTS, required=True)
     verify_gguf_file_parser = subparsers.add_parser("verify-gguf-file")
     verify_gguf_file_parser.add_argument("--run-root", type=Path, required=True)
     verify_gguf_file_parser.add_argument("--path", type=Path, required=True)
+    write_gguf_receipt_parser = subparsers.add_parser(
+        "write-gguf-conversion-receipt"
+    )
+    write_gguf_receipt_parser.add_argument("--run-root", type=Path, required=True)
+    write_gguf_receipt_parser.add_argument(
+        "--agent", choices=AGENTS, required=True
+    )
+    write_gguf_receipt_parser.add_argument(
+        "--staging-path", type=Path, required=True
+    )
+    install_gguf_file_parser = subparsers.add_parser("install-gguf-file")
+    install_gguf_file_parser.add_argument("--run-root", type=Path, required=True)
+    install_gguf_file_parser.add_argument("--agent", choices=AGENTS, required=True)
+    install_gguf_file_parser.add_argument(
+        "--staging-path", type=Path, required=True
+    )
     clean = subparsers.add_parser("clean-phase")
     clean.add_argument("--run-root", type=Path, required=True)
     clean.add_argument("--agent", choices=AGENTS, required=True)
@@ -3988,6 +7719,14 @@ def parse_args() -> argparse.Namespace:
     summary.add_argument("--preference", action="store_true")
     summary.add_argument("--require-gguf", action="store_true")
     summary.add_argument("--require-evaluation", action="store_true")
+    postcondition = subparsers.add_parser("verify-container-postcondition")
+    postcondition.add_argument("--root", type=Path, required=True)
+    postcondition.add_argument("--run-root", type=Path, required=True)
+    postcondition.add_argument("--agents", required=True)
+    postcondition.add_argument("--variant", required=True)
+    postcondition.add_argument("--container-digest", required=True)
+    postcondition.add_argument("--prepare-only", action="store_true")
+    _execution_plan_parser(postcondition)
     upload = subparsers.add_parser("upload")
     upload.add_argument("--run-root", type=Path, required=True)
     upload.add_argument("--agents", required=True)
@@ -4025,6 +7764,7 @@ def main() -> None:
             evaluation_scope=args.evaluation_scope,
             evaluation_max_examples=args.evaluation_max_examples,
             gguf_requested=args.gguf_requested,
+            precreated_bind_root=args.precreated_bind_root,
         )
     elif args.command == "runtime-preflight":
         result = runtime_preflight(
@@ -4049,6 +7789,23 @@ def main() -> None:
             evaluation_scope=args.evaluation_scope,
             evaluation_max_examples=args.evaluation_max_examples,
             gguf_requested=args.gguf_requested,
+            precreated_bind_root=args.precreated_bind_root,
+        )
+    elif args.command == "recover-incomplete-preparation":
+        result = recover_incomplete_preparation(
+            root=args.root.resolve(),
+            dataset_source=args.dataset_source.resolve(),
+            run_root=resolved_run_root,
+            allowed_parent=args.allowed_run_parent,
+            agents=agents,
+            variant=args.variant,
+            seed=args.seed,
+            base_model_override=args.base_model,
+            container_digest=args.container_digest,
+            evaluation_scope=args.evaluation_scope,
+            evaluation_max_examples=args.evaluation_max_examples,
+            gguf_requested=args.gguf_requested,
+            precreated_bind_root=args.precreated_bind_root,
         )
     elif args.command == "validate-prepared-runtime":
         result = validate_prepared_runtime(
@@ -4061,10 +7818,33 @@ def main() -> None:
             evaluation_max_examples=args.evaluation_max_examples,
             gguf_requested=args.gguf_requested,
         )
+    elif args.command == "global-tokenizer-preflight":
+        result = global_tokenizer_preflight(
+            run_root=resolved_run_root,
+            agents=agents,
+        )
     elif args.command == "verify-owned-run":
         result = verify_owned_run(
             resolved_run_root,
             variant=args.variant,
+        )
+    elif args.command == "reset-owned-run-root":
+        result = reset_owned_run_root(
+            resolved_run_root,
+            variant=args.variant,
+        )
+    elif args.command == "initialize-bind-root":
+        result = initialize_bind_root(
+            resolved_run_root,
+            allowed_parent=args.allowed_run_parent,
+            create_if_missing=args.create_if_missing,
+        )
+    elif args.command == "verify-bind-root":
+        result = verify_bind_root(
+            resolved_run_root,
+            allowed_parent=args.allowed_run_parent,
+            expected_identity=args.expected_identity,
+            mounted_bind=args.mounted_bind,
         )
     elif args.command == "verify-phase":
         result = (
@@ -4072,12 +7852,32 @@ def main() -> None:
             if args.phase == "sft"
             else verify_preference(resolved_run_root, args.agent)
         )
+    elif args.command == "verify-evaluation":
+        result = verify_evaluation(resolved_run_root, args.agent)
     elif args.command == "verify-gguf":
         result = verify_gguf(resolved_run_root, args.agent)
     elif args.command == "verify-gguf-file":
         result = verify_gguf_file(
             resolved_run_root,
             args.path.expanduser().resolve(),
+        )
+    elif args.command == "write-gguf-conversion-receipt":
+        staging_path = args.staging_path.expanduser()
+        if not staging_path.is_absolute():
+            raise RuntimeError("Staged GGUF path must be absolute")
+        result = write_gguf_conversion_receipt(
+            resolved_run_root,
+            args.agent,
+            staging_path,
+        )
+    elif args.command == "install-gguf-file":
+        staging_path = args.staging_path.expanduser()
+        if not staging_path.is_absolute():
+            raise RuntimeError("Staged GGUF path must be absolute")
+        result = install_gguf_file(
+            resolved_run_root,
+            args.agent,
+            staging_path,
         )
     elif args.command == "clean-phase":
         clean_phase(resolved_run_root, args.agent, args.phase)
@@ -4093,6 +7893,42 @@ def main() -> None:
             require_gguf=args.require_gguf,
             require_evaluation=args.require_evaluation,
         )
+    elif args.command == "verify-container-postcondition":
+        prepared = validate_prepared_runtime(
+            root=args.root.resolve(),
+            run_root=resolved_run_root,
+            agents=agents,
+            variant=args.variant,
+            container_digest=args.container_digest,
+            evaluation_scope=args.evaluation_scope,
+            evaluation_max_examples=args.evaluation_max_examples,
+            gguf_requested=args.gguf_requested,
+            observe_runtime=False,
+        )
+        if args.prepare_only:
+            result = {
+                "status": "prepared_postcondition_verified",
+                "trainingEnvironmentSHA256": prepared[
+                    "trainingEnvironmentSHA256"
+                ],
+                "observedAccelerator": prepared["observedAccelerator"],
+            }
+        else:
+            completed = _verified_completed_summary(resolved_run_root, agents)
+            result = {
+                "status": "completed_postcondition_verified",
+                "trainingEnvironmentSHA256": prepared[
+                    "trainingEnvironmentSHA256"
+                ],
+                "summarySHA256": completed["summarySHA256"],
+                "summaryStatus": completed["status"],
+                "evaluationStatus": completed["evaluationStatus"],
+                "ggufStatus": completed["ggufStatus"],
+                "ggufConversionStatus": completed["ggufConversionStatus"],
+                "ggufTensorEquivalenceStatus": completed[
+                    "ggufTensorEquivalenceStatus"
+                ],
+            }
     elif args.command == "upload":
         result = upload_run(
             run_root=resolved_run_root,

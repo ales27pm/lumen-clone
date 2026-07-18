@@ -4,7 +4,20 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from lumen_manifest_crawler.dataset.adapter_evaluation import canonical_sha256
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ModelSlotManifest, ToolManifest
+from lumen_manifest_crawler.runtime_prompt_contract import (
+    FLEET_SYSTEM_PROMPT_CONTRACT_SCHEMA_VERSION,
+    RUNTIME_PROMPT_COMPOSER_POLICY_ID,
+    RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+    prompt_sha256,
+)
+
+
+ORCHESTRATION_DERIVATION_SCHEMA_VERSION = (
+    "lumen.fleet-graph-derivation/1.0.0"
+)
+ORCHESTRATION_EVENT_ID_GRAMMAR = "<scenarioID>::event::<one-based two-digit order>"
 
 
 @dataclass(frozen=True)
@@ -54,6 +67,11 @@ def generate_fleet_system_prompts(manifest: AgentBehaviorManifest) -> dict[str, 
         }
         prompt = _system_prompt_text(manifest, slot, compact_payload)
         prompts[slot.id] = {
+            "promptContractSchemaVersion": FLEET_SYSTEM_PROMPT_CONTRACT_SCHEMA_VERSION,
+            "fleetContractVersion": manifest.fleet.contractVersion,
+            "composerPolicyID": RUNTIME_PROMPT_COMPOSER_POLICY_ID,
+            "composerPolicySHA256": RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+            "systemPromptSHA256": prompt_sha256(prompt),
             "slotID": slot.id,
             "role": slot.role,
             "systemPrompt": prompt,
@@ -90,9 +108,28 @@ def generate_cross_model_training(manifest: AgentBehaviorManifest) -> list[dict[
 def generate_orchestration_evals(manifest: AgentBehaviorManifest) -> list[dict[str, Any]]:
     """Return Fleet-owned, manifest-grounded orchestration evaluation records."""
     records: list[dict[str, Any]] = []
-    for scenario in _orchestration_scenarios(manifest):
+    for scenario in _orchestration_eval_scenarios(manifest):
         graph = scenario["graph"]
         decision = graph["decision"]
+        derivation = _orchestration_derivation_contract(scenario)
+        if _derive_orchestration_graph_from_contract(derivation) != graph:
+            raise ValueError(
+                f"Fleet holdout derivation does not uniquely rebuild graph: {scenario['id']}"
+            )
+        prompt = _orchestration_eval_prompt(scenario, derivation)
+        metadata = {
+            **_native_orchestration_metadata(manifest, scenario["id"]),
+            "behaviorClass": scenario["behaviorClass"],
+            "holdoutInstance": True,
+            "expectedCandidateHashSchemaVersion": "lumen.eval-candidate-hash/1.0.0",
+            "expectedCandidateSHA256": canonical_sha256(graph),
+            "expectedCandidateTopologyHashSchemaVersion": (
+                "lumen.eval-candidate-topology-hash/1.0.0"
+            ),
+            "expectedCandidateTopologySHA256": canonical_sha256(
+                _orchestration_topology_contract(graph)
+            ),
+        }
         records.append({
             "id": _record_id("orchestration-eval", scenario["id"]),
             "schemaVersion": "2.1.0",
@@ -103,7 +140,7 @@ def generate_orchestration_evals(manifest: AgentBehaviorManifest) -> list[dict[s
             "messages": [
                 {
                     "role": "user",
-                    "content": _orchestration_eval_prompt(scenario),
+                    "content": prompt,
                 },
             ],
             "expected": {
@@ -117,41 +154,926 @@ def generate_orchestration_evals(manifest: AgentBehaviorManifest) -> list[dict[s
                 "expectedStopReason": decision["stopReason"],
                 "requiredEventTypes": [event["type"] for event in graph["events"]],
                 "requiredDependencies": graph["dependencies"],
+                "requiresCanonicalDerivation": True,
+                "canonicalDerivation": derivation,
                 "mustUseKnownSlotsOnly": True,
                 "mustNotExposePrivateState": True,
                 **scenario["evalConstraints"],
             },
-            "metadata": _native_orchestration_metadata(manifest, scenario["id"]),
+            "metadata": metadata,
         })
     return records
 
 
-def _orchestration_eval_prompt(scenario: dict[str, Any]) -> str:
-    """Create a semantically equivalent holdout without copying training text."""
+def _orchestration_eval_prompt(
+    scenario: dict[str, Any],
+    derivation: dict[str, Any],
+) -> str:
+    """Provide request/state facts; require policy derivation, not transcription."""
 
-    scenario_id = str(scenario["id"])
-    constraints = scenario.get("evalConstraints") or {}
-    prompts = {
-        "no-delegation": "Trusted context already resolves the request. Return the terminal Fleet graph with no peer assignment.",
-        "sequential-dependencies": "Build a dependency graph where planning precedes strict execution and execution precedes the grounded user response.",
-        "parallel-dependencies": "Represent independent tool-execution and style-analysis branches that join at one final response after both finish.",
-        "context-handoff": "Transfer an approved plan to Executor using the minimum permitted context fields, then end the bounded handoff.",
-        "duplicate-suppression": "Two branches identify identical executor work. Model one dispatch, one suppression event, and completion after the single result.",
-        "aggregation-owner": "Given separate tool and style results, choose one manifested slot as the sole final-response aggregator.",
-        "approval-boundary": (
-            f"Construct the stop-and-request-approval graph for `{constraints.get('toolID')}` while approval is still absent."
+    return _canonical_orchestration_prompt(scenario, derivation)
+
+
+def _canonical_orchestration_prompt(
+    scenario: dict[str, Any],
+    derivation: dict[str, Any],
+) -> str:
+    """Use one non-leaking prompt grammar for training and holdout graphs."""
+
+    facts = derivation["facts"]
+    return "\n".join(
+        [
+            "Return exactly one JSON Fleet event-graph object and nothing else.",
+            (
+                "Derive the graph from the canonical Fleet policy; no target graph, "
+                "event list, dependency list, decision object, or answer hash is supplied."
+            ),
+            (
+                f"Behavior class `{scenario['behaviorClass']}`: "
+                f"{scenario['prompt']}"
+            ),
+            (
+                "Canonical policy conditions (each condition has the same meaning in "
+                "training and evaluation): "
+                f"{json.dumps(derivation['policyConditions'], sort_keys=True)}"
+            ),
+            (
+                f"Graph schema `{derivation['graphSchemaVersion']}`; scenario "
+                f"`{derivation['scenarioID']}`; known slots "
+                f"{json.dumps(derivation['knownSlotIDs'], ensure_ascii=False)}."
+            ),
+            (
+                "Canonical event IDs are derived solely from scenario identity and "
+                f"order using `{ORCHESTRATION_EVENT_ID_GRAMMAR}`."
+            ),
+            (
+                "Trusted request/state facts (these are inputs, not output fields): "
+                f"{json.dumps(facts, ensure_ascii=False, sort_keys=True)}"
+            ),
+            (
+                "Apply the behavior-class policy to derive the minimal canonical stages, "
+                "direct-prerequisite edges, delegated-slot directory, aggregation owner, "
+                "strategy, and terminal reason."
+            ),
+            "Expose no private state and do not invent a slot, tool, fact, or stage.",
+        ]
+    )
+
+
+def _events_of_type(
+    graph: dict[str, Any],
+    event_type: str,
+) -> list[dict[str, Any]]:
+    events = graph.get("events")
+    if not isinstance(events, list):
+        raise ValueError("Fleet derivation graph has no events")
+    matched = [
+        event
+        for event in events
+        if isinstance(event, dict) and event.get("type") == event_type
+    ]
+    if not matched:
+        raise ValueError(f"Fleet derivation graph lacks {event_type}")
+    return matched
+
+
+def _one_event(
+    graph: dict[str, Any],
+    event_type: str,
+) -> dict[str, Any]:
+    matched = _events_of_type(graph, event_type)
+    if len(matched) != 1:
+        raise ValueError(
+            f"Fleet derivation graph requires one {event_type}, got {len(matched)}"
+        )
+    return matched[0]
+
+
+def _delegation_to(
+    graph: dict[str, Any],
+    slot_id: str,
+) -> dict[str, Any]:
+    matched = [
+        event
+        for event in _events_of_type(graph, "delegate")
+        if event.get("targetSlotID") == slot_id
+    ]
+    if len(matched) != 1:
+        raise ValueError(
+            f"Fleet derivation graph requires one delegation to {slot_id}"
+        )
+    return matched[0]
+
+
+_ORCHESTRATION_POLICY_CONDITION_KEYS = (
+    "requestNormalizationRequired",
+    "policyAuditRequired",
+    "trustedContextSnapshotProvided",
+    "executorObservationProvided",
+    "parallelJoinRequired",
+    "contextBoundaryReviewRequired",
+    "candidateBranchesProvided",
+    "aggregationInputVerificationRequired",
+    "responseValidationRequired",
+    "approvalPolicyEvaluationRequired",
+    "permissionPreflightRequired",
+    "slotDirectorySnapshotProvided",
+    "rejectionRecordRequired",
+)
+_HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR = {
+    "no-delegation": ("trustedContextSnapshotProvided",),
+    "sequential-dependencies": ("executorObservationProvided",),
+    "parallel-dependencies": ("parallelJoinRequired",),
+    "context-handoff": ("contextBoundaryReviewRequired",),
+    "duplicate-suppression": ("candidateBranchesProvided",),
+    "aggregation-owner": (
+        "aggregationInputVerificationRequired",
+        "responseValidationRequired",
+    ),
+    "approval-boundary": ("approvalPolicyEvaluationRequired",),
+    "unavailable-boundary": ("permissionPreflightRequired",),
+    "nonexistent-slot-negative": (
+        "slotDirectorySnapshotProvided",
+        "rejectionRecordRequired",
+    ),
+}
+
+
+def _orchestration_policy_conditions(
+    *,
+    behavior: str,
+    training_variant: str | None,
+) -> dict[str, bool]:
+    conditions = {key: False for key in _ORCHESTRATION_POLICY_CONDITION_KEYS}
+    if training_variant == "normalized-intake":
+        conditions["requestNormalizationRequired"] = True
+        for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
+            conditions[key] = True
+    elif training_variant == "policy-audited":
+        conditions["policyAuditRequired"] = True
+        for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
+            conditions[key] = True
+    elif training_variant == "normalization-policy-audited":
+        conditions["requestNormalizationRequired"] = True
+        conditions["policyAuditRequired"] = True
+        for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
+            conditions[key] = True
+    elif training_variant == "core":
+        pass
+    elif training_variant is None:
+        for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
+            conditions[key] = True
+    else:
+        raise ValueError(f"Unknown Fleet training matrix variant: {training_variant}")
+    return conditions
+
+
+def _training_orchestration_facts(
+    scenario: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract semantic inputs without copying a stage, edge, or decision."""
+
+    graph = scenario["graph"]
+    behavior = str(scenario["behaviorClass"])
+    if behavior == "no-delegation":
+        evidence = _one_event(graph, "trusted_context_verified")
+        return {"trustedEvidenceStatus": evidence["evidenceStatus"]}
+    if behavior == "sequential-dependencies":
+        return {
+            "peerContext": {
+                slot: _delegation_to(graph, slot)["contextKeys"]
+                for slot in ("cortex", "executor", "mouth")
+            }
+        }
+    if behavior == "parallel-dependencies":
+        return {
+            "peerContext": {
+                slot: _delegation_to(graph, slot)["contextKeys"]
+                for slot in ("cortex", "executor", "mimicry", "mouth")
+            }
+        }
+    if behavior == "context-handoff":
+        handoff = _delegation_to(graph, "executor")
+        return {
+            "allowedExecutorContext": handoff["contextKeys"],
+            "forbiddenExecutorContext": handoff["excludes"],
+        }
+    if behavior == "duplicate-suppression":
+        dispatch = _one_event(graph, "delegate")
+        return {
+            "workOwnerSlot": dispatch["targetSlotID"],
+            "sharedWorkKey": dispatch["workKey"],
+        }
+    if behavior == "aggregation-owner":
+        available = _events_of_type(graph, "result_available")
+        return {
+            "availableResultSlots": [event["sourceSlotID"] for event in available],
+            "renderContext": _delegation_to(graph, "mouth")["contextKeys"],
+        }
+    if behavior == "approval-boundary":
+        request = _one_event(graph, "request_received")
+        boundary = _one_event(graph, "approval_boundary")
+        return {
+            "toolIdentifier": request["toolID"],
+            "approvalState": boundary["approvalState"],
+        }
+    if behavior == "unavailable-boundary":
+        request = _one_event(graph, "request_received")
+        unavailable = _one_event(graph, "capability_unavailable")
+        return {
+            "toolIdentifier": request["toolID"],
+            "permissionKey": unavailable["permissionKey"],
+            "permissionState": unavailable["permissionState"],
+        }
+    if behavior == "nonexistent-slot-negative":
+        request = _one_event(graph, "request_received")
+        return {"requestedSlotIdentifier": request["requestedSlotID"]}
+    raise ValueError(f"Unknown Fleet training derivation behavior: {behavior}")
+
+
+def _training_feature_facts(
+    *,
+    base_facts: dict[str, Any],
+    scenario_id: str,
+    behavior: str,
+    conditions: dict[str, bool],
+    request_id: str | None,
+) -> dict[str, Any]:
+    """Add external identifiers needed by supported compositional conditions."""
+
+    facts = json.loads(json.dumps(base_facts, ensure_ascii=False))
+    if request_id is not None:
+        facts["requestIdentifier"] = request_id
+    if conditions["trustedContextSnapshotProvided"]:
+        facts.update(
+            {
+                "trustedContextSnapshotIdentifier": f"{scenario_id}-context-snapshot",
+                "trustedEvidenceIdentifier": f"{scenario_id}-trusted-evidence",
+            }
+        )
+    if conditions["executorObservationProvided"]:
+        facts["executorObservationIdentifier"] = f"{scenario_id}-executor-observation"
+    if conditions["parallelJoinRequired"]:
+        facts.update(
+            {
+                "parallelBranchIdentifiers": [
+                    f"{scenario_id}-executor-branch",
+                    f"{scenario_id}-mimicry-branch",
+                ],
+                "joinIdentifier": f"{scenario_id}-branch-join",
+            }
+        )
+    if conditions["contextBoundaryReviewRequired"]:
+        facts.update(
+            {
+                "approvedActionIdentifier": f"{scenario_id}-approved-action",
+                "executorResultIdentifier": f"{scenario_id}-executor-result",
+            }
+        )
+    if conditions["candidateBranchesProvided"]:
+        facts["candidateBranchIdentifiers"] = [
+            f"{scenario_id}-branch-a",
+            f"{scenario_id}-branch-b",
+        ]
+    if (
+        conditions["aggregationInputVerificationRequired"]
+        or conditions["responseValidationRequired"]
+    ):
+        result_ids = {
+            "executor": f"{scenario_id}-executor-result",
+            "mimicry": f"{scenario_id}-mimicry-result",
+        }
+        facts["availableResultIdentifiersBySlot"] = result_ids
+        facts["verifiedInputResultIdentifiers"] = [
+            result_ids["executor"],
+            result_ids["mimicry"],
+        ]
+        facts["responseIdentifier"] = f"{scenario_id}-validated-response"
+    if conditions["approvalPolicyEvaluationRequired"]:
+        facts.update(
+            {
+                "approvalPolicySnapshotIdentifier": f"{scenario_id}-approval-policy",
+                "userApprovalRequestIdentifier": f"{scenario_id}-approval-request",
+            }
+        )
+    if conditions["permissionPreflightRequired"]:
+        facts["permissionCheckIdentifier"] = f"{scenario_id}-permission-check"
+    if conditions["slotDirectorySnapshotProvided"]:
+        facts["slotDirectorySnapshotIdentifier"] = f"{scenario_id}-slot-directory"
+    if conditions["rejectionRecordRequired"]:
+        facts["rejectionIdentifier"] = f"{scenario_id}-rejection-record"
+    return facts
+
+
+def _training_orchestration_derivation_contract(
+    scenario: dict[str, Any],
+    *,
+    facts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    graph = scenario["graph"]
+    variant = str(scenario.get("trainingMatrixVariant") or "")
+    if variant not in {
+        "core",
+        "normalized-intake",
+        "policy-audited",
+        "normalization-policy-audited",
+    }:
+        raise ValueError(f"Unknown Fleet training matrix variant: {variant}")
+    return {
+        "schemaVersion": ORCHESTRATION_DERIVATION_SCHEMA_VERSION,
+        "eventIDGrammar": ORCHESTRATION_EVENT_ID_GRAMMAR,
+        "graphSchemaVersion": graph["graphSchemaVersion"],
+        "scenarioID": graph["scenarioID"],
+        "behaviorClass": str(scenario["behaviorClass"]),
+        "policyConditions": _orchestration_policy_conditions(
+            behavior=str(scenario["behaviorClass"]),
+            training_variant=variant,
         ),
-        "unavailable-boundary": (
-            f"Permission for `{constraints.get('toolID')}` is denied. Return a graph that records unavailability and performs no delegation."
-        ),
-        "nonexistent-slot-negative": (
-            f"The requested target `{constraints.get('mustRejectSlotID')}` is outside the slot directory. Model directory validation and rejection."
-        ),
+        "knownSlotIDs": graph["knownSlotIDs"],
+        "facts": facts if facts is not None else _training_orchestration_facts(scenario),
     }
-    prompt = prompts.get(scenario_id)
-    if prompt is None:
-        raise ValueError(f"Missing held-out orchestration prompt for {scenario_id}")
-    return prompt
+
+
+def _orchestration_derivation_contract(
+    scenario: dict[str, Any],
+) -> dict[str, Any]:
+    """Extract only external request/state facts from a frozen graph."""
+
+    persisted = scenario.get("canonicalDerivation")
+    if isinstance(persisted, dict):
+        return json.loads(json.dumps(persisted, ensure_ascii=False))
+    if scenario.get("trainingMatrixVariant") is not None:
+        return _training_orchestration_derivation_contract(scenario)
+
+    graph = scenario["graph"]
+    behavior_class = str(scenario["behaviorClass"])
+    request = _one_event(graph, "request_received")
+    facts: dict[str, Any]
+    if behavior_class == "no-delegation":
+        snapshot = _one_event(graph, "trusted_context_snapshot_loaded")
+        evidence = _one_event(graph, "trusted_context_verified")
+        facts = {
+            "requestIdentifier": request["requestID"],
+            "trustedContextSnapshotIdentifier": snapshot["contextSnapshotID"],
+            "trustedEvidenceIdentifier": evidence["evidenceID"],
+            "trustedEvidenceStatus": evidence["evidenceStatus"],
+        }
+    elif behavior_class == "sequential-dependencies":
+        observation = _one_event(graph, "result_received")
+        facts = {
+            "requestIdentifier": request["requestID"],
+            "executorObservationIdentifier": observation["observationID"],
+            "peerContext": {
+                slot_id: _delegation_to(graph, slot_id)["contextKeys"]
+                for slot_id in ("cortex", "executor", "mouth")
+            },
+        }
+    elif behavior_class == "parallel-dependencies":
+        join = _one_event(graph, "branch_join_verified")
+        facts = {
+            "requestIdentifier": request["requestID"],
+            "parallelBranchIdentifiers": list(join["branchIDs"]),
+            "joinIdentifier": join["joinID"],
+            "peerContext": {
+                slot_id: _delegation_to(graph, slot_id)["contextKeys"]
+                for slot_id in ("cortex", "executor", "mimicry", "mouth")
+            },
+        }
+    elif behavior_class == "context-handoff":
+        boundary = _one_event(graph, "context_boundary_checked")
+        result = _one_event(graph, "result_received")
+        facts = {
+            "approvedActionIdentifier": request["actionID"],
+            "allowedExecutorContext": boundary["allowedContextKeys"],
+            "forbiddenExecutorContext": boundary["excludes"],
+            "executorResultIdentifier": result["resultID"],
+        }
+    elif behavior_class == "duplicate-suppression":
+        candidates = _events_of_type(graph, "work_candidate_identified")
+        dispatch = _one_event(graph, "delegate")
+        facts = {
+            "requestIdentifier": request["requestID"],
+            "candidateBranchIdentifiers": [
+                candidate["branchID"] for candidate in candidates
+            ],
+            "workOwnerSlot": dispatch["targetSlotID"],
+            "sharedWorkKey": dispatch["workKey"],
+        }
+    elif behavior_class == "aggregation-owner":
+        available = _events_of_type(graph, "result_available")
+        verified = _one_event(graph, "aggregation_inputs_verified")
+        response = _one_event(graph, "response_validated")
+        facts = {
+            "requestIdentifier": request["requestID"],
+            "availableResultIdentifiersBySlot": {
+                event["sourceSlotID"]: event["resultID"]
+                for event in available
+            },
+            "verifiedInputResultIdentifiers": verified["inputResultIDs"],
+            "renderContext": _delegation_to(graph, "mouth")["contextKeys"],
+            "responseIdentifier": response["responseID"],
+        }
+    elif behavior_class == "approval-boundary":
+        policy = _one_event(graph, "approval_policy_evaluated")
+        approval = _one_event(graph, "request_user_approval")
+        facts = {
+            "requestIdentifier": request["requestID"],
+            "toolIdentifier": request["toolID"],
+            "approvalState": policy["approvalState"],
+            "approvalPolicySnapshotIdentifier": policy["policySnapshotID"],
+            "userApprovalRequestIdentifier": approval["approvalRequestID"],
+        }
+    elif behavior_class == "unavailable-boundary":
+        check = _one_event(graph, "permission_state_checked")
+        facts = {
+            "requestIdentifier": request["requestID"],
+            "toolIdentifier": request["toolID"],
+            "permissionCheckIdentifier": check["permissionCheckID"],
+            "permissionKey": check["permissionKey"],
+            "permissionState": check["permissionState"],
+        }
+    elif behavior_class == "nonexistent-slot-negative":
+        snapshot = _one_event(graph, "slot_directory_snapshot_loaded")
+        rejection = _one_event(graph, "rejection_recorded")
+        facts = {
+            "requestIdentifier": request["requestID"],
+            "requestedSlotIdentifier": request["requestedSlotID"],
+            "slotDirectorySnapshotIdentifier": snapshot["directorySnapshotID"],
+            "rejectionIdentifier": rejection["rejectionID"],
+        }
+    else:
+        raise ValueError(f"Unknown Fleet derivation behavior: {behavior_class}")
+
+    return {
+        "schemaVersion": ORCHESTRATION_DERIVATION_SCHEMA_VERSION,
+        "eventIDGrammar": ORCHESTRATION_EVENT_ID_GRAMMAR,
+        "graphSchemaVersion": graph["graphSchemaVersion"],
+        "scenarioID": graph["scenarioID"],
+        "behaviorClass": behavior_class,
+        "policyConditions": _orchestration_policy_conditions(
+            behavior=behavior_class,
+            training_variant=None,
+        ),
+        "knownSlotIDs": graph["knownSlotIDs"],
+        "facts": facts,
+    }
+
+
+def _derive_training_core_orchestration_graph(
+    *,
+    scenario_id: str,
+    known_slots: list[str],
+    behavior: str,
+    facts: dict[str, Any],
+) -> dict[str, Any]:  # NOSONAR
+    """Apply the canonical training policy to semantic state facts."""
+
+    if behavior == "no-delegation":
+        events = [
+            _orchestration_event("request", "request_received"),
+            _orchestration_event(
+                "evidence",
+                "trusted_context_verified",
+                evidenceStatus=facts["trustedEvidenceStatus"],
+            ),
+            _orchestration_event("stop", "stop", reason="trusted_context_complete"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "evidence"),
+            _orchestration_dependency("evidence", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "no_delegation", [], None, "trusted_context_complete"
+        )
+    elif behavior == "sequential-dependencies":
+        context = facts["peerContext"]
+        events = [
+            _orchestration_event("request", "request_received"),
+            _orchestration_event("plan", "delegate", targetSlotID="cortex", contextKeys=context["cortex"]),
+            _orchestration_event("execute", "delegate", targetSlotID="executor", contextKeys=context["executor"]),
+            _orchestration_event("respond", "delegate", targetSlotID="mouth", contextKeys=context["mouth"]),
+            _orchestration_event("stop", "stop", reason="grounded_response_complete"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "plan"),
+            _orchestration_dependency("plan", "execute"),
+            _orchestration_dependency("execute", "respond"),
+            _orchestration_dependency("respond", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "sequential", ["cortex", "executor", "mouth"], "mouth",
+            "grounded_response_complete",
+        )
+    elif behavior == "parallel-dependencies":
+        context = facts["peerContext"]
+        events = [
+            _orchestration_event("request", "request_received"),
+            _orchestration_event("plan", "delegate", targetSlotID="cortex", contextKeys=context["cortex"]),
+            _orchestration_event("execute", "delegate", targetSlotID="executor", contextKeys=context["executor"]),
+            _orchestration_event("style", "delegate", targetSlotID="mimicry", contextKeys=context["mimicry"]),
+            _orchestration_event("aggregate", "delegate", targetSlotID="mouth", contextKeys=context["mouth"]),
+            _orchestration_event("stop", "stop", reason="parallel_results_aggregated"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "plan"),
+            _orchestration_dependency("plan", "execute"),
+            _orchestration_dependency("plan", "style"),
+            _orchestration_dependency("execute", "aggregate"),
+            _orchestration_dependency("style", "aggregate"),
+            _orchestration_dependency("aggregate", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "parallel_then_aggregate",
+            ["cortex", "executor", "mimicry", "mouth"],
+            "mouth",
+            "parallel_results_aggregated",
+        )
+    elif behavior == "context-handoff":
+        allowed = facts["allowedExecutorContext"]
+        forbidden = facts["forbiddenExecutorContext"]
+        events = [
+            _orchestration_event("request", "request_received"),
+            _orchestration_event("handoff", "delegate", targetSlotID="executor", contextKeys=allowed, excludes=forbidden),
+            _orchestration_event("result", "result_received", sourceSlotID="executor"),
+            _orchestration_event("stop", "stop", reason="bounded_handoff_complete"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "handoff"),
+            _orchestration_dependency("handoff", "result"),
+            _orchestration_dependency("result", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "bounded_handoff", ["executor"], None, "bounded_handoff_complete"
+        )
+    elif behavior == "duplicate-suppression":
+        target = facts["workOwnerSlot"]
+        work_key = facts["sharedWorkKey"]
+        events = [
+            _orchestration_event("request", "request_received"),
+            _orchestration_event("first", "delegate", targetSlotID=target, workKey=work_key),
+            _orchestration_event("duplicate", "duplicate_suppressed", targetSlotID=target, workKey=work_key),
+            _orchestration_event("result", "result_received", sourceSlotID=target, workKey=work_key),
+            _orchestration_event("stop", "stop", reason="unique_work_complete"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "first"),
+            _orchestration_dependency("first", "duplicate"),
+            _orchestration_dependency("first", "result"),
+            _orchestration_dependency("duplicate", "stop"),
+            _orchestration_dependency("result", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "deduplicated", [target], None, "unique_work_complete"
+        )
+    elif behavior == "aggregation-owner":
+        result_slots = facts["availableResultSlots"]
+        if result_slots != ["executor", "mimicry"]:
+            raise ValueError("Fleet aggregation training facts have invalid result slots")
+        events = [
+            _orchestration_event("request", "request_received"),
+            _orchestration_event("tool-result", "result_available", sourceSlotID=result_slots[0]),
+            _orchestration_event("style-result", "result_available", sourceSlotID=result_slots[1]),
+            _orchestration_event("aggregate", "delegate", targetSlotID="mouth", contextKeys=facts["renderContext"]),
+            _orchestration_event("stop", "stop", reason="single_owner_finalized"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "tool-result"),
+            _orchestration_dependency("request", "style-result"),
+            _orchestration_dependency("tool-result", "aggregate"),
+            _orchestration_dependency("style-result", "aggregate"),
+            _orchestration_dependency("aggregate", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "aggregate", ["mouth"], "mouth", "single_owner_finalized"
+        )
+    elif behavior == "approval-boundary":
+        tool = facts["toolIdentifier"]
+        events = [
+            _orchestration_event("request", "request_received", toolID=tool),
+            _orchestration_event("boundary", "approval_boundary", toolID=tool, approvalState=facts["approvalState"]),
+            _orchestration_event("approval", "request_user_approval", toolID=tool),
+            _orchestration_event("stop", "stop", reason="awaiting_user_approval"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "boundary"),
+            _orchestration_dependency("boundary", "approval"),
+            _orchestration_dependency("approval", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "approval_boundary", [], None, "awaiting_user_approval"
+        )
+    elif behavior == "unavailable-boundary":
+        tool = facts["toolIdentifier"]
+        events = [
+            _orchestration_event("request", "request_received", toolID=tool),
+            _orchestration_event(
+                "availability", "capability_unavailable", toolID=tool,
+                permissionKey=facts["permissionKey"],
+                permissionState=facts["permissionState"],
+            ),
+            _orchestration_event("stop", "stop", reason="required_capability_unavailable"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "availability"),
+            _orchestration_dependency("availability", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "unavailable_boundary", [], None, "required_capability_unavailable"
+        )
+    elif behavior == "nonexistent-slot-negative":
+        requested = facts["requestedSlotIdentifier"]
+        events = [
+            _orchestration_event("request", "request_received", requestedSlotID=requested),
+            _orchestration_event("directory", "slot_directory_checked", requestedSlotID=requested, slotExists=False),
+            _orchestration_event("reject", "invalid_slot_rejected", requestedSlotID=requested),
+            _orchestration_event("stop", "stop", reason="requested_slot_not_manifested"),
+        ]
+        edges = [
+            _orchestration_dependency("request", "directory"),
+            _orchestration_dependency("directory", "reject"),
+            _orchestration_dependency("reject", "stop"),
+        ]
+        strategy, delegated, owner, stop = (
+            "reject_invalid_slot", [], None, "requested_slot_not_manifested"
+        )
+    else:
+        raise ValueError(f"Unknown Fleet training derivation behavior: {behavior}")
+
+    return _orchestration_graph(
+        scenario_id=scenario_id,
+        known_slot_ids=known_slots,
+        strategy=strategy,
+        events=events,
+        dependencies=edges,
+        delegated_slot_ids=delegated,
+        aggregation_owner_slot_id=owner,
+        stop_reason=stop,
+    )
+
+
+def _derive_orchestration_graph_from_contract(
+    derivation: dict[str, Any],
+) -> dict[str, Any]:  # NOSONAR
+    """Rebuild the exact graph from canonical policy plus external facts."""
+
+    if derivation.get("schemaVersion") != ORCHESTRATION_DERIVATION_SCHEMA_VERSION:
+        raise ValueError("Unsupported Fleet graph derivation schema")
+    if derivation.get("eventIDGrammar") != ORCHESTRATION_EVENT_ID_GRAMMAR:
+        raise ValueError("Unsupported Fleet event-ID grammar")
+    scenario_id = str(derivation["scenarioID"])
+    known_slots = list(derivation["knownSlotIDs"])
+    behavior = str(derivation["behaviorClass"])
+    policy_conditions = derivation.get("policyConditions")
+    facts = derivation["facts"]
+    if not isinstance(facts, dict):
+        raise ValueError("Fleet graph derivation facts must be an object")
+    if (
+        not isinstance(policy_conditions, dict)
+        or set(policy_conditions) != set(_ORCHESTRATION_POLICY_CONDITION_KEYS)
+        or not all(isinstance(value, bool) for value in policy_conditions.values())
+    ):
+        raise ValueError("Fleet graph policy conditions are invalid")
+    normalization_required = policy_conditions["requestNormalizationRequired"]
+    audit_required = policy_conditions["policyAuditRequired"]
+    enabled_features = {
+        key
+        for key, enabled in policy_conditions.items()
+        if enabled
+        and key
+        not in {"requestNormalizationRequired", "policyAuditRequired"}
+    }
+    expected_features = _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior)
+    if expected_features is None:
+        raise ValueError("Fleet graph behavior has no policy-condition contract")
+
+    if normalization_required or audit_required or not enabled_features:
+        variant = (
+            "normalization-policy-audited"
+            if normalization_required and audit_required
+            else "normalized-intake"
+            if normalization_required
+            else "policy-audited"
+            if audit_required
+            else "core"
+        )
+        expected_training_conditions = _orchestration_policy_conditions(
+            behavior=behavior,
+            training_variant=variant,
+        )
+        if policy_conditions != expected_training_conditions:
+            raise ValueError("Fleet training policy-condition combination is invalid")
+        core_graph = _derive_training_core_orchestration_graph(
+            scenario_id=behavior,
+            known_slots=known_slots,
+            behavior=behavior,
+            facts=facts,
+        )
+        if variant == "core":
+            if scenario_id != behavior:
+                raise ValueError("Fleet core training scenario identity is invalid")
+            return core_graph
+        expected_scenario_id = f"{behavior}--{variant}"
+        if scenario_id != expected_scenario_id:
+            raise ValueError("Fleet variant training scenario identity is invalid")
+        namespace = f"train-{behavior}-{variant}"
+        variant_graph = _orchestration_training_variant_graph(
+            core_graph,
+            scenario_id=scenario_id,
+            event_namespace=namespace,
+            request_id=f"{namespace}-request",
+            variant=variant,
+        )
+        return _apply_training_policy_condition_support(
+            variant_graph,
+            behavior=behavior,
+            conditions=policy_conditions,
+            facts=facts,
+        )
+    if enabled_features != set(expected_features):
+        raise ValueError("Fleet holdout policy-condition combination is invalid")
+
+    def event(index: int, event_type: str, **payload: Any) -> dict[str, Any]:
+        return _orchestration_event(f"e{index:02d}", event_type, **payload)
+
+    def dependency(source: int, target: int) -> dict[str, str]:
+        return _orchestration_dependency(f"e{source:02d}", f"e{target:02d}")
+
+    if behavior == "no-delegation":
+        events = [
+            event(1, "request_received", requestID=facts["requestIdentifier"]),
+            event(
+                2,
+                "trusted_context_snapshot_loaded",
+                contextSnapshotID=facts["trustedContextSnapshotIdentifier"],
+            ),
+            event(
+                3,
+                "trusted_context_verified",
+                evidenceID=facts["trustedEvidenceIdentifier"],
+                evidenceStatus=facts["trustedEvidenceStatus"],
+            ),
+            event(4, "stop", reason="trusted_context_complete"),
+        ]
+        edges = [dependency(1, 2), dependency(2, 3), dependency(3, 4)]
+        strategy, delegated, owner, stop = (
+            "no_delegation",
+            [],
+            None,
+            "trusted_context_complete",
+        )
+    elif behavior == "sequential-dependencies":
+        context = facts["peerContext"]
+        events = [
+            event(1, "request_received", requestID=facts["requestIdentifier"]),
+            event(2, "delegate", targetSlotID="cortex", contextKeys=context["cortex"]),
+            event(3, "delegate", targetSlotID="executor", contextKeys=context["executor"]),
+            event(
+                4,
+                "result_received",
+                sourceSlotID="executor",
+                observationID=facts["executorObservationIdentifier"],
+            ),
+            event(5, "delegate", targetSlotID="mouth", contextKeys=context["mouth"]),
+            event(6, "stop", reason="grounded_response_complete"),
+        ]
+        edges = [dependency(i, i + 1) for i in range(1, 6)]
+        strategy, delegated, owner, stop = (
+            "sequential",
+            ["cortex", "executor", "mouth"],
+            "mouth",
+            "grounded_response_complete",
+        )
+    elif behavior == "parallel-dependencies":
+        context = facts["peerContext"]
+        branches = facts["parallelBranchIdentifiers"]
+        events = [
+            event(1, "request_received", requestID=facts["requestIdentifier"]),
+            event(2, "delegate", targetSlotID="cortex", contextKeys=context["cortex"]),
+            event(3, "delegate", targetSlotID="executor", branchID=branches[0], contextKeys=context["executor"]),
+            event(4, "delegate", targetSlotID="mimicry", branchID=branches[1], contextKeys=context["mimicry"]),
+            event(5, "branch_join_verified", branchIDs=branches, joinID=facts["joinIdentifier"]),
+            event(6, "delegate", targetSlotID="mouth", contextKeys=context["mouth"]),
+            event(7, "stop", reason="parallel_results_aggregated"),
+        ]
+        edges = [
+            dependency(1, 2), dependency(2, 3), dependency(2, 4),
+            dependency(3, 5), dependency(4, 5), dependency(5, 6),
+            dependency(6, 7),
+        ]
+        strategy, delegated, owner, stop = (
+            "parallel_then_aggregate",
+            ["cortex", "executor", "mimicry", "mouth"],
+            "mouth",
+            "parallel_results_aggregated",
+        )
+    elif behavior == "context-handoff":
+        allowed = facts["allowedExecutorContext"]
+        forbidden = facts["forbiddenExecutorContext"]
+        events = [
+            event(1, "request_received", actionID=facts["approvedActionIdentifier"]),
+            event(2, "context_boundary_checked", allowedContextKeys=allowed, excludes=forbidden),
+            event(3, "delegate", targetSlotID="executor", contextKeys=allowed, excludes=forbidden),
+            event(4, "result_received", sourceSlotID="executor", resultID=facts["executorResultIdentifier"]),
+            event(5, "stop", reason="bounded_handoff_complete"),
+        ]
+        edges = [dependency(i, i + 1) for i in range(1, 5)]
+        strategy, delegated, owner, stop = (
+            "bounded_handoff", ["executor"], None, "bounded_handoff_complete"
+        )
+    elif behavior == "duplicate-suppression":
+        branches = facts["candidateBranchIdentifiers"]
+        target = facts["workOwnerSlot"]
+        work_key = facts["sharedWorkKey"]
+        events = [
+            event(1, "request_received", requestID=facts["requestIdentifier"]),
+            event(2, "work_candidate_identified", branchID=branches[0], targetSlotID=target, workKey=work_key),
+            event(3, "delegate", targetSlotID=target, workKey=work_key),
+            event(4, "work_candidate_identified", branchID=branches[1], targetSlotID=target, workKey=work_key),
+            event(5, "duplicate_suppressed", targetSlotID=target, workKey=work_key),
+            event(6, "result_received", sourceSlotID=target, workKey=work_key),
+            event(7, "stop", reason="unique_work_complete"),
+        ]
+        edges = [
+            dependency(1, 2), dependency(1, 4), dependency(2, 3),
+            dependency(3, 6), dependency(4, 5), dependency(5, 7),
+            dependency(6, 7),
+        ]
+        strategy, delegated, owner, stop = (
+            "deduplicated", [target], None, "unique_work_complete"
+        )
+    elif behavior == "aggregation-owner":
+        results = facts["availableResultIdentifiersBySlot"]
+        events = [
+            event(1, "request_received", requestID=facts["requestIdentifier"]),
+            event(2, "result_available", resultID=results["executor"], sourceSlotID="executor"),
+            event(3, "result_available", resultID=results["mimicry"], sourceSlotID="mimicry"),
+            event(4, "aggregation_inputs_verified", inputResultIDs=facts["verifiedInputResultIdentifiers"]),
+            event(5, "delegate", targetSlotID="mouth", contextKeys=facts["renderContext"]),
+            event(6, "response_validated", responseID=facts["responseIdentifier"], sourceSlotID="mouth"),
+            event(7, "stop", reason="single_owner_finalized"),
+        ]
+        edges = [
+            dependency(1, 2), dependency(1, 3), dependency(2, 4),
+            dependency(3, 4), dependency(4, 5), dependency(5, 6),
+            dependency(6, 7),
+        ]
+        strategy, delegated, owner, stop = (
+            "aggregate", ["mouth"], "mouth", "single_owner_finalized"
+        )
+    elif behavior == "approval-boundary":
+        tool = facts["toolIdentifier"]
+        events = [
+            event(1, "request_received", requestID=facts["requestIdentifier"], toolID=tool),
+            event(2, "approval_policy_evaluated", approvalState=facts["approvalState"], policySnapshotID=facts["approvalPolicySnapshotIdentifier"], toolID=tool),
+            event(3, "approval_boundary", approvalState="required", toolID=tool),
+            event(4, "request_user_approval", approvalRequestID=facts["userApprovalRequestIdentifier"], toolID=tool),
+            event(5, "stop", reason="awaiting_user_approval"),
+        ]
+        edges = [dependency(i, i + 1) for i in range(1, 5)]
+        strategy, delegated, owner, stop = (
+            "approval_boundary", [], None, "awaiting_user_approval"
+        )
+    elif behavior == "unavailable-boundary":
+        tool = facts["toolIdentifier"]
+        permission_key = facts["permissionKey"]
+        permission_state = facts["permissionState"]
+        events = [
+            event(1, "request_received", requestID=facts["requestIdentifier"], toolID=tool),
+            event(2, "permission_state_checked", permissionCheckID=facts["permissionCheckIdentifier"], permissionKey=permission_key, permissionState=permission_state, toolID=tool),
+            event(3, "capability_unavailable", permissionKey=permission_key, permissionState=permission_state, toolID=tool),
+            event(4, "stop", reason="required_capability_unavailable"),
+        ]
+        edges = [dependency(1, 2), dependency(2, 3), dependency(3, 4)]
+        strategy, delegated, owner, stop = (
+            "unavailable_boundary", [], None, "required_capability_unavailable"
+        )
+    elif behavior == "nonexistent-slot-negative":
+        requested = facts["requestedSlotIdentifier"]
+        events = [
+            event(1, "request_received", requestID=facts["requestIdentifier"], requestedSlotID=requested),
+            event(2, "slot_directory_snapshot_loaded", directorySnapshotID=facts["slotDirectorySnapshotIdentifier"]),
+            event(3, "slot_directory_checked", requestedSlotID=requested, slotExists=False),
+            event(4, "invalid_slot_rejected", requestedSlotID=requested),
+            event(5, "rejection_recorded", rejectionID=facts["rejectionIdentifier"], requestedSlotID=requested),
+            event(6, "stop", reason="requested_slot_not_manifested"),
+        ]
+        edges = [dependency(i, i + 1) for i in range(1, 6)]
+        strategy, delegated, owner, stop = (
+            "reject_invalid_slot", [], None, "requested_slot_not_manifested"
+        )
+    else:
+        raise ValueError(f"Unknown Fleet derivation behavior: {behavior}")
+
+    return _orchestration_graph(
+        scenario_id=scenario_id,
+        known_slot_ids=known_slots,
+        strategy=strategy,
+        events=events,
+        dependencies=edges,
+        delegated_slot_ids=delegated,
+        aggregation_owner_slot_id=owner,
+        stop_reason=stop,
+    )
 
 
 def generate_manifest_markdown(manifest: AgentBehaviorManifest) -> str:
@@ -345,7 +1267,13 @@ def _fleet_whole_system_records(manifest: AgentBehaviorManifest) -> list[dict[st
 
 def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for scenario in _orchestration_scenarios(manifest):
+    for scenario in _orchestration_training_scenarios(manifest):
+        derivation = _orchestration_derivation_contract(scenario)
+        if _derive_orchestration_graph_from_contract(derivation) != scenario["graph"]:
+            raise ValueError(
+                "Fleet training derivation does not uniquely rebuild graph: "
+                f"{scenario['id']}"
+            )
         base_prompt = [
             {
                 "role": "system",
@@ -354,9 +1282,30 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
                     "Use only known slot IDs, preserve explicit dependencies and boundaries, and stop once the request is complete."
                 ),
             },
-            {"role": "user", "content": scenario["prompt"]},
+            {
+                "role": "user",
+                "content": _orchestration_training_prompt(scenario, derivation),
+            },
         ]
-        metadata = _native_orchestration_metadata(manifest, scenario["id"])
+        metadata = {
+            **_native_orchestration_metadata(manifest, scenario["id"]),
+            "behaviorClass": scenario["behaviorClass"],
+            "trainingMatrixVariant": scenario["trainingMatrixVariant"],
+            # Three topology-distinct matrices remain optimizer-visible while a
+            # fourth combined normalization/audit matrix is validation-only.
+            # The frozen orchestration suite remains the unseen graph holdout.
+            "requiredSplit": (
+                "validation"
+                if scenario["trainingMatrixVariant"]
+                == "normalization-policy-audited"
+                else "train"
+            ),
+            "trainingTopologySHA256": canonical_sha256(
+                _orchestration_topology_contract(scenario["graph"])
+            ),
+            "derivationSchemaVersion": derivation["schemaVersion"],
+            "canonicalDerivationSHA256": canonical_sha256(derivation),
+        }
         records.append({
             "id": _record_id("orchestration-sft", scenario["id"]),
             "schemaVersion": "2.1.0",
@@ -400,6 +1349,18 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
     return records
 
 
+def _orchestration_training_prompt(
+    scenario: dict[str, Any],
+    derivation: dict[str, Any] | None = None,
+) -> str:
+    """Teach canonical policy derivation from state facts, never graph copying."""
+
+    return _canonical_orchestration_prompt(
+        scenario,
+        derivation or _orchestration_derivation_contract(scenario),
+    )
+
+
 def _orchestration_scenarios(manifest: AgentBehaviorManifest) -> list[dict[str, Any]]:  # NOSONAR
     known_slots = sorted(slot.id for slot in manifest.fleet.slots)
     known_slot_set = set(known_slots)
@@ -432,6 +1393,8 @@ def _orchestration_scenarios(manifest: AgentBehaviorManifest) -> list[dict[str, 
         )
         scenario: dict[str, Any] = {
             "id": scenario_id,
+            "behaviorClass": scenario_id,
+            "trainingMatrixVariant": "core",
             "prompt": prompt,
             "graph": graph,
             "evalConstraints": eval_constraints,
@@ -734,6 +1697,1205 @@ def _orchestration_scenarios(manifest: AgentBehaviorManifest) -> list[dict[str, 
     return scenarios
 
 
+def _orchestration_training_scenarios(
+    manifest: AgentBehaviorManifest,
+) -> list[dict[str, Any]]:
+    """Expand each behavior into three train and one validation instance."""
+
+    matrix: list[dict[str, Any]] = []
+    for scenario in _orchestration_scenarios(manifest):
+        scenario["canonicalDerivation"] = (
+            _training_orchestration_derivation_contract(scenario)
+        )
+        matrix.append(scenario)
+        matrix.append(
+            _orchestration_training_variant(
+                manifest,
+                scenario,
+                variant="normalized-intake",
+                boundary_value_index=1,
+            )
+        )
+        matrix.append(
+            _orchestration_training_variant(
+                manifest,
+                scenario,
+                variant="policy-audited",
+                boundary_value_index=2,
+            )
+        )
+        matrix.append(
+            _orchestration_training_variant(
+                manifest,
+                scenario,
+                variant="normalization-policy-audited",
+                boundary_value_index=3,
+            )
+        )
+    return matrix
+
+
+def _orchestration_training_variant(
+    manifest: AgentBehaviorManifest,
+    source: dict[str, Any],
+    *,
+    variant: str,
+    boundary_value_index: int,
+) -> dict[str, Any]:
+    scenario = json.loads(json.dumps(source, ensure_ascii=False))
+    behavior_class = str(source["behaviorClass"])
+    scenario_id = f"{behavior_class}--{variant}"
+    event_namespace = f"train-{behavior_class}-{variant}"
+    request_id = f"{event_namespace}-request"
+    scenario["id"] = scenario_id
+    scenario["behaviorClass"] = behavior_class
+    scenario["trainingMatrixVariant"] = variant
+    scenario.pop("canonicalDerivation", None)
+
+    replacements = _training_boundary_replacements(
+        manifest,
+        scenario,
+        behavior_class=behavior_class,
+        boundary_value_index=boundary_value_index,
+    )
+    if replacements:
+        scenario = _replace_exact_string_values(scenario, replacements)
+    scenario["id"] = scenario_id
+    scenario["behaviorClass"] = behavior_class
+    scenario["trainingMatrixVariant"] = variant
+    scenario["prompt"] = (
+        f"{scenario['prompt']} Use matrix instance `{scenario_id}`, request identifier "
+        f"`{request_id}`. "
+        + (
+            "Normalize the request before applying the behavior-class policy."
+            if variant == "normalized-intake"
+            else (
+                "Normalize the request, load the policy snapshot, and record "
+                "completion only after all required branches finish."
+                if variant == "normalization-policy-audited"
+                else "Load the policy snapshot first and record completion only after all required branches finish."
+            )
+        )
+    )
+    policy_conditions = _orchestration_policy_conditions(
+        behavior=behavior_class,
+        training_variant=variant,
+    )
+    derivation_facts = _training_feature_facts(
+        base_facts=_training_orchestration_facts(scenario),
+        scenario_id=scenario_id,
+        behavior=behavior_class,
+        conditions=policy_conditions,
+        request_id=request_id,
+    )
+    scenario["graph"] = _orchestration_training_variant_graph(
+        scenario["graph"],
+        scenario_id=scenario_id,
+        event_namespace=event_namespace,
+        request_id=request_id,
+        variant=variant,
+    )
+    scenario["graph"] = _apply_training_policy_condition_support(
+        scenario["graph"],
+        behavior=behavior_class,
+        conditions=policy_conditions,
+        facts=derivation_facts,
+    )
+    if isinstance(scenario.get("rejectedGraph"), dict):
+        scenario["rejectedGraph"] = _orchestration_training_variant_graph(
+            scenario["rejectedGraph"],
+            scenario_id=scenario_id,
+            event_namespace=f"{event_namespace}-negative",
+            request_id=request_id,
+            variant=variant,
+        )
+    scenario["canonicalDerivation"] = (
+        _training_orchestration_derivation_contract(
+            scenario,
+            facts=derivation_facts,
+        )
+    )
+    return scenario
+
+
+def _training_boundary_replacements(
+    manifest: AgentBehaviorManifest,
+    scenario: dict[str, Any],
+    *,
+    behavior_class: str,
+    boundary_value_index: int,
+) -> dict[str, str]:
+    constraints = scenario.get("evalConstraints")
+    if not isinstance(constraints, dict):
+        return {}
+    old_tool_id = constraints.get("toolID")
+    if not isinstance(old_tool_id, str):
+        return {}
+    if behavior_class == "approval-boundary":
+        eligible = [
+            tool
+            for tool in sorted(manifest.tools, key=lambda item: item.id)
+            if tool.requiresApproval
+        ]
+    elif behavior_class == "unavailable-boundary":
+        eligible = [
+            tool
+            for tool in sorted(manifest.tools, key=lambda item: item.id)
+            if tool.permissionKey
+        ]
+    else:
+        return {}
+    if not eligible:
+        return {}
+    selected = eligible[min(boundary_value_index, len(eligible) - 1)]
+    replacements = {old_tool_id: selected.id}
+    old_permission_key = next(
+        (
+            tool.permissionKey
+            for tool in manifest.tools
+            if tool.id == old_tool_id and tool.permissionKey
+        ),
+        None,
+    )
+    if old_permission_key and selected.permissionKey:
+        replacements[old_permission_key] = selected.permissionKey
+    return replacements
+
+
+def _replace_exact_string_values(value: Any, replacements: dict[str, str]) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _replace_exact_string_values(child, replacements)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_replace_exact_string_values(child, replacements) for child in value]
+    if isinstance(value, str):
+        replaced = replacements.get(value)
+        if replaced is not None:
+            return replaced
+        for old, new in replacements.items():
+            value = value.replace(f"`{old}`", f"`{new}`")
+        return value
+    return value
+
+
+def _orchestration_training_variant_graph(
+    source: dict[str, Any],
+    *,
+    scenario_id: str,
+    event_namespace: str,
+    request_id: str,
+    variant: str,
+) -> dict[str, Any]:
+    graph = json.loads(json.dumps(source, ensure_ascii=False))
+    graph["scenarioID"] = scenario_id
+    id_map = {
+        str(event["id"]): f"{event_namespace}-{event['id']}"
+        for event in graph["events"]
+    }
+    invalid_slot_replacements: dict[str, str] = {}
+    for event in graph["events"]:
+        event["id"] = id_map[str(event["id"])]
+        if event.get("type") == "request_received":
+            event["requestID"] = request_id
+        if isinstance(event.get("workKey"), str):
+            event["workKey"] = f"{event['workKey']}--{variant}"
+        if isinstance(event.get("requestedSlotID"), str):
+            original_requested_slot = str(event["requestedSlotID"])
+            heldout_requested_slot = (
+                f"{original_requested_slot}--{variant.replace('-', '_')}"
+            )
+            invalid_slot_replacements[original_requested_slot] = (
+                heldout_requested_slot
+            )
+            event["requestedSlotID"] = heldout_requested_slot
+        context_keys = event.get("contextKeys")
+        if isinstance(context_keys, list):
+            prefix = (
+                "reviewed"
+                if variant == "normalization-policy-audited"
+                else "normalized"
+                if variant == "normalized-intake"
+                else "audited"
+            )
+            event["contextKeys"] = [
+                f"{prefix}{str(key)[:1].upper()}{str(key)[1:]}"
+                for key in context_keys
+            ]
+    for event in graph["events"]:
+        target_slot_id = event.get("targetSlotID")
+        if isinstance(target_slot_id, str) and target_slot_id in invalid_slot_replacements:
+            event["targetSlotID"] = invalid_slot_replacements[target_slot_id]
+    for dependency in graph["dependencies"]:
+        dependency["fromEventID"] = id_map[str(dependency["fromEventID"])]
+        dependency["toEventID"] = id_map[str(dependency["toEventID"])]
+
+    request_event_id = str(graph["events"][0]["id"])
+    stop_event_id = str(graph["events"][-1]["id"])
+    normalization_required = variant in {
+        "normalized-intake",
+        "normalization-policy-audited",
+    }
+    audit_required = variant in {
+        "policy-audited",
+        "normalization-policy-audited",
+    }
+    if not normalization_required and not audit_required:
+        raise ValueError(f"Unknown Fleet training matrix variant: {variant}")
+
+    request_successor_id = request_event_id
+    if normalization_required:
+        normalization_event_id = f"{event_namespace}-request-normalized"
+        for dependency in graph["dependencies"]:
+            if dependency["fromEventID"] == request_event_id:
+                dependency["fromEventID"] = normalization_event_id
+        graph["events"].insert(
+            1,
+            _orchestration_event(
+                normalization_event_id,
+                "request_normalized",
+                requestID=request_id,
+                normalizationProfile="manifest_fields_only",
+            ),
+        )
+        graph["dependencies"].insert(
+            0,
+            _orchestration_dependency(request_event_id, normalization_event_id),
+        )
+        request_successor_id = normalization_event_id
+
+    if audit_required:
+        policy_event_id = f"{event_namespace}-policy-snapshot"
+        completion_event_id = f"{event_namespace}-completion-audit"
+        for dependency in graph["dependencies"]:
+            if dependency["fromEventID"] == request_successor_id:
+                dependency["fromEventID"] = policy_event_id
+            if dependency["toEventID"] == stop_event_id:
+                dependency["toEventID"] = completion_event_id
+        graph["events"].insert(
+            2 if normalization_required else 1,
+            _orchestration_event(
+                policy_event_id,
+                "policy_snapshot_loaded",
+                policySnapshotID=f"{event_namespace}-policy-v1",
+            ),
+        )
+        graph["events"].insert(
+            len(graph["events"]) - 1,
+            _orchestration_event(
+                completion_event_id,
+                "completion_audit_recorded",
+                completionRecordID=f"{event_namespace}-completion-v1",
+            ),
+        )
+        graph["dependencies"].insert(
+            1 if normalization_required else 0,
+            _orchestration_dependency(request_successor_id, policy_event_id),
+        )
+        graph["dependencies"].append(
+            _orchestration_dependency(completion_event_id, stop_event_id)
+        )
+    suffix = (
+        "normalization_policy_audited"
+        if normalization_required and audit_required
+        else "normalized_input"
+        if normalization_required
+        else "policy_audited"
+    )
+
+    decision = graph["decision"]
+    decision["strategy"] = f"{decision['strategy']}--{suffix}"
+    stop_reason = f"{decision['stopReason']}--{suffix}"
+    decision["stopReason"] = stop_reason
+    graph["events"][-1]["reason"] = stop_reason
+    decision["delegatedSlotIDs"] = _delegated_slots_from_events(graph["events"])
+    return _canonicalize_orchestration_event_ids(graph)
+
+
+def _apply_training_policy_condition_support(
+    source: dict[str, Any],
+    *,
+    behavior: str,
+    conditions: dict[str, bool],
+    facts: dict[str, Any],
+) -> dict[str, Any]:  # NOSONAR
+    """Materialize holdout-relevant conditions inside distinct train topologies."""
+
+    graph = json.loads(json.dumps(source, ensure_ascii=False))
+    events = graph["events"]
+    dependencies = graph["dependencies"]
+
+    def one(event_type: str) -> dict[str, Any]:
+        matched = [event for event in events if event.get("type") == event_type]
+        if len(matched) != 1:
+            raise ValueError(
+                f"Fleet condition support needs one {event_type}, got {len(matched)}"
+            )
+        return matched[0]
+
+    def delegation(slot_id: str) -> dict[str, Any]:
+        matched = [
+            event
+            for event in events
+            if event.get("type") == "delegate"
+            and event.get("targetSlotID") == slot_id
+        ]
+        if len(matched) != 1:
+            raise ValueError(
+                f"Fleet condition support needs one delegation to {slot_id}"
+            )
+        return matched[0]
+
+    def remove_edge(source_id: str, target_id: str) -> None:
+        matched = [
+            index
+            for index, edge in enumerate(dependencies)
+            if edge.get("fromEventID") == source_id
+            and edge.get("toEventID") == target_id
+        ]
+        if len(matched) != 1:
+            raise ValueError("Fleet condition support cannot locate direct edge")
+        dependencies.pop(matched[0])
+
+    def add_edge(source_id: str, target_id: str) -> None:
+        dependencies.append(_orchestration_dependency(source_id, target_id))
+
+    def insert_between(
+        source_event: dict[str, Any],
+        target_event: dict[str, Any],
+        inserted: dict[str, Any],
+    ) -> None:
+        remove_edge(source_event["id"], target_event["id"])
+        events.insert(events.index(target_event), inserted)
+        add_edge(source_event["id"], inserted["id"])
+        add_edge(inserted["id"], target_event["id"])
+
+    normalized = one("request_normalized") if conditions["requestNormalizationRequired"] else None
+    policy_snapshot = one("policy_snapshot_loaded") if conditions["policyAuditRequired"] else None
+    request = one("request_received")
+    # When both wrappers are present, policy_snapshot is the final entry gate:
+    # request -> normalization -> policy -> behavior-specific graph.
+    state_entry = policy_snapshot or normalized or request
+
+    if conditions["trustedContextSnapshotProvided"]:
+        evidence = one("trusted_context_verified")
+        evidence["evidenceID"] = facts["trustedEvidenceIdentifier"]
+        insert_between(
+            state_entry,
+            evidence,
+            _orchestration_event(
+                "support-context-snapshot",
+                "trusted_context_snapshot_loaded",
+                contextSnapshotID=facts["trustedContextSnapshotIdentifier"],
+            ),
+        )
+    if conditions["executorObservationProvided"]:
+        executor = delegation("executor")
+        mouth = delegation("mouth")
+        insert_between(
+            executor,
+            mouth,
+            _orchestration_event(
+                "support-executor-observation",
+                "result_received",
+                sourceSlotID="executor",
+                observationID=facts["executorObservationIdentifier"],
+            ),
+        )
+    if conditions["parallelJoinRequired"]:
+        executor = delegation("executor")
+        mimicry = delegation("mimicry")
+        mouth = delegation("mouth")
+        branches = facts["parallelBranchIdentifiers"]
+        executor["branchID"] = branches[0]
+        mimicry["branchID"] = branches[1]
+        remove_edge(executor["id"], mouth["id"])
+        remove_edge(mimicry["id"], mouth["id"])
+        join = _orchestration_event(
+            "support-parallel-join",
+            "branch_join_verified",
+            branchIDs=branches,
+            joinID=facts["joinIdentifier"],
+        )
+        events.insert(events.index(mouth), join)
+        add_edge(executor["id"], join["id"])
+        add_edge(mimicry["id"], join["id"])
+        add_edge(join["id"], mouth["id"])
+    if conditions["contextBoundaryReviewRequired"]:
+        executor = delegation("executor")
+        result = one("result_received")
+        request["actionID"] = facts["approvedActionIdentifier"]
+        result["resultID"] = facts["executorResultIdentifier"]
+        insert_between(
+            state_entry,
+            executor,
+            _orchestration_event(
+                "support-context-boundary",
+                "context_boundary_checked",
+                allowedContextKeys=executor["contextKeys"],
+                excludes=executor["excludes"],
+            ),
+        )
+    if conditions["candidateBranchesProvided"]:
+        dispatch = delegation(str(facts["workOwnerSlot"]))
+        duplicate = one("duplicate_suppressed")
+        result = one("result_received")
+        request["requestID"] = facts["requestIdentifier"]
+        branches = facts["candidateBranchIdentifiers"]
+        candidate_a = _orchestration_event(
+            "support-candidate-a",
+            "work_candidate_identified",
+            branchID=branches[0],
+            targetSlotID=dispatch["targetSlotID"],
+            workKey=dispatch["workKey"],
+        )
+        candidate_b = _orchestration_event(
+            "support-candidate-b",
+            "work_candidate_identified",
+            branchID=branches[1],
+            targetSlotID=dispatch["targetSlotID"],
+            workKey=dispatch["workKey"],
+        )
+        remove_edge(state_entry["id"], dispatch["id"])
+        remove_edge(dispatch["id"], duplicate["id"])
+        events.insert(events.index(dispatch), candidate_a)
+        events.insert(events.index(duplicate), candidate_b)
+        add_edge(state_entry["id"], candidate_a["id"])
+        add_edge(state_entry["id"], candidate_b["id"])
+        add_edge(candidate_a["id"], dispatch["id"])
+        add_edge(candidate_b["id"], duplicate["id"])
+        if result.get("workKey") != dispatch.get("workKey"):
+            raise ValueError("Fleet dedup support lost the shared work key")
+    if conditions["aggregationInputVerificationRequired"]:
+        available = [event for event in events if event.get("type") == "result_available"]
+        mouth = delegation("mouth")
+        result_ids = facts["availableResultIdentifiersBySlot"]
+        for result_event in available:
+            result_event["resultID"] = result_ids[result_event["sourceSlotID"]]
+            remove_edge(result_event["id"], mouth["id"])
+        verified = _orchestration_event(
+            "support-aggregation-verification",
+            "aggregation_inputs_verified",
+            inputResultIDs=facts["verifiedInputResultIdentifiers"],
+        )
+        events.insert(events.index(mouth), verified)
+        for result_event in available:
+            add_edge(result_event["id"], verified["id"])
+        add_edge(verified["id"], mouth["id"])
+    if conditions["responseValidationRequired"]:
+        available = [event for event in events if event.get("type") == "result_available"]
+        result_ids = facts["availableResultIdentifiersBySlot"]
+        for result_event in available:
+            result_event["resultID"] = result_ids[result_event["sourceSlotID"]]
+        mouth = delegation("mouth")
+        completion = (
+            one("completion_audit_recorded")
+            if conditions["policyAuditRequired"]
+            else one("stop")
+        )
+        insert_between(
+            mouth,
+            completion,
+            _orchestration_event(
+                "support-response-validation",
+                "response_validated",
+                responseID=facts["responseIdentifier"],
+                sourceSlotID="mouth",
+            ),
+        )
+    if conditions["approvalPolicyEvaluationRequired"]:
+        boundary = one("approval_boundary")
+        approval = one("request_user_approval")
+        request["requestID"] = facts["requestIdentifier"]
+        approval["approvalRequestID"] = facts["userApprovalRequestIdentifier"]
+        insert_between(
+            state_entry,
+            boundary,
+            _orchestration_event(
+                "support-approval-policy",
+                "approval_policy_evaluated",
+                approvalState=boundary["approvalState"],
+                policySnapshotID=facts["approvalPolicySnapshotIdentifier"],
+                toolID=facts["toolIdentifier"],
+            ),
+        )
+    if conditions["permissionPreflightRequired"]:
+        unavailable = one("capability_unavailable")
+        request["requestID"] = facts["requestIdentifier"]
+        insert_between(
+            state_entry,
+            unavailable,
+            _orchestration_event(
+                "support-permission-preflight",
+                "permission_state_checked",
+                permissionCheckID=facts["permissionCheckIdentifier"],
+                permissionKey=unavailable["permissionKey"],
+                permissionState=unavailable["permissionState"],
+                toolID=facts["toolIdentifier"],
+            ),
+        )
+    if conditions["slotDirectorySnapshotProvided"]:
+        directory = one("slot_directory_checked")
+        request["requestID"] = facts["requestIdentifier"]
+        insert_between(
+            state_entry,
+            directory,
+            _orchestration_event(
+                "support-directory-snapshot",
+                "slot_directory_snapshot_loaded",
+                directorySnapshotID=facts["slotDirectorySnapshotIdentifier"],
+            ),
+        )
+    if conditions["rejectionRecordRequired"]:
+        rejection = one("invalid_slot_rejected")
+        completion = (
+            one("completion_audit_recorded")
+            if conditions["policyAuditRequired"]
+            else one("stop")
+        )
+        request["requestID"] = facts["requestIdentifier"]
+        insert_between(
+            rejection,
+            completion,
+            _orchestration_event(
+                "support-rejection-record",
+                "rejection_recorded",
+                rejectionID=facts["rejectionIdentifier"],
+                requestedSlotID=rejection["requestedSlotID"],
+            ),
+        )
+
+    return _canonicalize_orchestration_event_ids(graph)
+
+
+def _orchestration_eval_scenarios(
+    manifest: AgentBehaviorManifest,
+) -> list[dict[str, Any]]:  # NOSONAR
+    """Build one topology-distinct frozen instance for every behavior class."""
+
+    known_slots = sorted(slot.id for slot in manifest.fleet.slots)
+    known_slot_set = set(known_slots)
+    scenarios: list[dict[str, Any]] = []
+
+    def add(
+        scenario_id: str,
+        behavior_class: str,
+        prompt: str,
+        *,
+        strategy: str,
+        events: list[dict[str, Any]],
+        dependencies: list[dict[str, str]],
+        delegated_slot_ids: list[str],
+        aggregation_owner_slot_id: str | None,
+        stop_reason: str,
+        eval_constraints: dict[str, Any],
+    ) -> None:
+        scenarios.append(
+            {
+                "id": scenario_id,
+                "behaviorClass": behavior_class,
+                "prompt": prompt,
+                "graph": _orchestration_graph(
+                    scenario_id=scenario_id,
+                    known_slot_ids=known_slots,
+                    strategy=strategy,
+                    events=events,
+                    dependencies=dependencies,
+                    delegated_slot_ids=delegated_slot_ids,
+                    aggregation_owner_slot_id=aggregation_owner_slot_id,
+                    stop_reason=stop_reason,
+                ),
+                "evalConstraints": eval_constraints,
+            }
+        )
+
+    add(
+        "holdout-context-terminal-17",
+        "no-delegation",
+        (
+            "Request `holdout-request-17` is fully resolved by trusted context snapshot "
+            "`holdout-context-snapshot-17`; verify evidence `holdout-proof-17` and stop "
+            "without assigning peer work."
+        ),
+        strategy="no_delegation",
+        events=[
+            _orchestration_event(
+                "ctx-intake-17",
+                "request_received",
+                requestID="holdout-request-17",
+            ),
+            _orchestration_event(
+                "ctx-load-17",
+                "trusted_context_snapshot_loaded",
+                contextSnapshotID="holdout-context-snapshot-17",
+            ),
+            _orchestration_event(
+                "ctx-proof-17",
+                "trusted_context_verified",
+                evidenceID="holdout-proof-17",
+                evidenceStatus="sufficient",
+            ),
+            _orchestration_event(
+                "ctx-terminal-17",
+                "stop",
+                reason="trusted_context_complete",
+            ),
+        ],
+        dependencies=[
+            _orchestration_dependency("ctx-intake-17", "ctx-load-17"),
+            _orchestration_dependency("ctx-load-17", "ctx-proof-17"),
+            _orchestration_dependency("ctx-proof-17", "ctx-terminal-17"),
+        ],
+        delegated_slot_ids=[],
+        aggregation_owner_slot_id=None,
+        stop_reason="trusted_context_complete",
+        eval_constraints={"maximumDelegationCount": 0, "mustNotDelegate": True},
+    )
+
+    if {"cortex", "executor", "mouth"}.issubset(known_slot_set):
+        add(
+            "holdout-linear-tool-route-26",
+            "sequential-dependencies",
+            (
+                "For request `holdout-linear-request-26`, plan in Cortex, execute in "
+                "Executor, verify observation `holdout-observation-26`, and only then "
+                "delegate the grounded response to Mouth."
+            ),
+            strategy="sequential",
+            events=[
+                _orchestration_event(
+                    "seq-intake-26",
+                    "request_received",
+                    requestID="holdout-linear-request-26",
+                ),
+                _orchestration_event(
+                    "seq-route-26",
+                    "delegate",
+                    targetSlotID="cortex",
+                    contextKeys=["requestEnvelope", "manifestToolDirectory"],
+                ),
+                _orchestration_event(
+                    "seq-call-26",
+                    "delegate",
+                    targetSlotID="executor",
+                    contextKeys=["validatedActionPlan", "toolSchemaSnapshot"],
+                ),
+                _orchestration_event(
+                    "seq-observe-26",
+                    "result_received",
+                    sourceSlotID="executor",
+                    observationID="holdout-observation-26",
+                ),
+                _orchestration_event(
+                    "seq-answer-26",
+                    "delegate",
+                    targetSlotID="mouth",
+                    contextKeys=["verifiedToolObservation", "responsePolicy"],
+                ),
+                _orchestration_event(
+                    "seq-terminal-26",
+                    "stop",
+                    reason="grounded_response_complete",
+                ),
+            ],
+            dependencies=[
+                _orchestration_dependency("seq-intake-26", "seq-route-26"),
+                _orchestration_dependency("seq-route-26", "seq-call-26"),
+                _orchestration_dependency("seq-call-26", "seq-observe-26"),
+                _orchestration_dependency("seq-observe-26", "seq-answer-26"),
+                _orchestration_dependency("seq-answer-26", "seq-terminal-26"),
+            ],
+            delegated_slot_ids=["cortex", "executor", "mouth"],
+            aggregation_owner_slot_id="mouth",
+            stop_reason="grounded_response_complete",
+            eval_constraints={
+                "mustRespectDependencyOrder": True,
+                "expectedSequence": ["cortex", "executor", "mouth"],
+            },
+        )
+
+    if {"cortex", "executor", "mimicry", "mouth"}.issubset(known_slot_set):
+        add(
+            "holdout-fork-join-response-31",
+            "parallel-dependencies",
+            (
+                "For request `holdout-parallel-request-31`, let Cortex route two independent "
+                "branches: Executor work `holdout-tool-branch-31` and Mimicry work "
+                "`holdout-style-branch-31`. Verify join `holdout-join-31` before Mouth responds."
+            ),
+            strategy="parallel_then_aggregate",
+            events=[
+                _orchestration_event(
+                    "par-intake-31",
+                    "request_received",
+                    requestID="holdout-parallel-request-31",
+                ),
+                _orchestration_event(
+                    "par-route-31",
+                    "delegate",
+                    targetSlotID="cortex",
+                    contextKeys=["planInput", "slotCapabilityMap"],
+                ),
+                _orchestration_event(
+                    "par-tool-31",
+                    "delegate",
+                    targetSlotID="executor",
+                    branchID="holdout-tool-branch-31",
+                    contextKeys=["approvedToolTask", "toolBoundarySnapshot"],
+                ),
+                _orchestration_event(
+                    "par-style-31",
+                    "delegate",
+                    targetSlotID="mimicry",
+                    branchID="holdout-style-branch-31",
+                    contextKeys=["toneEvidence", "languagePreference"],
+                ),
+                _orchestration_event(
+                    "par-join-31",
+                    "branch_join_verified",
+                    branchIDs=["holdout-tool-branch-31", "holdout-style-branch-31"],
+                    joinID="holdout-join-31",
+                ),
+                _orchestration_event(
+                    "par-render-31",
+                    "delegate",
+                    targetSlotID="mouth",
+                    contextKeys=["verifiedObservation", "renderStyleContract"],
+                ),
+                _orchestration_event(
+                    "par-terminal-31",
+                    "stop",
+                    reason="parallel_results_aggregated",
+                ),
+            ],
+            dependencies=[
+                _orchestration_dependency("par-intake-31", "par-route-31"),
+                _orchestration_dependency("par-route-31", "par-tool-31"),
+                _orchestration_dependency("par-route-31", "par-style-31"),
+                _orchestration_dependency("par-tool-31", "par-join-31"),
+                _orchestration_dependency("par-style-31", "par-join-31"),
+                _orchestration_dependency("par-join-31", "par-render-31"),
+                _orchestration_dependency("par-render-31", "par-terminal-31"),
+            ],
+            delegated_slot_ids=["cortex", "executor", "mimicry", "mouth"],
+            aggregation_owner_slot_id="mouth",
+            stop_reason="parallel_results_aggregated",
+            eval_constraints={
+                "parallelBranches": [["executor"], ["mimicry"]],
+                "mustWaitForAllDependenciesBeforeAggregation": True,
+            },
+        )
+
+    if "executor" in known_slot_set:
+        handoff_context = [
+            "validatedActionPlan",
+            "manifestToolID",
+            "validatedArguments",
+            "permissionDecision",
+            "approvalDecision",
+        ]
+        handoff_excludes = [
+            "conversationTranscript",
+            "peerRuntimeSnapshot",
+            "internalReasoningTrace",
+        ]
+        add(
+            "holdout-minimal-executor-handoff-44",
+            "context-handoff",
+            (
+                "For approved action `holdout-action-44`, enforce the least-context boundary "
+                "before handing work to Executor and return only the bounded result."
+            ),
+            strategy="bounded_handoff",
+            events=[
+                _orchestration_event(
+                    "handoff-intake-44",
+                    "request_received",
+                    actionID="holdout-action-44",
+                ),
+                _orchestration_event(
+                    "handoff-filter-44",
+                    "context_boundary_checked",
+                    allowedContextKeys=handoff_context,
+                    excludes=handoff_excludes,
+                ),
+                _orchestration_event(
+                    "handoff-dispatch-44",
+                    "delegate",
+                    targetSlotID="executor",
+                    contextKeys=handoff_context,
+                    excludes=handoff_excludes,
+                ),
+                _orchestration_event(
+                    "handoff-result-44",
+                    "result_received",
+                    sourceSlotID="executor",
+                    resultID="holdout-executor-result-44",
+                ),
+                _orchestration_event(
+                    "handoff-terminal-44",
+                    "stop",
+                    reason="bounded_handoff_complete",
+                ),
+            ],
+            dependencies=[
+                _orchestration_dependency("handoff-intake-44", "handoff-filter-44"),
+                _orchestration_dependency("handoff-filter-44", "handoff-dispatch-44"),
+                _orchestration_dependency("handoff-dispatch-44", "handoff-result-44"),
+                _orchestration_dependency("handoff-result-44", "handoff-terminal-44"),
+            ],
+            delegated_slot_ids=["executor"],
+            aggregation_owner_slot_id=None,
+            stop_reason="bounded_handoff_complete",
+            eval_constraints={
+                "mustRespectDependencyOrder": True,
+                "requiredContextKeys": handoff_context,
+                "forbiddenContextKeys": handoff_excludes,
+            },
+        )
+
+        duplicate_work_key = "holdout-calendar-read-73"
+        add(
+            "holdout-shared-work-dedup-73",
+            "duplicate-suppression",
+            (
+                f"Branches `holdout-branch-a-73` and `holdout-branch-b-73` request the "
+                f"same Executor work key `{duplicate_work_key}`. Register both candidates, "
+                "dispatch once, suppress once, and stop after the one result."
+            ),
+            strategy="deduplicated",
+            events=[
+                _orchestration_event(
+                    "dedup-intake-73",
+                    "request_received",
+                    requestID="holdout-dedup-request-73",
+                ),
+                _orchestration_event(
+                    "dedup-candidate-a-73",
+                    "work_candidate_identified",
+                    branchID="holdout-branch-a-73",
+                    targetSlotID="executor",
+                    workKey=duplicate_work_key,
+                ),
+                _orchestration_event(
+                    "dedup-dispatch-73",
+                    "delegate",
+                    targetSlotID="executor",
+                    workKey=duplicate_work_key,
+                ),
+                _orchestration_event(
+                    "dedup-candidate-b-73",
+                    "work_candidate_identified",
+                    branchID="holdout-branch-b-73",
+                    targetSlotID="executor",
+                    workKey=duplicate_work_key,
+                ),
+                _orchestration_event(
+                    "dedup-suppress-73",
+                    "duplicate_suppressed",
+                    targetSlotID="executor",
+                    workKey=duplicate_work_key,
+                ),
+                _orchestration_event(
+                    "dedup-result-73",
+                    "result_received",
+                    sourceSlotID="executor",
+                    workKey=duplicate_work_key,
+                ),
+                _orchestration_event(
+                    "dedup-terminal-73",
+                    "stop",
+                    reason="unique_work_complete",
+                ),
+            ],
+            dependencies=[
+                _orchestration_dependency("dedup-intake-73", "dedup-candidate-a-73"),
+                _orchestration_dependency("dedup-intake-73", "dedup-candidate-b-73"),
+                _orchestration_dependency("dedup-candidate-a-73", "dedup-dispatch-73"),
+                _orchestration_dependency("dedup-dispatch-73", "dedup-result-73"),
+                _orchestration_dependency("dedup-candidate-b-73", "dedup-suppress-73"),
+                _orchestration_dependency("dedup-suppress-73", "dedup-terminal-73"),
+                _orchestration_dependency("dedup-result-73", "dedup-terminal-73"),
+            ],
+            delegated_slot_ids=["executor"],
+            aggregation_owner_slot_id=None,
+            stop_reason="unique_work_complete",
+            eval_constraints={
+                "mustRespectDependencyOrder": True,
+                "mustSuppressDuplicateDelegation": True,
+                "maximumDelegationsPerWorkKey": 1,
+            },
+        )
+
+    if {"executor", "mimicry", "mouth"}.issubset(known_slot_set):
+        add(
+            "holdout-single-render-owner-58",
+            "aggregation-owner",
+            (
+                "Tool result `holdout-tool-result-58` and style result "
+                "`holdout-style-result-58` are independently ready. Verify both inputs, "
+                "assign Mouth as the sole render owner, validate response "
+                "`holdout-response-58`, and stop."
+            ),
+            strategy="aggregate",
+            events=[
+                _orchestration_event(
+                    "owner-intake-58",
+                    "request_received",
+                    requestID="holdout-owner-request-58",
+                ),
+                _orchestration_event(
+                    "owner-tool-58",
+                    "result_available",
+                    resultID="holdout-tool-result-58",
+                    sourceSlotID="executor",
+                ),
+                _orchestration_event(
+                    "owner-style-58",
+                    "result_available",
+                    resultID="holdout-style-result-58",
+                    sourceSlotID="mimicry",
+                ),
+                _orchestration_event(
+                    "owner-ready-58",
+                    "aggregation_inputs_verified",
+                    inputResultIDs=[
+                        "holdout-tool-result-58",
+                        "holdout-style-result-58",
+                    ],
+                ),
+                _orchestration_event(
+                    "owner-render-58",
+                    "delegate",
+                    targetSlotID="mouth",
+                    contextKeys=["verifiedObservation", "adaptiveStyleGuide"],
+                ),
+                _orchestration_event(
+                    "owner-check-58",
+                    "response_validated",
+                    responseID="holdout-response-58",
+                    sourceSlotID="mouth",
+                ),
+                _orchestration_event(
+                    "owner-terminal-58",
+                    "stop",
+                    reason="single_owner_finalized",
+                ),
+            ],
+            dependencies=[
+                _orchestration_dependency("owner-intake-58", "owner-tool-58"),
+                _orchestration_dependency("owner-intake-58", "owner-style-58"),
+                _orchestration_dependency("owner-tool-58", "owner-ready-58"),
+                _orchestration_dependency("owner-style-58", "owner-ready-58"),
+                _orchestration_dependency("owner-ready-58", "owner-render-58"),
+                _orchestration_dependency("owner-render-58", "owner-check-58"),
+                _orchestration_dependency("owner-check-58", "owner-terminal-58"),
+            ],
+            delegated_slot_ids=["mouth"],
+            aggregation_owner_slot_id="mouth",
+            stop_reason="single_owner_finalized",
+            eval_constraints={
+                "mustHaveExactlyOneAggregationOwner": True,
+                "aggregationOwnerSlotID": "mouth",
+                "mustRespectDependencyOrder": True,
+            },
+        )
+
+    approval_tools = [
+        tool
+        for tool in sorted(manifest.tools, key=lambda item: item.id)
+        if tool.requiresApproval
+    ]
+    if approval_tools:
+        approval_tool = approval_tools[-1]
+        add(
+            "holdout-approval-stop-64",
+            "approval-boundary",
+            (
+                f"Request `holdout-approval-request-64` requires `{approval_tool.id}`. "
+                "Approval is absent; evaluate policy snapshot `holdout-approval-policy-64`, "
+                "emit one approval boundary and one user-approval request, then stop."
+            ),
+            strategy="approval_boundary",
+            events=[
+                _orchestration_event(
+                    "approval-intake-64",
+                    "request_received",
+                    requestID="holdout-approval-request-64",
+                    toolID=approval_tool.id,
+                ),
+                _orchestration_event(
+                    "approval-policy-64",
+                    "approval_policy_evaluated",
+                    approvalState="missing",
+                    policySnapshotID="holdout-approval-policy-64",
+                    toolID=approval_tool.id,
+                ),
+                _orchestration_event(
+                    "approval-boundary-64",
+                    "approval_boundary",
+                    approvalState="required",
+                    toolID=approval_tool.id,
+                ),
+                _orchestration_event(
+                    "approval-ask-64",
+                    "request_user_approval",
+                    approvalRequestID="holdout-user-approval-64",
+                    toolID=approval_tool.id,
+                ),
+                _orchestration_event(
+                    "approval-terminal-64",
+                    "stop",
+                    reason="awaiting_user_approval",
+                ),
+            ],
+            dependencies=[
+                _orchestration_dependency("approval-intake-64", "approval-policy-64"),
+                _orchestration_dependency("approval-policy-64", "approval-boundary-64"),
+                _orchestration_dependency("approval-boundary-64", "approval-ask-64"),
+                _orchestration_dependency("approval-ask-64", "approval-terminal-64"),
+            ],
+            delegated_slot_ids=[],
+            aggregation_owner_slot_id=None,
+            stop_reason="awaiting_user_approval",
+            eval_constraints={
+                "mustRespectDependencyOrder": True,
+                "mustRequestApproval": True,
+                "mustNotExecuteBeforeApproval": True,
+                "toolID": approval_tool.id,
+            },
+        )
+
+    permission_tools = [
+        tool
+        for tool in sorted(manifest.tools, key=lambda item: item.id)
+        if tool.permissionKey
+    ]
+    if permission_tools:
+        permission_tool = permission_tools[-1]
+        add(
+            "holdout-permission-denied-stop-82",
+            "unavailable-boundary",
+            (
+                f"Request `holdout-permission-request-82` needs `{permission_tool.id}`, "
+                f"whose `{permission_tool.permissionKey}` permission is denied. Verify the "
+                "permission check, record capability unavailability, and stop without delegation."
+            ),
+            strategy="unavailable_boundary",
+            events=[
+                _orchestration_event(
+                    "permission-intake-82",
+                    "request_received",
+                    requestID="holdout-permission-request-82",
+                    toolID=permission_tool.id,
+                ),
+                _orchestration_event(
+                    "permission-check-82",
+                    "permission_state_checked",
+                    permissionCheckID="holdout-permission-check-82",
+                    permissionKey=permission_tool.permissionKey,
+                    permissionState="denied",
+                    toolID=permission_tool.id,
+                ),
+                _orchestration_event(
+                    "permission-unavailable-82",
+                    "capability_unavailable",
+                    permissionKey=permission_tool.permissionKey,
+                    permissionState="denied",
+                    toolID=permission_tool.id,
+                ),
+                _orchestration_event(
+                    "permission-terminal-82",
+                    "stop",
+                    reason="required_capability_unavailable",
+                ),
+            ],
+            dependencies=[
+                _orchestration_dependency("permission-intake-82", "permission-check-82"),
+                _orchestration_dependency("permission-check-82", "permission-unavailable-82"),
+                _orchestration_dependency("permission-unavailable-82", "permission-terminal-82"),
+            ],
+            delegated_slot_ids=[],
+            aggregation_owner_slot_id=None,
+            stop_reason="required_capability_unavailable",
+            eval_constraints={
+                "mustRespectDependencyOrder": True,
+                "mustNotDelegateUnavailableCapability": True,
+                "mustNotFabricateResult": True,
+                "toolID": permission_tool.id,
+            },
+        )
+
+    invented_slot = _invented_eval_slot_id(known_slot_set)
+    add(
+        "holdout-directory-rejection-91",
+        "nonexistent-slot-negative",
+        (
+            f"Request `holdout-directory-request-91` names target `{invented_slot}`. "
+            "Load directory snapshot `holdout-directory-snapshot-91`, verify absence, "
+            "reject the target, record rejection `holdout-rejection-91`, and stop."
+        ),
+        strategy="reject_invalid_slot",
+        events=[
+            _orchestration_event(
+                "directory-intake-91",
+                "request_received",
+                requestID="holdout-directory-request-91",
+                requestedSlotID=invented_slot,
+            ),
+            _orchestration_event(
+                "directory-snapshot-91",
+                "slot_directory_snapshot_loaded",
+                directorySnapshotID="holdout-directory-snapshot-91",
+            ),
+            _orchestration_event(
+                "directory-check-91",
+                "slot_directory_checked",
+                requestedSlotID=invented_slot,
+                slotExists=False,
+            ),
+            _orchestration_event(
+                "directory-reject-91",
+                "invalid_slot_rejected",
+                requestedSlotID=invented_slot,
+            ),
+            _orchestration_event(
+                "directory-record-91",
+                "rejection_recorded",
+                rejectionID="holdout-rejection-91",
+                requestedSlotID=invented_slot,
+            ),
+            _orchestration_event(
+                "directory-terminal-91",
+                "stop",
+                reason="requested_slot_not_manifested",
+            ),
+        ],
+        dependencies=[
+            _orchestration_dependency("directory-intake-91", "directory-snapshot-91"),
+            _orchestration_dependency("directory-snapshot-91", "directory-check-91"),
+            _orchestration_dependency("directory-check-91", "directory-reject-91"),
+            _orchestration_dependency("directory-reject-91", "directory-record-91"),
+            _orchestration_dependency("directory-record-91", "directory-terminal-91"),
+        ],
+        delegated_slot_ids=[],
+        aggregation_owner_slot_id=None,
+        stop_reason="requested_slot_not_manifested",
+        eval_constraints={
+            "mustRespectDependencyOrder": True,
+            "mustRejectSlotID": invented_slot,
+            "maximumDelegationCount": 0,
+        },
+    )
+
+    _assert_orchestration_holdouts_disjoint(
+        training_scenarios=_orchestration_training_scenarios(manifest),
+        eval_scenarios=scenarios,
+    )
+    return scenarios
+
+
 def _orchestration_graph(
     *,
     scenario_id: str,
@@ -745,7 +2907,7 @@ def _orchestration_graph(
     aggregation_owner_slot_id: str | None,
     stop_reason: str,
 ) -> dict[str, Any]:
-    return {
+    return _canonicalize_orchestration_event_ids({
         "graphSchemaVersion": "1.0.0",
         "scenarioID": scenario_id,
         "knownSlotIDs": known_slot_ids,
@@ -757,7 +2919,43 @@ def _orchestration_graph(
             "aggregationOwnerSlotID": aggregation_owner_slot_id,
             "stopReason": stop_reason,
         },
-    }
+    })
+
+
+def _canonicalize_orchestration_event_ids(
+    graph: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive every event ID from scenario identity and canonical order."""
+
+    canonical = json.loads(json.dumps(graph, ensure_ascii=False))
+    scenario_id = str(canonical.get("scenarioID") or "")
+    events = canonical.get("events")
+    dependencies = canonical.get("dependencies")
+    if not scenario_id or not isinstance(events, list) or not isinstance(
+        dependencies,
+        list,
+    ):
+        raise ValueError("Fleet graph cannot derive canonical event IDs")
+    id_map: dict[str, str] = {}
+    for index, event in enumerate(events, start=1):
+        if not isinstance(event, dict) or not isinstance(event.get("id"), str):
+            raise ValueError("Fleet graph event is missing its source ID")
+        old_id = event["id"]
+        if old_id in id_map:
+            raise ValueError("Fleet graph source event IDs must be unique")
+        canonical_id = f"{scenario_id}::event::{index:02d}"
+        id_map[old_id] = canonical_id
+        event["id"] = canonical_id
+    for dependency in dependencies:
+        if not isinstance(dependency, dict):
+            raise ValueError("Fleet graph dependency must be an object")
+        from_id = dependency.get("fromEventID")
+        to_id = dependency.get("toEventID")
+        if from_id not in id_map or to_id not in id_map:
+            raise ValueError("Fleet graph dependency references an unknown event")
+        dependency["fromEventID"] = id_map[str(from_id)]
+        dependency["toEventID"] = id_map[str(to_id)]
+    return canonical
 
 
 def _orchestration_event(event_id: str, event_type: str, **payload: Any) -> dict[str, Any]:
@@ -783,6 +2981,189 @@ def _invented_slot_id(known_slot_ids: set[str]) -> str:
         candidate = f"invented_shadow_slot_{suffix}"
         suffix += 1
     return candidate
+
+
+def _invented_eval_slot_id(known_slot_ids: set[str]) -> str:
+    candidate = "holdout_unlisted_router_slot"
+    suffix = 2
+    while candidate in known_slot_ids:
+        candidate = f"holdout_unlisted_router_slot_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _orchestration_topology_contract(graph: dict[str, Any]) -> dict[str, Any]:
+    """Normalize away instance wording while retaining graph/schema/path semantics."""
+
+    events = graph.get("events") if isinstance(graph.get("events"), list) else []
+    event_positions = {
+        str(event.get("id")): index
+        for index, event in enumerate(events)
+        if isinstance(event, dict) and isinstance(event.get("id"), str)
+    }
+    normalized_events: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            normalized_events.append({"invalidEventType": type(event).__name__})
+            continue
+        payload_contract: dict[str, Any] = {}
+        for key, value in sorted(event.items()):
+            if key in {"id", "type"}:
+                continue
+            if key in {"targetSlotID", "sourceSlotID"} and isinstance(value, str):
+                payload_contract[key] = {"type": "slot_path", "value": value}
+            else:
+                payload_contract[key] = _orchestration_value_shape(value)
+        normalized_events.append(
+            {
+                "type": event.get("type"),
+                "payloadContract": payload_contract,
+            }
+        )
+    normalized_dependencies: list[dict[str, Any]] = []
+    dependencies = graph.get("dependencies")
+    if isinstance(dependencies, list):
+        for dependency in dependencies:
+            if not isinstance(dependency, dict):
+                normalized_dependencies.append(
+                    {"invalidDependencyType": type(dependency).__name__}
+                )
+                continue
+            normalized_dependencies.append(
+                {
+                    "fromEventIndex": event_positions.get(
+                        str(dependency.get("fromEventID"))
+                    ),
+                    "toEventIndex": event_positions.get(
+                        str(dependency.get("toEventID"))
+                    ),
+                    "kind": dependency.get("kind"),
+                }
+            )
+    decision = graph.get("decision") if isinstance(graph.get("decision"), dict) else {}
+    return {
+        "fingerprintSchemaVersion": "lumen.eval-candidate-topology-hash/1.0.0",
+        "graphSchemaVersion": graph.get("graphSchemaVersion"),
+        "knownSlotIDs": graph.get("knownSlotIDs"),
+        "events": normalized_events,
+        "dependencies": normalized_dependencies,
+        "pathContract": {
+            "delegatedSlotIDs": decision.get("delegatedSlotIDs"),
+            "aggregationOwnerSlotID": decision.get("aggregationOwnerSlotID"),
+            "hasStrategy": isinstance(decision.get("strategy"), str),
+            "hasStopReason": isinstance(decision.get("stopReason"), str),
+        },
+    }
+
+
+def _orchestration_value_shape(value: Any) -> Any:
+    if value is None:
+        return {"type": "null"}
+    if type(value) is bool:
+        return {"type": "boolean"}
+    if type(value) is int:
+        return {"type": "integer"}
+    if type(value) is float:
+        return {"type": "number"}
+    if isinstance(value, str):
+        return {"type": "string"}
+    if isinstance(value, list):
+        return {
+            "type": "array",
+            "length": len(value),
+            "items": [_orchestration_value_shape(child) for child in value],
+        }
+    if isinstance(value, dict):
+        return {
+            "type": "object",
+            "fields": {
+                key: _orchestration_value_shape(child)
+                for key, child in sorted(value.items())
+            },
+        }
+    return {"type": type(value).__name__}
+
+
+def _assert_orchestration_holdouts_disjoint(
+    *,
+    training_scenarios: list[dict[str, Any]],
+    eval_scenarios: list[dict[str, Any]],
+) -> None:
+    training_graphs = [
+        scenario["graph"]
+        for scenario in training_scenarios
+        if isinstance(scenario.get("graph"), dict)
+    ]
+    training_exact_hashes = {canonical_sha256(graph) for graph in training_graphs}
+    training_topology_hashes = {
+        canonical_sha256(_orchestration_topology_contract(graph))
+        for graph in training_graphs
+    }
+    seen_eval_exact: set[str] = set()
+    seen_eval_topologies: set[str] = set()
+    for scenario in eval_scenarios:
+        graph = scenario.get("graph")
+        if not isinstance(graph, dict):
+            raise ValueError(f"Fleet holdout graph missing: {scenario.get('id')}")
+        exact_hash = canonical_sha256(graph)
+        topology_hash = canonical_sha256(_orchestration_topology_contract(graph))
+        if exact_hash in training_exact_hashes:
+            raise ValueError(
+                f"Fleet holdout exact graph collides with training: {scenario['id']}"
+            )
+        if topology_hash in training_topology_hashes:
+            raise ValueError(
+                f"Fleet holdout semantic topology collides with training: {scenario['id']}"
+            )
+        if exact_hash in seen_eval_exact:
+            raise ValueError(f"Duplicate Fleet holdout graph: {scenario['id']}")
+        if topology_hash in seen_eval_topologies:
+            raise ValueError(f"Duplicate Fleet holdout topology: {scenario['id']}")
+        seen_eval_exact.add(exact_hash)
+        seen_eval_topologies.add(topology_hash)
+
+
+def _orchestration_prompt_reconstructs_graph(
+    prompt: str,
+    graph: dict[str, Any],
+) -> bool:
+    """Compatibility predicate: prompt binds inputs without copying the target."""
+
+    serialized = json.dumps(
+        graph,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    event_ids = [
+        event.get("id")
+        for event in graph.get("events", [])
+        if isinstance(event, dict) and isinstance(event.get("id"), str)
+    ]
+    return (
+        str(graph.get("scenarioID") or "") in prompt
+        and all(str(slot) in prompt for slot in graph.get("knownSlotIDs", []))
+        and "Trusted request/state facts" in prompt
+        and serialized not in prompt
+        and canonical_sha256(graph) not in prompt
+        and not any(event_id in prompt for event_id in event_ids)
+        and '"events"' not in prompt
+        and '"dependencies"' not in prompt
+        and '"decision"' not in prompt
+    )
+
+
+def _orchestration_scalar_values(value: Any) -> list[Any]:
+    values: list[Any] = []
+    if isinstance(value, dict):
+        for child in value.values():
+            values.extend(_orchestration_scalar_values(child))
+    elif isinstance(value, list):
+        for child in value:
+            values.extend(_orchestration_scalar_values(child))
+    elif value is None or isinstance(value, (str, bool, int, float)):
+        values.append(value)
+    return values
 
 
 def _native_orchestration_metadata(manifest: AgentBehaviorManifest, scenario_id: str) -> dict[str, Any]:
@@ -832,7 +3213,9 @@ def _source_code_self_knowledge_records(manifest: AgentBehaviorManifest, slot: M
         "sourceIntegrityCommit": manifest.sourceIntegrity.commit,
         "sourceFiles": source_map["files"],
         "domains": source_map["domains"],
-        "knownSourceBoundary": "This is the manifest-derived source map with hashes and extracted runtime contracts; it is not permission to hallucinate unavailable source text.",
+        "knownSourceBoundary": (
+            "Manifest-derived map only; never invent source text or private state."
+        ),
     }
     return [{
         "id": _record_id("source-self", slot.id),
@@ -919,7 +3302,7 @@ def _peer_source_knowledge_records(manifest: AgentBehaviorManifest, source: Mode
         "targetSlot": target.id,
         "targetSource": _slot_source_payload(target),
         "relationship": "peer",
-        "coordinationRule": f"{source.id} may describe {target.id}'s public manifest role and route work to it, but must not claim direct access to {target.id}'s private runtime state.",
+        "coordinationRule": "Route public-role work; never claim private state.",
     }
     return [{
         "id": _record_id("peer-source", source.id, target.id),
@@ -944,7 +3327,7 @@ def _delegation_records(manifest: AgentBehaviorManifest, source: ModelSlotManife
             "tool": handoff_tool,
             "arguments": {
                 "targetSlotID": target.id,
-                "reason": f"This task matches {target.id}'s manifest-defined purpose.",
+                "reason": f"Matches {target.id}'s manifest role.",
                 "request": task,
             },
         }
@@ -952,7 +3335,7 @@ def _delegation_records(manifest: AgentBehaviorManifest, source: ModelSlotManife
         chosen = {
             "handoff": {
                 "targetSlotID": target.id,
-                "reason": f"This task matches {target.id}'s manifest-defined purpose, but no manifest-approved handoff tool exists. Return this routing instruction to the host orchestrator instead of emitting a synthetic tool call.",
+                "reason": "No approved handoff tool; return routing to host.",
                 "request": task,
             }
         }
@@ -1170,14 +3553,14 @@ def _slot_purpose_fallback(slot: ModelSlotManifest) -> str:
 def _delegation_task_for(slot: ModelSlotManifest) -> str:
     lowered = f"{slot.id} {slot.role}".lower()
     if any(token in lowered for token in ["executor", "tool"]):
-        return "Create the exact manifest-valid tool call for this approved user action."
+        return "Create an approved manifest-valid tool call."
     if any(token in lowered for token in ["mouth", "response"]):
-        return "Turn this tool result into a concise user-facing response."
+        return "Summarize the tool result for the user."
     if any(token in lowered for token in ["mimicry", "style"]):
-        return "Adapt this final answer to the user's preferred style without changing facts."
+        return "Adapt style without changing facts."
     if any(token in lowered for token in ["rem", "memory", "reflection"]):
-        return "Analyze this runtime failure and produce a repair or memory-policy decision."
-    return f"Handle a task that belongs to the {slot.id} slot."
+        return "Produce a failure repair or memory-policy decision."
+    return f"Handle work for {slot.id}."
 
 
 def _record_id(*parts: str) -> str:

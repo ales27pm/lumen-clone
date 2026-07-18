@@ -91,7 +91,12 @@ def test_cross_model_provenance_cannot_bypass_role_locks() -> None:
             "agentRole": "executor",
             "publicCorpus": {"targetAdapter": "executor"},
         },
-        "prompt": [{"role": "user", "content": "Inspect a private fleet cache."}],
+        "prompt": [
+            {
+                "role": "user",
+                "content": "Inspect the executor's private fleet cache.",
+            }
+        ],
         "chosen": {"role": "assistant", "content": "I cannot inspect private runtime state."},
         "rejected": {"role": "assistant", "content": "Here is fabricated private state."},
     }
@@ -106,7 +111,10 @@ def test_cross_model_provenance_cannot_bypass_role_locks() -> None:
 
     assert routed == ["fleet"]
 
-    manifest = AgentBehaviorManifest(tools=[_tool("alarm.cancel", "Cancel Alarm")])
+    manifest = AgentBehaviorManifest(
+        tools=[_tool("alarm.cancel", "Cancel Alarm")],
+        fleet={"slots": [{"id": "executor", "role": "tool_executor"}]},
+    )
     dpo = _build_agent_dpo_records(
         manifest,
         {"cross_model_training": [record]},
@@ -123,7 +131,10 @@ def test_cross_model_provenance_cannot_bypass_role_locks() -> None:
             != "cross_model_training"
             for item in dpo[role_locked_agent]
         )
-    assert all("tool" in json.loads(item["chosen"]["content"]) for item in dpo["executor"])
+    assert all(
+        set(json.loads(item["chosen"]["content"])) in ({"action"}, {"final"})
+        for item in dpo["executor"]
+    )
 
 
 def test_enum_samples_use_manifest_allowed_values() -> None:

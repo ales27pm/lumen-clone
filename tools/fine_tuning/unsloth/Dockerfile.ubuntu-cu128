@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG LUMEN_RUNTIME_UID=1000
@@ -138,16 +138,19 @@ RUN set -eu; \
             --shell /bin/bash \
             lumen-runtime; \
     fi; \
+    install -d -m 0555 -o root -g root /outputs; \
     install -d -m 0700 \
         -o "${LUMEN_RUNTIME_UID}" \
         -g "${LUMEN_RUNTIME_GID}" \
         /home/lumen-runtime \
         /home/lumen-runtime/.cache \
+        /home/lumen-runtime/.cache/unsloth_compiled_cache \
         /home/lumen-runtime/.cache/torch/inductor \
         /home/lumen-runtime/.cache/triton
 
 ENV HOME=/home/lumen-runtime \
     XDG_CACHE_HOME=/home/lumen-runtime/.cache \
+    UNSLOTH_COMPILE_LOCATION=/home/lumen-runtime/.cache/unsloth_compiled_cache \
     TORCHINDUCTOR_CACHE_DIR=/home/lumen-runtime/.cache/torch/inductor \
     TRITON_CACHE_DIR=/home/lumen-runtime/.cache/triton
 
@@ -195,6 +198,7 @@ assert getpass.getuser()
 home = Path.home()
 assert home == Path("/home/lumen-runtime") and home.is_dir()
 tempfile.TemporaryFile(dir=home).close()
+tempfile.TemporaryFile(dir=Path(os.environ["UNSLOTH_COMPILE_LOCATION"])).close()
 tempfile.TemporaryFile(dir=Path(os.environ["TORCHINDUCTOR_CACHE_DIR"])).close()
 PY
 

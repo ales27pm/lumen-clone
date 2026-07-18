@@ -37,9 +37,9 @@ IGNORED_DIRS = {
 }
 IGNORED_PLIST_DIRS = IGNORED_DIRS | {"Tests", "UITests", "UnitTests", "Fixtures", "fixtures"}
 FRESHNESS_DEFAULTS = {
-    "volatile": {"ttlSeconds": 300, "durable": False},
-    "shortLived": {"ttlSeconds": 3600, "durable": False},
-    "short_lived": {"ttlSeconds": 3600, "durable": False},
+    "volatile": {"ttlSeconds": 45 * 60, "durable": False},
+    "shortLived": {"ttlSeconds": 6 * 60 * 60, "durable": False},
+    "short_lived": {"ttlSeconds": 6 * 60 * 60, "durable": False},
     "timeless": {"ttlSeconds": None, "durable": True},
 }
 

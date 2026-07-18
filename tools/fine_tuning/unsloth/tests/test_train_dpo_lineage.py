@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import math
 import os
 import sys
 import types
@@ -526,11 +527,14 @@ def _valid_preference_row() -> dict:
 def test_preference_rows_remain_conversational_for_trl_chat_templates() -> None:
     source = _valid_preference_row()
     normalized = train_dpo.row_to_preference(source)
+    expected_prompt = [dict(message) for message in source["prompt"]]
+    expected_prompt[-1]["content"] += "\n\n/no_think"
 
     assert normalized == {
-        "prompt": source["prompt"],
+        "prompt": expected_prompt,
         "chosen": [source["chosen"]],
         "rejected": [source["rejected"]],
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     assert isinstance(normalized["prompt"], list)
     assert normalized["prompt"][-1]["role"] == "user"
@@ -655,23 +659,28 @@ def test_pinned_qwen_trl_chat_template_preserves_assistant_boundaries() -> None:
 
     normalized = train_dpo.row_to_preference(_valid_preference_row())
     prepared = maybe_apply_chat_template(normalized, tokenizer)
-    without_generation_boundary = tokenizer.apply_chat_template(
+    expected_prompt = tokenizer.apply_chat_template(
         normalized["prompt"],
         tokenize=False,
-        add_generation_prompt=False,
+        add_generation_prompt=True,
+        enable_thinking=False,
     )
-    generation_boundary = prepared["prompt"][len(without_generation_boundary) :]
 
-    assert prepared["prompt"].startswith(without_generation_boundary)
-    assert generation_boundary
-    assert "assistant" in generation_boundary
+    assert prepared["prompt"] == expected_prompt
+    assert prepared["prompt"].endswith("<think>\n\n</think>\n\n")
+    assert not prepared["chosen"].lstrip().startswith("<think>")
+    assert not prepared["rejected"].lstrip().startswith("<think>")
     assert prepared["chosen"].rstrip().endswith(tokenizer.eos_token)
     assert prepared["rejected"].rstrip().endswith(tokenizer.eos_token)
     assert "The tool reported success." in prepared["chosen"]
     assert "I guessed that it worked." in prepared["rejected"]
 
     old_flattened = {
-        "prompt": without_generation_boundary,
+        "prompt": tokenizer.apply_chat_template(
+            normalized["prompt"],
+            tokenize=False,
+            add_generation_prompt=False,
+        ),
         "chosen": normalized["chosen"][0]["content"],
         "rejected": normalized["rejected"][0]["content"],
     }
@@ -679,7 +688,7 @@ def test_pinned_qwen_trl_chat_template_preserves_assistant_boundaries() -> None:
     assert prepared != old_flattened
 
 
-def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
+def test_pinned_trl_024_dpo_constructor_contract_is_fail_closed() -> None:
     class ConfigProbe:
         def __init__(self, **kwargs: object) -> None:
             self.kwargs = kwargs
@@ -716,9 +725,17 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
         "dpo_learning_rate": 2e-6,
         "num_train_epochs": 1,
         "dpo_num_train_epochs": 0.5,
+        "dpo_beta": 0.1,
         "warmup_steps": 0,
         "max_seq_length": 512,
         "max_prompt_length": 384,
+        "preference_trainer": "dpo",
+        "gradient_checkpointing": True,
+        "use_logits_to_keep": True,
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "bf16": False,
+        "fp16": True,
     }
     common = {
         "seed": 42,
@@ -741,50 +758,122 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
     assert dpo_args.kwargs["ref_adapter_name"] == train_dpo.REFERENCE_ADAPTER_NAME
     assert dpo_args.kwargs["seed"] == dpo_args.kwargs["data_seed"] == 42
     assert dpo_args.kwargs["eval_strategy"] == "no"
-    assert dpo_args.kwargs["save_strategy"] == "epoch"
+    assert dpo_args.kwargs["save_strategy"] == "steps"
+    assert dpo_args.kwargs["save_steps"] == 5
+    assert dpo_args.kwargs["save_total_limit"] == 2
+    assert dpo_args.kwargs["save_only_model"] is False
     assert dpo_args.kwargs["learning_rate"] == 2e-6
     assert dpo_args.kwargs["num_train_epochs"] == 0.5
     assert dpo_args.kwargs["max_prompt_length"] == 384
+    assert dpo_args.kwargs["max_completion_length"] is None
     assert dpo_args.kwargs["use_logits_to_keep"] is True
     assert dpo_args.kwargs["precompute_ref_log_probs"] is True
     assert dpo_args.kwargs["precompute_ref_batch_size"] == 1
     assert dpo_args.kwargs["gradient_checkpointing"] is True
     assert dpo_args.kwargs["torch_empty_cache_steps"] == 1
 
-    orpo_trainer, orpo_args = train_dpo._build_preference_trainer(
-        cfg, preference_trainer="orpo", **common
-    )
-    assert isinstance(orpo_trainer, ORPOTrainerProbe)
-    assert "model_adapter_name" not in orpo_args.kwargs
-    assert "use_logits_to_keep" not in orpo_args.kwargs
-    assert "precompute_ref_log_probs" not in orpo_args.kwargs
-    assert "precompute_ref_batch_size" not in orpo_args.kwargs
-    assert "torch_empty_cache_steps" not in orpo_args.kwargs
-    assert orpo_args.kwargs["seed"] == orpo_args.kwargs["data_seed"] == 42
-    assert orpo_args.kwargs["learning_rate"] == 2e-6
+    with pytest.raises(ValueError, match="drifted from the config"):
+        train_dpo._build_preference_trainer(
+            cfg, preference_trainer="orpo", **common
+        )
 
     cfg["precompute_ref_batch_size"] = 0
     with pytest.raises(ValueError, match="precompute_ref_batch_size"):
         train_dpo._build_preference_trainer(
             cfg, preference_trainer="dpo", **common
         )
-    cfg.pop("precompute_ref_batch_size")
+    cfg["precompute_ref_batch_size"] = 1
     for field, invalid, message in (
         ("gradient_checkpointing", "true", "gradient_checkpointing"),
         ("gradient_checkpointing", False, "gradient_checkpointing=true"),
-        ("use_logits_to_keep", "false", "use_logits_to_keep=true"),
+        ("use_logits_to_keep", "false", "use_logits_to_keep"),
         ("use_logits_to_keep", False, "use_logits_to_keep=true"),
-        ("precompute_ref_log_probs", "false", "precompute_ref_log_probs=true"),
+        ("precompute_ref_log_probs", "false", "precompute_ref_log_probs"),
         ("precompute_ref_log_probs", False, "precompute_ref_log_probs=true"),
         ("precompute_ref_batch_size", True, "precompute_ref_batch_size"),
         ("precompute_ref_batch_size", 1.5, "precompute_ref_batch_size"),
     ):
+        original = cfg[field]
         cfg[field] = invalid
         with pytest.raises(ValueError, match=message):
             train_dpo._build_preference_trainer(
                 cfg, preference_trainer="dpo", **common
             )
-        cfg.pop(field)
+        cfg[field] = original
+
+
+def _valid_preference_controls() -> dict[str, object]:
+    return {
+        "preference_trainer": "dpo",
+        "dpo_learning_rate": 5e-6,
+        "dpo_num_train_epochs": 2,
+        "dpo_beta": 0.1,
+        "max_seq_length": 4096,
+        "max_prompt_length": 2048,
+        "batch_size": 2,
+        "gradient_accumulation_steps": 4,
+        "warmup_steps": 0,
+        "gradient_checkpointing": True,
+        "use_logits_to_keep": True,
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "bf16": False,
+        "fp16": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid", "message"),
+    (
+        ("preference_trainer", "orpo", "exactly 'dpo'"),
+        ("dpo_learning_rate", None, "dpo_learning_rate"),
+        ("dpo_learning_rate", True, "dpo_learning_rate"),
+        ("dpo_learning_rate", math.inf, "dpo_learning_rate"),
+        ("dpo_num_train_epochs", 0, "dpo_num_train_epochs"),
+        ("dpo_num_train_epochs", "2", "dpo_num_train_epochs"),
+        ("dpo_beta", None, "dpo_beta"),
+        ("dpo_beta", -0.1, "dpo_beta"),
+        ("max_prompt_length", 4096, "max_prompt_length"),
+        ("max_prompt_length", 2048.0, "max_prompt_length"),
+        ("bf16", True, "Exactly one"),
+        ("fp16", "true", "explicit booleans"),
+    ),
+)
+def test_preference_controls_reject_missing_coerced_or_fallback_values(
+    field: str,
+    invalid: object,
+    message: str,
+) -> None:
+    config = _valid_preference_controls()
+    if invalid is None:
+        config.pop(field)
+    else:
+        config[field] = invalid
+
+    with pytest.raises(ValueError, match=message):
+        train_dpo._validate_preference_training_config(config)
+
+
+def test_preference_controls_resolve_explicit_fp16_without_sft_fallbacks() -> None:
+    config = _valid_preference_controls()
+
+    assert train_dpo._validate_preference_training_config(config) == {
+        "preferenceTrainer": "dpo",
+        "learningRate": 5e-6,
+        "numTrainEpochs": 2.0,
+        "beta": 0.1,
+        "maxPromptLength": 2048,
+        "gradientCheckpointing": True,
+        "useLogitsToKeep": True,
+        "precomputeRefLogProbs": True,
+        "precomputeRefBatchSize": 1,
+        "precision": {
+            "schemaVersion": train_sft.TRAINING_PRECISION_SCHEMA,
+            "bf16": False,
+            "fp16": True,
+            "dtype": "float16",
+        },
+    }
 
 
 @pytest.mark.e2e
@@ -810,10 +899,20 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
         "batch_size": 1,
         "gradient_accumulation_steps": 2,
         "learning_rate": 1e-5,
+        "dpo_learning_rate": 2e-6,
         "num_train_epochs": 1,
+        "dpo_num_train_epochs": 0.5,
+        "dpo_beta": 0.1,
         "warmup_steps": 0,
         "max_seq_length": 512,
-        "fp16": False,
+        "max_prompt_length": 384,
+        "preference_trainer": "dpo",
+        "gradient_checkpointing": True,
+        "use_logits_to_keep": True,
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "bf16": False,
+        "fp16": True,
     }
     common = {
         "seed": 42,
@@ -833,14 +932,7 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
         preference_trainer="dpo",
         **common,
     )
-    _, orpo_args = train_dpo._build_preference_trainer(
-        cfg,
-        preference_trainer="orpo",
-        **common,
-    )
-
     assert isinstance(dpo_args, trl.DPOConfig)
-    assert isinstance(orpo_args, trl.ORPOConfig)
     assert dpo_args.model_adapter_name == train_dpo.POLICY_ADAPTER_NAME
     assert dpo_args.ref_adapter_name == train_dpo.REFERENCE_ADAPTER_NAME
     assert dpo_args.use_logits_to_keep is True
@@ -849,7 +941,6 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
     assert dpo_args.gradient_checkpointing is True
     assert dpo_args.torch_empty_cache_steps == 1
     assert dpo_args.seed == dpo_args.data_seed == 42
-    assert orpo_args.seed == orpo_args.data_seed == 42
 
 
 def test_reference_logps_precompute_before_checkpoint_graph_initialization() -> None:

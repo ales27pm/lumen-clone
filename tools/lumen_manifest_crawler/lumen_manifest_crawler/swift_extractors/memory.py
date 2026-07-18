@@ -3,10 +3,20 @@ from __future__ import annotations
 import re
 
 from lumen_manifest_crawler.manifest import FreshnessClassManifest
-from lumen_manifest_crawler.swift_extractors.base import SwiftExtractor, SwiftFile, enum_cases, string_literals
+from lumen_manifest_crawler.swift_extractors.base import (
+    SwiftExtractor,
+    SwiftFile,
+    enum_cases,
+    string_literals,
+    strip_comments,
+)
 
 DURABLE_NAMES = {"durable", "permanent", "pinned"}
 TTL_NAME_PATTERN = r"(?:ephemeral|session|durable|permanent|project)\w*(?:ttl|ttlseconds|lifetime|duration|expiration|expiry|seconds)\w*|(?:ttl|ttlseconds|lifetime|duration|expiration|expiry)\w*(?:ephemeral|session|durable|permanent|project)\w*"
+RUNTIME_TTL_POLICY_PATTERN = re.compile(
+    r"\breturn\s+TTLPolicy\s*\(\s*freshness\s*:\s*\.(?P<freshness>[A-Za-z_][A-Za-z0-9_]*)"
+    r"\s*,\s*ttl\s*:\s*(?P<ttl>nil|\d+(?:\s*\*\s*\d+)*)\s*\)"
+)
 
 
 class MemoryExtractor(SwiftExtractor):
@@ -21,26 +31,66 @@ class MemoryExtractor(SwiftExtractor):
                 scopes.add(literal)
         manifest.memory.scopes = sorted(scopes)
 
-        existing = {f.id for f in manifest.memory.freshnessClasses}
+        existing_by_id = {f.id: f for f in manifest.memory.freshnessClasses}
         freshness_cases = set(enum_cases(file.text, "MemoryFreshnessClass")) | set(enum_cases(file.text, "FreshnessClass"))
         for name in sorted(freshness_cases):
-            if name not in existing:
-                manifest.memory.freshnessClasses.append(
-                    FreshnessClassManifest(
-                        id=name,
-                        ttlSeconds=self._ttl_near(file.text, name),
-                        durable=name.lower() in DURABLE_NAMES,
-                        source=file.relpath,
-                    )
+            if name not in existing_by_id:
+                freshness = FreshnessClassManifest(
+                    id=name,
+                    ttlSeconds=self._ttl_near(file.text, name),
+                    durable=name.lower() in DURABLE_NAMES,
+                    source=file.relpath,
                 )
-                existing.add(name)
+                manifest.memory.freshnessClasses.append(freshness)
+                existing_by_id[name] = freshness
+
+        for name, ttl in self._runtime_ttl_policies(file.text).items():
+            if ttl is None or name.casefold() in DURABLE_NAMES | {"timeless"}:
+                continue
+            freshness = existing_by_id.get(name)
+            if freshness is None:
+                freshness = FreshnessClassManifest(id=name)
+                manifest.memory.freshnessClasses.append(freshness)
+                existing_by_id[name] = freshness
+            freshness.ttlSeconds = ttl
+            freshness.durable = False
+            freshness.source = file.relpath
 
         for ttl_name, ttl in self._extract_ttl_constants(file.text):
-            if ttl_name not in existing:
-                manifest.memory.freshnessClasses.append(
-                    FreshnessClassManifest(id=ttl_name, ttlSeconds=ttl, durable=ttl_name.lower() in DURABLE_NAMES, source=file.relpath)
+            if ttl_name not in existing_by_id:
+                freshness = FreshnessClassManifest(
+                    id=ttl_name,
+                    ttlSeconds=ttl,
+                    durable=ttl_name.lower() in DURABLE_NAMES,
+                    source=file.relpath,
                 )
-                existing.add(ttl_name)
+                manifest.memory.freshnessClasses.append(freshness)
+                existing_by_id[ttl_name] = freshness
+
+    @staticmethod
+    def _runtime_ttl_policies(text: str) -> dict[str, int | None]:
+        policies: dict[str, set[int | None]] = {}
+        for match in RUNTIME_TTL_POLICY_PATTERN.finditer(strip_comments(text)):
+            freshness = match.group("freshness")
+            raw_ttl = match.group("ttl")
+            ttl = None
+            if raw_ttl != "nil":
+                factors = [int(value.strip()) for value in raw_ttl.split("*")]
+                ttl = 1
+                for factor in factors:
+                    ttl *= factor
+            policies.setdefault(freshness, set()).add(ttl)
+
+        resolved: dict[str, int | None] = {}
+        for freshness, values in policies.items():
+            numeric_values = {value for value in values if value is not None}
+            if len(numeric_values) > 1:
+                raise ValueError(
+                    f"Memory freshness class {freshness!r} has conflicting runtime TTLs: "
+                    f"{sorted(numeric_values)}"
+                )
+            resolved[freshness] = next(iter(numeric_values), None)
+        return resolved
 
     @staticmethod
     def _ttl_near(text: str, name: str) -> int | None:

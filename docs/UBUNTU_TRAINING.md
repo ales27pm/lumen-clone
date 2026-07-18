@@ -11,8 +11,9 @@ The one-click command is:
 bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
 
-By default it trains the `internal_plus_public_optimized` variant for Cortex,
-Executor, Mouth, Mimicry, REM, and Fleet. Each role runs SFT and then preference
+By default it trains the `internal_plus_public_optimized` variant in fail-fast
+risk order: Fleet, Executor, Mouth, REM, Mimicry, then Cortex. Each role runs
+SFT and then preference
 training (DPO under the current controlled manifests). It writes LoRA adapters
 and adapter-only GGUF files, then runs the frozen per-role evaluation suites.
 It does not upload artifacts, publish a repository, merge adapters into full
@@ -39,7 +40,9 @@ Verify GPU access from both the host and a container:
 ```bash
 nvidia-smi
 docker info
-docker run --rm --gpus all nvidia/cuda:12.8.1-devel-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all \
+  nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97 \
+  nvidia-smi
 ```
 
 Run Docker as a regular non-root user permitted to access the Docker daemon; do
@@ -57,7 +60,9 @@ forwarded through Docker metadata.
 ## Controlled Container Stack
 
 The training image is based on
-`nvidia/cuda:12.8.1-devel-ubuntu22.04` and uses Python 3.10. The controlled
+`nvidia/cuda:12.8.1-devel-ubuntu22.04` at immutable OCI manifest
+`sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97`
+and uses Python 3.10. The controlled
 training lock requires CUDA 12.8 and these direct dependency versions:
 
 | Package | Version |
@@ -108,14 +113,13 @@ accepted, and `--no-build` still requires its source record to equal the current
 clean checkout. Run manifests, prepared configs, resume verification,
 evaluation evidence, summaries, and upload receipts retain that source record.
 
-The CUDA base is version-tagged rather than OCI-digest-pinned, and Python wheel
-artifacts are version-pinned but not installed from a hash-locked wheelhouse.
-For that reason, runtime-image promotion remains prohibited. Credential-scoped
-upload requires an image built by the same launcher invocation; the token is
-not placed in the Python process environment and is read only after local
-evidence and uploader imports have passed. A future release-grade publisher
-should additionally use an OCI-digest-pinned minimal image and hashed package
-artifacts.
+The CUDA base is OCI-digest-pinned. Python wheel artifacts are version-pinned
+but are not installed from a hash-locked wheelhouse. For that reason,
+runtime-image promotion remains prohibited. Credential-scoped upload requires
+an image built by the same launcher invocation; the token is not placed in the
+Python process environment and is read only after local evidence and uploader
+imports have passed. A future release-grade publisher should additionally use
+a minimal image and hashed package artifacts.
 
 ## Capacity Planning
 
@@ -126,7 +130,7 @@ roles, and variant count.
 | Resource | Practical estimate |
 |---|---|
 | GPU | Modern NVIDIA CUDA GPU |
-| VRAM | 12 GB floor; 16 GB recommended; 24 GB comfortable |
+| VRAM | The controlled low-memory path has passed Cortex training on an 8 GB RTX 2070; 12 GB or more remains recommended until a fresh six-role run completes |
 | System RAM | 32 GB; 64 GB for release-bake experiments |
 | Free disk | 50 GB for adapter-only work; 80--100 GB when retaining caches, checkpoints, or merged GGUF experiments |
 
@@ -144,10 +148,19 @@ cd /absolute/path/to/lumen-clone
 bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
 
+Keep that checkout immutable until the launcher has completed its independent
+postcondition. A dedicated clean worktree is recommended for long runs; host
+source drift deliberately blocks later resume, postcondition, and upload trust
+boundaries even though the GPU container executes only its baked source copy.
+
 The launcher builds the pinned image, checks Docker GPU access, derives the
-actual local image ID, verifies the image-baked source closure, mounts only the
-output tree and credential-free persistent Hugging Face cache for training, and
-creates a fresh run directory. Each selected role completes this order:
+actual local image ID, verifies the image-baked source closure, and mounts only
+the exact per-run root, a read-only cross-container lock identity, and the three
+credential-free persistent Hugging Face cache subdirectories. It first runs one
+exact-tokenizer preflight for every requested role before loading model weights
+or creating an optimizer. That gate checks SFT sequence margins, DPO prompt and
+sequence margins, and Fleet's exact assistant-target loss-share limits. Each
+selected role then completes this order before the next role starts:
 
 ```text
 prepare and verify isolated dataset/config snapshot
@@ -157,6 +170,10 @@ frozen deterministic inference -> score and enforce the quality gate
 adapter-only GGUF conversion -> verify output digest
 write run summary
 ```
+
+The default order minimizes wasted GPU time if an unpiloted role fails. It does
+not change any role's dataset, seed, hyperparameters, evaluation, or output.
+An explicit `--agents` list is honored in the exact order supplied.
 
 The current preference trainer is DPO. ORPO is an alternative controlled
 trainer, not an additional phase; selecting it requires regenerated controlled
@@ -220,10 +237,10 @@ Additional launcher controls:
 | `--run-id <id>` | Give the run a stable operator-selected identifier. A variant suffix is added. |
 | `--image-tag <tag>` | Override the local Docker image tag used for build/run. |
 | `--no-build` | Reuse an existing image. It cannot be combined with credential-scoped upload. |
-| `--no-pull` | Build without refreshing the pinned CUDA base tag. |
+| `--no-pull` | Build without re-fetching the immutable pinned CUDA base digest. |
 | `--prepare-only` | Run controlled input, environment, and config preparation without model training. |
 | `--overwrite` | Destructively replace the selected run directory after path-safety checks. |
-| `--resume` | Reuse an existing run, skip phases whose complete artifacts re-verify, and restart incomplete phases. |
+| `--resume` | Reuse an existing run, skip phases whose complete artifacts re-verify, resume incomplete phases from a verified checkpoint when available, and otherwise restart the phase. |
 | `--no-evaluate` | Skip frozen inference/scoring. Full evaluation is enabled by default. |
 | `--eval-smoke <n>` | Evaluate a deterministic semantic cohort of `n` cases per role; `n` must be smaller than every selected role's frozen suite, and this is smoke evidence, not a quality pass. |
 | `--token-file <file>` | Mount an owner-only, mode-600 token only into the upload container. |
@@ -231,7 +248,7 @@ Additional launcher controls:
 | `--allow-diagnostic-upload` | With `--upload`, explicitly permit smoke or unevaluated artifacts under the separate `diagnostic-runs/` namespace. |
 | `--public` | With `--upload`, explicitly request public visibility. Public publication is never the default. |
 
-Ubuntu resume is phase-boundary resume, not arbitrary checkpoint resume. With
+Ubuntu resume accepts only cryptographically bound pipeline state. With
 `--resume`, the image ID, source revision, environment, agents, variant,
 prepared-config digest, exact run-scoped paths, self-hashed run manifest, and
 the immutable execution plan must still match. The execution plan binds
@@ -240,11 +257,19 @@ its digest is retained by each config's variant attestation, reconstructed from
 the hash-bound configs, and repeated in evaluation evidence, summaries, and
 upload receipts. Resume or rehashed evidence therefore cannot relabel a
 different cohort or missing conversion as an operator skip. A fully verified
-SFT or DPO phase is kept; an incomplete
-phase is removed only inside that agent's owned run subtree and restarted. For
-a multi-variant batch, existing variant directories resume and a variant that
-had not started yet is prepared fresh. Direct unbound
-`--resume-from-checkpoint` remains disabled.
+SFT or DPO phase is kept. An incomplete phase resumes only from the newest
+complete checkpoint whose dataset, config, code, parent adapter, optimizer
+progress, and checkpoint bytes all re-verify; an incomplete newest checkpoint
+or any lineage drift fails closed. If there is no valid checkpoint, only that
+agent's owned incomplete phase is restarted. The outer launcher also retains
+the exact Docker container across terminal or launcher disconnects. A
+subsequent explicit `--resume` authenticates its immutable launch environment
+and either reattaches to the running container, starts a never-started fresh
+container, or verifies the postcondition of an exited container before any
+replacement. A never-started overwrite container still requires `--overwrite`.
+For a multi-variant batch, existing variant directories resume and a variant
+that had not started yet is prepared fresh. Direct unbound checkpoint selection
+remains disabled.
 `--resume` and `--overwrite` are mutually exclusive. Use `--overwrite` only
 when the existing run is intentionally disposable; the host wrapper deletes
 only the constructed `<output-dir>/<run-id>-<variant>` child after validating
@@ -281,6 +306,7 @@ For a single variant, that directory contains:
 aio_run_manifest.json
 aio_summary.json
 training_environment.json
+global_tokenizer_preflight.json
 upload_receipts.json                 # only after an explicit successful upload
 configs/<agent>.json
 configs/<agent>.final.json
@@ -290,10 +316,13 @@ logs/...
 models/lora_qwen3_bootstrap/<agent>/...
 models/lora_qwen3_dpo/<agent>/...
 models/lora_qwen3_gguf/lumen-<agent>-lora.gguf
+models/lora_qwen3_gguf_receipts/lumen-<agent>-lora.conversion.json
 training/<agent>/finalized_variant_manifest.json
 training/<agent>/training_report.json
+training/<agent>/sft_token_length_preflight.json
 training/<agent>/dpo/finalized_variant_manifest.json
 training/<agent>/dpo/dpo_report.json
+training/<agent>/dpo/token_length_preflight.json
 evaluation/<agent>/candidate_outputs.jsonl
 evaluation/<agent>/evaluation_report.json
 evaluation/<agent>/evaluation_run_manifest.json
@@ -333,8 +362,14 @@ manifests, evaluation file hashes, GGUF digests, run/summary evidence, and the
 exact allowlist. The upload process runs with isolated Python, no host source
 mount or repository `PYTHONPATH`, a read-only root filesystem, read-only run
 artifacts, and a separate receipt-only writable mount. The HF token is its only
-credential mount. It creates one atomic commit guarded by the observed remote
-parent and refuses an existing run prefix. The default is private. Public
+credential mount. It durably records a local intent and parent-bound attempt,
+places a self-hashed intent marker in one atomic commit, and records the
+immutable commit OID before writing the final receipt. After a crash between
+remote commit and local receipt, it adopts only the unique journaled commit
+whose parent, title, exact prefix path set, and bytes all re-verify. An unrelated
+later repository head is allowed only when that head still contains the exact
+immutable run prefix; an unjournaled existing prefix is always rejected. The
+default is private. Public
 visibility requires both `--upload` and `--public`:
 
 ```bash
@@ -399,6 +434,12 @@ It does not by itself prove:
 - live tool calls, RAG, memory, voice, or AppIntent flows;
 - signed release packaging or runtime promotion.
 
+GGUF qualification proves converter and reader provenance,
+adapter/base/tokenizer lineage, the final file digest, and structural
+readability. It does not claim an independent tensor-by-tensor equivalence
+proof between the PEFT adapter and the GGUF representation; the summary records
+that residual explicitly.
+
 Runtime-image promotion remains intentionally unsupported. Do not change the
 iOS runtime artifact pointer merely because local training completed. Promotion
 requires artifact compatibility, trusted attestation, and device/TestFlight
@@ -410,6 +451,22 @@ evidence owned by the release workflow even when the frozen evaluation passes.
 - **The CUDA container cannot see a GPU:** configure the NVIDIA Container
   Toolkit for Docker, restart Docker, and repeat the container verification
   command above.
+- **`Failed to create stream fd` appears:** treat this as a launch blocker until
+  its cause is known. First check `/tmp` free space, inode use, and any per-user
+  quota, then prove that a small temporary file descriptor can be created,
+  written, closed, and removed. Review stale temporary artifacts before
+  removing only the paths known to be unused, or select a controlled writable
+  `TMPDIR`; do not delete repository, model-cache, run-output, or evidence
+  paths. A distinct Ubuntu desktop case can print `Operation not permitted`
+  when a login-shell input-method initializer attempts optional journal
+  logging. Only after the temporary-file probe succeeds, use an ordinary
+  non-login shell and avoid `bash -l` or `bash -lc`. Do not dismiss the message
+  as harmless unless the intended command actually starts and remains healthy.
+- **Docker remains permission-denied after adding the account to the `docker`
+  group:** start a new non-login user session (or restart the terminal/Codex
+  host) so supplementary groups refresh, confirm `id` lists `docker`, and rerun
+  `docker info`. Do not work around it by running the training launcher with
+  `sudo`.
 - **Python or CUDA lock mismatch:** rebuild without `--no-build`; do not bypass
   the environment gate.
 - **Source-integrity or clean-checkout failure:** preserve or commit intended
@@ -424,6 +481,10 @@ evidence owned by the release workflow even when the frozen evaluation passes.
 - **A run directory already exists:** use a new `--run-id` or `--output-dir`,
   use `--resume` when its environment and phase lineage still match, or choose
   `--overwrite` deliberately after reviewing the existing artifacts.
+- **The terminal or Codex task disconnects while training:** do not delete the
+  retained container or run root. Rerun the same clean source and run ID with
+  `--resume --no-build`; the launcher authenticates and reattaches to the exact
+  container or checkpoint state.
 - **Frozen evaluation exits 2 or 3:** keep the generated candidate outputs and
   reports. Exit 2 means malformed/empty role output; exit 3 means the complete
   suite failed its quality gate. Neither is a successful full pipeline.

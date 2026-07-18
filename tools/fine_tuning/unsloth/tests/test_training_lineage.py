@@ -98,6 +98,11 @@ def test_repository_code_bundle_is_phase_specific_and_self_verifying() -> None:
     )
     assert any(
         entry["path"]
+        == "lumen_manifest_crawler/dataset/chat_template_contract.py"
+        for entry in bundle["phases"]["sft"]["files"]
+    )
+    assert any(
+        entry["path"]
         == "lumen_manifest_crawler/dataset/public_adapter_eval_sources.json"
         for entry in bundle["phases"]["sft"]["files"]
     )

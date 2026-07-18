@@ -12,6 +12,7 @@ from collections import Counter
 from collections.abc import Iterable
 from typing import Any
 
+from lumen_manifest_crawler.dataset.adapter_evaluation import mouth_final_text_is_complete
 from lumen_manifest_crawler.fleet_artifacts import generate_orchestration_evals
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ValidationFailure, ValidationReport, ValidationWarning
 
@@ -838,6 +839,14 @@ def _validate_agent_sft_records(  # NOSONAR
                     and CORTEX_ROUTE_SYSTEM_MARKER in system
                 ),
             )
+        if agent == "mouth" and not mouth_final_text_is_complete(assistant):
+            failures.append(
+                ValidationFailure(
+                    code="mouth_incomplete_sft_output",
+                    message="Mouth SFT output must be complete user-facing text",
+                    path=f"fine_tuning.{agent}.sft.{index}",
+                )
+            )
         for sentinel in forbidden:
             if sentinel in assistant:
                 failures.append(ValidationFailure(code="sentinel_leak", message=f"{agent} leaked sentinel `{sentinel}`", path=f"fine_tuning.{agent}.sft.{index}"))
@@ -1016,13 +1025,33 @@ def _validate_executor_json_contract(
     if not isinstance(payload, dict):
         failures.append(ValidationFailure(code="executor_non_object_output", message="Executor SFT output must be a JSON object", path=path))
         return
-    tool_id = payload.get("tool")
-    if not isinstance(tool_id, str) or tool_id not in tools_by_id:
-        failures.append(ValidationFailure(code="executor_invalid_payload_tool", message="Executor SFT output must contain one manifest tool id", path=path))
+
+    top_level_keys = set(payload)
+    if "thought" in payload and not isinstance(payload.get("thought"), str):
+        failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor thought must be a string when present", path=path))
         return
-    arguments = payload.get("arguments")
+    if "final" in payload:
+        if top_level_keys not in ({"final"}, {"final", "thought"}):
+            failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor final output may contain only final and optional thought", path=path))
+            return
+        final = payload.get("final")
+        if not isinstance(final, str) or not final.strip():
+            failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor final output must contain non-empty final text", path=path))
+        return
+    if top_level_keys not in ({"action"}, {"action", "thought"}):
+        failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor output must use the native action or final envelope without legacy metadata", path=path))
+        return
+    action = payload.get("action")
+    if not isinstance(action, dict) or set(action) != {"tool", "args"}:
+        failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor action must contain exactly tool and args", path=path))
+        return
+    tool_id = action.get("tool")
+    if not isinstance(tool_id, str) or tool_id not in tools_by_id:
+        failures.append(ValidationFailure(code="executor_invalid_payload_tool", message="Executor action must contain one manifest tool id", path=path))
+        return
+    arguments = action.get("args")
     if not isinstance(arguments, dict):
-        failures.append(ValidationFailure(code="executor_invalid_arguments", message=f"Executor payload for {tool_id} must contain an arguments object", path=path))
+        failures.append(ValidationFailure(code="executor_invalid_arguments", message=f"Executor action for {tool_id} must contain an args object", path=path))
         return
 
     tool = tools_by_id[tool_id]
@@ -1045,10 +1074,7 @@ def _validate_executor_json_contract(
         if argument.required and argument.name not in arguments
     }
     if missing_required:
-        declared_missing = payload.get("missingArguments")
-        declared = {item for item in declared_missing if isinstance(item, str)} if isinstance(declared_missing, list) else set()
-        if payload.get("status") != "needs_clarification" or not missing_required.issubset(declared):
-            failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor payload for {tool_id} omits required arguments", path=path))
+        failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor action for {tool_id} omits required arguments", path=path))
 
 
 def _validate_executor_dpo_records(
@@ -1109,7 +1135,8 @@ def _assistant_mentions_required_args(assistant: str, required_args: set[str]) -
         return all(arg.lower() in lowered for arg in required_args)
 
     if isinstance(parsed, dict):
-        args = parsed.get("arguments")
+        action = parsed.get("action")
+        args = action.get("args") if isinstance(action, dict) else None
         if isinstance(args, dict):
             return required_args.issubset(set(args.keys()))
     return False
@@ -1122,10 +1149,7 @@ def _should_enforce_required_args(assistant: str) -> bool:
         return True
     if not isinstance(payload, dict):
         return True
-    status = payload.get("status")
-    if isinstance(status, str) and status in {"needs_clarification", "permission_unavailable", "cancelled_by_user"}:
-        return False
-    return True
+    return isinstance(payload.get("action"), dict)
 
 
 def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], failures: list[ValidationFailure]) -> None:
@@ -1167,6 +1191,14 @@ def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], fa
                     isinstance(system, str)
                     and CORTEX_ROUTE_SYSTEM_MARKER in system
                 ),
+            )
+        if agent == "mouth" and not mouth_final_text_is_complete(chosen_text):
+            failures.append(
+                ValidationFailure(
+                    code="mouth_incomplete_dpo_chosen_output",
+                    message="Mouth DPO chosen output must be complete user-facing text",
+                    path=f"fine_tuning.{agent}.dpo.{index}.chosen",
+                )
             )
         if chosen_text == rejected_text:
             failures.append(ValidationFailure(code="dpo_chosen_equals_rejected", message=f"{agent} DPO chosen == rejected", path=f"fine_tuning.{agent}.dpo.{index}"))
@@ -1260,6 +1292,20 @@ def _validate_agent_eval_records(
             value = expected.get(key)
             if isinstance(value, str) and value not in known_tools:
                 failures.append(ValidationFailure(code="unknown_tool_id", message=f"{agent} eval expected references unknown tool {value}", path=f"fine_tuning.{agent}.eval.{index}.expected.{key}"))
+        if agent == "mouth":
+            metrics = rec.get("metrics")
+            if not isinstance(metrics, list) or not any(
+                isinstance(metric, dict)
+                and metric.get("type") == "complete_final_text"
+                for metric in metrics
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="mouth_eval_missing_completeness_metric",
+                        message="Every Mouth evaluation must enforce complete final text",
+                        path=f"fine_tuning.{agent}.eval.{index}.metrics",
+                    )
+                )
 
 
 def _validate_unsloth_config(*, agent: str, config: dict[str, Any], failures: list[ValidationFailure]) -> None:

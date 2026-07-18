@@ -152,6 +152,15 @@ def check_runtime() -> None:
     text = read(LLAMA_SERVICE)
     require("private actor AdapterChatRuntime" in text, "AdapterChatRuntime must remain actor-isolated.")
     require(
+        "nonisolated static func defaultGenerationSlot(for request: GenerateRequest) -> LumenModelSlot" in text
+        and "request.preservesRawStructuredAgentOutput ? .executor : .mouth" in text,
+        "Implicit generation must route raw structured output to Executor and plain text to Mouth.",
+    )
+    require(
+        "stream(req, slot: Self.defaultGenerationSlot(for: req))" in text,
+        "The no-slot stream overload must use the explicit implicit-generation slot policy.",
+    )
+    require(
         "func activateRoleAdapter(slot: LumenModelSlot, scale: Float) throws" in text,
         "AdapterChatRuntime must own a single activation entry point.",
     )
