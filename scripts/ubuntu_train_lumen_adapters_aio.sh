@@ -5,6 +5,7 @@ umask 077
 IFS=$'\n\t'
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$ROOT"
 : "${LUMEN_AIO_EXPERIMENT_VARIANT:?Select one exact controlled experiment variant}"
 : "${LUMEN_AIO_CONTAINER_IMAGE_DIGEST:?Pass the observed local Docker image ID}"
 

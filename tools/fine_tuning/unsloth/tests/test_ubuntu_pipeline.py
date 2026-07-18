@@ -1043,6 +1043,7 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
     assert {
         "!scripts/ubuntu_train_lumen_full_pipeline.sh",
         "!scripts/ubuntu_train_lumen_adapters_aio.sh",
+        "!lumen_manifest_crawler/__init__.py",
         "!tools/fine_tuning/unsloth/**",
         "!tools/lumen_manifest_crawler/lumen_manifest_crawler/**",
         "!tools/hf_zerogpu/space_template/**",
@@ -1063,12 +1064,43 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
         "tools/hf_zerogpu/space_template/requirements.txt",
         "scripts/ubuntu_train_lumen_full_pipeline.sh",
         "scripts/ubuntu_train_lumen_adapters_aio.sh",
+        "lumen_manifest_crawler/__init__.py",
         "tools/fine_tuning/unsloth",
         "tools/lumen_manifest_crawler/lumen_manifest_crawler",
         "tools/hf_zerogpu/space_template",
         "generated/fine_tuning",
         "generated/agent_manifest/AgentBehaviorManifest.json",
     }.issubset(copy_sources)
+    assert (
+        "COPY lumen_manifest_crawler/__init__.py "
+        "/opt/lumen/source/lumen_manifest_crawler/__init__.py"
+    ) in dockerfile
+    assert (
+        "COPY lumen_manifest_crawler /opt/lumen/source/lumen_manifest_crawler"
+        not in dockerfile
+    )
+    assert "lumen_manifest_crawler/__main__.py" not in dockerfile
+    assert "!lumen_manifest_crawler/**" not in dockerignore
+    assert "cd /opt/lumen/source" in dockerfile
+    assert "env -u PYTHONPATH python - <<'PY'" in dockerfile
+    assert "python -I - <<'PY'" in dockerfile
+    assert "sys.path.insert(0, str(source_root))" in dockerfile
+    assert "import lumen_manifest_crawler" in dockerfile
+    assert "from lumen_manifest_crawler.dataset import chat_template_contract" in dockerfile
+    assert "from tools.fine_tuning.unsloth import ubuntu_pipeline" in dockerfile
+    assert "Path(lumen_manifest_crawler.__file__).resolve()" in dockerfile
+    assert "Path(chat_template_contract.__file__).resolve().is_relative_to(" in dockerfile
+    assert "Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)" in dockerfile
+
+
+def test_inner_launcher_uses_the_verified_repo_root_shim_without_pythonpath() -> None:
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_adapters_aio.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"' in launcher
+    assert 'cd "$ROOT"' in launcher
+    assert "PYTHONPATH=" not in launcher
 
 
 def test_credential_uploader_uses_only_the_verified_image_copy() -> None:
@@ -1261,6 +1293,7 @@ def test_docker_build_uses_only_the_attested_commit_archive() -> None:
     assert {
         "scripts/ubuntu_train_lumen_full_pipeline.sh",
         "scripts/ubuntu_train_lumen_adapters_aio.sh",
+        "lumen_manifest_crawler/__init__.py",
         "tools/fine_tuning/unsloth",
         "tools/lumen_manifest_crawler/lumen_manifest_crawler",
         "tools/hf_zerogpu/space_template",
@@ -1281,6 +1314,7 @@ def test_attested_build_archive_ignores_live_checkout_bytes_and_fails_closed(
     files = {
         "scripts/ubuntu_train_lumen_full_pipeline.sh": b"trusted launcher\n",
         "scripts/ubuntu_train_lumen_adapters_aio.sh": b"trusted inner launcher\n",
+        "lumen_manifest_crawler/__init__.py": b"trusted crawler shim\n",
         "tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128": b"trusted dockerfile\n",
         "tools/lumen_manifest_crawler/lumen_manifest_crawler/__init__.py": (
             b"trusted crawler\n"
@@ -1317,6 +1351,8 @@ def test_attested_build_archive_ignores_live_checkout_bytes_and_fails_closed(
     ).strip()
     dockerfile = repository / "tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128"
     dockerfile.write_bytes(b"transient untrusted dockerfile\n")
+    crawler_shim = repository / "lumen_manifest_crawler/__init__.py"
+    crawler_shim.write_bytes(b"transient untrusted crawler shim\n")
 
     launcher = (
         REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
@@ -1351,6 +1387,12 @@ def test_attested_build_archive_ignores_live_checkout_bytes_and_fails_closed(
         )
         assert archived_dockerfile is not None
         assert archived_dockerfile.read() == b"trusted dockerfile\n"
+        archived_crawler_shim = archive.extractfile(
+            "lumen_manifest_crawler/__init__.py"
+        )
+        assert archived_crawler_shim is not None
+        assert archived_crawler_shim.read() == b"trusted crawler shim\n"
+        assert "lumen_manifest_crawler/__main__.py" not in archive.getnames()
 
     failed = subprocess.run(
         ["bash", "-c", script],

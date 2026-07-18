@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,9 @@ from pathlib import Path
 import pytest
 
 from tools.fine_tuning.unsloth import ubuntu_source_integrity
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _git(root: Path, *args: str) -> str:
@@ -59,6 +63,11 @@ def test_clean_repository_attestation_binds_worktree_and_orchestration(
     assert record["dirtyState"] is False
     assert len(record["workingTreeDigest"]) == 64
     assert len(record["ubuntuOrchestrationCodeSHA256"]) == 64
+    orchestration_paths = {
+        item["path"] for item in record["orchestrationManifest"]["files"]
+    }
+    assert "lumen_manifest_crawler/__init__.py" in orchestration_paths
+    assert "lumen_manifest_crawler/__main__.py" not in orchestration_paths
     assert ubuntu_source_integrity.validate_attestation_record(record) == record
     assert ubuntu_source_integrity.verify_snapshot_attestation(root, record) == record
 
@@ -197,6 +206,72 @@ def test_image_attestation_rejects_orchestration_tamper(tmp_path: Path) -> None:
     target.write_text("tampered\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="no longer matches"):
         ubuntu_source_integrity.verify_snapshot_attestation(root, image)
+
+
+@pytest.mark.parametrize("mutation", ("tampered", "missing"))
+def test_image_attestation_rejects_repo_root_crawler_shim_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    root = _repository(tmp_path)
+    host = ubuntu_source_integrity.attest_repository(root)
+    shim = root / "lumen_manifest_crawler/__init__.py"
+    if mutation == "tampered":
+        shim.write_text("tampered crawler shim\n", encoding="utf-8")
+    else:
+        shim.unlink()
+
+    with pytest.raises(RuntimeError):
+        ubuntu_source_integrity.verify_snapshot_attestation(root, host)
+
+
+def test_isolated_image_layout_imports_only_the_baked_crawler_shim(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    shim = source_root / "lumen_manifest_crawler/__init__.py"
+    shim.parent.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "lumen_manifest_crawler/__init__.py", shim)
+    ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
+    shutil.copytree(
+        REPO_ROOT / "tools/lumen_manifest_crawler/lumen_manifest_crawler",
+        source_root / "tools/lumen_manifest_crawler/lumen_manifest_crawler",
+        ignore=ignore,
+    )
+    shutil.copytree(
+        REPO_ROOT / "tools/fine_tuning/unsloth",
+        source_root / "tools/fine_tuning/unsloth",
+        ignore=ignore,
+    )
+    code = """
+import sys
+from pathlib import Path
+
+source_root = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(source_root))
+import lumen_manifest_crawler
+from lumen_manifest_crawler.dataset import chat_template_contract
+from tools.fine_tuning.unsloth import ubuntu_pipeline
+
+assert Path(lumen_manifest_crawler.__file__).resolve() == source_root / "lumen_manifest_crawler/__init__.py"
+assert Path(chat_template_contract.__file__).resolve().is_relative_to(
+    source_root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
+)
+assert Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)
+"""
+    environment = {
+        key: value for key, value in os.environ.items() if key != "PYTHONPATH"
+    }
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code, str(source_root)],
+        cwd=Path("/"),
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_rehashed_record_cannot_omit_required_orchestration_source(
