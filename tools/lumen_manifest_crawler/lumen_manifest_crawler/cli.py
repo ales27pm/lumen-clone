@@ -131,10 +131,16 @@ def generate(
 
     target_output = output
     target_cross_dir = cross_model_train_dir.resolve() if cross_model_train_dir else None
+    explicit_fine_tuning_output = unsloth_output or fine_tuning_output
+    if explicit_fine_tuning_output is not None:
+        explicit_fine_tuning_output = explicit_fine_tuning_output.resolve()
+    target_fine_tuning_output = explicit_fine_tuning_output
     if dry_run:
         temp_root = Path(tempfile.mkdtemp(prefix="lumen-manifest-dry-run-"))
         target_output = temp_root / "agent_manifest"
         target_cross_dir = (temp_root / "cross_model_training") if cross_model_train_dir else None
+        if fine_tuning_datasets is not None and explicit_fine_tuning_output is not None:
+            target_fine_tuning_output = temp_root / "fine_tuning"
 
     write_outputs(
         target_output,
@@ -147,13 +153,26 @@ def generate(
         cross_model_train_dir=target_cross_dir,
         incremental_fingerprint=manifest_fingerprint,
         fine_tuning_datasets=fine_tuning_datasets,
-        fine_tuning_output_dir=(unsloth_output or fine_tuning_output),
+        fine_tuning_output_dir=target_fine_tuning_output,
     )
 
     if dry_run:
         diff_report = _diff_directories(output, target_output)
         if cross_model_train_dir and target_cross_dir:
             diff_report["cross_model_training"] = _diff_directories(cross_model_train_dir.resolve(), target_cross_dir)
+        if (
+            fine_tuning_datasets is not None
+            and explicit_fine_tuning_output is not None
+            and target_fine_tuning_output is not None
+        ):
+            fine_tuning_diff = _diff_directories(
+                explicit_fine_tuning_output,
+                target_fine_tuning_output,
+            )
+            diff_report["fine_tuning"] = fine_tuning_diff
+            diff_report["changed"] = bool(
+                diff_report.get("changed") or fine_tuning_diff.get("changed")
+            )
         console.print(json.dumps(diff_report, ensure_ascii=False, indent=2, sort_keys=True))
         if fail_on_change and diff_report.get("changed"):
             raise typer.Exit(code=1)
