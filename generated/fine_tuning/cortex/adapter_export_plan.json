@@ -33,7 +33,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "694cbfde924e59bf12a2fc6429fc7c0a8bd4d128669389f5af2c43701d0be35b"
+        "reportSHA256": "ff72f6c917d2d9e19e986471c750de30c67c69d826a3df4ef295069c64751aa1"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -41,19 +41,19 @@
       "recordCount": 504,
       "schemaVersion": "lumen.adapter-eval/1.0.0"
     },
-    "manifestCommit": "13517a42b6a34a8dec8957eb565c15029e481f16",
+    "manifestCommit": "640c64d27814c887c772118463e6f19605edc86a",
     "preferenceTraining": {
       "includedInCheckpoint": false,
-      "recordCount": 775,
+      "recordCount": 822,
       "requiredPhase": "post_sft_preference_training",
       "status": "generated_not_trained"
     },
     "recordCounts": {
       "eval": 504,
-      "train_dpo": 727,
-      "train_sft": 1039,
-      "val_dpo": 48,
-      "val_sft": 53
+      "train_dpo": 764,
+      "train_sft": 1076,
+      "val_dpo": 58,
+      "val_sft": 63
     },
     "sourceFamilies": [
       "adapter_ultra_specific",
@@ -66,15 +66,16 @@
       "public_adapter_corpus_toolace_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "13517a42b6a34a8dec8957eb565c15029e481f16",
+      "baseCommit": "640c64d27814c887c772118463e6f19605edc86a",
       "dirtyState": false,
-      "workingTreeDigest": "856d2df181b9406acb51ed768ec17fb10bf5500a870770111c1f1318a64e3498"
+      "workingTreeDigest": "f1bab5344c860b9dd6a51403f12789a82afdd3e893894ce4e7592b9addea2fbb"
     },
     "taskTypes": [
       "codebase_home_grounding",
       "codebase_home_overview",
       "codebase_self_awareness",
       "codebase_source_chunk_grounding",
+      "cortex_calendar_required_argument_lattice",
       "cortex_contrast_route_selection",
       "cortex_invalid_tool_rejection",
       "cortex_no_tool_route",
@@ -86,6 +87,7 @@
       "cortex_route_failure_repair_clarification",
       "cortex_route_semantic_generalization_validation",
       "cortex_route_strict_retry_repair",
+      "cortex_selection_only_replay",
       "manifest_grounding_cards",
       "module_ownership_grounding",
       "public_intent_routing",
@@ -138,7 +140,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "901cb2fb440869a02d2b24bc7ee3893e329dc709451f23125d05a4e69f2e1199",
+    "experimentManifestSHA256": "edbe41aab5b85504525f1f898b8a1f94cb63f48b072eaa63c924a3d874a24827",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -197,12 +199,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
-  "trainingCodeBundleSHA256": "a3b5ffca2077e8bb77072b6563bcfa1e94977e34935d1f1f8dc0598db66a82cc",
-  "trainingCodeSHA256": "d4a44e5eca138e7e95a3651466d56850ad5f28f80101455af88776fcc93c2f79",
+  "trainingCodeBundleSHA256": "414b4de2bc8962dd907aaa0ed690a67e9574720c3827a7a102c579d1b4324369",
+  "trainingCodeSHA256": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "9e176ad8eaa601f2c405c9b1181c1fecf31824d6d6d8aa348cd0b5172ee88c76",
-    "orpo": "a7419995e06528790d795b1c876d230b58dc6bbabbefaaf69bb9a1d6aab663b5",
-    "sft": "d4a44e5eca138e7e95a3651466d56850ad5f28f80101455af88776fcc93c2f79"
+    "dpo": "8751a9843e0479a32170960e138278a107aeccf608d9bd4a5326332915c1e6cd",
+    "orpo": "7ea02a5f85f775153effaef1f7a9b5175b840576065025289d021b4ae52493ef",
+    "sft": "220f943558d5daff388842ebf93e74d932fe600bde454bca75d49feece540ce1"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
