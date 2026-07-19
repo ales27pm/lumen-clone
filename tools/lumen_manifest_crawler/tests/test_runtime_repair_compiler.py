@@ -1,13 +1,32 @@
 """Tests for runtime repair dataset quality gates."""
 
 import json
+from pathlib import Path
 
+import pytest
+
+from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset.compiler import compile_state_of_art_datasets
 from lumen_manifest_crawler.dataset.fine_tuning import (
     FineTuningDatasetConfig,
     compile_agent_fine_tuning_datasets,
 )
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
+
+
+@pytest.fixture(scope="module")
+def diagnostic_manifest() -> AgentBehaviorManifest:
+    """Use production topology for optimizer-aware repair routing checks."""
+
+    root = Path(__file__).resolve().parents[3]
+    manifest = generate_manifest(root)
+    return manifest.model_copy(
+        update={
+            "sourceIntegrity": manifest.sourceIntegrity.model_copy(
+                update={"baseCommit": "test-commit"}
+            )
+        }
+    )
 
 
 def test_export_quality_failures_do_not_become_training_repairs() -> None:
@@ -73,8 +92,10 @@ def test_final_validator_replacement_quality_failure_becomes_rem_repair() -> Non
     assert "final_intent_validator_trace_eval" in payload["repair"]["alsoAdd"]
 
 
-def test_final_validator_replacement_repair_reaches_rem_sft() -> None:
-    manifest = AgentBehaviorManifest(tools=[ToolManifest(id="calendar.list")])
+def test_final_validator_replacement_repair_reaches_rem_sft(
+    diagnostic_manifest: AgentBehaviorManifest,
+) -> None:
+    manifest = diagnostic_manifest
     runtime_reports = [
         {
             "_source": "agent-grounding-export-v14.json",

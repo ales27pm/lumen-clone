@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset.fine_tuning import (
     AGENTS,
     FineTuningDatasetConfig,
+    _agent_unsloth_config,
     _build_experiment_variants,
     _cap_public_corpus_token_share,
     _experiment_public_group_limit,
@@ -21,8 +24,101 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _unique_sorted_records,
     compile_agent_fine_tuning_datasets,
 )
-from lumen_manifest_crawler.manifest import AgentBehaviorManifest, SourceIntegrity
 from lumen_manifest_crawler.validators import _validate_public_corpus_metadata
+
+
+@pytest.fixture(scope="module")
+def diagnostic_manifest():
+    """Use the production topology for sparse corpus-routing diagnostics."""
+
+    root = Path(__file__).resolve().parents[3]
+    manifest = generate_manifest(root)
+    return manifest.model_copy(
+        update={
+            "sourceIntegrity": manifest.sourceIntegrity.model_copy(
+                update={"baseCommit": "test-commit"}
+            )
+        }
+    )
+
+
+_MINIMUM_TEST_SFT_RECORDS = {
+    "cortex": 1,
+    "executor": 65,
+    "mouth": 17,
+    "mimicry": 9,
+    "rem": 17,
+}
+_MINIMUM_TEST_DPO_RECORDS = {
+    "cortex": 1,
+    "executor": 1,
+    "mouth": 9,
+    "mimicry": 1,
+    "rem": 1,
+}
+
+
+def _optimizer_ready_sft_records(
+    agent: str,
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    selected = list(records)
+    minimum = _MINIMUM_TEST_SFT_RECORDS[agent]
+    for index in range(len(selected), minimum):
+        selected.append(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"{agent} optimizer support request {index}.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": f"{agent} optimizer support response {index}.",
+                    },
+                ],
+                "metadata": {"agent": agent},
+            }
+        )
+    return selected
+
+
+def _optimizer_ready_dpo_records(agent: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "prompt": [
+                {
+                    "role": "user",
+                    "content": f"{agent} preference support request {index}.",
+                }
+            ],
+            "chosen": {
+                "role": "assistant",
+                "content": f"Grounded {agent} preference {index}.",
+            },
+            "rejected": {
+                "role": "assistant",
+                "content": f"Ungrounded {agent} preference {index}.",
+            },
+            "metadata": {"agent": agent},
+        }
+        for index in range(_MINIMUM_TEST_DPO_RECORDS[agent])
+    ]
+
+
+def _optimizer_ready_training_config(
+    agent: str,
+    *,
+    config: FineTuningDatasetConfig,
+    sft_record_count: int,
+    dpo_record_count: int,
+) -> dict[str, Any]:
+    return _agent_unsloth_config(
+        agent,
+        config,
+        sft_train_record_count=sft_record_count,
+        dpo_train_record_count=dpo_record_count,
+    )
 
 
 def _provenance(*, target: str, group: str, row: str, repository: str = "OpenAssistant/oasst2") -> dict[str, Any]:
@@ -165,8 +261,10 @@ def test_training_source_normalization_fails_closed_on_public_lineage_mismatch()
         )
 
 
-def test_public_records_route_only_to_explicit_target_and_preserve_provenance() -> None:
-    manifest = AgentBehaviorManifest(sourceIntegrity=SourceIntegrity(commit="test-commit"))
+def test_public_records_route_only_to_explicit_target_and_preserve_provenance(
+    diagnostic_manifest,
+) -> None:
+    manifest = diagnostic_manifest
     internal_mouth_records = [
         {
             "sourceFamily": "mouth_responses",
@@ -221,6 +319,19 @@ def test_public_records_route_only_to_explicit_target_and_preserve_provenance() 
             include_unsloth_config=False,
         ),
     )
+
+    for agent in AGENTS:
+        assert compiled[agent].unsloth_config == {}
+        for variant in compiled[agent].experiment_variants.values():
+            policy = variant["variant_manifest"]["controlledTrainingConfig"][
+                "optimizationStepPolicy"
+            ]
+            assert policy["sft"]["trainRecordCount"] == len(
+                variant["train_sft"]
+            )
+            assert policy["dpo"]["trainRecordCount"] == len(
+                variant["train_dpo"]
+            )
 
     mouth_public = [record for record in _all_sft(compiled["mouth"]) if "publicCorpus" in record["metadata"]]
     assert len(mouth_public) == 4
@@ -386,8 +497,10 @@ def test_public_split_stratifies_each_source_family() -> None:
     }
 
 
-def test_explicit_adapter_role_suppresses_incidental_text_heuristics() -> None:
-    manifest = AgentBehaviorManifest(sourceIntegrity=SourceIntegrity(commit="test-commit"))
+def test_explicit_adapter_role_suppresses_incidental_text_heuristics(
+    diagnostic_manifest,
+) -> None:
+    manifest = diagnostic_manifest
     records = {
         "role_directory_samples": [
             {
@@ -439,8 +552,10 @@ def test_explicit_adapter_role_suppresses_incidental_text_heuristics() -> None:
     assert not custom_by_agent["rem"]
 
 
-def test_fleet_routing_uses_structured_ownership_without_bypassing_role_locks() -> None:
-    manifest = AgentBehaviorManifest(sourceIntegrity=SourceIntegrity(commit="test-commit"))
+def test_fleet_routing_uses_structured_ownership_without_bypassing_role_locks(
+    diagnostic_manifest,
+) -> None:
+    manifest = diagnostic_manifest
     role_targets = {
         "orchestrator": ("cortex", "fleet_delegation"),
         "tool_executor": ("executor", "fleet_peer_source_knowledge"),
@@ -630,8 +745,10 @@ def test_public_corpus_provenance_validation_fails_closed() -> None:
     assert "public_corpus_heldout_split_ingested" in {failure.code for failure in failures}
 
 
-def test_sft_deduplicates_exact_messages_and_prefers_lumen_native_record() -> None:
-    manifest = AgentBehaviorManifest(sourceIntegrity=SourceIntegrity(commit="test-commit"))
+def test_sft_deduplicates_exact_messages_and_prefers_lumen_native_record(
+    diagnostic_manifest,
+) -> None:
+    manifest = diagnostic_manifest
     messages = [
         {"role": "user", "content": "Summarize the approved observation."},
         {"role": "assistant", "content": "The approved operation completed successfully."},
@@ -669,8 +786,10 @@ def test_sft_deduplicates_exact_messages_and_prefers_lumen_native_record() -> No
     assert "publicCorpus" not in matches[0]["metadata"]
 
 
-def test_public_corpus_total_and_target_token_shares_are_capped_per_lane() -> None:
-    manifest = AgentBehaviorManifest(sourceIntegrity=SourceIntegrity(commit="test-commit"))
+def test_public_corpus_total_and_target_token_shares_are_capped_per_lane(
+    diagnostic_manifest,
+) -> None:
+    manifest = diagnostic_manifest
     internal_records = [
         {
             "sourceFamily": "mouth_responses",
@@ -1020,16 +1139,21 @@ def test_public_token_cap_prefers_higher_selection_score_within_stratum() -> Non
 
 
 def test_default_exact_public_cap_uses_deterministic_30_percent_proxy_safety_budget() -> None:
-    internal = [{
-        "messages": [
-            {"role": "user", "content": "Internal grounding."},
-            {
-                "role": "assistant",
-                "content": " ".join(f"internal_{index}" for index in range(100)),
-            },
-        ],
-        "metadata": {"agent": "mouth"},
-    }]
+    internal = _optimizer_ready_sft_records(
+        "mouth",
+        [{
+            "messages": [
+                {"role": "user", "content": "Internal grounding."},
+                {
+                    "role": "assistant",
+                    "content": " ".join(
+                        f"internal_{index}" for index in range(100)
+                    ),
+                },
+            ],
+            "metadata": {"agent": "mouth"},
+        }],
+    )
     public: list[dict[str, Any]] = []
     for group_index in range(10):
         for row_index in range(2):
@@ -1055,24 +1179,31 @@ def test_default_exact_public_cap_uses_deterministic_30_percent_proxy_safety_bud
             })
 
     config = FineTuningDatasetConfig(max_public_corpus_token_share=0.35)
+    dpo = _optimizer_ready_dpo_records("mouth")
+    training_config = _optimizer_ready_training_config(
+        "mouth",
+        config=config,
+        sft_record_count=len(internal) + len(public),
+        dpo_record_count=len(dpo),
+    )
     variants, _ = _build_experiment_variants(
         agent="mouth",
         available_train_sft=[*internal, *public],
         available_val_sft=[],
-        available_train_dpo=[],
+        available_train_dpo=dpo,
         available_val_dpo=[],
         evaluation_records=[],
-        training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
+        training_config=training_config,
         dataset_config=config,
     )
     repeated, _ = _build_experiment_variants(
         agent="mouth",
         available_train_sft=list(reversed([*internal, *public])),
         available_val_sft=[],
-        available_train_dpo=[],
+        available_train_dpo=list(reversed(dpo)),
         available_val_dpo=[],
         evaluation_records=[],
-        training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
+        training_config=training_config,
         dataset_config=config,
     )
 
@@ -1102,13 +1233,22 @@ def test_default_exact_public_cap_uses_deterministic_30_percent_proxy_safety_bud
 
 
 def test_experiment_variants_separate_internal_baseline_and_quality_optimized_corpora() -> None:
-    internal = [{
-        "messages": [
-            {"role": "user", "content": " ".join(["internal-user"] * 100)},
-            {"role": "assistant", "content": " ".join(["internal-target"] * 100)},
-        ],
-        "metadata": {"agent": "mouth"},
-    }]
+    internal = _optimizer_ready_sft_records(
+        "mouth",
+        [{
+            "messages": [
+                {
+                    "role": "user",
+                    "content": " ".join(["internal-user"] * 100),
+                },
+                {
+                    "role": "assistant",
+                    "content": " ".join(["internal-target"] * 100),
+                },
+            ],
+            "metadata": {"agent": "mouth"},
+        }],
+    )
     public = []
     for index in range(10):
         provenance = _provenance(
@@ -1143,17 +1283,24 @@ def test_experiment_variants_separate_internal_baseline_and_quality_optimized_co
         )
 
     optimized = _cap_public_corpus_token_share([*internal, *public], 0.10)
+    config = FineTuningDatasetConfig(
+        max_public_corpus_token_share=0.10,
+    )
+    dpo = _optimizer_ready_dpo_records("mouth")
     variants, experiment = _build_experiment_variants(
         agent="mouth",
         available_train_sft=[*internal, *public],
         available_val_sft=[],
-        available_train_dpo=[],
+        available_train_dpo=dpo,
         available_val_dpo=[],
         evaluation_records=[],
-        training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
-        dataset_config=FineTuningDatasetConfig(
-            max_public_corpus_token_share=0.10,
+        training_config=_optimizer_ready_training_config(
+            "mouth",
+            config=config,
+            sft_record_count=len(internal) + len(public),
+            dpo_record_count=len(dpo),
         ),
+        dataset_config=config,
     )
 
     internal_only = variants["internal_only"]
@@ -1178,13 +1325,26 @@ def test_experiment_selection_policies_produce_distinct_corpora_for_non_fleet_ad
     # Fleet variants additionally require the complete native orchestration
     # curriculum and are exercised by the compiled-dataset contract suite.
     for agent in (candidate for candidate in AGENTS if candidate != "fleet"):
-        internal = [{
-            "messages": [
-                {"role": "user", "content": " ".join([f"{agent}-internal-user"] * 100)},
-                {"role": "assistant", "content": " ".join([f"{agent}-internal-target"] * 100)},
-            ],
-            "metadata": {"agent": agent},
-        }]
+        internal = _optimizer_ready_sft_records(
+            agent,
+            [{
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": " ".join(
+                            [f"{agent}-internal-user"] * 100
+                        ),
+                    },
+                    {
+                        "role": "assistant",
+                        "content": " ".join(
+                            [f"{agent}-internal-target"] * 100
+                        ),
+                    },
+                ],
+                "metadata": {"agent": agent},
+            }],
+        )
         public: list[dict[str, Any]] = []
         for index in range(10):
             provenance = _provenance(
@@ -1221,17 +1381,24 @@ def test_experiment_selection_policies_produce_distinct_corpora_for_non_fleet_ad
                 0.0 if public_metadata["sourceGroupID"] in baseline_groups else 1.0
             )
 
+        config = FineTuningDatasetConfig(
+            max_public_corpus_token_share=0.80,
+        )
+        dpo = _optimizer_ready_dpo_records(agent)
         variants, experiment = _build_experiment_variants(
             agent=agent,
             available_train_sft=[*internal, *public],
             available_val_sft=[],
-            available_train_dpo=[],
+            available_train_dpo=dpo,
             available_val_dpo=[],
             evaluation_records=[],
-            training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
-            dataset_config=FineTuningDatasetConfig(
-                max_public_corpus_token_share=0.80,
+            training_config=_optimizer_ready_training_config(
+                agent,
+                config=config,
+                sft_record_count=len(internal) + len(public),
+                dpo_record_count=len(dpo),
             ),
+            dataset_config=config,
         )
         baseline_manifest = variants["internal_plus_public_baseline"]["variant_manifest"]
         optimized_manifest = variants["internal_plus_public_optimized"]["variant_manifest"]
@@ -1254,13 +1421,16 @@ def test_experiment_selection_policies_produce_distinct_corpora_for_non_fleet_ad
 
 
 def test_identical_public_variant_corpora_are_marked_not_applicable_for_promotion() -> None:
-    internal = [{
-        "messages": [
-            {"role": "user", "content": "internal request"},
-            {"role": "assistant", "content": "internal response"},
-        ],
-        "metadata": {"agent": "mouth"},
-    }]
+    internal = _optimizer_ready_sft_records(
+        "mouth",
+        [{
+            "messages": [
+                {"role": "user", "content": "internal request"},
+                {"role": "assistant", "content": "internal response"},
+            ],
+            "metadata": {"agent": "mouth"},
+        }],
+    )
     provenance = _provenance(target="mouth", group="only-public-group", row="only-public")
     provenance["selectionScore"] = {"overall": 1.0}
     public = [{
@@ -1271,17 +1441,24 @@ def test_identical_public_variant_corpora_are_marked_not_applicable_for_promotio
         "metadata": {"agent": "mouth", "publicCorpus": provenance},
     }]
 
+    config = FineTuningDatasetConfig(
+        max_public_corpus_token_share=0.80,
+    )
+    dpo = _optimizer_ready_dpo_records("mouth")
     variants, experiment = _build_experiment_variants(
         agent="mouth",
         available_train_sft=[*internal, *public],
         available_val_sft=[],
-        available_train_dpo=[],
+        available_train_dpo=dpo,
         available_val_dpo=[],
         evaluation_records=[],
-        training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
-        dataset_config=FineTuningDatasetConfig(
-            max_public_corpus_token_share=0.80,
+        training_config=_optimizer_ready_training_config(
+            "mouth",
+            config=config,
+            sft_record_count=len(internal) + len(public),
+            dpo_record_count=len(dpo),
         ),
+        dataset_config=config,
     )
 
     baseline_manifest = variants["internal_plus_public_baseline"]["variant_manifest"]

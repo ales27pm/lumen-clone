@@ -1144,13 +1144,14 @@ def compile_agent_fine_tuning_datasets(
             [*train_sft, *val_sft, *train_dpo, *val_dpo],
             eval_records,
         )
+        resolved_training_config = _agent_unsloth_config(
+            agent,
+            config,
+            sft_train_record_count=len(train_sft),
+            dpo_train_record_count=len(train_dpo),
+        )
         unsloth_config = (
-            _agent_unsloth_config(
-                agent,
-                config,
-                sft_train_record_count=len(train_sft),
-                dpo_train_record_count=len(train_dpo),
-            )
+            resolved_training_config
             if config.include_unsloth_config
             else {}
         )
@@ -1161,7 +1162,7 @@ def compile_agent_fine_tuning_datasets(
             available_train_dpo=available_train_dpo,
             available_val_dpo=available_val_dpo,
             evaluation_records=eval_records,
-            training_config=unsloth_config,
+            training_config=resolved_training_config,
             dataset_config=config,
         )
 
