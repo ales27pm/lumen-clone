@@ -191,7 +191,11 @@ NON_CORTEX_GRADIENT_ACCUMULATION_STEPS = {
     "mouth": 4,
     "mimicry": 2,
     "rem": 4,
-    "fleet": 4,
+    # Fleet's native orchestration preferences include substantially longer
+    # chosen/rejected pairs than the other non-Cortex lanes. Keep its effective
+    # batch at eight while avoiding the padding-driven CUDA peak of a two-row
+    # preference microbatch on the supported 8 GB training host.
+    "fleet": 8,
 }
 # Repeating a pathologically small corpus is not a substitute for data
 # coverage. Abort when a role cannot meet its minimum optimizer exposure in
@@ -13609,7 +13613,7 @@ def _agent_unsloth_config(
     high_reasoning = agent in {"cortex", "executor", "rem"}
     fleet_strategy = "train_first" if agent == "fleet" else "per_slot_adapter"
     training_lineage = default_training_lineage_contract()
-    batch_size = 1 if agent == "cortex" else 2
+    batch_size = 1 if agent in {"cortex", "fleet"} else 2
     gradient_accumulation_steps = (
         16
         if agent == "cortex"

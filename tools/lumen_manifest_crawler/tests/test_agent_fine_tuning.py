@@ -8844,6 +8844,36 @@ def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
         )
 
 
+def test_fleet_uses_memory_safe_microbatches_without_changing_optimizer_exposure(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    fleet = fine_tuning["fleet"].unsloth_config
+    policy = fleet["optimizationStepPolicy"]
+
+    assert fleet["batch_size"] == 1
+    assert fleet["gradient_accumulation_steps"] == 8
+    assert (
+        fleet["batch_size"] * fleet["gradient_accumulation_steps"]
+    ) == 8
+    assert policy["batchSize"] == fleet["batch_size"]
+    assert policy["gradientAccumulationSteps"] == (
+        fleet["gradient_accumulation_steps"]
+    )
+    for lane in ("sft", "dpo"):
+        lane_policy = policy[lane]
+        expected_steps_per_epoch = (
+            lane_policy["trainRecordCount"] + 7
+        ) // 8
+        assert lane_policy["effectiveStepsPerEpoch"] == (
+            expected_steps_per_epoch
+        )
+        assert lane_policy["projectedEffectiveSteps"] == (
+            expected_steps_per_epoch * lane_policy["selectedEpochs"]
+        )
+        assert lane_policy["minimumSatisfied"] is True
+
+
 @pytest.mark.parametrize(
     ("sft_records", "dpo_records", "message"),
     (
