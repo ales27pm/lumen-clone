@@ -4502,6 +4502,188 @@ def test_contamination_report_keeps_unrelated_training_clean() -> None:
     assert report["matchCount"] == 0
 
 
+@pytest.mark.parametrize(
+    ("training_type", "eval_type", "suffix"),
+    (
+        (
+            "fleet_contract_delegation",
+            "delegation_protocol",
+            adapter_evaluation.FLEET_DELEGATION_OUTPUT_CONTRACT,
+        ),
+        (
+            "fleet_contract_known_slots",
+            "slot_id_directory",
+            adapter_evaluation.FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT,
+        ),
+        (
+            "fleet_contract_tool_boundary",
+            "tool_boundary_awareness",
+            adapter_evaluation.FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT,
+        ),
+    ),
+)
+def test_contamination_report_ignores_only_shared_fleet_schema_suffixes(
+    training_type: str,
+    eval_type: str,
+    suffix: str,
+) -> None:
+    training = {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Assign the archival indexing request to the registered owner."
+                    f"\n\n{suffix}"
+                ),
+            }
+        ],
+        "metadata": {
+            "agent": "fleet",
+            "taskType": training_type,
+        },
+    }
+    evaluation = _eval(
+        "fleet",
+        eval_type,
+        [{"type": "json_valid"}],
+        prompt=(
+            "Resolve the live sensor handoff using the frozen runtime directory."
+            f"\n\n{suffix}"
+        ),
+    )
+
+    report = build_contamination_report([training], [evaluation])
+
+    assert report["schemaVersion"] == "lumen.adapter-contamination/1.4.0"
+    assert report["contaminated"] is False
+    assert report["matchCount"] == 0
+
+
+def test_contamination_report_still_detects_fleet_task_prompt_copy() -> None:
+    suffix = adapter_evaluation.FLEET_DELEGATION_OUTPUT_CONTRACT
+    frozen_prompt = (
+        "Delegate the sealed semantic index rebuild to its manifested owner."
+    )
+    metadata = {"agent": "fleet", "taskType": "fleet_contract_delegation"}
+    training = {
+        "messages": [
+            {
+                "role": "user",
+                "content": f"{frozen_prompt}\n\n{suffix}",
+            }
+        ],
+        "metadata": metadata,
+    }
+    evaluation = _eval(
+        "fleet",
+        "delegation_protocol",
+        [{"type": "json_valid"}],
+        prompt=f"{frozen_prompt}\n\n{suffix}",
+    )
+
+    report = build_contamination_report([training], [evaluation])
+
+    assert report["contaminated"] is True
+    assert report["matchCount"] == 1
+    assert report["matches"][0]["matchKind"] in {
+        "exact_record",
+        "exact_segment",
+    }
+
+
+def test_fleet_schema_suffix_stripping_preserves_scoring_target_detection() -> None:
+    suffix = adapter_evaluation.FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT
+    frozen_target = "The execution boundary remains permission gated."
+    evaluation = _eval(
+        "fleet",
+        "tool_boundary_awareness",
+        [
+            {
+                "type": "json_field_equals",
+                "path": "final",
+                "expected": frozen_target,
+            }
+        ],
+        prompt=f"Route the frozen tool request.\n\n{suffix}",
+    )
+    training = {
+        "messages": [
+            {
+                "role": "user",
+                "content": f"Classify a separate host capability.\n\n{suffix}",
+            },
+            {
+                "role": "assistant",
+                "content": json.dumps({"final": frozen_target}),
+            },
+        ],
+        "metadata": {
+            "agent": "fleet",
+            "taskType": "fleet_contract_tool_boundary",
+        },
+    }
+
+    report = build_contamination_report([training], [evaluation])
+
+    assert report["contaminated"] is True
+    assert report["matchCount"] == 1
+    assert report["matches"][0]["matchKind"] == "exact_segment"
+
+
+def test_unrecognized_fleet_schema_text_remains_contamination_visible() -> None:
+    suffix = adapter_evaluation.FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT
+    training = {
+        "messages": [
+            {
+                "role": "user",
+                "content": f"Training-only directory request.\n\n{suffix}",
+            }
+        ],
+        "metadata": {"agent": "fleet", "taskType": "unrecognized_contract"},
+    }
+    evaluation = _eval(
+        "fleet",
+        "unrecognized_contract",
+        [{"type": "json_valid"}],
+        prompt=f"Held-out directory request.\n\n{suffix}",
+    )
+
+    report = build_contamination_report([training], [evaluation])
+
+    assert report["contaminated"] is True
+    assert report["matchCount"] == 1
+    assert report["matches"][0]["matchKind"] in {
+        "near_segment",
+        "short_window_containment",
+    }
+
+
+def test_fleet_schema_suffix_helpers_are_exact_and_ambiguity_fails_closed() -> None:
+    suffix = adapter_evaluation.FLEET_DELEGATION_OUTPUT_CONTRACT
+    metadata = {"agent": "fleet", "taskType": "fleet_contract_delegation"}
+    embedded = f"Task prefix\n\n{suffix}\nUnexpected trailing text"
+
+    assert adapter_evaluation._fleet_prompt_without_short_contract_suffix(
+        embedded,
+        metadata,
+    ) == embedded
+    assert adapter_evaluation._fleet_prompt_with_short_contract(
+        embedded,
+        metadata,
+    ) == f"{embedded}\n\n{suffix}"
+    assert adapter_evaluation._fleet_short_contract_prompt_suffix(
+        {"agent": "cortex", "taskType": "delegation_protocol"}
+    ) is None
+    with pytest.raises(ValueError, match="conflicting short output contracts"):
+        adapter_evaluation._fleet_short_contract_prompt_suffix(
+            {
+                "agent": "fleet",
+                "taskType": "fleet_contract_delegation",
+                "evalType": "slot_id_directory",
+            }
+        )
+
+
 @pytest.mark.parametrize("target_location", ("expected", "metric"))
 def test_contamination_report_fingerprints_natural_language_scoring_targets(
     target_location: str,

@@ -21,7 +21,7 @@ from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
 
 EVALUATION_SCHEMA_VERSION = "lumen.adapter-eval/1.1.0"
 EVALUATION_REPORT_SCHEMA_VERSION = "lumen.adapter-eval-report/1.3.0"
-CONTAMINATION_SCHEMA_VERSION = "lumen.adapter-contamination/1.3.0"
+CONTAMINATION_SCHEMA_VERSION = "lumen.adapter-contamination/1.4.0"
 EXPERIMENT_SCHEMA_VERSION = "lumen.adapter-experiment/1.2.0"
 VARIANT_SCHEMA_VERSION = "lumen.adapter-experiment-variant/1.2.0"
 PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.1.0"
@@ -99,6 +99,110 @@ _MOUTH_GENERIC_FINALS = frozenset(
 EVALUATION_OUTPUT_MODES = frozenset({"json", "text"})
 _JSON_ONLY_EVALUATION_AGENTS = frozenset({"cortex", "executor", "fleet", "rem"})
 _TEXT_ONLY_EVALUATION_AGENTS = frozenset({"mouth"})
+FLEET_DELEGATION_OUTPUT_CONTRACT = (
+    "Fleet delegation output contract: return exactly one JSON object with "
+    "exactly the keys `delegateTo`, `knownSlots`, and `reason`; no other keys. "
+    "The knownSlots array uses the complete canonical manifested slot-ID order, "
+    "and reason is the literal JSON string \"manifest_responsibility_match\"."
+)
+FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT = (
+    "Fleet slot-directory output contract: return exactly one JSON object with "
+    "exactly one key, `knownSlots`; no other keys. The knownSlots array uses "
+    "the complete canonical manifested slot-ID order."
+)
+FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT = (
+    "Fleet tool-boundary output contract: return exactly one JSON object with "
+    "exactly the keys `approvalState`, `delegateTo`, `knownSlots`, "
+    "`permissionState`, and `toolID`; no other keys. The knownSlots array uses "
+    "the complete canonical manifested slot-ID order; delegateTo is the "
+    "manifested execution slot; copy the reported states and tool ID exactly."
+)
+_FLEET_SHORT_CONTRACT_BY_TASK_TYPE = {
+    **{
+        task_type: FLEET_DELEGATION_OUTPUT_CONTRACT
+        for task_type in (
+            "delegation_protocol",
+            "fleet_contract_delegation",
+            "no_invented_slots",
+            "ultra_specific_adapter_selection",
+            "ultra_specific_fleet_delegation",
+            "ultra_specific_no_invented_slots",
+            "ultra_specific_no_shadow_slot",
+        )
+    },
+    **{
+        task_type: FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT
+        for task_type in (
+            "fleet_contract_known_slots",
+            "slot_id_directory",
+            "ultra_specific_fleet_known_slot_directory",
+        )
+    },
+    **{
+        task_type: FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT
+        for task_type in (
+            "fleet_contract_tool_boundary",
+            "tool_boundary_awareness",
+            "ultra_specific_tool_boundary_awareness",
+            "ultra_specific_tool_boundary_ownership",
+        )
+    },
+}
+
+
+def _fleet_short_contract_prompt_suffix(
+    metadata: Mapping[str, Any],
+) -> str | None:
+    """Resolve one compiler-owned Fleet output schema from record metadata."""
+
+    agent = metadata.get("agent")
+    if agent is not None and agent != "fleet":
+        return None
+    contracts: set[str] = set()
+    for key in ("taskType", "preferenceType", "evalType"):
+        task_type = metadata.get(key)
+        if not isinstance(task_type, str) or not task_type:
+            continue
+        contract = _FLEET_SHORT_CONTRACT_BY_TASK_TYPE.get(task_type)
+        if contract is not None:
+            contracts.add(contract)
+    if len(contracts) > 1:
+        raise ValueError(
+            "Fleet record metadata resolves conflicting short output contracts"
+        )
+    return next(iter(contracts), None)
+
+
+def _fleet_prompt_with_short_contract(
+    user: str,
+    metadata: Mapping[str, Any],
+) -> str:
+    """Append the exact schema-only suffix once to a recognized Fleet prompt."""
+
+    suffix = _fleet_short_contract_prompt_suffix(metadata)
+    marker = f"\n\n{suffix}" if suffix is not None else None
+    if suffix is None or user == suffix or (
+        marker is not None and user.endswith(marker)
+    ):
+        return user
+    return user.rstrip() + f"\n\n{suffix}"
+
+
+def _fleet_prompt_without_short_contract_suffix(
+    user: str,
+    metadata: Mapping[str, Any],
+) -> str:
+    """Remove one exact compiler suffix for contamination comparison only."""
+
+    suffix = _fleet_short_contract_prompt_suffix(metadata)
+    marker = f"\n\n{suffix}" if suffix is not None else None
+    if user == suffix:
+        return ""
+    if marker is None or not user.endswith(marker):
+        return user
+    return user[: -len(marker)].rstrip()
+
+
 _MIMICRY_JSON_METRIC_TYPES = frozenset(
     {
         "json_valid",
@@ -7179,6 +7283,11 @@ def _content_segment_entries(
                     for value in _fleet_orchestration_unique_prompt_segments(content)
                 )
                 continue
+            if role == "user":
+                content = _fleet_prompt_without_short_contract_suffix(
+                    content,
+                    metadata,
+                )
             segments.append((role or "unknown", content))
             segments.extend(
                 (role or "unknown", value)

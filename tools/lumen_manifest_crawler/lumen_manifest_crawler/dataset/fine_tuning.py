@@ -28,7 +28,13 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     EVALUATION_SCHEMA_VERSION,
     EXPERIMENT_VARIANTS,
     DEFAULT_NEAR_DUPLICATE_THRESHOLD,
+    FLEET_DELEGATION_OUTPUT_CONTRACT,
+    FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT,
+    FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT,
     SHORT_WINDOW_SHINGLE_SIZE,
+    _fleet_prompt_with_short_contract,
+    _fleet_prompt_without_short_contract_suffix,
+    _fleet_short_contract_prompt_suffix,
     build_contamination_report,
     build_experiment_manifest,
     build_experiment_variant_manifest,
@@ -118,6 +124,13 @@ FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS = frozenset(
 )
 FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS = frozenset(
     {"normalization-policy-audited"}
+)
+FLEET_BALANCED_CONTRACT_TASK_TYPES = frozenset(
+    {
+        "fleet_contract_delegation",
+        "fleet_contract_known_slots",
+        "fleet_contract_tool_boundary",
+    }
 )
 # Fleet loss accounting is intentionally deny-by-default. Only these exact,
 # role-native source-family/task-type pairs are behavioral primary; generic
@@ -2527,6 +2540,7 @@ def _bind_fleet_sft_contract(
         assistant = _first_role_content(messages, "assistant")
         if not user or not assistant:
             continue
+        user = _fleet_prompt_with_short_contract(user, metadata)
         if (
             metadata.get("taskType") == "fleet_private_state_boundary"
             or metadata.get("preferenceType")
@@ -2916,7 +2930,10 @@ def _build_ultra_specific_adapter_sft_records(
         "mouth": _ultra_specific_mouth_records(manifest, sorted_tools),
         "mimicry": _ultra_specific_mimicry_records(manifest),
         "rem": _ultra_specific_rem_records(manifest, sorted_tools, known_tools),
-        "fleet": _ultra_specific_fleet_records(manifest, sorted_tools),
+        "fleet": [
+            *_ultra_specific_fleet_records(manifest, sorted_tools),
+            *_balanced_fleet_contract_sft_anchors(manifest),
+        ],
     }
 
 
@@ -4453,6 +4470,45 @@ def _bind_evaluation_output_prompt_contract(
     return copied
 
 
+def _bind_fleet_eval_contract(
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind short frozen Fleet cases to the same schema-only training prompt."""
+
+    metadata = (
+        record.get("metadata")
+        if isinstance(record.get("metadata"), dict)
+        else {}
+    )
+    if _fleet_short_contract_prompt_suffix(metadata) is None:
+        return record
+    messages = record.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("Fleet evaluation record requires prompt messages")
+    copied_messages = [
+        dict(message) if isinstance(message, dict) else message
+        for message in messages
+    ]
+    user_message = next(
+        (
+            message
+            for message in reversed(copied_messages)
+            if isinstance(message, dict) and message.get("role") == "user"
+        ),
+        None,
+    )
+    if not isinstance(user_message, dict) or not isinstance(
+        user_message.get("content"),
+        str,
+    ):
+        raise ValueError("Fleet evaluation record lacks a user prompt")
+    user_message["content"] = _fleet_prompt_with_short_contract(
+        user_message["content"],
+        metadata,
+    )
+    return {**record, "messages": copied_messages}
+
+
 def _critical_contract_sft_records(
     manifest: AgentBehaviorManifest,
     scenarios: list[dict[str, Any]],
@@ -4760,11 +4816,18 @@ def _ultra_specific_fleet_records(
             )
         )
 
-    for target_agent, prompts in _fleet_delegation_tasks().items():
+    for target_index, (target_agent, prompts) in enumerate(
+        _fleet_delegation_tasks().items()
+    ):
         target_slot_id = slot_ids_by_agent.get(target_agent)
         if target_slot_id is None:
             continue
-        for prompt_index, required_split in ((0, "train"), (1, "validation")):
+        for prompt_index in (0, 1):
+            required_split = (
+                "validation"
+                if prompt_index == 1 and target_index < 3
+                else "train"
+            )
             records.append(
                 _adapter_sft_record(
                     "fleet",
@@ -5773,6 +5836,7 @@ def _bind_fleet_dpo_contract(
         user = _first_role_content(prompt, "user")
         if not user:
             continue
+        user = _fleet_prompt_with_short_contract(user, metadata)
         chosen_content = _to_string(chosen.get("content"))
         rejected_content = _to_string(rejected.get("content"))
         if (
@@ -12399,7 +12463,7 @@ def _balanced_fleet_contract_dpo_pairs(
                 rejected_slot = slot_ids[(target_index + offset) % len(slot_ids)]
             required_split = (
                 "validation"
-                if prompt_index == 3 and agent_index < 3
+                if prompt_index == 1 and agent_index < 3
                 else "train"
             )
             pairs.append(
@@ -12552,7 +12616,79 @@ def _balanced_fleet_contract_dpo_pairs(
             )
     for pair in pairs:
         _bind_structured_output_instruction(pair, messages_key="prompt")
+        prompt = pair["prompt"]
+        metadata = pair["metadata"]
+        user_message = next(
+            (
+                message
+                for message in reversed(prompt)
+                if isinstance(message, dict) and message.get("role") == "user"
+            ),
+            None,
+        )
+        if not isinstance(user_message, dict) or not isinstance(
+            user_message.get("content"),
+            str,
+        ):
+            raise ValueError("Balanced Fleet preference lacks a user prompt")
+        user_message["content"] = _fleet_prompt_with_short_contract(
+            user_message["content"],
+            metadata,
+        )
     return pairs
+
+
+def _balanced_fleet_contract_sft_anchors(
+    manifest: AgentBehaviorManifest,
+) -> list[dict[str, Any]]:
+    """Teach the preferred short Fleet closures with a generative objective."""
+
+    pairs = _balanced_fleet_contract_dpo_pairs(manifest)
+    if not pairs:
+        return []
+    anchors: list[dict[str, Any]] = []
+    observed_task_types: set[str] = set()
+    for pair in pairs:
+        prompt = pair.get("prompt")
+        chosen = pair.get("chosen")
+        metadata = (
+            pair.get("metadata")
+            if isinstance(pair.get("metadata"), dict)
+            else {}
+        )
+        task_type = str(metadata.get("taskType") or "")
+        if task_type not in FLEET_BALANCED_CONTRACT_TASK_TYPES:
+            continue
+        if not isinstance(prompt, list) or not isinstance(chosen, dict):
+            raise ValueError("Balanced Fleet preference anchor is malformed")
+        chosen_content = chosen.get("content")
+        if not isinstance(chosen_content, str) or not chosen_content:
+            raise ValueError("Balanced Fleet preference anchor has no chosen target")
+        observed_task_types.add(task_type)
+        anchors.append(
+            {
+                "messages": [
+                    *[
+                        dict(message)
+                        for message in prompt
+                        if isinstance(message, dict)
+                    ],
+                    {"role": "assistant", "content": chosen_content},
+                ],
+                "metadata": {
+                    **metadata,
+                    "sourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
+                    "taskType": task_type,
+                    "sftAnchorFromPreference": True,
+                },
+            }
+        )
+    if observed_task_types != set(FLEET_BALANCED_CONTRACT_TASK_TYPES):
+        raise ValueError(
+            "Balanced Fleet SFT anchors lack required contract families: "
+            f"observed={sorted(observed_task_types)}"
+        )
+    return _unique_sorted_sft_records(anchors)
 
 
 def _build_agent_eval_records(
@@ -12639,6 +12775,10 @@ def _build_agent_eval_records(
     routed["mouth"] = [
         _bind_mouth_eval_contract(record)
         for record in routed["mouth"]
+    ]
+    routed["fleet"] = [
+        _bind_fleet_eval_contract(record)
+        for record in routed["fleet"]
     ]
     if _has_authoritative_manifest_revision(manifest):
         routed["cortex"] = [
@@ -13626,7 +13766,7 @@ def _agent_unsloth_config(
     )
     base_sft_epochs = (
         3
-        if agent == "cortex"
+        if agent in {"cortex", "fleet"}
         else 2
         if high_reasoning
         else 1
@@ -13899,6 +14039,11 @@ def _exclude_evaluation_segment_matches(
 def _normalized_non_system_segments(record: dict[str, Any]) -> set[str]:
     segments: set[str] = set()
     orchestration = _is_fleet_orchestration_record(record)
+    metadata = (
+        record.get("metadata")
+        if isinstance(record.get("metadata"), dict)
+        else {}
+    )
     for field in ("messages", "prompt"):
         messages = record.get(field)
         if not isinstance(messages, list):
@@ -13911,7 +14056,14 @@ def _normalized_non_system_segments(record: dict[str, Any]) -> set[str]:
                 values = (
                     _fleet_orchestration_unique_prompt_segments(content)
                     if orchestration and str(message.get("role") or "").lower() == "user"
-                    else [content]
+                    else [
+                        _fleet_prompt_without_short_contract_suffix(
+                            content,
+                            metadata,
+                        )
+                        if str(message.get("role") or "").lower() == "user"
+                        else content
+                    ]
                 )
                 for value in values:
                     normalized = " ".join(
@@ -13931,6 +14083,11 @@ def _normalized_non_system_segments(record: dict[str, Any]) -> set[str]:
 def _normalized_user_segments(record: dict[str, Any]) -> set[str]:
     segments: set[str] = set()
     orchestration = _is_fleet_orchestration_record(record)
+    metadata = (
+        record.get("metadata")
+        if isinstance(record.get("metadata"), dict)
+        else {}
+    )
     for field in ("messages", "prompt"):
         messages = record.get(field)
         if not isinstance(messages, list):
@@ -13947,7 +14104,12 @@ def _normalized_user_segments(record: dict[str, Any]) -> set[str]:
             values = (
                 _fleet_orchestration_unique_prompt_segments(content)
                 if orchestration
-                else [content]
+                else [
+                    _fleet_prompt_without_short_contract_suffix(
+                        content,
+                        metadata,
+                    )
+                ]
             )
             for value in values:
                 normalized = " ".join(

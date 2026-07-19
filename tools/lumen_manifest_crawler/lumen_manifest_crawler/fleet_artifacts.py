@@ -18,6 +18,25 @@ ORCHESTRATION_DERIVATION_SCHEMA_VERSION = (
     "lumen.fleet-graph-derivation/1.0.0"
 )
 ORCHESTRATION_EVENT_ID_GRAMMAR = "<scenarioID>::event::<one-based two-digit order>"
+ORCHESTRATION_OUTPUT_INTERFACE = (
+    "Canonical output interface: the top-level keys are exactly `decision`, "
+    "`dependencies`, `events`, `graphSchemaVersion`, `knownSlotIDs`, and "
+    "`scenarioID`. The `decision` keys are exactly `aggregationOwnerSlotID`, "
+    "`delegatedSlotIDs`, `stopReason`, and `strategy`. Each dependency has "
+    "exactly `fromEventID`, `kind`, and `toEventID`, with `kind` set to "
+    "`requires`. `events` and `dependencies` are arrays; `decision` is an "
+    "object; `graphSchemaVersion` and `scenarioID` are strings; and "
+    "`knownSlotIDs` and `delegatedSlotIDs` are ordered string arrays. "
+    "`aggregationOwnerSlotID` is a known-slot string or null, while "
+    "`stopReason` and `strategy` are strings. Each event has `id` and `type` "
+    "plus only the fields required by its behavior, with no wrapper objects or "
+    "invented aliases. Copy the supplied graph schema version, scenario ID, "
+    "and known slot IDs exactly. Substitute the actual supplied scenario ID into "
+    "every event ID using a two-digit one-based order; never emit the literal "
+    "`<scenarioID>` placeholder. Emit one terminal `stop` event, no more than "
+    "12 events or 16 dependencies, and stop immediately after the minimal "
+    "graph's closing brace."
+)
 
 
 @dataclass(frozen=True)
@@ -202,6 +221,7 @@ def _canonical_orchestration_prompt(
                 f"`{derivation['scenarioID']}`; known slots "
                 f"{json.dumps(derivation['knownSlotIDs'], ensure_ascii=False)}."
             ),
+            ORCHESTRATION_OUTPUT_INTERFACE,
             (
                 "Canonical event IDs are derived solely from scenario identity and "
                 f"order using `{ORCHESTRATION_EVENT_ID_GRAMMAR}`."
