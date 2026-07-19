@@ -1,5 +1,9 @@
 import json
+from pathlib import Path
 
+import pytest
+
+from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset.compiler import (
     MIN_SELF_MODEL_EVAL_SCENARIOS,
     SELF_MODEL_CARD_TYPES,
@@ -31,6 +35,21 @@ def _manifest() -> AgentBehaviorManifest:
             ToolManifest(id="device.status", displayName="Device Status", description="Summarize safe device status"),
             ToolManifest(id="rag.search.secure", displayName="Secure RAG Search", description="Search approved RAG sources"),
         ],
+    )
+
+
+@pytest.fixture(scope="module")
+def diagnostic_manifest() -> AgentBehaviorManifest:
+    """Use production topology for optimizer-aware repair routing checks."""
+
+    root = Path(__file__).resolve().parents[3]
+    manifest = generate_manifest(root)
+    return manifest.model_copy(
+        update={
+            "sourceIntegrity": manifest.sourceIntegrity.model_copy(
+                update={"baseCommit": "test-commit"}
+            )
+        }
     )
 
 
@@ -97,8 +116,10 @@ def test_self_model_sft_routes_only_to_fleet_adapter() -> None:
             ) == ["fleet"]
 
 
-def test_self_model_runtime_failure_ingests_as_rem_repair() -> None:
-    manifest = _manifest()
+def test_self_model_runtime_failure_ingests_as_rem_repair(
+    diagnostic_manifest: AgentBehaviorManifest,
+) -> None:
+    manifest = diagnostic_manifest
     runtime_reports = [
         {
             "_source": "agent-grounding-export-self-model.json",

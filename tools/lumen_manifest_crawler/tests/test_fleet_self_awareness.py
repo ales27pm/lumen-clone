@@ -7,6 +7,7 @@ import pytest
 
 from lumen_manifest_crawler import fleet_artifacts as fleet_artifact_module
 from lumen_manifest_crawler.crawler import generate_manifest
+from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
     _score_orchestration_graph,
     canonical_sha256,
@@ -27,16 +28,28 @@ from lumen_manifest_crawler.runtime_prompt_contract import (
 from lumen_manifest_crawler.validators import validate_agent_fine_tuning_datasets
 
 
-def _without_full_dataset_optimizer_assertions(manifest):
-    """Keep production topology while testing a deliberately Fleet-only input."""
+@pytest.fixture(scope="module")
+def production_fleet_compilation():
+    """Compile the real source corpus once for production-routing assertions."""
 
-    return manifest.model_copy(
-        update={
-            "sourceIntegrity": manifest.sourceIntegrity.model_copy(
-                update={"baseCommit": "test-commit"}
-            )
-        }
+    root = Path(__file__).resolve().parents[3]
+    manifest = generate_manifest(root)
+    datasets = generate_all_datasets(manifest, root=root)
+    artifacts = generate_fleet_artifacts(manifest)
+    compiled = compile_agent_fine_tuning_datasets(
+        manifest,
+        datasets,
+        fleet_artifacts=artifacts,
     )
+    return manifest, datasets, artifacts, compiled
+
+
+@pytest.fixture(scope="module")
+def production_compilation_without_fleet_artifacts(
+    production_fleet_compilation,
+):
+    manifest, datasets, _, _ = production_fleet_compilation
+    return compile_agent_fine_tuning_datasets(manifest, datasets)
 
 
 def test_fleet_artifacts_include_source_code_map_and_whole_system_records():
@@ -162,15 +175,10 @@ def test_fleet_records_teach_peer_source_awareness_and_private_boundaries():
     assert "must not claim direct access" in serialized or "cannot inspect" in serialized
 
 
-def test_production_cross_model_training_is_fleet_owned():
-    manifest = generate_manifest(Path(".").resolve())
-    artifacts = generate_fleet_artifacts(manifest)
-    fleet_only_manifest = _without_full_dataset_optimizer_assertions(manifest)
-    compiled = compile_agent_fine_tuning_datasets(
-        fleet_only_manifest,
-        {},
-        fleet_artifacts=artifacts,
-    )
+def test_production_cross_model_training_is_fleet_owned(
+    production_fleet_compilation,
+):
+    _, _, _, compiled = production_fleet_compilation
     expected_sft_task_types = {
         "fleet_delegation",
         "fleet_peer_source_knowledge",
@@ -335,15 +343,11 @@ def test_native_fleet_orchestration_covers_event_graph_boundaries_and_eval_contr
         )
 
 
-def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior() -> None:
-    manifest = generate_manifest(Path(".").resolve())
-    artifacts = generate_fleet_artifacts(manifest)
-    fleet_only_manifest = _without_full_dataset_optimizer_assertions(manifest)
-    fleet = compile_agent_fine_tuning_datasets(
-        fleet_only_manifest,
-        {},
-        fleet_artifacts=artifacts,
-    )["fleet"]
+def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
+    production_fleet_compilation,
+) -> None:
+    _, _, _, compiled = production_fleet_compilation
+    fleet = compiled["fleet"]
 
     expected_sft = {
         "no-delegation",
@@ -1141,16 +1145,11 @@ def test_native_fleet_holdout_guard_rejects_exact_and_invalid_topology_coverage(
         )
 
 
-def test_native_orchestration_training_routes_only_to_fleet_adapter():
-    manifest = generate_manifest(Path(".").resolve())
-    artifacts = generate_fleet_artifacts(manifest)
-    fleet_only_manifest = _without_full_dataset_optimizer_assertions(manifest)
-
-    compiled = compile_agent_fine_tuning_datasets(
-        fleet_only_manifest,
-        {},
-        fleet_artifacts=artifacts,
-    )
+def test_native_orchestration_training_routes_only_to_fleet_adapter(
+    production_fleet_compilation,
+    production_compilation_without_fleet_artifacts,
+):
+    manifest, _, _, compiled = production_fleet_compilation
     fleet_orchestration_eval_classes = {
         record["metadata"]["behaviorClass"]
         for record in compiled["fleet"].eval
@@ -1170,16 +1169,16 @@ def test_native_orchestration_training_routes_only_to_fleet_adapter():
         "nonexistent-slot-negative",
     }
     complete_failures = validate_agent_fine_tuning_datasets(
-        fleet_only_manifest,
+        manifest,
         compiled,
     )
     assert "fleet_orchestration_eval_coverage_missing" not in {
         failure.code for failure in complete_failures
     }
 
-    truncated = compile_agent_fine_tuning_datasets(fleet_only_manifest, {})
+    truncated = production_compilation_without_fleet_artifacts
     truncated_failures = validate_agent_fine_tuning_datasets(
-        fleet_only_manifest,
+        manifest,
         truncated,
     )
     assert "fleet_orchestration_eval_coverage_missing" in {
