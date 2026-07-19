@@ -7,8 +7,8 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "baseCommit": "4540017839fb708efd6d550eca46e85c03e03191",
-    "workingTreeDigest": "e77185a39e199d8417dd5eaacd0be327d41aece12e4c217512c0b5bd7b4520cf",
+    "baseCommit": "b2d0ad2a8d6ae42c60cf497262083d86a1ffa82c",
+    "workingTreeDigest": "55da98b23ed758f07ad15e996a6e51d03d4e245869b6a6106e0e2521c1af334e",
     "dirtyState": false,
     "files": [
       {
@@ -136,7 +136,10 @@
         "id": "embedding",
         "role": "embedding",
         "modelFamily": null,
-        "responsibilities": [],
+        "responsibilities": [
+          "semantic memory embedding",
+          "embedding vector generation"
+        ],
         "source": "ios/Lumen/Services/ModelFleet.swift"
       }
     ]
@@ -181,9 +184,9 @@
       },
       "embedding": {
         "role": "embedding",
-        "purpose": "Perform the embedding role defined by the Lumen model fleet contract.",
-        "inputSignature": "Role-specific input defined by the fleet contract and AgentBehaviorManifest.",
-        "outputSignature": "Role-specific output defined by the fleet contract and AgentBehaviorManifest.",
+        "purpose": "Generate semantic vector representations for memory indexing and retrieval.",
+        "inputSignature": "Text or content selected for semantic memory indexing or retrieval.",
+        "outputSignature": "Embedding vector only; no user-facing text, tool call, or hidden reasoning.",
         "calls": [],
         "calledBy": [
           "cortex"
@@ -202,7 +205,10 @@
           "toolObservation",
           "userPreference"
         ],
-        "responsibilities": []
+        "responsibilities": [
+          "embedding vector generation",
+          "semantic memory embedding"
+        ]
       },
       "executor": {
         "role": "tool_executor",
@@ -2960,9 +2966,9 @@
       },
       "embedding": {
         "role": "embedding",
-        "purpose": "Perform the embedding role defined by the Lumen model fleet contract.",
-        "input_signature": "Role-specific input defined by the fleet contract and AgentBehaviorManifest.",
-        "output_signature": "Role-specific output defined by the fleet contract and AgentBehaviorManifest.",
+        "purpose": "Generate semantic vector representations for memory indexing and retrieval.",
+        "input_signature": "Text or content selected for semantic memory indexing or retrieval.",
+        "output_signature": "Embedding vector only; no user-facing text, tool call, or hidden reasoning.",
         "calls": [],
         "called_by": [
           "cortex"
@@ -2981,7 +2987,10 @@
           "toolObservation",
           "userPreference"
         ],
-        "responsibilities": []
+        "responsibilities": [
+          "embedding vector generation",
+          "semantic memory embedding"
+        ]
       },
       "executor": {
         "role": "tool_executor",
