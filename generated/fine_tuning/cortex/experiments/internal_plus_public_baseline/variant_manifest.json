@@ -61,8 +61,8 @@
     }
   ],
   "comparisonEligibility": {
-    "baselineTrainingCorpusSHA256": "1bd62d2cd0aac3da109a8aed30e6fb3dedd212d6db3143731949a3914aa24a67",
-    "optimizedTrainingCorpusSHA256": "3788a78cc34313d1e658b8860e65aca8bc0f242e3bbdd1d7b7165a90ea7c83a8",
+    "baselineTrainingCorpusSHA256": "7560659f10f40851e268eeaf9db73369be7eaf623878fc3d3a3cb2579636a9ba",
+    "optimizedTrainingCorpusSHA256": "bd284ee323d5bd9ebe6978345aae26032bf028df0ff1e8b075bf42e05bea1b95",
     "promotionEligible": true,
     "promotionProhibited": false,
     "publicRecordCount": 31,
@@ -75,8 +75,8 @@
     "matchCount": 0,
     "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
     "publicEvaluationRowCount": 1040,
-    "reportSHA256": "bc16eb3fcd47d49de2fb25bee417c34428e57c78af5e80dabc7250103412267c",
-    "trainingRecordsSHA256": "1bd62d2cd0aac3da109a8aed30e6fb3dedd212d6db3143731949a3914aa24a67"
+    "reportSHA256": "f6de11fc436ffc231811c05bd94b7956e56e1809fb238865fc9b98353fbfc7a6",
+    "trainingRecordsSHA256": "7560659f10f40851e268eeaf9db73369be7eaf623878fc3d3a3cb2579636a9ba"
   },
   "controlledTrainingConfig": {
     "agent": "cortex",
@@ -1611,7 +1611,7 @@
     },
     "trainSFT": {
       "count": 1120,
-      "sha256": "d07adc10d1145e2b41b557142c0946dae657c64c59a90b0695f3c4b5f97e8abc"
+      "sha256": "8375ce33069f83d82090ac6cc96fb47dc78bb017f9a01255e377a5b2f6ff72c5"
     },
     "validationDPO": {
       "count": 58,
@@ -1619,7 +1619,7 @@
     },
     "validationSFT": {
       "count": 72,
-      "sha256": "11bcf46f23ba4ad8248f0c42712796a4ecff0587a495a237e4b35d0c4ad20a4b"
+      "sha256": "b13bf252156b2a4a90953d35d2e3ac4bb72b404ee44ebfd6c35d7a1df487fcb2"
     }
   },
   "dpoTraining": {
@@ -2913,7 +2913,7 @@
     "sft": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
   },
   "trainingConfigSHA256": "e2ea4a7969d280424776e446c0257abfb0a297a8245a2f9093f5c29735ea109a",
-  "trainingCorpusSHA256": "1bd62d2cd0aac3da109a8aed30e6fb3dedd212d6db3143731949a3914aa24a67",
+  "trainingCorpusSHA256": "7560659f10f40851e268eeaf9db73369be7eaf623878fc3d3a3cb2579636a9ba",
   "trainingDependencyLock": {
     "cudaVersion": "12.8",
     "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -2983,7 +2983,7 @@
   "trainingEnvironmentLockSHA256": "3844ddcb45334ec7b78bcacaf4ba221218d85cde56ae02943a9ba970f939cb33",
   "trainingEnvironmentSHA256": null,
   "variant": "internal_plus_public_baseline",
-  "variantManifestSHA256": "fbca94f0b13659154702b8ba370e2b1887278e605f48ed66901d384974b6a921",
+  "variantManifestSHA256": "b668a41178ddaf0a666bc22753ca764144daf48261650b7378aa181702815403",
   "zeroGPUDurationSeconds": null,
   "zeroGPUSize": null
 }
