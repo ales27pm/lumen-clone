@@ -8729,6 +8729,23 @@ def test_codebase_home_excludes_private_runtime_evidence_and_snapshot_exports(tm
     assert "exports/testflight-session.txt" not in paths
 
 
+def test_codebase_home_is_independent_of_checkout_directory_name(tmp_path: Path) -> None:
+    roots = [tmp_path / "first-checkout", tmp_path / "renamed-checkout"]
+    for root in roots:
+        source = root / "ios" / "Lumen" / "StableSource.swift"
+        source.parent.mkdir(parents=True)
+        source.write_text("struct StableSource {}\n", encoding="utf-8")
+
+    first = generate_codebase_home_records(roots[0])
+    second = generate_codebase_home_records(roots[1])
+
+    assert first == second
+    overview = first["codebase_home_corpus"][0]
+    assert "Root: Lumen repository" in overview["evidenceSnippet"]
+    assert roots[0].name not in overview["evidenceSnippet"]
+    assert roots[1].name not in overview["evidenceSnippet"]
+
+
 def test_codebase_home_chunks_enforce_character_limit_for_single_long_line() -> None:
     text = "x" * (MAX_CHUNK_CHARS * 2 + 17)
 
