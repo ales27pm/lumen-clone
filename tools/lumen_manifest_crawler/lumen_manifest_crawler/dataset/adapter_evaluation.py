@@ -102,19 +102,19 @@ _TEXT_ONLY_EVALUATION_AGENTS = frozenset({"mouth"})
 FLEET_DELEGATION_OUTPUT_CONTRACT = (
     "Fleet delegation output contract: return exactly one JSON object with "
     "exactly the keys `delegateTo`, `knownSlots`, and `reason`; no other keys. "
-    "The knownSlots array uses the complete canonical manifested slot-ID order, "
+    "The knownSlots array uses the complete manifest declaration order, "
     "and reason is the literal JSON string \"manifest_responsibility_match\"."
 )
 FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT = (
     "Fleet slot-directory output contract: return exactly one JSON object with "
     "exactly one key, `knownSlots`; no other keys. The knownSlots array uses "
-    "the complete canonical manifested slot-ID order."
+    "the complete manifest declaration order."
 )
 FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT = (
     "Fleet tool-boundary output contract: return exactly one JSON object with "
     "exactly the keys `approvalState`, `delegateTo`, `knownSlots`, "
     "`permissionState`, and `toolID`; no other keys. The knownSlots array uses "
-    "the complete canonical manifested slot-ID order; delegateTo is the "
+    "the complete manifest declaration order; delegateTo is the "
     "manifested execution slot; copy the reported states and tool ID exactly."
 )
 _FLEET_SHORT_CONTRACT_BY_TASK_TYPE = {

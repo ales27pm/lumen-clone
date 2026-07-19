@@ -3153,7 +3153,24 @@ def test_required_fleet_boundary_eval_resolves_execution_slot_by_role() -> None:
         if record["metadata"]["evalType"] == "tool_boundary_awareness"
     )
 
-    assert boundary["expected"]["boundaryContract"]["expectedSlot"] == "executor-v1"
+    boundary_contract = boundary["expected"]["boundaryContract"]
+    assert boundary_contract["expectedSlot"] == "executor-v1"
+    assert boundary_contract["expectedToolID"] == "maps.search"
+    assert boundary_contract["approvalState"] == "not_required"
+    assert boundary_contract["permissionState"] == "granted"
+    assert boundary_contract["allowedSlots"] == [
+        "planner-v1",
+        "executor-v1",
+        "vectors-v1",
+    ]
+    boundary_prompt = next(
+        message["content"]
+        for message in boundary["messages"]
+        if message["role"] == "user"
+    )
+    assert "approvalState=not_required" in boundary_prompt
+    assert "permissionState=granted" in boundary_prompt
+    assert "maps.search" in boundary_prompt
     delegation = next(
         record
         for record in _required_eval_templates(manifest, {"maps.search"})["fleet"]
@@ -3168,6 +3185,15 @@ def test_required_fleet_boundary_eval_resolves_execution_slot_by_role() -> None:
     assert delegation["expected"]["expectedReason"] == (
         "manifest_responsibility_match"
     )
+
+
+def test_fleet_short_contracts_bind_known_slots_to_manifest_declaration_order() -> None:
+    for contract in (
+        adapter_evaluation.FLEET_DELEGATION_OUTPUT_CONTRACT,
+        adapter_evaluation.FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT,
+        adapter_evaluation.FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT,
+    ):
+        assert "complete manifest declaration order" in contract
 
 
 def test_required_rem_evals_bind_runtime_ttl_and_canonical_repair_paths() -> None:

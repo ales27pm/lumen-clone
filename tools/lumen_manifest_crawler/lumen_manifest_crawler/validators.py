@@ -196,6 +196,14 @@ def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str
     for slot in manifest.fleet.slots:
         if not slot.role:
             failures.append(ValidationFailure(code="model_slot_missing_role", message=f"Model slot {slot.id} has no role", path=f"fleet.slots.{slot.id}"))
+        if not slot.responsibilities:
+            failures.append(
+                ValidationFailure(
+                    code="model_slot_missing_responsibilities",
+                    message=f"Model slot {slot.id} has no source-grounded responsibilities",
+                    path=f"fleet.slots.{slot.id}.responsibilities",
+                )
+            )
 
     for entry in manifest.routingMatrix:
         if len(entry.allowedTools) > 1 and entry.intent not in FANOUT_INTENTS:

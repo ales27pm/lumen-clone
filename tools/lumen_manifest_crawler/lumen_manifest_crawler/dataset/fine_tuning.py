@@ -65,10 +65,24 @@ FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = (
 )
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_TOKEN_SHARE_HARD_MAX = 0.10
 FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR = 10_000
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.2.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.3.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
-    "lumen.fleet-loss-share-evidence/1.1.0"
+    "lumen.fleet-loss-share-evidence/1.2.0"
 )
+FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION = (
+    "lumen.fleet-optimizer-family-share/1.0.0"
+)
+FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY = "fleet_orchestration_native"
+FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE = (
+    "fleet_orchestration_event_graph"
+)
+FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE = (
+    "fleet_orchestration_event_graph_preference"
+)
+FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS = 5_000
+FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS = 6_000
+FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS = 1_800
+FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS = 2_200
 PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = (
     "lumen.public-corpus-loss-share/1.0.0"
 )
@@ -90,6 +104,8 @@ FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL = "public_behavioral"
 FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC = "supplemental_static"
 FLEET_SOURCE_ROLE_REGISTRY_SCHEMA_VERSION = "lumen.fleet-source-role/1.0.0"
 FLEET_DELEGATION_REASON = "manifest_responsibility_match"
+FLEET_DELEGATION_PROMPTS_PER_OWNER = 8
+FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER = 2
 SOURCE_TOKEN_PROXY_SCHEMA_VERSION = "lumen.source-token-proxy/1.0.0"
 FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES = frozenset(
     {
@@ -111,7 +127,7 @@ FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS = frozenset(
         "nonexistent-slot-negative",
     }
 )
-FLEET_NATIVE_ORCHESTRATION_DPO_BEHAVIORS = frozenset(
+FLEET_NATIVE_ORCHESTRATION_FULL_MATRIX_DPO_BEHAVIORS = frozenset(
     {
         "duplicate-suppression",
         "approval-boundary",
@@ -119,8 +135,16 @@ FLEET_NATIVE_ORCHESTRATION_DPO_BEHAVIORS = frozenset(
         "nonexistent-slot-negative",
     }
 )
+FLEET_NATIVE_ORCHESTRATION_DPO_BEHAVIORS = (
+    FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
+)
 FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS = frozenset(
-    {"core", "normalized-intake", "policy-audited"}
+    {
+        "core",
+        "behavior-conditioned",
+        "normalized-intake",
+        "policy-audited",
+    }
 )
 FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS = frozenset(
     {"normalization-policy-audited"}
@@ -1815,39 +1839,42 @@ def _assert_fleet_native_orchestration_training_coverage(
         )
     ):
         return
-    expected_by_lane = {
-        "train SFT": (
-            train_sft_by_behavior,
-            FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS,
-            FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS,
-        ),
-        "train DPO": (
-            train_dpo_by_behavior,
-            FLEET_NATIVE_ORCHESTRATION_DPO_BEHAVIORS,
-            FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS,
-        ),
-        "validation SFT": (
-            val_sft_by_behavior,
-            FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS,
-            FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS,
-        ),
-        "validation DPO": (
-            val_dpo_by_behavior,
-            FLEET_NATIVE_ORCHESTRATION_DPO_BEHAVIORS,
-            FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS,
-        ),
+    train_sft_variants = {
+        behavior: FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS
+        for behavior in FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
     }
-    for lane, (grouped, expected_behaviors, expected_variants) in (
-        expected_by_lane.items()
-    ):
-        if set(grouped) == set(expected_behaviors):
+    train_dpo_variants = {
+        behavior: (
+            FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS
+            if behavior in FLEET_NATIVE_ORCHESTRATION_FULL_MATRIX_DPO_BEHAVIORS
+            else frozenset({"behavior-conditioned"})
+        )
+        for behavior in FLEET_NATIVE_ORCHESTRATION_DPO_BEHAVIORS
+    }
+    validation_sft_variants = {
+        behavior: FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS
+        for behavior in FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
+    }
+    validation_dpo_variants = {
+        behavior: FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS
+        for behavior in FLEET_NATIVE_ORCHESTRATION_FULL_MATRIX_DPO_BEHAVIORS
+    }
+    expected_by_lane = {
+        "train SFT": (train_sft_by_behavior, train_sft_variants),
+        "train DPO": (train_dpo_by_behavior, train_dpo_variants),
+        "validation SFT": (val_sft_by_behavior, validation_sft_variants),
+        "validation DPO": (val_dpo_by_behavior, validation_dpo_variants),
+    }
+    for lane, (grouped, expected_variants_by_behavior) in expected_by_lane.items():
+        if set(grouped) == set(expected_variants_by_behavior):
             continue
         raise ValueError(
             f"Fleet native {lane} behavior coverage is incomplete: "
             f"observed={sorted(grouped)}"
         )
-    for lane, (grouped, _, expected_variants) in expected_by_lane.items():
+    for lane, (grouped, expected_variants_by_behavior) in expected_by_lane.items():
         for behavior, records in sorted(grouped.items()):
+            expected_variants = expected_variants_by_behavior[behavior]
             variants: set[str] = set()
             topology_hashes: set[str] = set()
             for record in records:
@@ -1887,7 +1914,7 @@ def _assert_fleet_native_orchestration_training_coverage(
             }
             validation_hashes = {
                 record["metadata"]["trainingTopologySHA256"]
-                for record in validation_grouped[behavior]
+                for record in validation_grouped.get(behavior, [])
             }
             if train_hashes & validation_hashes:
                 raise ValueError(
@@ -2216,6 +2243,56 @@ def _fleet_loss_share_contract(
             ),
         },
         "dpoTokenizationPolicy": dict(FLEET_DPO_TOKENIZATION_POLICY),
+        "optimizerFamilyShareBands": {
+            "schemaVersion": FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION,
+            "enforcementScope": "optimizer_train_only",
+            "classification": {
+                "sourceFamily": FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+                "taskTypeByLane": {
+                    "sft": FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+                    "dpo": FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
+                },
+            },
+            "lanes": {
+                "sft": {
+                    "basis": "assistant_mask_non_ignored_token_count",
+                    "numeratorEvidenceField": (
+                        "nativeOrchestrationAssistantTargetTokenCount"
+                    ),
+                    "denominatorEvidenceField": "assistantTargetTokenCount",
+                    "minimumBasisPoints": (
+                        FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS
+                    ),
+                    "maximumBasisPoints": (
+                        FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS
+                    ),
+                },
+                "dpo": {
+                    "basis": "preference_pair_count",
+                    "numeratorEvidenceField": (
+                        "nativeOrchestrationPreferencePairCount"
+                    ),
+                    "denominatorEvidenceField": "preferencePairCount",
+                    "minimumBasisPoints": (
+                        FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS
+                    ),
+                    "maximumBasisPoints": (
+                        FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS
+                    ),
+                },
+            },
+            "comparisonRules": {
+                "minimum": (
+                    "numeratorCount*basisPointDenominator>="
+                    "denominatorCount*minimumBasisPoints"
+                ),
+                "maximum": (
+                    "numeratorCount*basisPointDenominator<="
+                    "denominatorCount*maximumBasisPoints"
+                ),
+            },
+            "failurePolicy": "abort_before_optimizer",
+        },
         "failurePolicy": "abort_before_optimizer",
         "rowMetadataContract": {
             "requiredCanonicalFields": ["sourceFamily", "taskType"],
@@ -4816,16 +4893,14 @@ def _ultra_specific_fleet_records(
             )
         )
 
-    for target_index, (target_agent, prompts) in enumerate(
-        _fleet_delegation_tasks().items()
-    ):
+    for target_agent, prompts in _fleet_delegation_tasks().items():
         target_slot_id = slot_ids_by_agent.get(target_agent)
         if target_slot_id is None:
             continue
         for prompt_index in (0, 1):
             required_split = (
                 "validation"
-                if prompt_index == 1 and target_index < 3
+                if prompt_index == 1
                 else "train"
             )
             records.append(
@@ -4982,45 +5057,79 @@ def _fleet_boundary_tools(
     ][:limit]
 
 
-def _fleet_delegation_tasks() -> dict[str, tuple[str, str, str, str]]:
-    return {
+def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
+    tasks = {
         "cortex": (
             "Assign a fresh user intent to the peer that owns planning and persisted action routing.",
             "Choose the manifested destination for converting user intent into a grounded execution plan.",
             "Route pre-execution planning to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for intent planning.",
+            "Which manifested peer classifies an incoming intent before any tool arguments are emitted?",
+            "Send manifest-grounded tool selection to the slot that coordinates the remaining model peers.",
+            "Choose the owner of task decomposition and model coordination for a new request.",
+            "Route creation of a validated action plan to the fleet's orchestration owner.",
         ),
         "executor": (
             "Assign an approved action to the peer that emits strict manifest-valid tool JSON.",
             "Choose the manifested destination for exact tool arguments and approval enforcement.",
             "Route concrete tool-call construction to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for executable tool JSON.",
+            "Which manifested peer validates argument types before emitting a native tool action?",
+            "Send a fully planned action to the slot that owns strict JSON generation.",
+            "Choose the owner that enforces approval boundaries around executable tool payloads.",
+            "Route schema-valid tool argument construction to its manifested runtime owner.",
         ),
         "mouth": (
             "Assign trusted tool observations to the peer that writes the final user-facing response.",
             "Choose the manifested destination for concise grounded response text.",
             "Route post-execution communication to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for grounded final wording.",
+            "Which manifested peer converts verified observations into the answer shown to the user?",
+            "Send completed tool results to the slot that owns final response composition.",
+            "Choose the owner of spoken output after execution evidence is available.",
+            "Route a necessary clarification question to the fleet's user-response slot.",
         ),
         "mimicry": (
             "Assign fact-preserving tone adaptation to the peer that owns user style constraints.",
             "Choose the manifested destination for rewriting style without content drift.",
             "Route response-style analysis to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for fact-preserving style.",
+            "Which manifested peer detects tone while preserving the supplied facts?",
+            "Send a grounded draft to the slot that adapts wording to the user's style.",
+            "Choose the owner of response rewriting when only presentation may change.",
+            "Route tone detection and language-style adaptation to their fleet owner.",
         ),
         "rem": (
             "Assign a repeated runtime failure to the peer that owns diagnosis and regression repair.",
             "Choose the manifested destination for memory policy and training-record repair.",
             "Route post-run failure analysis to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for regression diagnosis.",
+            "Which manifested peer audits recurring failures and creates corrective dataset records?",
+            "Send idle-time memory pruning work to the slot that owns reflective maintenance.",
+            "Choose the owner of manifest audits after a runtime regression is observed.",
+            "Route post-execution failure diagnosis to the fleet's reflection component.",
         ),
         "embedding": (
             "Assign semantic vector generation to the manifested embedding destination.",
             "Choose the runtime slot that owns vector representations for memory retrieval.",
             "Route embedding computation to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for semantic vectors.",
+            "Which manifested peer converts memory content into a numerical semantic representation?",
+            "Send text destined for similarity indexing to the fleet's vector-generation owner.",
+            "Choose the owner of embedding vectors used by semantic memory retrieval.",
+            "Route memory-index representation generation to its manifested component.",
         ),
     }
+    prompt_counts = {owner: len(prompts) for owner, prompts in tasks.items()}
+    if set(prompt_counts.values()) != {FLEET_DELEGATION_PROMPTS_PER_OWNER}:
+        raise ValueError(
+            "Fleet delegation prompts are not balanced by owner: "
+            f"{prompt_counts}"
+        )
+    all_prompts = [prompt for prompts in tasks.values() for prompt in prompts]
+    if len(set(all_prompts)) != len(all_prompts):
+        raise ValueError("Fleet delegation prompts must be globally unique")
+    return tasks
 
 
 def _adapter_sft_record(
@@ -12452,18 +12561,18 @@ def _balanced_fleet_contract_dpo_pairs(
     pairs: list[dict[str, Any]] = []
     tasks = _fleet_delegation_tasks()
     manifested_agents = [agent for agent in tasks if agent in slot_ids_by_agent]
-    for agent_index, target_agent in enumerate(manifested_agents):
+    for target_agent in manifested_agents:
         target_slot_id = slot_ids_by_agent[target_agent]
-        target_index = slot_ids.index(target_slot_id)
+        contrast_slots = [
+            slot_id for slot_id in slot_ids if slot_id != target_slot_id
+        ] + ["invented_shadow_slot"]
         for prompt_index, prompt in enumerate(tasks[target_agent]):
-            if prompt_index >= 2:
-                rejected_slot = "invented_shadow_slot"
-            else:
-                offset = 1 if prompt_index == 0 else -1
-                rejected_slot = slot_ids[(target_index + offset) % len(slot_ids)]
+            rejected_slot = contrast_slots[prompt_index % len(contrast_slots)]
             required_split = (
                 "validation"
-                if prompt_index == 1 and agent_index < 3
+                if prompt_index
+                >= len(tasks[target_agent])
+                - FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER
                 else "train"
             )
             pairs.append(
@@ -13671,7 +13780,25 @@ def _required_eval_templates(
                     "expectedReason": FLEET_DELEGATION_REASON,
                 },
             ),
-            _eval("fleet", "tool_boundary_awareness", f"Route an approved {maps_search} request with location permission granted through the execution slot.", {"mustRespectBoundaries": True, "boundaryContract": {"expectedToolID": maps_search, "expectedSlot": boundary_slot, "allowedSlots": slots, "approvalState": "not_required", "permissionState": "granted"}}),
+            _eval(
+                "fleet",
+                "tool_boundary_awareness",
+                (
+                    "The runtime reports approvalState=not_required and "
+                    f"permissionState=granted for {maps_search}. Route that exact "
+                    "execution boundary through the manifested execution slot."
+                ),
+                {
+                    "mustRespectBoundaries": True,
+                    "boundaryContract": {
+                        "expectedToolID": maps_search,
+                        "expectedSlot": boundary_slot,
+                        "allowedSlots": slots,
+                        "approvalState": "not_required",
+                        "permissionState": "granted",
+                    },
+                },
+            ),
         ],
     }
 

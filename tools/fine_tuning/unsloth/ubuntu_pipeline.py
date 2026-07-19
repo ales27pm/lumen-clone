@@ -7493,6 +7493,42 @@ _FLEET_DPO_TOKENIZATION_POLICY = {
     "completionSuffix": "append_tokenizer_eos_token_id",
     "appendedEOSTokensPerCompletion": 1,
 }
+_FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA = (
+    "lumen.fleet-optimizer-family-share/1.0.0"
+)
+_FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY = "fleet_orchestration_native"
+_FLEET_NATIVE_ORCHESTRATION_TASK_TYPE_BY_LANE = {
+    "sft": "fleet_orchestration_event_graph",
+    "dpo": "fleet_orchestration_event_graph_preference",
+}
+_FLEET_OPTIMIZER_FAMILY_SHARE_LANES = {
+    "sft": {
+        "basis": "assistant_mask_non_ignored_token_count",
+        "numeratorEvidenceField": (
+            "nativeOrchestrationAssistantTargetTokenCount"
+        ),
+        "denominatorEvidenceField": "assistantTargetTokenCount",
+        "minimumBasisPoints": 5_000,
+        "maximumBasisPoints": 6_000,
+    },
+    "dpo": {
+        "basis": "preference_pair_count",
+        "numeratorEvidenceField": "nativeOrchestrationPreferencePairCount",
+        "denominatorEvidenceField": "preferencePairCount",
+        "minimumBasisPoints": 1_800,
+        "maximumBasisPoints": 2_200,
+    },
+}
+_FLEET_OPTIMIZER_FAMILY_SHARE_COMPARISON_RULES = {
+    "minimum": (
+        "numeratorCount*basisPointDenominator>="
+        "denominatorCount*minimumBasisPoints"
+    ),
+    "maximum": (
+        "numeratorCount*basisPointDenominator<="
+        "denominatorCount*maximumBasisPoints"
+    ),
+}
 
 
 def _pipeline_exact_mapping(
@@ -8061,6 +8097,7 @@ def _pipeline_validated_fleet_loss_share_contract(
             "dpoTokenizationPolicy",
             "exactTokenEvidenceContract",
             "failurePolicy",
+            "optimizerFamilyShareBands",
             "rowMetadataContract",
             "sourceSelectionProxy",
             "sourceRoleRegistry",
@@ -8070,7 +8107,7 @@ def _pipeline_validated_fleet_loss_share_contract(
         label="Fleet loss-share contract",
     )
     if (
-        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.2.0"
+        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.3.0"
         or contract.get("enforcementRequired") is not True
         or contract.get("enforcementPhase")
         != "post_tokenizer_load_pre_optimizer"
@@ -8160,6 +8197,61 @@ def _pipeline_validated_fleet_loss_share_contract(
     )
     if dict(dpo_tokenization_policy) != _FLEET_DPO_TOKENIZATION_POLICY:
         raise RuntimeError("Fleet DPO tokenization policy drifted")
+    family_share = _pipeline_exact_mapping(
+        contract.get("optimizerFamilyShareBands"),
+        {
+            "schemaVersion",
+            "enforcementScope",
+            "classification",
+            "lanes",
+            "comparisonRules",
+            "failurePolicy",
+        },
+        label="Fleet optimizer-family share bands",
+    )
+    classification = _pipeline_exact_mapping(
+        family_share.get("classification"),
+        {"sourceFamily", "taskTypeByLane"},
+        label="Fleet optimizer-family classification",
+    )
+    task_types = _pipeline_exact_mapping(
+        classification.get("taskTypeByLane"),
+        {"sft", "dpo"},
+        label="Fleet optimizer-family task types",
+    )
+    family_lanes = _pipeline_exact_mapping(
+        family_share.get("lanes"),
+        {"sft", "dpo"},
+        label="Fleet optimizer-family lane bands",
+    )
+    if (
+        family_share.get("schemaVersion")
+        != _FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA
+        or family_share.get("enforcementScope") != "optimizer_train_only"
+        or classification.get("sourceFamily")
+        != _FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+        or dict(task_types) != _FLEET_NATIVE_ORCHESTRATION_TASK_TYPE_BY_LANE
+        or family_share.get("comparisonRules")
+        != _FLEET_OPTIMIZER_FAMILY_SHARE_COMPARISON_RULES
+        or family_share.get("failurePolicy") != "abort_before_optimizer"
+    ):
+        raise RuntimeError("Fleet optimizer-family share contract drifted")
+    for expected_lane, expected_band in (
+        _FLEET_OPTIMIZER_FAMILY_SHARE_LANES.items()
+    ):
+        actual_band = _pipeline_exact_mapping(
+            family_lanes.get(expected_lane),
+            set(expected_band),
+            label=f"Fleet {expected_lane} optimizer-family share band",
+        )
+        if any(
+            type(actual_band[field]) is not type(expected_value)
+            or actual_band[field] != expected_value
+            for field, expected_value in expected_band.items()
+        ):
+            raise RuntimeError(
+                f"Fleet {expected_lane} optimizer-family share band drifted"
+            )
     if contract.get("tokenAccounting") != {
         "sft": "assistant_mask_non_ignored_token_count",
         "dpo": (
@@ -8212,7 +8304,7 @@ def _pipeline_validated_fleet_loss_share_contract(
     if (
         exact.get("required") is not True
         or exact.get("schemaVersion")
-        != "lumen.fleet-loss-share-evidence/1.1.0"
+        != "lumen.fleet-loss-share-evidence/1.2.0"
         or exact.get("statusAtGeneration")
         != "pending_exact_tokenizer_preflight"
         or exact.get("tokenizer") != "pinned_qwen_tokenizer"
@@ -8351,6 +8443,25 @@ def _pipeline_fleet_cap_passes(
     )
 
 
+def _pipeline_fleet_optimizer_family_band_passes(
+    numerator: Any,
+    denominator: Any,
+    minimum_basis_points: Any,
+    maximum_basis_points: Any,
+) -> bool:
+    return (
+        type(numerator) is int
+        and numerator >= 0
+        and type(denominator) is int
+        and denominator > 0
+        and type(minimum_basis_points) is int
+        and type(maximum_basis_points) is int
+        and 0 <= minimum_basis_points <= maximum_basis_points <= 10_000
+        and numerator * 10_000 >= denominator * minimum_basis_points
+        and numerator * 10_000 <= denominator * maximum_basis_points
+    )
+
+
 def _verify_fleet_loss_share_evidence(
     *,
     value: Any,
@@ -8382,6 +8493,7 @@ def _verify_fleet_loss_share_evidence(
             "tokenizer",
             "tokenAccounting",
             "dpoTokenizationPolicy",
+            "optimizerFamilyShareBand",
             "contractSHA256",
             "sourceRoleRegistrySHA256",
             "splits",
@@ -8390,7 +8502,7 @@ def _verify_fleet_loss_share_evidence(
     )
     if (
         evidence.get("schemaVersion")
-        != "lumen.fleet-loss-share-evidence/1.1.0"
+        != "lumen.fleet-loss-share-evidence/1.2.0"
         or evidence.get("status") != "passed"
         or evidence.get("lane") != lane
         or evidence.get("enforcementScope")
@@ -8404,6 +8516,8 @@ def _verify_fleet_loss_share_evidence(
         or evidence.get("tokenAccounting") != contract["tokenAccounting"][lane]
         or evidence.get("dpoTokenizationPolicy")
         != (contract["dpoTokenizationPolicy"] if lane == "dpo" else None)
+        or evidence.get("optimizerFamilyShareBand")
+        != contract["optimizerFamilyShareBands"]["lanes"][lane]
         or evidence.get("contractSHA256") != canonical_sha256(contract)
         or evidence.get("sourceRoleRegistrySHA256")
         != canonical_sha256(contract["sourceRoleRegistry"])
@@ -8420,6 +8534,14 @@ def _verify_fleet_loss_share_evidence(
         else {"train": "train_dpo.jsonl", "validation": "val_dpo.jsonl"}
     )
     fields = _FLEET_LOSS_SHARE_FIELD_NAMES[lane]
+    family_share_contract = contract["optimizerFamilyShareBands"]
+    selected_family_band = family_share_contract["lanes"][lane]
+    native_source_family = family_share_contract["classification"][
+        "sourceFamily"
+    ]
+    native_task_type = family_share_contract["classification"][
+        "taskTypeByLane"
+    ][lane]
     for split in ("train", "validation"):
         split_evidence = _pipeline_exact_mapping(
             split_values.get(split),
@@ -8429,6 +8551,9 @@ def _verify_fleet_loss_share_evidence(
                 "sourceRowsSHA256",
                 "rowTokenEvidence",
                 "targetTokenCountsByCategory",
+                "optimizerFamilyBandEnforcementStatus",
+                selected_family_band["numeratorEvidenceField"],
+                selected_family_band["denominatorEvidenceField"],
                 *fields.values(),
             },
             label=f"Fleet {lane} {split} loss-share evidence",
@@ -8451,6 +8576,8 @@ def _verify_fleet_loss_share_evidence(
             raise RuntimeError(f"Fleet {lane} {split} evidence row count drifted")
         target_by_category = {category: 0 for category in _FLEET_SOURCE_ROLES}
         supplemental_by_family: dict[str, int] = {}
+        native_target_tokens = 0
+        native_preference_pairs = 0
         row_hashes: list[str] = []
         for index, (source_row, row_value) in enumerate(zip(source_rows, row_values)):
             row_evidence = _pipeline_exact_mapping(
@@ -8484,6 +8611,12 @@ def _verify_fleet_loss_share_evidence(
                 raise RuntimeError(f"Fleet {lane} {split} row evidence drifted")
             row_hashes.append(row_hash)
             target_by_category[category] += target_tokens
+            if (
+                source_family == native_source_family
+                and task_type == native_task_type
+            ):
+                native_target_tokens += target_tokens
+                native_preference_pairs += 1
             if category == "supplemental_static":
                 supplemental_by_family[source_family] = (
                     supplemental_by_family.get(source_family, 0) + target_tokens
@@ -8491,6 +8624,12 @@ def _verify_fleet_loss_share_evidence(
         denominator = sum(target_by_category.values())
         supplemental = target_by_category["supplemental_static"]
         public = target_by_category["public_behavioral"]
+        family_numerator = (
+            native_target_tokens
+            if lane == "sft"
+            else native_preference_pairs
+        )
+        family_denominator = denominator if lane == "sft" else len(source_rows)
         observed_categories = split_evidence.get("targetTokenCountsByCategory")
         observed_families = split_evidence.get(
             fields["perSourceFamilyNumeratorTokenCounts"]
@@ -8521,6 +8660,28 @@ def _verify_fleet_loss_share_evidence(
             or split_evidence.get(fields["supplementalNumeratorTokenCount"])
             != supplemental
             or split_evidence.get(fields["publicNumeratorTokenCount"]) != public
+            or split_evidence.get("optimizerFamilyBandEnforcementStatus")
+            != expected_enforcement_status
+            or type(
+                split_evidence.get(
+                    selected_family_band["numeratorEvidenceField"]
+                )
+            )
+            is not int
+            or type(
+                split_evidence.get(
+                    selected_family_band["denominatorEvidenceField"]
+                )
+            )
+            is not int
+            or split_evidence.get(
+                selected_family_band["numeratorEvidenceField"]
+            )
+            != family_numerator
+            or split_evidence.get(
+                selected_family_band["denominatorEvidenceField"]
+            )
+            != family_denominator
             or observed_families != dict(sorted(supplemental_by_family.items()))
         ):
             raise RuntimeError(
@@ -8545,6 +8706,17 @@ def _verify_fleet_loss_share_evidence(
         ):
             raise RuntimeError(
                 f"Fleet {lane} {split} per-source-family token cap failed"
+            )
+        if split == "train" and not (
+            _pipeline_fleet_optimizer_family_band_passes(
+                family_numerator,
+                family_denominator,
+                selected_family_band["minimumBasisPoints"],
+                selected_family_band["maximumBasisPoints"],
+            )
+        ):
+            raise RuntimeError(
+                f"Fleet {lane} {split} optimizer-family share band failed"
             )
     return dict(evidence)
 
