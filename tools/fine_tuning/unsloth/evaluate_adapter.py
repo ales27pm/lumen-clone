@@ -16,15 +16,19 @@ from typing import Any, Callable
 
 try:
     from lumen_manifest_crawler.dataset.chat_template_contract import (
+        STRUCTURED_OUTPUT_INSTRUCTION,
         apply_non_thinking_chat_template,
         canonical_non_thinking_messages,
+        structured_output_instruction_status,
         strip_terminal_non_thinking_directive,
         verify_chat_template_contract,
     )
 except ImportError:
     from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.chat_template_contract import (
+        STRUCTURED_OUTPUT_INSTRUCTION,
         apply_non_thinking_chat_template,
         canonical_non_thinking_messages,
+        structured_output_instruction_status,
         strip_terminal_non_thinking_directive,
         verify_chat_template_contract,
     )
@@ -100,15 +104,14 @@ UBUNTU_SOURCE_INTEGRITY_FIELDS = (
 CANDIDATE_OUTPUT_SCHEMA_VERSION = "lumen.adapter-eval-candidate/1.2.0"
 GENERATION_ATTEMPT_SCHEMA_VERSION = "lumen.adapter-eval-generation-attempt/1.0.0"
 STRUCTURED_OUTPUT_CONTRACT_VERSION = "lumen.adapter-eval-json-object-contract/1.1.0"
-OUTPUT_MODE_CONTRACT_VERSION = "lumen.adapter-eval-output-mode-contract/1.0.0"
+OUTPUT_MODE_CONTRACT_VERSION = "lumen.adapter-eval-output-mode-contract/1.1.0"
+EVALUATION_PROMPT_PREFLIGHT_SCHEMA_VERSION = (
+    "lumen.adapter-eval-prompt-preflight/1.0.0"
+)
 CORTEX_ROUTING_CONTEXT_VERSION = "lumen.adapter-eval-cortex-routing-context/1.0.0"
 STRICT_JSON_RETRY_CONTRACT_VERSION = "lumen.adapter-eval-strict-json-retry/1.4.0"
 STRICT_JSON_MAX_ATTEMPTS = 2
 GENERATION_REPETITION_PENALTY = 1.1
-STRUCTURED_OUTPUT_INSTRUCTION = (
-    "Response format contract: output exactly one valid JSON object. Do not include "
-    "prose, markdown, code fences, or hidden reasoning."
-)
 CORTEX_ROUTE_INSTRUCTION = (
     "Cortex route mode: use the manifest catalog below as exact runtime truth. "
     "The catalog is TSV: defaultIntent is the canonical intent for an ordinary "
@@ -206,6 +209,11 @@ CORTEX_ROUTE_DECISION_ENDCAP = (
 )
 CORTEX_TOOL_CATALOG_HEADER = (
     "Manifest tools TSV: id\tname\tdefaultIntent\tallowedIntents\trequired\tapproval\tdescription"
+)
+_CORTEX_STRUCTURED_OUTPUT_MARKER_PATTERN = re.compile(
+    r"(?i)(?:\bcortex[\s_-]*route[\s_-]*mode\s*:|"
+    r"\bmanifest[\s_-]*tools[\s_-]*tsv\s*:|"
+    r"\bfinal[\s_-]*route[\s_-]*decision\s*:)"
 )
 STRICT_JSON_RETRY_INSTRUCTION = (
     "This is the single bounded retry after strict raw JSON or manifest-route "
@@ -1698,6 +1706,16 @@ def _structured_output_messages(
     ]
     resolved_output_mode = _validate_output_mode_for_agent(agent, output_mode)
     if resolved_output_mode == "text":
+        if copied and copied[0]["role"] == "system" and (
+            structured_output_instruction_status(copied[0]["content"]) != "absent"
+            or _CORTEX_STRUCTURED_OUTPUT_MARKER_PATTERN.search(
+                copied[0]["content"]
+            )
+            is not None
+        ):
+            raise ValueError(
+                f"{agent} text-mode evaluation prompt contains a structured-output contract"
+            )
         return canonical_non_thinking_messages(copied)
     if agent == "cortex" and not tool_contracts:
         raise ValueError("Cortex structured output requires manifest tool contracts")
@@ -1714,12 +1732,21 @@ def _structured_output_messages(
     contract = "\n\n".join(instructions)
     if copied and copied[0]["role"] == "system":
         existing = copied[0]["content"].rstrip()
-        if existing == contract or existing.endswith("\n\n" + contract):
+        instruction_status = structured_output_instruction_status(existing)
+        has_cortex_marker = (
+            _CORTEX_STRUCTURED_OUTPUT_MARKER_PATTERN.search(existing) is not None
+        )
+        if agent == "cortex" and (
+            existing == contract or existing.endswith("\n\n" + contract)
+        ):
             return canonical_non_thinking_messages(copied)
         if (
-            STRUCTURED_OUTPUT_INSTRUCTION in existing
-            or CORTEX_TOOL_CATALOG_HEADER in existing
+            agent != "cortex"
+            and instruction_status == "exact_once"
+            and not has_cortex_marker
         ):
+            return canonical_non_thinking_messages(copied)
+        if instruction_status != "absent" or has_cortex_marker:
             raise ValueError(
                 f"{agent} evaluation prompt contains a drifted structured-output contract"
             )
@@ -1842,6 +1869,11 @@ def _evaluation_output_mode_contract(
     agent: str,
     tool_contracts: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    prompt_preflight = evaluation_prompt_preflight(
+        records,
+        agent=agent,
+        tool_contracts=tool_contracts,
+    )
     entries: list[dict[str, Any]] = []
     seen_eval_ids: set[str] = set()
     for record in records:
@@ -1874,11 +1906,64 @@ def _evaluation_output_mode_contract(
         "schemaVersion": OUTPUT_MODE_CONTRACT_VERSION,
         "structuredOutputContractVersion": STRUCTURED_OUTPUT_CONTRACT_VERSION,
         "strictJSONRetryContractVersion": STRICT_JSON_RETRY_CONTRACT_VERSION,
+        "evaluationPromptPreflight": prompt_preflight,
         "records": entries,
     }
     return {
         **contract,
         "outputModeContractSHA256": _canonical_sha256(contract),
+    }
+
+
+def evaluation_prompt_preflight(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    agent: str,
+    tool_contracts: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not records:
+        raise ValueError("Evaluation prompt preflight requires evaluation records")
+    entries: list[dict[str, Any]] = []
+    seen_eval_ids: set[str] = set()
+    for case_index, record in enumerate(records, start=1):
+        eval_id = record.get("evalID")
+        if not isinstance(eval_id, str) or not eval_id or eval_id in seen_eval_ids:
+            raise ValueError(
+                "Evaluation prompt preflight requires unique stable evalID values"
+            )
+        seen_eval_ids.add(eval_id)
+        output_mode = _record_output_mode(record, agent=agent)
+        messages = record.get("messages")
+        if not isinstance(messages, Sequence) or isinstance(messages, (str, bytes)):
+            raise ValueError(f"Evaluation prompt {eval_id} lacks messages")
+        try:
+            bound_messages = _structured_output_messages(
+                agent,
+                messages,
+                output_mode=output_mode,
+                tool_contracts=tool_contracts,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Evaluation prompt preflight failed for "
+                f"{agent}/{eval_id} at case {case_index}: {exc}"
+            ) from exc
+        entries.append(
+            {
+                "evalID": eval_id,
+                "outputMode": output_mode,
+                "promptSHA256": _canonical_sha256(bound_messages),
+            }
+        )
+    unsigned = {
+        "schemaVersion": EVALUATION_PROMPT_PREFLIGHT_SCHEMA_VERSION,
+        "agent": agent,
+        "caseCount": len(entries),
+        "promptSetSHA256": _canonical_sha256(entries),
+    }
+    return {
+        **unsigned,
+        "evaluationPromptPreflightSHA256": _canonical_sha256(unsigned),
     }
 
 

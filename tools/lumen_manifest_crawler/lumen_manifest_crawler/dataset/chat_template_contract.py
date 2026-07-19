@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 
 CHAT_TEMPLATE_CONTRACT_SCHEMA_VERSION = "lumen.qwen3-chat-template-contract/1.1.0"
@@ -13,6 +13,33 @@ PINNED_QWEN3_CHAT_TEMPLATE_SHA256 = (
 )
 NON_THINKING_GENERATION_PREFIX = "<think>\n\n</think>\n\n"
 NON_THINKING_USER_DIRECTIVE = "/no_think"
+STRUCTURED_OUTPUT_INSTRUCTION = (
+    "Response format contract: output exactly one valid JSON object. Do not include "
+    "prose, markdown, code fences, or hidden reasoning."
+)
+_STRUCTURED_OUTPUT_CONTRACT_MARKER_PATTERN = re.compile(
+    r"(?i)\bresponse[\s_-]*format[\s_-]*contract\b"
+)
+StructuredOutputInstructionStatus = Literal["absent", "exact_once", "drifted"]
+
+
+def structured_output_instruction_status(
+    content: str,
+) -> StructuredOutputInstructionStatus:
+    """Classify the shared JSON-only instruction without constraining its placement."""
+
+    if not isinstance(content, str):
+        raise ValueError("Structured-output system content must be a string")
+    exact_count = content.count(STRUCTURED_OUTPUT_INSTRUCTION)
+    remaining = content.replace(STRUCTURED_OUTPUT_INSTRUCTION, "")
+    has_noncanonical_marker = (
+        _STRUCTURED_OUTPUT_CONTRACT_MARKER_PATTERN.search(remaining) is not None
+    )
+    if exact_count == 0 and not has_noncanonical_marker:
+        return "absent"
+    if exact_count == 1 and not has_noncanonical_marker:
+        return "exact_once"
+    return "drifted"
 
 
 def _canonical_sha256(value: Any) -> str:

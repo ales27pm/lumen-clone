@@ -2752,7 +2752,58 @@ def test_current_optimized_artifacts_pass_static_preflight(tmp_path: Path) -> No
     assert [entry["agent"] for entry in result["agents"]] == list(
         ubuntu_pipeline.AGENTS
     )
+    assert all(
+        entry["evaluationPromptPreflight"]["caseCount"] > 0
+        and len(
+            entry["evaluationPromptPreflight"][
+                "evaluationPromptPreflightSHA256"
+            ]
+        )
+        == 64
+        for entry in result["agents"]
+    )
     assert not (tmp_path / "run-one").exists()
+
+
+def test_static_preflight_rejects_evaluator_prompt_contract_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_loader = evaluate_adapter.load_evaluation_records
+
+    def load_drifted_prompts(*args: object, **kwargs: object) -> tuple[list, str]:
+        records, evaluation_sha256 = original_loader(*args, **kwargs)
+        drifted = json.loads(json.dumps(records))
+        system_message = drifted[0]["messages"][0]
+        system_message["content"] = system_message["content"].replace(
+            "Response format contract:",
+            "Response-format contract:",
+            1,
+        )
+        return drifted, evaluation_sha256
+
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "load_evaluation_records",
+        load_drifted_prompts,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"fleet/.*drifted structured-output contract",
+    ):
+        ubuntu_pipeline.static_preflight(
+            root=REPO_ROOT,
+            dataset_source=REPO_ROOT / "generated" / "fine_tuning",
+            agents=("fleet",),
+            variant=OPTIMIZED_VARIANT,
+            seed=42,
+            base_model_override="",
+            container_digest=FAKE_IMAGE_DIGEST,
+            run_root=tmp_path / "run-prompt-drift",
+            allowed_parent=tmp_path,
+        )
+    assert not (tmp_path / "run-prompt-drift").exists()
 
 
 def test_static_preflight_rejects_smoke_size_covering_a_frozen_suite(
@@ -3293,7 +3344,7 @@ def test_run_manifest_reverifies_shared_private_snapshots_once_per_command(
     assert calls == {"tokenizer": 1, "runtime": 1}
 
     calls.update(tokenizer=0, runtime=0)
-    ubuntu_pipeline.validate_prepared_runtime(
+    prepared_runtime = ubuntu_pipeline.validate_prepared_runtime(
         root=REPO_ROOT,
         run_root=run_root,
         agents=("cortex", "executor"),
@@ -3306,6 +3357,54 @@ def test_run_manifest_reverifies_shared_private_snapshots_once_per_command(
     )
 
     assert calls == {"tokenizer": 1, "runtime": 1}
+    assert set(prepared_runtime["evaluationPromptPreflights"]) == {
+        "cortex",
+        "executor",
+    }
+    assert all(
+        evidence["caseCount"] > 0
+        for evidence in prepared_runtime["evaluationPromptPreflights"].values()
+    )
+
+    original_evaluation_loader = evaluate_adapter.load_evaluation_records
+
+    def load_drifted_prepared_prompts(
+        *args: object,
+        **kwargs: object,
+    ) -> tuple[list, str]:
+        records, evaluation_sha256 = original_evaluation_loader(*args, **kwargs)
+        if kwargs.get("agent") != "executor":
+            return records, evaluation_sha256
+        drifted = json.loads(json.dumps(records))
+        system_message = drifted[0]["messages"][0]
+        system_message["content"] = system_message["content"].replace(
+            "Response format contract:",
+            "Response-format contract:",
+            1,
+        )
+        return drifted, evaluation_sha256
+
+    with monkeypatch.context() as prompt_drift:
+        prompt_drift.setattr(
+            evaluate_adapter,
+            "load_evaluation_records",
+            load_drifted_prepared_prompts,
+        )
+        with pytest.raises(
+            ValueError,
+            match=r"executor/.*drifted structured-output contract",
+        ):
+            ubuntu_pipeline.validate_prepared_runtime(
+                root=REPO_ROOT,
+                run_root=run_root,
+                agents=("cortex", "executor"),
+                variant=OPTIMIZED_VARIANT,
+                container_digest=FAKE_IMAGE_DIGEST,
+                evaluation_scope="smoke",
+                evaluation_max_examples=7,
+                gguf_requested=False,
+                observe_runtime=False,
+            )
 
     executor_config_path = run_root / "configs" / "executor.json"
     executor_config = ubuntu_pipeline.read_object(executor_config_path)
