@@ -1222,12 +1222,46 @@ def test_native_orchestration_training_routes_only_to_fleet_adapter(
             assert not val_orchestration_dpo
 
 
-def test_fleet_writer_persists_orchestration_evals(tmp_path: Path):
+def test_fleet_writer_persists_and_mirrors_cross_model_artifacts(tmp_path: Path):
     manifest = generate_manifest(Path(".").resolve())
     artifacts = generate_fleet_artifacts(manifest)
 
-    _write_fleet_artifacts(tmp_path, artifacts, None)
+    default_output = tmp_path / "default" / "agent_manifest"
+    default_output.mkdir(parents=True)
+    _write_fleet_artifacts(default_output, artifacts, None)
 
-    eval_path = tmp_path / "cross_model_training" / "orchestration_evals.jsonl"
+    eval_path = default_output / "cross_model_training" / "orchestration_evals.jsonl"
     written = [json.loads(line) for line in eval_path.read_text(encoding="utf-8").splitlines()]
     assert written == artifacts.orchestration_evals
+
+    mirrored_output = tmp_path / "mirrored" / "agent_manifest"
+    external_output = tmp_path / "mirrored" / "cross_model_training"
+    mirrored_output.mkdir(parents=True)
+    _write_fleet_artifacts(mirrored_output, artifacts, external_output)
+
+    nested_output = mirrored_output / "cross_model_training"
+    expected_files = {
+        "cross_model_training.jsonl",
+        "cross_model_training_index.csv",
+        "dpo_train_cross.jsonl",
+        "dpo_val_cross.jsonl",
+        "orchestration_evals.jsonl",
+        "train_sft_cross.jsonl",
+        "val_sft_cross.jsonl",
+    }
+    assert {path.name for path in nested_output.iterdir()} == expected_files
+    assert {path.name for path in external_output.iterdir()} == expected_files
+    for filename in expected_files:
+        assert (nested_output / filename).read_bytes() == (
+            external_output / filename
+        ).read_bytes()
+
+    same_path_output = tmp_path / "same-path" / "agent_manifest"
+    same_path_output.mkdir(parents=True)
+    same_path_cross_model = same_path_output / "cross_model_training"
+    _write_fleet_artifacts(
+        same_path_output,
+        artifacts,
+        same_path_cross_model,
+    )
+    assert {path.name for path in same_path_cross_model.iterdir()} == expected_files
