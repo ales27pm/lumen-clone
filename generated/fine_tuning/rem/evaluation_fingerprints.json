@@ -1,5 +1,5 @@
 {
-  "bundleSHA256": "88f5ae851124484db749ade4ad4677f0f587e603b15607df1e854fde15fa8202",
+  "bundleSHA256": "9a166c196a2ff51d8a62a8467ec38cb99a18b23b34f6107cff684f90e6f8626a",
   "hashOnly": true,
   "purpose": "evaluation_only_contamination_fingerprints",
   "records": [
@@ -130,7 +130,7 @@
       ]
     }
   ],
-  "schemaVersion": "lumen.adapter-contamination/1.3.0",
+  "schemaVersion": "lumen.adapter-contamination/1.4.0",
   "scoringTargetFingerprintPolicy": "natural_language_expected_and_metric_values",
   "scoringTargetMinimumTokens": 4,
   "shingleSize": 13,
