@@ -43,6 +43,8 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     CORTEX_TOOL_CATALOG_HEADER,
     CRITICAL_CONTRACT_VALIDATION_RECORDS_PER_CASE,
     EXECUTOR_RUNTIME_SYSTEM_PROMPT,
+    FLEET_BALANCED_CONTRACT_TASK_TYPES,
+    FLEET_DELEGATION_OUTPUT_CONTRACT,
     FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR,
     FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION,
     FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES,
@@ -52,6 +54,8 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY,
     FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL,
     FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC,
+    FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT,
+    FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT,
     NON_CORTEX_MINIMUM_EFFECTIVE_DPO_STEPS,
     NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS,
     NON_CORTEX_MAX_TRAINING_EPOCHS,
@@ -75,6 +79,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _CORTEX_NATURAL_IMPLICIT_COMPLETE_PROMPTS,
     _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE,
     _balanced_fleet_contract_dpo_pairs,
+    _balanced_fleet_contract_sft_anchors,
     _agent_unsloth_config,
     _bind_fleet_dpo_contract,
     _bind_fleet_sft_contract,
@@ -8359,6 +8364,16 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
     } == expected_counts
     assert sum(expected_counts.values()) == 603
     fleet = fine_tuning["fleet"]
+    optimized_fleet = fleet.experiment_variants[
+        "internal_plus_public_optimized"
+    ]
+    fleet_sft_policy = fleet.unsloth_config["optimizationStepPolicy"]["sft"]
+    assert len(optimized_fleet["train_sft"]) == (
+        fleet_sft_policy["trainRecordCount"]
+    )
+    assert fleet_sft_policy["baseEpochs"] == 3
+    assert fleet_sft_policy["selectedEpochs"] >= 3
+    assert fleet_sft_policy["projectedEffectiveSteps"] >= 100
     assert fleet.dataset_card["constraints"][
         "fleetOrchestrationEvaluationRequired"
     ] is True
@@ -8607,6 +8622,182 @@ def test_fleet_dpo_resolves_custom_slot_ids_instead_of_hardcoded_roles(
         if "delegateTo" in chosen:
             assert chosen["delegateTo"] in slot_ids
             assert chosen["delegateTo"] != "fleet"
+
+
+def test_balanced_fleet_preference_targets_become_split_preserving_sft_anchors(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    pairs = _balanced_fleet_contract_dpo_pairs(manifest)
+    anchors = _balanced_fleet_contract_sft_anchors(manifest)
+    suffix_by_task = {
+        "fleet_contract_delegation": FLEET_DELEGATION_OUTPUT_CONTRACT,
+        "fleet_contract_known_slots": FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT,
+        "fleet_contract_tool_boundary": FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT,
+    }
+    quoted_keys_by_task = {
+        "fleet_contract_delegation": ["delegateTo", "knownSlots", "reason"],
+        "fleet_contract_known_slots": ["knownSlots"],
+        "fleet_contract_tool_boundary": [
+            "approvalState",
+            "delegateTo",
+            "knownSlots",
+            "permissionState",
+            "toolID",
+        ],
+    }
+
+    pair_by_prompt = {
+        (
+            record["metadata"]["taskType"],
+            _canonical_rendered_prompt_key(record, lane="dpo"),
+        ): record
+        for record in pairs
+    }
+    anchor_by_prompt = {
+        (
+            record["metadata"]["taskType"],
+            _canonical_rendered_prompt_key(record, lane="sft"),
+        ): record
+        for record in anchors
+    }
+    assert len(pair_by_prompt) == len(pairs)
+    assert len(anchor_by_prompt) == len(anchors)
+    assert pair_by_prompt.keys() == anchor_by_prompt.keys()
+    assert {
+        task_type for task_type, _ in anchor_by_prompt
+    } == FLEET_BALANCED_CONTRACT_TASK_TYPES
+    assert Counter(
+        (
+            record["metadata"]["taskType"],
+            record["metadata"]["requiredSplit"],
+        )
+        for record in anchors
+    ) == Counter(
+        (
+            record["metadata"]["taskType"],
+            record["metadata"]["requiredSplit"],
+        )
+        for record in pairs
+    )
+
+    for key, anchor in anchor_by_prompt.items():
+        task_type, _ = key
+        pair = pair_by_prompt[key]
+        assert anchor["messages"][:-1] == pair["prompt"]
+        assert anchor["messages"][-1] == pair["chosen"]
+        assert anchor["metadata"]["requiredSplit"] == (
+            pair["metadata"]["requiredSplit"]
+        )
+        assert anchor["metadata"]["sourceFamily"] == (
+            ULTRA_SPECIFIC_SOURCE_FAMILY
+        )
+        assert anchor["metadata"]["sftAnchorFromPreference"] is True
+        user = anchor["messages"][-2]["content"]
+        suffix = suffix_by_task[task_type]
+        assert user.endswith(f"\n\n{suffix}")
+        assert re.findall(r"`([^`]+)`", suffix) == (
+            quoted_keys_by_task[task_type]
+        )
+
+
+def test_compiled_fleet_anchors_survive_with_dpo_parity_and_clean_evaluation(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    fleet = fine_tuning["fleet"]
+    source_anchors = _balanced_fleet_contract_sft_anchors(manifest)
+    compiled_sft = [*fleet.train_sft, *fleet.val_sft]
+    compiled_dpo = [*fleet.train_dpo, *fleet.val_dpo]
+    compiled_contract_dpo = [
+        record
+        for record in compiled_dpo
+        if record["metadata"].get("taskType")
+        in FLEET_BALANCED_CONTRACT_TASK_TYPES
+    ]
+
+    source_by_prompt = {
+        _canonical_rendered_prompt_key(record, lane="sft"): record
+        for record in source_anchors
+    }
+    dpo_by_prompt = {
+        _canonical_rendered_prompt_key(record, lane="dpo"): record
+        for record in compiled_contract_dpo
+    }
+    compiled_by_prompt = {
+        _canonical_rendered_prompt_key(record, lane="sft"): record
+        for record in compiled_sft
+        if _canonical_rendered_prompt_key(record, lane="sft")
+        in source_by_prompt
+    }
+    assert len(source_by_prompt) == len(source_anchors)
+    assert source_by_prompt.keys() == compiled_by_prompt.keys()
+    assert source_by_prompt.keys() == dpo_by_prompt.keys()
+    assert {
+        record["metadata"]["taskType"]
+        for record in compiled_contract_dpo
+    } == FLEET_BALANCED_CONTRACT_TASK_TYPES
+
+    expected_split_by_prompt = {
+        key: record["metadata"]["requiredSplit"]
+        for key, record in source_by_prompt.items()
+    }
+    train_prompt_keys = {
+        _canonical_rendered_prompt_key(record, lane="sft")
+        for record in fleet.train_sft
+        if _canonical_rendered_prompt_key(record, lane="sft")
+        in source_by_prompt
+    }
+    val_prompt_keys = {
+        _canonical_rendered_prompt_key(record, lane="sft")
+        for record in fleet.val_sft
+        if _canonical_rendered_prompt_key(record, lane="sft")
+        in source_by_prompt
+    }
+    assert train_prompt_keys == {
+        key for key, split in expected_split_by_prompt.items()
+        if split == "train"
+    }
+    assert val_prompt_keys == {
+        key for key, split in expected_split_by_prompt.items()
+        if split == "validation"
+    }
+
+    for key, source_anchor in source_by_prompt.items():
+        compiled_assistant = next(
+            message["content"]
+            for message in reversed(compiled_by_prompt[key]["messages"])
+            if message["role"] == "assistant"
+        )
+        assert json.loads(compiled_assistant) == json.loads(
+            source_anchor["messages"][-1]["content"]
+        )
+        assert compiled_assistant == dpo_by_prompt[key]["chosen"]["content"]
+
+    expected_eval_suffixes = {
+        "ultra_specific_adapter_selection": FLEET_DELEGATION_OUTPUT_CONTRACT,
+        "ultra_specific_no_shadow_slot": FLEET_DELEGATION_OUTPUT_CONTRACT,
+        "slot_id_directory": FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT,
+        "delegation_protocol": FLEET_DELEGATION_OUTPUT_CONTRACT,
+        "no_invented_slots": FLEET_DELEGATION_OUTPUT_CONTRACT,
+        "tool_boundary_awareness": FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT,
+    }
+    eval_by_type = {
+        record["metadata"]["evalType"]: record
+        for record in fleet.eval
+        if record["metadata"].get("evalType") in expected_eval_suffixes
+    }
+    assert eval_by_type.keys() == expected_eval_suffixes.keys()
+    for eval_type, suffix in expected_eval_suffixes.items():
+        user = next(
+            message["content"]
+            for message in reversed(eval_by_type[eval_type]["messages"])
+            if message["role"] == "user"
+        )
+        assert user.endswith(f"\n\n{suffix}")
+
+    assert fleet.contamination_report["contaminated"] is False
+    assert fleet.contamination_report["matchCount"] == 0
 
 
 def test_fleet_slot_contract_falls_back_to_a_canonical_id_for_unknown_role(
@@ -8860,6 +9051,10 @@ def test_fleet_uses_memory_safe_microbatches_without_changing_optimizer_exposure
     assert policy["gradientAccumulationSteps"] == (
         fleet["gradient_accumulation_steps"]
     )
+    assert NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS["fleet"] == 24
+    assert policy["sft"]["baseEpochs"] == 3
+    assert policy["sft"]["selectedEpochs"] >= 3
+    assert fleet["num_train_epochs"] == policy["sft"]["selectedEpochs"]
     for lane in ("sft", "dpo"):
         lane_policy = policy[lane]
         expected_steps_per_epoch = (

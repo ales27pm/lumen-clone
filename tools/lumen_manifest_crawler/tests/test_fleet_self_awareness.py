@@ -572,6 +572,27 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
             assert '"events"' not in prompt
             assert '"dependencies"' not in prompt
             assert '"decision"' not in prompt
+            assert prompt.count(
+                fleet_artifact_module.ORCHESTRATION_OUTPUT_INTERFACE
+            ) == 1
+            for required_key in (
+                "`decision`",
+                "`dependencies`",
+                "`events`",
+                "`graphSchemaVersion`",
+                "`knownSlotIDs`",
+                "`scenarioID`",
+                "`aggregationOwnerSlotID`",
+                "`delegatedSlotIDs`",
+                "`stopReason`",
+                "`strategy`",
+                "`fromEventID`",
+                "`kind`",
+                "`toEventID`",
+            ):
+                assert required_key in prompt
+            assert "never emit the literal `<scenarioID>` placeholder" in prompt
+            assert "no more than 12 events or 16 dependencies" in prompt
             assert not any(
                 f'"{event["type"]}"' in prompt
                 for event in scenario["graph"]["events"]
@@ -683,6 +704,9 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
             prompt,
             scenario["graph"],
         )
+        assert prompt.count(
+            fleet_artifact_module.ORCHESTRATION_OUTPUT_INTERFACE
+        ) == 1
         derivation = record["expected"]["canonicalDerivation"]
         assert record["expected"]["requiresCanonicalDerivation"] is True
         assert fleet_artifact_module._derive_orchestration_graph_from_contract(
