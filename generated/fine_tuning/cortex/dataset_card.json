@@ -1,11 +1,15 @@
 {
   "agent": "cortex",
-  "availableSFTRecords": 1200,
-  "candidateSFTRecords": 13994,
+  "availableSFTRecords": 1199,
+  "candidateSFTRecords": 14631,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": null,
+    "fleetLossShareEnforcementScope": null,
+    "fleetOrchestrationEvaluationRequired": null,
     "fleetSourceRoleRegistry": null,
+    "fleetValidationLossSharePolicy": null,
+    "fleetValidationSamplingPolicy": null,
     "manifestOnlyTools": true,
     "maxCortexPublicSFTRecordsPerTool": 8,
     "maxCortexSupplementalAssistantCharShare": 0.15,
@@ -15,7 +19,76 @@
     "maxFleetSupplementalDPOChosenCharShare": null,
     "maxFleetSupplementalDPOChosenTokenProxySelectionShare": null,
     "maxFleetSupplementalDPOChosenTokenShare": null,
-    "maxPublicCorpusSFTTokenProxyShare": 0.35,
+    "maxPublicCorpusSFTTokenProxyShare": 0.3,
+    "publicCorpusLossShareContract": {
+      "authoritativeCapEncoding": "integer_basis_points",
+      "basisPointDenominator": 10000,
+      "capBasisPoints": {
+        "hard": 3500,
+        "requested": 3500
+      },
+      "dpoTokenizationPolicy": {
+        "appendedEOSTokensPerCompletion": 1,
+        "completionSuffix": "append_tokenizer_eos_token_id",
+        "completionTokenization": "add_special_tokens_false",
+        "trainerImplementation": "trl.DPOTrainer.tokenize_row",
+        "trlVersion": "0.24.0"
+      },
+      "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+      "enforcementRequired": true,
+      "exactTokenEvidenceContract": {
+        "comparisonRule": "numeratorTokenCount*basisPointDenominator<=denominatorTokenCount*capBasisPoints",
+        "lanes": {
+          "dpo": {
+            "denominatorTokenCount": "chosenTargetTokenCount",
+            "publicNumeratorTokenCount": "publicChosenTargetTokenCount"
+          },
+          "sft": {
+            "denominatorTokenCount": "assistantTargetTokenCount",
+            "publicNumeratorTokenCount": "publicAssistantTargetTokenCount"
+          }
+        },
+        "required": true,
+        "schemaVersion": "lumen.public-corpus-loss-share-evidence/1.0.0",
+        "statusAtGeneration": "pending_exact_tokenizer_preflight",
+        "tokenizer": "pinned_qwen_tokenizer"
+      },
+      "failurePolicy": "abort_before_optimizer",
+      "requiredLanes": [
+        "sft",
+        "dpo"
+      ],
+      "rowMetadataContract": {
+        "classificationRule": "prefix_and_nonempty_lineage_required",
+        "mismatch": "hard_fail",
+        "publicCorpusField": "publicCorpus",
+        "publicSourceFamilyPrefix": "public_adapter_corpus_"
+      },
+      "schemaVersion": "lumen.public-corpus-loss-share/1.0.0",
+      "sourceSelectionProxy": {
+        "contract": {
+          "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+          "exactPinnedTokenizerAuthoritative": true,
+          "maxCharsPerToken": 4,
+          "schemaVersion": "lumen.source-token-proxy/1.0.0",
+          "status": "source_side_selection_proxy_not_exact_token_count",
+          "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+        },
+        "maximumPublicShareBasisPoints": 3000,
+        "status": "safety_budget_not_exact_token_count"
+      },
+      "tokenAccounting": {
+        "dpo": "rendered_chosen_completion_tokens_add_special_tokens_false_plus_one_trl_0_24_0_appended_eos",
+        "sft": "assistant_mask_non_ignored_token_count"
+      },
+      "tokenizer": {
+        "baseModelID": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+        "tokenizerClosureSHA256": "ef6d799ce1ba7094fc40f8d5bf011d6ff3c549598ed1b06dbe46207ae9c1d13b",
+        "tokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+      }
+    },
+    "requestedMaxPublicCorpusAssistantTargetTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
@@ -25,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "775da719f39036d0c514b504c2e639d7a5c6f264ed645fd3984982913a080d6d"
+      "reportSHA256": "0b29947b51aa953f7fef91c835583c89bffd229d93b4d51f650421ae0d19cbef"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -35,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "4d755b66a646352259579d80d223134fe50d3111c688021c4464ff36fcde6196",
-      "optimizedTrainingCorpusSHA256": "246112a1c425c7052d93ea288689ef3034580450b716aa21de5ff020f5fb509d",
+      "baselineTrainingCorpusSHA256": "1bd62d2cd0aac3da109a8aed30e6fb3dedd212d6db3143731949a3914aa24a67",
+      "optimizedTrainingCorpusSHA256": "3788a78cc34313d1e658b8860e65aca8bc0f242e3bbdd1d7b7165a90ea7c83a8",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 31,
@@ -52,6 +125,8 @@
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
+      "baseModelTokenizerFiles",
+      "baseModelTokenizerClosureSHA256",
       "trainingEnvironmentLockSHA256",
       "trainingCodeSHA256",
       "trainingCodeSHA256ByPhase",
@@ -63,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "cfc1e3de08436a48909a9d4f44a7d328094754955714b90283394f479c4696ca",
+    "experimentManifestSHA256": "fa96127925e52d720023566462f697c77530f28a6ac0c9f9673982b407d91832",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -85,7 +160,7 @@
       "runtimePointerPolicy": "unchanged_until_promoted",
       "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
       "runtimeSourceRevisionIsAuditOnly": true,
-      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+      "schemaVersion": "lumen.adapter-promotion/1.1.0"
     },
     "requiredVariants": [
       "internal_only",
@@ -93,7 +168,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "394257510890f67af00c0840f5dd97dddb1ac53d",
+  "manifestCommit": "d17fc15c3eddee50eab8a636a556b8dfb01165bc",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 822,
@@ -133,8 +208,8 @@
       "Apache-2.0",
       "CC-BY-4.0"
     ],
-    "maxDPOTokenProxyShare": 0.35,
-    "maxSFTTokenProxyShare": 0.35,
+    "maxDPOTokenProxyShare": 0.3,
+    "maxSFTTokenProxyShare": 0.3,
     "recordCounts": {
       "train_dpo": 0,
       "train_sft": 27,
@@ -147,12 +222,27 @@
       "val_dpo": 0,
       "val_sft": 0
     },
+    "rejectedByValidationSampling": {
+      "train_dpo": 0,
+      "train_sft": 0,
+      "val_dpo": 0,
+      "val_sft": 0
+    },
+    "requestedMaxDPOChosenTargetTokenShare": 0.35,
+    "requestedMaxSFTAssistantTargetTokenShare": 0.35,
     "selectionContract": {
-      "maxTokenProxyShare": 0.35,
+      "laneTargetTokenProxyModes": {
+        "train_dpo": "dpo_chosen",
+        "train_sft": "all_assistant",
+        "val_dpo": "dpo_chosen",
+        "val_sft": "all_assistant"
+      },
+      "maxTokenProxyShare": 0.3,
       "policyVersions": [
         "2026-07-12.3"
       ],
-      "sha256": "601495d0961ed2518f7832b192f78c7fee35210f969609b709b899c6d37edd46",
+      "requestedExactPublicAssistantTargetShare": 0.35,
+      "sha256": "39666d0f65e6a5335afd9886a1fdc0270532dff39ab51bf8c1417d97557b61ca",
       "sourceTokenProxyContract": {
         "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
         "exactPinnedTokenizerAuthoritative": true,
@@ -278,8 +368,8 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.016558,
-        "total": 0.02558
+        "target": 0.016555,
+        "total": 0.025581
       },
       "val_dpo": {
         "target": 0.0,
@@ -292,13 +382,13 @@
     }
   },
   "quality": {
-    "assistantTargetCharCount": 396741,
-    "assistantTargetTokenProxyCount": 99614,
+    "assistantTargetCharCount": 396811,
+    "assistantTargetTokenProxyCount": 99631,
     "cortexCodebaseChunkRecordCount": 16,
-    "cortexCodebaseFileRecordCount": 49,
-    "cortexCodebaseSelfAwarenessCandidateRecordCount": 7179,
+    "cortexCodebaseFileRecordCount": 48,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 7505,
     "cortexCodebaseSelfAwarenessCoverage": "deterministic_supplemental_sample_of_git_tracked_text_files",
-    "cortexCodebaseSelfAwarenessRecordCount": 67,
+    "cortexCodebaseSelfAwarenessRecordCount": 66,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
     "cortexPublicBalanceDroppedRecordCount": 47,
     "fleetDPOChosenTargetCharCount": 0,
@@ -318,12 +408,12 @@
       "status": "source_side_selection_proxy_not_exact_token_count",
       "strategy": "max_whitespace_terms_utf8_byte_ceiling"
     },
-    "supplementalAssistantTargetCharCount": 59411,
-    "supplementalAssistantTargetCharShare": 0.14974756831282876,
-    "supplementalAssistantTargetTokenProxyCount": 14891,
-    "supplementalAssistantTargetTokenProxyShare": 0.14948701989680166,
-    "supplementalBalanceDroppedRecordCount": 12541,
-    "supplementalSFTRecordCount": 106,
+    "supplementalAssistantTargetCharCount": 59481,
+    "supplementalAssistantTargetCharShare": 0.14989755828341453,
+    "supplementalAssistantTargetTokenProxyCount": 14908,
+    "supplementalAssistantTargetTokenProxyShare": 0.14963214260621693,
+    "supplementalBalanceDroppedRecordCount": 13178,
+    "supplementalSFTRecordCount": 105,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 901,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
@@ -331,7 +421,7 @@
   "recordCounts": {
     "eval": 507,
     "train_dpo": 764,
-    "train_sft": 1127,
+    "train_sft": 1126,
     "val_dpo": 58,
     "val_sft": 73
   },
@@ -350,22 +440,22 @@
     "adapter_ultra_specific": 901,
     "codebase_home_chunk_sft": 17,
     "codebase_home_sft": 18,
-    "cortex_codebase_self_awareness": 67,
+    "cortex_codebase_self_awareness": 66,
     "cortex_routing": 162,
     "manifest_grounding_cards": 4,
     "public_adapter_corpus_massive_en_us_1_1": 24,
     "public_adapter_corpus_toolace_train": 7
   },
   "sourceIntegrity": {
-    "baseCommit": "394257510890f67af00c0840f5dd97dddb1ac53d",
+    "baseCommit": "d17fc15c3eddee50eab8a636a556b8dfb01165bc",
     "dirtyState": false,
-    "workingTreeDigest": "aca88fed6ad0f542b5f4e881be371af802a5afb76f5cffaa93f65048bc17c399"
+    "workingTreeDigest": "790d052374174a0863a7c0aa7bb8c2fa4528f347aa2f54876a5a034414a0b880"
   },
   "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
   "taskTypeCounts": {
     "codebase_home_grounding": 17,
     "codebase_home_overview": 1,
-    "codebase_self_awareness": 16,
+    "codebase_self_awareness": 17,
     "codebase_source_chunk_grounding": 17,
     "cortex_calendar_required_argument_lattice": 40,
     "cortex_contrast_route_selection": 20,
@@ -381,10 +471,10 @@
     "cortex_route_strict_retry_repair": 42,
     "cortex_selection_only_replay": 6,
     "manifest_grounding_cards": 4,
-    "module_ownership_grounding": 17,
+    "module_ownership_grounding": 16,
     "public_intent_routing": 24,
     "public_verified_tool_routing": 7,
-    "source_symbol_grounding": 17,
+    "source_symbol_grounding": 16,
     "total_codebase_self_awareness": 1,
     "total_codebase_source_chunk": 16,
     "ultra_specific_files_read_clarification": 1,
@@ -422,5 +512,5 @@
     "ultra_specific_missing_required_argument_clarification",
     "ultra_specific_regression_routing"
   ],
-  "worktreeFingerprint": "aca88fed6ad0f542b5f4e881be371af802a5afb76f5cffaa93f65048bc17c399"
+  "worktreeFingerprint": "790d052374174a0863a7c0aa7bb8c2fa4528f347aa2f54876a5a034414a0b880"
 }
