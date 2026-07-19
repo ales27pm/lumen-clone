@@ -295,6 +295,13 @@ def test_prepare_only_postcondition_holds_closure_across_all_checks(
             },
         }
 
+    def verify_runtime_binding_smoke(
+        _run_root: Path,
+        _agents: tuple[str, ...],
+    ) -> dict[str, str]:
+        events.append("verify-runtime-binding-smoke")
+        return {"runtimeBindingSmokeGateSHA256": "d" * 64}
+
     monkeypatch.setattr(
         ubuntu_pipeline,
         "parse_args",
@@ -322,6 +329,11 @@ def test_prepare_only_postcondition_holds_closure_across_all_checks(
         "_verified_prepared_global_tokenizer_preflight",
         retokenize,
     )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        verify_runtime_binding_smoke,
+    )
 
     ubuntu_pipeline.main()
 
@@ -329,6 +341,7 @@ def test_prepare_only_postcondition_holds_closure_across_all_checks(
         "acquire-closure",
         "validate-runtime",
         "retokenize",
+        "verify-runtime-binding-smoke",
         "verify-closure",
         "close-closure",
     ]
@@ -336,6 +349,7 @@ def test_prepare_only_postcondition_holds_closure_across_all_checks(
     assert output["status"] == "prepared_postcondition_verified"
     assert output["prepareInputMountStatus"] == "exact_readonly_mount_verified"
     assert output["prepareInputClosureEntryCount"] == 1
+    assert output["runtimeBindingSmokeGateSHA256"] == "d" * 64
 
 
 def test_prepare_only_postcondition_closes_closure_when_validation_fails(

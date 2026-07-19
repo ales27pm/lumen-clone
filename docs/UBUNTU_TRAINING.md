@@ -166,10 +166,11 @@ only `tokenizer.json`; the trainers must use that verified snapshot and bind any
 derived tokenizer files saved with an adapter. The independent `--prepare-only`
 postcondition reads the run from an exact read-only mount, rejects nested
 mounts or path substitution, and checks resource headroom before repeating the
-token-ID evidence. On an execution that continues past the prepare-only
-early-exit boundary, a second gate uses `train_sft --runtime-binding-smoke` to
-load the private model and tokenizer through the real pinned Unsloth path
-before converter setup, PEFT, or trainer construction. Prepared configs are
+token-ID evidence and re-verifying the runtime-binding smoke report. Before
+either a prepare-only success or a training phase, a second gate uses
+`train_sft --runtime-binding-smoke` to load the private model and tokenizer
+through the real pinned Unsloth path before converter setup, PEFT, or trainer
+construction. Prepared configs are
 grouped only when their complete runtime-load contracts match; the current six
 roles therefore require one load, while any future sequence-length or loader
 difference requires its own load. The gate atomically persists and re-verifies
@@ -263,7 +264,7 @@ Additional launcher controls:
 | `--image-tag <tag>` | Override the local Docker image tag used for build/run. |
 | `--no-build` | Reuse an existing image. It cannot be combined with credential-scoped upload. |
 | `--no-pull` | Build without re-fetching the immutable pinned CUDA base digest. |
-| `--prepare-only` | Run controlled input, environment, and config preparation without model loading or training. The real Unsloth binding smoke runs only on executions that continue beyond this early exit. |
+| `--prepare-only` | Run controlled input, environment, config, exact-tokenizer, and real Unsloth model-load smoke validation without PEFT or trainer construction. |
 | `--overwrite` | Destructively replace the selected run directory after path-safety checks. |
 | `--resume` | Reuse an existing run, skip phases whose complete artifacts re-verify, resume incomplete phases from a verified checkpoint when available, and otherwise restart the phase. |
 | `--no-evaluate` | Skip frozen inference/scoring. Full evaluation is enabled by default. |

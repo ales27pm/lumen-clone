@@ -22,6 +22,7 @@ from lumen_manifest_crawler.dataset.chat_template_contract import (
 )
 from tools.fine_tuning.unsloth import (
     evaluate_adapter,
+    runtime_binding_smoke_gate,
     ubuntu_pipeline,
     ubuntu_source_integrity,
 )
@@ -3072,6 +3073,15 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
     assert config["resolvedTrainingEnvironment"] == lineage[
         "resolvedTrainingEnvironment"
     ]
+    assert "resolvedTrainingEnvironmentCacheAttestation" in config
+    assert config["resolvedTrainingEnvironmentCacheAttestation"] is None
+    runtime_load_contract = runtime_binding_smoke_gate._runtime_load_contract(config)
+    assert (
+        runtime_load_contract["preparedConfigInputs"][
+            "resolvedTrainingEnvironmentCacheAttestation"
+        ]
+        is None
+    )
     assert config["runExecutionPlan"] == expected_plan
     assert run_manifest["executionPlan"] == expected_plan
     assert not (run_root / ubuntu_pipeline.PREPARATION_OWNER_FILENAME).exists()
@@ -3110,6 +3120,57 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
             evaluation_max_examples=None,
             gguf_requested=True,
         )
+
+
+def test_local_runtime_lineage_clears_remote_cache_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tools.fine_tuning.unsloth import train_sft
+
+    observed_config: dict[str, Any] = {}
+    lineage = {
+        "resolvedTrainingEnvironment": {"schemaVersion": "test"},
+        "resolvedTrainingEnvironmentSHA256": "a" * 64,
+        "resolvedTrainingEnvironmentScanAudit": {"distributionCount": 1},
+        "spaceConfigurationSHA256": None,
+        "zeroGPUSize": None,
+        "zeroGPUDurationSeconds": None,
+        "observedAccelerator": {"backend": "cuda", "deviceCount": 1},
+    }
+
+    def capture_runtime_lineage(
+        config: Mapping[str, Any],
+        *,
+        phase: str,
+    ) -> dict[str, Any]:
+        assert phase == "sft"
+        observed_config.update(config)
+        return lineage
+
+    monkeypatch.setattr(
+        train_sft,
+        "_training_runtime_lineage",
+        capture_runtime_lineage,
+    )
+    monkeypatch.setattr(
+        train_sft,
+        "_training_environment",
+        lambda *_args, **_kwargs: {"trainingEnvironmentSHA256": "b" * 64},
+    )
+
+    ubuntu_pipeline._runtime_lineage(
+        root=REPO_ROOT,
+        source_config={
+            "resolvedTrainingEnvironmentCacheAttestation": {
+                "cacheHMACSHA256": "c" * 64
+            }
+        },
+        container_digest=FAKE_IMAGE_DIGEST,
+        source_integrity=_source_integrity_fixture()["ubuntuSourceIntegrity"],
+    )
+
+    assert "resolvedTrainingEnvironmentCacheAttestation" in observed_config
+    assert observed_config["resolvedTrainingEnvironmentCacheAttestation"] is None
 
 
 def test_prepared_snapshot_copy_normalizes_read_only_image_modes(
