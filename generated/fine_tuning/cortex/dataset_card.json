@@ -1,7 +1,7 @@
 {
   "agent": "cortex",
   "availableSFTRecords": 1199,
-  "candidateSFTRecords": 14631,
+  "candidateSFTRecords": 14633,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": null,
@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "1cda83442ee7751c3fa62a1a44fc5665b779e8c3c3be0958cdcee12441b123e4"
+      "reportSHA256": "50621b510b4b8faac13caccf4ce43deb654a408e25b94d1671fffc6e2513c6f4"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "49816153f916c79a2a898e8fd14d65f95c09a2353013f4d6d8d75ccfb6f376ba",
-      "optimizedTrainingCorpusSHA256": "11667cac8c7e7470c509ce9a23e4e5644f965fa2b3499f0c7223e7ded6e76535",
+      "baselineTrainingCorpusSHA256": "d4e697a39afeb7d94c688b6451d2d61d6148a1815e0558ee04b8fb2628cd0b72",
+      "optimizedTrainingCorpusSHA256": "cd5a27be41e4d80a67c202adb6e729dd0f3b6f5ca3f678f433db2071647ef202",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 31,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "78af8ea2f277edc5ebf759318e1caf39b6441ba6461565022345d75d8dd84828",
+    "experimentManifestSHA256": "79d046f869794e362ac58c569d6752a8b06ffe0f598637ffc206327714fc5bdd",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -168,7 +168,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "faca89ac8422025a0471d7f761b354f5035df707",
+  "manifestCommit": "0415c1ec86a22f3d9e0e4cad95159d2ba553cacc",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 822,
@@ -386,7 +386,7 @@
     "assistantTargetTokenProxyCount": 99631,
     "cortexCodebaseChunkRecordCount": 16,
     "cortexCodebaseFileRecordCount": 48,
-    "cortexCodebaseSelfAwarenessCandidateRecordCount": 7505,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 7506,
     "cortexCodebaseSelfAwarenessCoverage": "deterministic_supplemental_sample_of_git_tracked_text_files",
     "cortexCodebaseSelfAwarenessRecordCount": 66,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
@@ -412,7 +412,7 @@
     "supplementalAssistantTargetCharShare": 0.14989755828341453,
     "supplementalAssistantTargetTokenProxyCount": 14908,
     "supplementalAssistantTargetTokenProxyShare": 0.14963214260621693,
-    "supplementalBalanceDroppedRecordCount": 13178,
+    "supplementalBalanceDroppedRecordCount": 13180,
     "supplementalSFTRecordCount": 105,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 901,
@@ -447,9 +447,9 @@
     "public_adapter_corpus_toolace_train": 7
   },
   "sourceIntegrity": {
-    "baseCommit": "faca89ac8422025a0471d7f761b354f5035df707",
+    "baseCommit": "0415c1ec86a22f3d9e0e4cad95159d2ba553cacc",
     "dirtyState": false,
-    "workingTreeDigest": "9af64914597dedd5418d2cf9dae54b3d2864e5767811ecc8fb3b2f76fc264429"
+    "workingTreeDigest": "2b65582352a6a5fe98c8029ddff86e842941b7953588ba0ff93ed14fd6d56931"
   },
   "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
   "taskTypeCounts": {
@@ -512,5 +512,5 @@
     "ultra_specific_missing_required_argument_clarification",
     "ultra_specific_regression_routing"
   ],
-  "worktreeFingerprint": "9af64914597dedd5418d2cf9dae54b3d2864e5767811ecc8fb3b2f76fc264429"
+  "worktreeFingerprint": "2b65582352a6a5fe98c8029ddff86e842941b7953588ba0ff93ed14fd6d56931"
 }

@@ -1,8 +1,8 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Base commit: `faca89ac8422025a0471d7f761b354f5035df707`
-- Working-tree digest: `9af64914597dedd5418d2cf9dae54b3d2864e5767811ecc8fb3b2f76fc264429`
+- Base commit: `0415c1ec86a22f3d9e0e4cad95159d2ba553cacc`
+- Working-tree digest: `2b65582352a6a5fe98c8029ddff86e842941b7953588ba0ff93ed14fd6d56931`
 - Dirty source state: `False`
 - Source files: 13
 - Source map:
