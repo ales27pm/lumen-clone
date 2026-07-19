@@ -1,8 +1,8 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Base commit: `4540017839fb708efd6d550eca46e85c03e03191`
-- Working-tree digest: `e77185a39e199d8417dd5eaacd0be327d41aece12e4c217512c0b5bd7b4520cf`
+- Base commit: `b2d0ad2a8d6ae42c60cf497262083d86a1ffa82c`
+- Working-tree digest: `55da98b23ed758f07ad15e996a6e51d03d4e245869b6a6106e0e2521c1af334e`
 - Dirty source state: `False`
 - Source files: 13
 - Source map:
@@ -44,9 +44,12 @@
 ### `embedding`
 - Role: embedding
 - Source: `ios/Lumen/Services/ModelFleet.swift`
-- Purpose: Perform the embedding role defined by the Lumen model fleet contract.
-- Accepts: Role-specific input defined by the fleet contract and AgentBehaviorManifest.
-- Returns: Role-specific output defined by the fleet contract and AgentBehaviorManifest.
+- Purpose: Generate semantic vector representations for memory indexing and retrieval.
+- Responsibilities:
+  - embedding vector generation
+  - semantic memory embedding
+- Accepts: Text or content selected for semantic memory indexing or retrieval.
+- Returns: Embedding vector only; no user-facing text, tool call, or hidden reasoning.
 - Calls: none
 - Called by: cortex
 

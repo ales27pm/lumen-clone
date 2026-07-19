@@ -6,7 +6,7 @@
       "markdown": 74,
       "mixed": 1,
       "plist": 3,
-      "python": 165,
+      "python": 168,
       "shell": 17,
       "swift": 506,
       "text": 4,
@@ -74,14 +74,14 @@
       "tools/hf_zerogpu/space_template": 3,
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 4,
-      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 46,
+      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 47,
       "tools/lumen_manifest_crawler/scripts": 1,
-      "tools/lumen_manifest_crawler/tests": 37,
+      "tools/lumen_manifest_crawler/tests": 39,
       "tools/pipeline": 7,
       "tools/pipeline/tests": 9,
       "tools/security": 1
     },
-    "recordCount": 800,
+    "recordCount": 803,
     "selectedFiles": [
       {
         "imports": [
@@ -2197,13 +2197,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "4540017839fb708efd6d550eca46e85c03e03191",
+  "manifestCommit": "b2d0ad2a8d6ae42c60cf497262083d86a1ffa82c",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "84bac288801918c4be7176f5f4b8cf3e14df0bd55eec926f713fe31ade7d3a25",
+    "promptSHA256": "11b76800ce2c218de902660f00adb80b0abb749e5c9688c3d647133af33096f9",
     "promptUTF8ByteCount": 26334,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2215,8 +2215,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "4540017839fb708efd6d550eca46e85c03e03191",
+    "baseCommit": "b2d0ad2a8d6ae42c60cf497262083d86a1ffa82c",
     "dirtyState": false,
-    "workingTreeDigest": "e77185a39e199d8417dd5eaacd0be327d41aece12e4c217512c0b5bd7b4520cf"
+    "workingTreeDigest": "55da98b23ed758f07ad15e996a6e51d03d4e245869b6a6106e0e2521c1af334e"
   }
 }
