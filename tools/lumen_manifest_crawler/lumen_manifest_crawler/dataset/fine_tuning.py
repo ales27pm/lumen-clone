@@ -65,12 +65,15 @@ FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = (
 )
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_TOKEN_SHARE_HARD_MAX = 0.10
 FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR = 10_000
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.3.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.4.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
     "lumen.fleet-loss-share-evidence/1.2.0"
 )
 FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION = (
     "lumen.fleet-optimizer-family-share/1.0.0"
+)
+FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION = (
+    "lumen.fleet-optimizer-family-source-proxy/1.0.0"
 )
 FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY = "fleet_orchestration_native"
 FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE = (
@@ -81,6 +84,8 @@ FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE = (
 )
 FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS = 5_000
 FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS = 6_000
+FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS = 5_300
+FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS = 6_210
 FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS = 1_800
 FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS = 2_200
 PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = (
@@ -106,6 +111,7 @@ FLEET_SOURCE_ROLE_REGISTRY_SCHEMA_VERSION = "lumen.fleet-source-role/1.0.0"
 FLEET_DELEGATION_REASON = "manifest_responsibility_match"
 FLEET_DELEGATION_PROMPTS_PER_OWNER = 8
 FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER = 2
+FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES = 3
 SOURCE_TOKEN_PROXY_SCHEMA_VERSION = "lumen.source-token-proxy/1.0.0"
 FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES = frozenset(
     {
@@ -169,6 +175,7 @@ FLEET_SOURCE_ROLE_REGISTRY: dict[tuple[str, str], str] = {
             "fleet_contract_delegation",
             "fleet_contract_known_slots",
             "fleet_contract_tool_boundary",
+            "fleet_contract_tool_ownership",
             "slot_id_directory",
             "ultra_specific_fleet_delegation",
             "ultra_specific_fleet_known_slot_directory",
@@ -2238,6 +2245,32 @@ def _fleet_loss_share_contract(
                 _public_corpus_source_proxy_selection_share(config)
                 * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
             ),
+            "optimizerFamilySafetyBand": {
+                "schemaVersion": (
+                    FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION
+                ),
+                "lane": "sft",
+                "basis": "assistant_target_source_token_proxy_count",
+                "sourceFamily": FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+                "taskType": FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+                "minimumBasisPoints": (
+                    FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS
+                ),
+                "maximumBasisPoints": (
+                    FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS
+                ),
+                "selectionPolicy": (
+                    "retain_non_public_then_bound_public_behavioral"
+                ),
+                "authoritativeExactBandBasisPoints": {
+                    "minimum": (
+                        FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS
+                    ),
+                    "maximum": (
+                        FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS
+                    ),
+                },
+            },
             "contract": _source_token_proxy_contract(
                 config.max_chars_per_token
             ),
@@ -3010,6 +3043,10 @@ def _build_ultra_specific_adapter_sft_records(
         "fleet": [
             *_ultra_specific_fleet_records(manifest, sorted_tools),
             *_balanced_fleet_contract_sft_anchors(manifest),
+            *_comprehensive_fleet_tool_ownership_sft_anchors(
+                manifest,
+                sorted_tools,
+            ),
         ],
     }
 
@@ -4973,6 +5010,104 @@ def _ultra_specific_fleet_records(
     return records
 
 
+def _comprehensive_fleet_tool_ownership_sft_anchors(
+    manifest: AgentBehaviorManifest,
+    tools: list[ToolManifest],
+) -> list[dict[str, Any]]:
+    """Teach a distinct short ownership closure across the complete catalog.
+
+    Native event graphs are deliberately information-dense. These independent
+    short-form anchors keep the optimizer from learning that every Fleet
+    decision needs a long graph, while covering every non-holdout tool's exact
+    planning, execution, and response owners. Their schema deliberately avoids
+    the short-contract `knownSlots` key, which is not the native graph's
+    `knownSlotIDs` key. DPO remains on its smaller contrast matrix so its
+    pair-count family band is unchanged.
+    """
+
+    _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
+    required_owners = ("cortex", "executor", "mouth")
+    missing_owners = [
+        owner for owner in required_owners if owner not in slot_ids_by_agent
+    ]
+    if missing_owners:
+        if _has_authoritative_manifest_revision(manifest):
+            raise ValueError(
+                "Fleet comprehensive tool-ownership curriculum requires "
+                "manifested semantic owners: "
+                + ", ".join(missing_owners)
+            )
+        return []
+    planning_slot_id = slot_ids_by_agent["cortex"]
+    executor_slot_id = slot_ids_by_agent["executor"]
+    response_slot_id = slot_ids_by_agent["mouth"]
+    prompt_templates = (
+        (
+            "For manifested tool `{tool_id}`, return the exact planning, "
+            "execution, and user-response owner slots."
+        ),
+        (
+            "Return only the bounded tool-ownership JSON for `{tool_id}` using "
+            "canonical runtime slot identifiers."
+        ),
+        (
+            "Map `{tool_id}` to its plan owner, native action owner, and grounded "
+            "response owner; do not invent a peer slot."
+        ),
+    )
+    if len(prompt_templates) != FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES:
+        raise RuntimeError(
+            "Fleet comprehensive ownership surface count drifted"
+        )
+
+    records: list[dict[str, Any]] = []
+    for tool in _fleet_boundary_tools(tools, limit=None):
+        payload = {
+            "executionOwnerSlotID": executor_slot_id,
+            "planningOwnerSlotID": planning_slot_id,
+            "responseOwnerSlotID": response_slot_id,
+            "toolID": tool.id,
+        }
+        for surface_index, template in enumerate(prompt_templates):
+            records.append(
+                _adapter_sft_record(
+                    "fleet",
+                    template.format(
+                        tool_id=tool.id,
+                    ),
+                    payload,
+                    "fleet_contract_tool_ownership",
+                    [tool.id],
+                    _risk_for_tool(tool),
+                    {
+                        "requiredSplit": "train",
+                        "curriculumMode": (
+                            "comprehensive_tool_ownership_sft_matrix"
+                        ),
+                        "ownershipSurfaceIndex": surface_index,
+                        "targetToolID": tool.id,
+                        "specificityVector": [
+                            "fleet_contract_sft_anchor",
+                            "complete_tool_catalog",
+                            "tool_ownership",
+                            "planning_execution_response_chain",
+                        ],
+                    },
+                    manifest,
+                )
+            )
+    expected = (
+        len(_fleet_boundary_tools(tools, limit=None))
+        * FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES
+    )
+    bounded = _unique_sorted_sft_records(records)
+    if len(bounded) != expected:
+        raise RuntimeError(
+            "Fleet comprehensive ownership anchors are not globally unique"
+        )
+    return bounded
+
+
 def _fleet_slot_contract(
     manifest: AgentBehaviorManifest,
 ) -> tuple[list[str], list[str], dict[str, str]]:
@@ -5046,15 +5181,20 @@ def _fleet_eval_slot_contract(
 def _fleet_boundary_tools(
     tools: list[ToolManifest],
     *,
-    limit: int = 12,
+    limit: int | None = 12,
 ) -> list[ToolManifest]:
     # The frozen Fleet boundary case uses maps.search. Teach the general schema
     # on other tools so the contract is learned without copying the eval target.
-    return [
+    candidates = [
         tool
         for tool in sorted(tools, key=lambda item: item.id)
         if tool.id != "maps.search"
-    ][:limit]
+    ]
+    if limit is None:
+        return candidates
+    if type(limit) is not int or limit < 0:
+        raise ValueError("Fleet boundary tool limit must be non-negative or None")
+    return candidates[:limit]
 
 
 def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
@@ -14389,6 +14529,7 @@ def _cap_public_corpus_token_share(
     *,
     prefer_quality: bool = True,
     max_public_groups: int | None = None,
+    max_public_target_proxy_tokens: int | None = None,
     max_chars_per_token: int = FineTuningDatasetConfig.max_chars_per_token,
     target_mode: str = "all_assistant",
 ) -> list[dict[str, Any]]:
@@ -14404,6 +14545,13 @@ def _cap_public_corpus_token_share(
         type(max_public_groups) is not int or max_public_groups < 0
     ):
         raise ValueError("max_public_groups must be a non-negative integer")
+    if max_public_target_proxy_tokens is not None and (
+        type(max_public_target_proxy_tokens) is not int
+        or max_public_target_proxy_tokens < 0
+    ):
+        raise ValueError(
+            "max_public_target_proxy_tokens must be a non-negative integer"
+        )
     if target_mode not in {"all_assistant", "dpo_chosen"}:
         raise ValueError(f"Unsupported target token proxy mode: {target_mode!r}")
     if max_share is not None and not 0.0 <= max_share < 1.0:
@@ -14458,6 +14606,11 @@ def _cap_public_corpus_token_share(
         multiplier = max_share / (1.0 - max_share)
         total_budget = int(internal_total * multiplier)
         target_budget = int(internal_target * multiplier)
+    if max_public_target_proxy_tokens is not None:
+        target_budget = min(
+            target_budget,
+            max_public_target_proxy_tokens,
+        )
     if (
         public_total <= total_budget
         and public_target <= target_budget
@@ -15637,6 +15790,134 @@ def _fleet_validation_sampling_contract(
     }
 
 
+def _bound_fleet_native_sft_source_proxy_share(
+    records: list[dict[str, Any]],
+    *,
+    config: FineTuningDatasetConfig,
+    prefer_public_quality: bool,
+    max_public_groups: int | None,
+) -> list[dict[str, Any]]:
+    """Keep the source proxy inside its calibrated construction band.
+
+    The pinned tokenizer remains authoritative. This source-only guard prevents
+    an advertised variant from reaching the expensive pre-optimizer boundary
+    with an obviously imbalanced native family. Internal rows are immutable;
+    only public behavioral groups may be removed, preserving the meaning of the
+    internal-only experiment and every required native topology cell.
+    """
+
+    ordered = _unique_sorted_sft_records(records)
+    native = [
+        record
+        for record in ordered
+        if isinstance(record.get("metadata"), dict)
+        and record["metadata"].get("sourceFamily")
+        == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+        and record["metadata"].get("taskType")
+        == FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE
+    ]
+    if not native:
+        return ordered
+    manifest_commits = {
+        (
+            metadata.get("manifestCommit")
+            if isinstance((metadata := record.get("metadata")), dict)
+            else None
+        )
+        for record in ordered
+    }
+    manifest_commit = next(iter(manifest_commits), None)
+    if (
+        len(manifest_commits) != 1
+        or not isinstance(manifest_commit, str)
+        or re.fullmatch(r"[0-9a-f]{40}", manifest_commit) is None
+    ):
+        raise ValueError(
+            "Fleet native SFT source-proxy construction requires one "
+            "canonical 40-character lowercase hexadecimal manifestCommit "
+            "on every record"
+        )
+
+    denominator = FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+    minimum = FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS
+    maximum = FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS
+
+    def target_proxy(selected: list[dict[str, Any]]) -> int:
+        return sum(
+            _assistant_target_token_count(
+                record,
+                max_chars_per_token=config.max_chars_per_token,
+            )
+            for record in selected
+        )
+
+    native_tokens = target_proxy(native)
+    total_tokens = target_proxy(ordered)
+    if native_tokens <= 0 or total_tokens <= 0:
+        raise ValueError(
+            "Fleet native SFT source-proxy accounting has no target tokens"
+        )
+    if (
+        native_tokens * denominator >= total_tokens * minimum
+        and native_tokens * denominator <= total_tokens * maximum
+    ):
+        return ordered
+
+    public = [
+        record
+        for record in ordered
+        if _fleet_source_role(record) == FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL
+    ]
+    if native_tokens * denominator > total_tokens * maximum:
+        raise ValueError(
+            "Fleet native SFT source-proxy share exceeds its safety maximum; "
+            "the internal behavioral curriculum needs more non-native signal"
+        )
+    if not public:
+        raise ValueError(
+            "Fleet native SFT source-proxy share is below its safety minimum "
+            "without removable public behavior"
+        )
+
+    non_public = [record for record in ordered if record not in public]
+    non_public_tokens = target_proxy(non_public)
+    maximum_total_tokens = native_tokens * denominator // minimum
+    public_target_budget = maximum_total_tokens - non_public_tokens
+    if public_target_budget < 0:
+        raise ValueError(
+            "Fleet non-public SFT source-proxy share is below its safety minimum"
+        )
+    selected = _cap_public_corpus_token_share(
+        ordered,
+        _public_corpus_source_proxy_selection_share(config),
+        prefer_quality=prefer_public_quality,
+        max_public_groups=max_public_groups,
+        max_public_target_proxy_tokens=public_target_budget,
+        max_chars_per_token=config.max_chars_per_token,
+        target_mode="all_assistant",
+    )
+    selected_native_tokens = target_proxy(
+        [record for record in selected if record in native]
+    )
+    selected_total_tokens = target_proxy(selected)
+    if selected_native_tokens != native_tokens:
+        raise RuntimeError(
+            "Fleet source-proxy balancing removed native SFT records"
+        )
+    if not (
+        native_tokens * denominator >= selected_total_tokens * minimum
+        and native_tokens * denominator <= selected_total_tokens * maximum
+    ):
+        raise ValueError(
+            "Fleet native SFT source-proxy safety band is unsatisfied after "
+            "deterministic public selection: "
+            f"{native_tokens}*{denominator} must be between "
+            f"{selected_total_tokens}*{minimum} and "
+            f"{selected_total_tokens}*{maximum}"
+        )
+    return _unique_sorted_sft_records(selected)
+
+
 def _finalize_fleet_optimizer_lane(
     records: list[dict[str, Any]],
     *,
@@ -15676,6 +15957,13 @@ def _finalize_fleet_optimizer_lane(
             if lane == "sft"
             else _limit_fleet_supplemental_dpo_records(public_bounded, config)
         )
+        if lane == "sft":
+            bounded = _bound_fleet_native_sft_source_proxy_share(
+                bounded,
+                config=config,
+                prefer_public_quality=prefer_public_quality,
+                max_public_groups=max_public_groups,
+            )
         current_keys = {_canonical_record_key(record) for record in current}
         bounded_keys = {_canonical_record_key(record) for record in bounded}
         if not bounded_keys <= current_keys:

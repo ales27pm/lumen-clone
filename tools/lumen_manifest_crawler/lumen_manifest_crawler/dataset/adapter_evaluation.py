@@ -124,6 +124,13 @@ FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT = (
     "the complete manifest declaration order; delegateTo is the "
     "manifested execution slot; copy the reported states and tool ID exactly."
 )
+FLEET_TOOL_OWNERSHIP_OUTPUT_CONTRACT = (
+    "Fleet tool-ownership output contract: return exactly one JSON object with "
+    "exactly the keys `executionOwnerSlotID`, `planningOwnerSlotID`, "
+    "`responseOwnerSlotID`, and `toolID`; no other keys. Use only canonical "
+    "manifested slot IDs, copy the tool ID exactly, and stop after the closing "
+    "brace."
+)
 _FLEET_SHORT_CONTRACT_BY_TASK_TYPE = {
     **{
         task_type: FLEET_DELEGATION_OUTPUT_CONTRACT
@@ -154,6 +161,7 @@ _FLEET_SHORT_CONTRACT_BY_TASK_TYPE = {
             "ultra_specific_tool_boundary_ownership",
         )
     },
+    "fleet_contract_tool_ownership": FLEET_TOOL_OWNERSHIP_OUTPUT_CONTRACT,
 }
 
 

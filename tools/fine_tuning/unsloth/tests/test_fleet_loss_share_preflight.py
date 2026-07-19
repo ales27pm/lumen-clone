@@ -44,7 +44,7 @@ TOKENIZER_CLOSURE_SHA256 = ubuntu_pipeline.canonical_sha256(
 def _contract() -> dict[str, Any]:
     fields = train_sft.FLEET_LOSS_SHARE_FIELD_NAMES
     return {
-        "schemaVersion": "lumen.fleet-loss-share/1.3.0",
+        "schemaVersion": "lumen.fleet-loss-share/1.4.0",
         "enforcementRequired": True,
         "enforcementPhase": "post_tokenizer_load_pre_optimizer",
         "requiredLanes": ["sft", "dpo"],
@@ -71,6 +71,24 @@ def _contract() -> dict[str, Any]:
             "status": "safety_budget_not_exact_token_count",
             "maximumPublicBehavioralShareBasisPoints": 3_000,
             "maximumSupplementalStaticShareBasisPoints": 1_500,
+            "optimizerFamilySafetyBand": {
+                "schemaVersion": (
+                    "lumen.fleet-optimizer-family-source-proxy/1.0.0"
+                ),
+                "lane": "sft",
+                "basis": "assistant_target_source_token_proxy_count",
+                "sourceFamily": "fleet_orchestration_native",
+                "taskType": "fleet_orchestration_event_graph",
+                "minimumBasisPoints": 5_300,
+                "maximumBasisPoints": 6_210,
+                "selectionPolicy": (
+                    "retain_non_public_then_bound_public_behavioral"
+                ),
+                "authoritativeExactBandBasisPoints": {
+                    "minimum": 5_000,
+                    "maximum": 6_000,
+                },
+            },
             "contract": {
                 "schemaVersion": "lumen.source-token-proxy/1.0.0",
                 "status": "source_side_selection_proxy_not_exact_token_count",
@@ -978,6 +996,48 @@ def test_nested_optimizer_family_contract_mutations_fail_both_validators(
         family_share["classification"]["taskTypeByLane"]["dpo"] = (
             "fleet_orchestration_event_graph"
         )
+    else:
+        raise AssertionError(mutation)
+
+    for verifier in (
+        lambda: train_sft._validated_fleet_loss_share_contract(
+            contract,
+            lane="sft",
+            config=_config(),
+        ),
+        lambda: ubuntu_pipeline._pipeline_validated_fleet_loss_share_contract(
+            contract,
+            config=_config(),
+        ),
+    ):
+        with pytest.raises(RuntimeError):
+            verifier()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "floating_proxy_minimum",
+        "boolean_proxy_maximum",
+        "floating_exact_minimum",
+        "extra_proxy_key",
+    ],
+)
+def test_source_proxy_family_band_mutations_fail_both_validators(
+    mutation: str,
+) -> None:
+    contract = _contract()
+    safety_band = contract["sourceSelectionProxy"][
+        "optimizerFamilySafetyBand"
+    ]
+    if mutation == "floating_proxy_minimum":
+        safety_band["minimumBasisPoints"] = 5_300.0
+    elif mutation == "boolean_proxy_maximum":
+        safety_band["maximumBasisPoints"] = True
+    elif mutation == "floating_exact_minimum":
+        safety_band["authoritativeExactBandBasisPoints"]["minimum"] = 5_000.0
+    elif mutation == "extra_proxy_key":
+        safety_band["unexpected"] = "unbound"
     else:
         raise AssertionError(mutation)
 
