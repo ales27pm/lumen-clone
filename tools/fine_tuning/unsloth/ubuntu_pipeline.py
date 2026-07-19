@@ -26,8 +26,22 @@ except ImportError:  # pragma: no cover - repository-root module execution.
         PINNED_QWEN3_CHAT_TEMPLATE_SHA256,
     )
 
+try:
+    from lumen_manifest_crawler.dataset.optimization_policy import (
+        EXPERIMENT_VARIANT_SCHEMA_VERSION,
+        VARIANT_SPECIFIC_TRAINING_CONFIG_FIELDS as _SHARED_VARIANT_OPTIMIZATION_CONFIG_FIELDS,
+        invariant_training_config as _normalized_invariant_training_config,
+    )
+except ImportError:  # pragma: no cover - repository-root module execution.
+    from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.optimization_policy import (
+        EXPERIMENT_VARIANT_SCHEMA_VERSION,
+        VARIANT_SPECIFIC_TRAINING_CONFIG_FIELDS as _SHARED_VARIANT_OPTIMIZATION_CONFIG_FIELDS,
+        invariant_training_config as _normalized_invariant_training_config,
+    )
+
 from tools.fine_tuning.unsloth.training_lineage import (
     DEFAULT_LLAMA_CPP_REVISION,
+    TRAINING_VARIANT_ATTESTATION_SCHEMA,
 )
 from tools.fine_tuning.unsloth.ubuntu_source_integrity import (
     SOURCE_INTEGRITY_ENV,
@@ -131,6 +145,26 @@ NON_CONTROLLED_CONFIG_FIELDS = {
     "variantManifestSHA256",
     *RUNTIME_CONFIG_FIELDS,
 }
+VARIANT_OPTIMIZATION_CONFIG_FIELDS = (
+    _SHARED_VARIANT_OPTIMIZATION_CONFIG_FIELDS
+)
+_MINIMUM_EFFECTIVE_STEPS_BY_LANE = {
+    "sft": {
+        "executor": 40,
+        "mouth": 24,
+        "mimicry": 20,
+        "rem": 20,
+        "fleet": 24,
+    },
+    "dpo": {
+        "executor": 8,
+        "mouth": 9,
+        "mimicry": 8,
+        "rem": 8,
+        "fleet": 8,
+    },
+}
+_MAXIMUM_NON_CORTEX_EPOCHS = 8
 GGUF_FIXED_HEADER_SIZE = 24
 GGUF_SUPPORTED_VERSIONS = frozenset({2, 3})
 GGUF_CONVERTER_RELATIVE_PATH = Path("convert_lora_to_gguf.py")
@@ -1988,6 +2022,197 @@ def _require_clean_contamination_report(
         )
 
 
+def _expected_variant_optimization_policy(
+    *,
+    agent: str,
+    sft_train_record_count: int,
+    dpo_train_record_count: int,
+) -> dict[str, Any]:
+    batch_size = 1 if agent in {"cortex", "fleet"} else 2
+    gradient_accumulation_steps = {
+        "cortex": 16,
+        "executor": 8,
+        "mouth": 4,
+        "mimicry": 2,
+        "rem": 4,
+        "fleet": 8,
+    }[agent]
+    high_reasoning = agent in {"cortex", "executor", "rem"}
+    base_epochs = {
+        "sft": (
+            3
+            if agent in {"cortex", "fleet"}
+            else 2
+            if high_reasoning
+            else 1
+        ),
+        "dpo": (
+            1
+            if agent == "cortex"
+            else 2
+            if high_reasoning
+            else 1
+        ),
+    }
+    maximum_epochs = None if agent == "cortex" else _MAXIMUM_NON_CORTEX_EPOCHS
+    lanes: dict[str, dict[str, Any]] = {}
+    for lane, record_count in (
+        ("sft", sft_train_record_count),
+        ("dpo", dpo_train_record_count),
+    ):
+        if type(record_count) is not int or record_count <= 0:
+            raise RuntimeError(
+                f"{agent} {lane} optimization record count is invalid"
+            )
+        micro_batches = (record_count + batch_size - 1) // batch_size
+        steps_per_epoch = (
+            micro_batches + gradient_accumulation_steps - 1
+        ) // gradient_accumulation_steps
+        minimum_steps = (
+            None
+            if agent == "cortex"
+            else _MINIMUM_EFFECTIVE_STEPS_BY_LANE[lane][agent]
+        )
+        if agent == "cortex":
+            selected_epochs = base_epochs[lane]
+        else:
+            if steps_per_epoch <= 0 or minimum_steps is None:
+                raise RuntimeError(
+                    f"{agent} {lane} optimization lane cannot satisfy its minimum"
+                )
+            selected_epochs = max(
+                base_epochs[lane],
+                (minimum_steps + steps_per_epoch - 1) // steps_per_epoch,
+            )
+            if selected_epochs > _MAXIMUM_NON_CORTEX_EPOCHS:
+                raise RuntimeError(
+                    f"{agent} {lane} optimization lane exceeds the epoch cap"
+                )
+        projected_steps = steps_per_epoch * selected_epochs
+        lanes[lane] = {
+            "trainRecordCount": record_count,
+            "baseEpochs": base_epochs[lane],
+            "selectedEpochs": selected_epochs,
+            "effectiveStepsPerEpoch": steps_per_epoch,
+            "minimumEffectiveSteps": minimum_steps,
+            "projectedEffectiveSteps": projected_steps,
+            "minimumSatisfied": (
+                True
+                if minimum_steps is None
+                else projected_steps >= minimum_steps
+            ),
+        }
+    return {
+        "schemaVersion": "lumen.adapter-effective-steps/1.0.0",
+        "mode": (
+            "cortex_empirical_fixed"
+            if agent == "cortex"
+            else "non_cortex_minimum_effective_steps"
+        ),
+        "batchSize": batch_size,
+        "gradientAccumulationSteps": gradient_accumulation_steps,
+        "sft": lanes["sft"],
+        "dpo": lanes["dpo"],
+        "maximumEpochs": maximum_epochs,
+    }
+
+
+def _variant_effective_training_config(
+    *,
+    agent: str,
+    base_config: Mapping[str, Any],
+    controlled_config: Mapping[str, Any],
+    train_sft_record_count: int,
+    train_dpo_record_count: int,
+) -> dict[str, Any]:
+    base_controlled_keys = set(base_config) - NON_CONTROLLED_CONFIG_FIELDS
+    if set(controlled_config) != base_controlled_keys:
+        raise RuntimeError(
+            "Variant controlled training config fields drifted from the base config"
+        )
+    if not VARIANT_OPTIMIZATION_CONFIG_FIELDS.issubset(controlled_config):
+        raise RuntimeError(
+            "Variant controlled training config lacks optimizer-policy fields"
+        )
+    for key in sorted(base_controlled_keys - VARIANT_OPTIMIZATION_CONFIG_FIELDS):
+        if canonical_sha256({"value": controlled_config[key]}) != canonical_sha256(
+            {"value": base_config[key]}
+        ):
+            raise RuntimeError(
+                f"Variant controlled training config changed non-variant field: {key}"
+            )
+
+    base_policy = base_config.get("optimizationStepPolicy")
+    if not isinstance(base_policy, Mapping):
+        raise RuntimeError("Base config lacks an optimization-step policy")
+    base_sft = base_policy.get("sft")
+    base_dpo = base_policy.get("dpo")
+    if not isinstance(base_sft, Mapping) or not isinstance(base_dpo, Mapping):
+        raise RuntimeError("Base optimization-step policy lacks lane state")
+    base_expected = _expected_variant_optimization_policy(
+        agent=agent,
+        sft_train_record_count=base_sft.get("trainRecordCount"),
+        dpo_train_record_count=base_dpo.get("trainRecordCount"),
+    )
+    if (
+        canonical_sha256(dict(base_policy)) != canonical_sha256(base_expected)
+        or type(base_config.get("batch_size")) is not int
+        or base_config.get("batch_size") != base_expected["batchSize"]
+        or type(base_config.get("gradient_accumulation_steps")) is not int
+        or base_config.get("gradient_accumulation_steps")
+        != base_expected["gradientAccumulationSteps"]
+        or type(base_config.get("num_train_epochs")) is not int
+        or base_config.get("num_train_epochs")
+        != base_expected["sft"]["selectedEpochs"]
+        or type(base_config.get("dpo_num_train_epochs")) is not int
+        or base_config.get("dpo_num_train_epochs")
+        != base_expected["dpo"]["selectedEpochs"]
+    ):
+        raise RuntimeError("Base optimization-step policy is internally inconsistent")
+
+    variant_expected = _expected_variant_optimization_policy(
+        agent=agent,
+        sft_train_record_count=train_sft_record_count,
+        dpo_train_record_count=train_dpo_record_count,
+    )
+    if (
+        canonical_sha256(controlled_config.get("optimizationStepPolicy"))
+        != canonical_sha256(variant_expected)
+        or type(controlled_config.get("num_train_epochs")) is not int
+        or controlled_config.get("num_train_epochs")
+        != variant_expected["sft"]["selectedEpochs"]
+        or type(controlled_config.get("dpo_num_train_epochs")) is not int
+        or controlled_config.get("dpo_num_train_epochs")
+        != variant_expected["dpo"]["selectedEpochs"]
+    ):
+        raise RuntimeError(
+            "Variant optimization-step policy does not match its training lanes"
+        )
+
+    effective = dict(base_config)
+    for key in VARIANT_OPTIMIZATION_CONFIG_FIELDS:
+        effective[key] = controlled_config[key]
+    return effective
+
+
+def _variant_invariant_training_config(
+    config: Mapping[str, Any],
+    *,
+    agent: str | None = None,
+    sft_train_record_count: int | None = None,
+    dpo_train_record_count: int | None = None,
+) -> dict[str, Any]:
+    try:
+        return _normalized_invariant_training_config(
+            config,
+            agent=agent,
+            sft_train_record_count=sft_train_record_count,
+            dpo_train_record_count=dpo_train_record_count,
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Variant invariant training config is invalid") from exc
+
+
 def validate_variant(
     source_root: Path,
     *,
@@ -2010,8 +2235,8 @@ def validate_variant(
     config_path = agent_root / "unsloth_config.json"
     manifest = read_object(manifest_path)
     config = read_object(config_path)
-    _resolve_training_precision(config)
-    _validate_preference_training_config(config)
+    if manifest.get("schemaVersion") != EXPERIMENT_VARIANT_SCHEMA_VERSION:
+        raise RuntimeError(f"Variant manifest schema is unsupported: {manifest_path}")
     if manifest.get("agent") != agent or manifest.get("variant") != variant:
         raise RuntimeError(f"Variant manifest identity mismatch: {manifest_path}")
     declared_manifest_digest = manifest.get("variantManifestSHA256")
@@ -2079,14 +2304,48 @@ def validate_variant(
     controlled = manifest.get("controlledTrainingConfig")
     if not isinstance(controlled, Mapping):
         raise RuntimeError(f"Variant manifest lacks controlledTrainingConfig: {manifest_path}")
-    unexpected = set(config) - set(controlled) - NON_CONTROLLED_CONFIG_FIELDS
+    if manifest.get("trainingConfigSHA256") != canonical_sha256(dict(controlled)):
+        raise RuntimeError(
+            f"Variant controlled training-config digest drifted: {manifest_path}"
+        )
     if (
-        manifest.get("trainingConfigSHA256") != canonical_sha256(dict(controlled))
-        or any(config.get(key) != value for key, value in controlled.items())
-        or unexpected
+        type(manifest.get("seed")) is not int
+        or type(controlled.get("seed")) is not int
+        or manifest.get("seed") != controlled.get("seed")
     ):
-        detail = f" unexpected fields: {', '.join(sorted(unexpected))}" if unexpected else ""
-        raise RuntimeError(f"Generated config drifted from the controlled variant:{detail} {config_path}")
+        raise RuntimeError(f"Variant seed contract drifted: {manifest_path}")
+    invariant_digest = canonical_sha256(
+        _variant_invariant_training_config(
+            controlled,
+            agent=agent,
+            sft_train_record_count=len(lanes["train_sft"]),
+            dpo_train_record_count=len(lanes["train_dpo"]),
+        )
+    )
+    if manifest.get("trainingConfigInvariantSHA256") != invariant_digest:
+        raise RuntimeError(
+            f"Variant invariant training-config digest drifted: {manifest_path}"
+        )
+    base_controlled = {
+        key: value
+        for key, value in config.items()
+        if key not in NON_CONTROLLED_CONFIG_FIELDS
+    }
+    if canonical_sha256(
+        _variant_invariant_training_config(base_controlled, agent=agent)
+    ) != invariant_digest:
+        raise RuntimeError(
+            f"Variant invariant training config differs from the base config: {config_path}"
+        )
+    config = _variant_effective_training_config(
+        agent=agent,
+        base_config=config,
+        controlled_config=controlled,
+        train_sft_record_count=len(lanes["train_sft"]),
+        train_dpo_record_count=len(lanes["train_dpo"]),
+    )
+    _resolve_training_precision(config)
+    _validate_preference_training_config(config)
     if config.get("agent") != agent:
         raise RuntimeError(f"Generated config agent mismatch: {config_path}")
     public_corpus_contract = (
@@ -2125,7 +2384,13 @@ def validate_variant(
         raise RuntimeError(
             f"Non-Fleet generated config contains Fleet loss-share state: {config_path}"
         )
-    if manifest.get("seed") != seed:
+    if (
+        type(seed) is not int
+        or type(manifest.get("seed")) is not int
+        or manifest.get("seed") != seed
+        or type(config.get("seed")) is not int
+        or config.get("seed") != seed
+    ):
         raise RuntimeError(f"Seed {seed} would break the controlled variant for {agent}")
     base_model = base_model_override or str(config.get("base_model_name") or "")
     if not base_model or manifest.get("baseModelID") != base_model:
@@ -2395,14 +2660,25 @@ def _training_attestation(
     controlled = manifest.get("controlledTrainingConfig")
     if not isinstance(controlled, Mapping):
         raise RuntimeError("Variant manifest lacks controlled training config")
-    effective = {key: config.get(key) for key in controlled}
-    if effective != dict(controlled):
+    missing_controlled = set(controlled) - set(config)
+    if missing_controlled:
+        raise RuntimeError(
+            "Effective training config lacks controlled fields: "
+            + ", ".join(sorted(missing_controlled))
+        )
+    effective = {key: config[key] for key in controlled}
+    effective_digest = canonical_sha256(effective)
+    controlled_digest = canonical_sha256(dict(controlled))
+    if (
+        effective_digest != controlled_digest
+        or effective_digest != manifest.get("trainingConfigSHA256")
+    ):
         raise RuntimeError("Effective training config drifted from the controlled variant")
     datasets = manifest.get("datasets")
     if not isinstance(datasets, Mapping):
         raise RuntimeError("Variant manifest lacks dataset lineage")
     return {
-        "schema": "lumen.training-variant-attestation/1.1.0",
+        "schema": TRAINING_VARIANT_ATTESTATION_SCHEMA,
         "variant": manifest["variant"],
         "variantManifestSHA256": manifest["variantManifestSHA256"],
         "trainingCorpusSHA256": manifest["trainingCorpusSHA256"],
@@ -2411,7 +2687,10 @@ def _training_attestation(
             for name, contract in sorted(datasets.items())
             if isinstance(contract, Mapping) and isinstance(contract.get("sha256"), str)
         },
-        "effectiveTrainingConfigSHA256": canonical_sha256(effective),
+        "effectiveTrainingConfigSHA256": effective_digest,
+        "trainingConfigInvariantSHA256": manifest[
+            "trainingConfigInvariantSHA256"
+        ],
         "baseModelRevision": manifest["baseModelRevision"],
         "baseModelIndexDigest": manifest["baseModelIndexDigest"],
         "baseModelIndexReferencedShardNames": manifest[
@@ -3877,8 +4156,21 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
             )
         variant_manifest_path = expected_variant_root / "variant_manifest.json"
         variant_manifest = _verify_manifest_integrity(variant_manifest_path)
+        expected_variant_attestation = _training_attestation(
+            prepared_config,
+            variant_manifest,
+        )
         if (
-            variant_manifest.get("baseModelTokenizerFiles")
+            variant_attestation != expected_variant_attestation
+            or expected_variant_attestation.get(
+                "effectiveTrainingConfigSHA256"
+            )
+            != variant_manifest.get("trainingConfigSHA256")
+            or expected_variant_attestation.get(
+                "trainingConfigInvariantSHA256"
+            )
+            != variant_manifest.get("trainingConfigInvariantSHA256")
+            or variant_manifest.get("baseModelTokenizerFiles")
             != prepared_tokenizer_closure["files"]
             or variant_manifest.get("baseModelTokenizerClosureSHA256")
             != prepared_tokenizer_closure[
@@ -4138,13 +4430,38 @@ def validate_prepared_runtime(
             prepared_config
         )
         verify_embedded_source_integrity(prepared_config)
-        _, pending_manifest, variant_root = validate_variant(
+        pending_config, pending_manifest, variant_root = validate_variant(
             snapshot_root,
             agent=agent,
             variant=variant,
             seed=seed,
             base_model_override=str(prepared_config.get("base_model_name") or ""),
         )
+        controlled = pending_manifest.get("controlledTrainingConfig")
+        if (
+            not isinstance(controlled, Mapping)
+            or any(
+                prepared_config.get(field) != pending_config.get(field)
+                or pending_config.get(field) != value
+                for field, value in controlled.items()
+            )
+        ):
+            raise RuntimeError(
+                f"Prepared controlled training config drifted for {agent}"
+            )
+        expected_variant_attestation = _training_attestation(
+            prepared_config,
+            pending_manifest,
+        )
+        if (
+            expected_variant_attestation.get("effectiveTrainingConfigSHA256")
+            != pending_manifest.get("trainingConfigSHA256")
+            or prepared_config.get("variantAttestation")
+            != expected_variant_attestation
+        ):
+            raise RuntimeError(
+                f"Prepared variant attestation drifted for {agent}"
+            )
         evaluation_path = snapshot_root / agent / "eval.jsonl"
         evaluation_records, evaluation_sha256 = (
             evaluate_adapter.load_evaluation_records(
@@ -5327,6 +5644,9 @@ def _verify_finalized_variant_binding(
         "trainingCorpusSHA256": attestation.get("trainingCorpusSHA256"),
         "trainingConfigSHA256": attestation.get(
             "effectiveTrainingConfigSHA256"
+        ),
+        "trainingConfigInvariantSHA256": attestation.get(
+            "trainingConfigInvariantSHA256"
         ),
         "baseModelRevision": attestation.get("baseModelRevision"),
         "baseModelIndexDigest": attestation.get("baseModelIndexDigest"),

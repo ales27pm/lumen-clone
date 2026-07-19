@@ -12757,6 +12757,7 @@ def _balanced_fleet_contract_sft_anchors(
         return []
     anchors: list[dict[str, Any]] = []
     observed_task_types: set[str] = set()
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
     for pair in pairs:
         prompt = pair.get("prompt")
         chosen = pair.get("chosen")
@@ -12773,25 +12774,69 @@ def _balanced_fleet_contract_sft_anchors(
         chosen_content = chosen.get("content")
         if not isinstance(chosen_content, str) or not chosen_content:
             raise ValueError("Balanced Fleet preference anchor has no chosen target")
-        observed_task_types.add(task_type)
-        anchors.append(
-            {
-                "messages": [
-                    *[
-                        dict(message)
-                        for message in prompt
-                        if isinstance(message, dict)
-                    ],
-                    {"role": "assistant", "content": chosen_content},
-                ],
-                "metadata": {
-                    **metadata,
-                    "sourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
-                    "taskType": task_type,
-                    "sftAnchorFromPreference": True,
-                },
-            }
+        user_message = next(
+            (
+                message
+                for message in reversed(prompt)
+                if isinstance(message, dict)
+                and message.get("role") == "user"
+                and isinstance(message.get("content"), str)
+            ),
+            None,
         )
+        if not isinstance(user_message, dict):
+            raise ValueError("Balanced Fleet preference anchor has no user prompt")
+        chosen_payload = _strict_json_loads(chosen_content)
+        tool_ids = sorted(_extract_tool_ids(chosen_payload))
+        if any(tool_id not in tools_by_id for tool_id in tool_ids):
+            raise ValueError(
+                "Balanced Fleet preference anchor references an unknown tool"
+            )
+        tool_risks = {
+            _risk_for_tool(tools_by_id[tool_id]) for tool_id in tool_ids
+        }
+        risk = (
+            "permissioned"
+            if "permissioned" in tool_risks
+            else "approval_required"
+            if "approval_required" in tool_risks
+            else "standard"
+        )
+        observed_task_types.add(task_type)
+        anchor = _adapter_sft_record(
+            "fleet",
+            str(user_message["content"]),
+            chosen_content,
+            task_type,
+            tool_ids,
+            risk,
+            {
+                **metadata,
+                "sourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
+                "taskType": task_type,
+                "sftAnchorFromPreference": True,
+                "specificityVector": [
+                    "fleet_contract_sft_anchor",
+                    task_type,
+                ],
+            },
+            manifest,
+        )
+        # Keep the exact preference prompt (including its Fleet-specific
+        # system contract) so these anchors remain distinct from the shorter
+        # ultra-specific SFT curriculum while sharing canonical metadata.
+        anchor["messages"] = [
+            *[
+                dict(message)
+                for message in prompt
+                if isinstance(message, dict)
+            ],
+            {
+                "role": "assistant",
+                "content": anchor["messages"][-1]["content"],
+            },
+        ]
+        anchors.append(anchor)
     if observed_task_types != set(FLEET_BALANCED_CONTRACT_TASK_TYPES):
         raise ValueError(
             "Balanced Fleet SFT anchors lack required contract families: "
@@ -13847,10 +13892,21 @@ def _effective_steps_per_epoch(
     batch_size: int,
     gradient_accumulation_steps: int,
 ) -> int:
-    if record_count <= 0:
-        return 0
-    micro_batches = math.ceil(record_count / batch_size)
-    return math.ceil(micro_batches / gradient_accumulation_steps)
+    if (
+        type(record_count) is not int
+        or record_count <= 0
+        or type(batch_size) is not int
+        or batch_size <= 0
+        or type(gradient_accumulation_steps) is not int
+        or gradient_accumulation_steps <= 0
+    ):
+        raise ValueError(
+            "Effective-step arithmetic requires positive integer lane and batch state"
+        )
+    micro_batches = (record_count + batch_size - 1) // batch_size
+    return (
+        micro_batches + gradient_accumulation_steps - 1
+    ) // gradient_accumulation_steps
 
 
 def _epochs_for_minimum_effective_steps(
@@ -13864,7 +13920,7 @@ def _epochs_for_minimum_effective_steps(
             "Minimum-effective-step contract cannot be satisfied with zero "
             "effective steps per epoch"
         )
-    required_epochs = math.ceil(minimum_steps / steps_per_epoch)
+    required_epochs = (minimum_steps + steps_per_epoch - 1) // steps_per_epoch
     selected_epochs = max(base_epochs, required_epochs)
     if selected_epochs > NON_CORTEX_MAX_TRAINING_EPOCHS:
         raise ValueError(
@@ -13875,22 +13931,19 @@ def _epochs_for_minimum_effective_steps(
     return selected_epochs
 
 
-def _agent_unsloth_config(
+def _adapter_optimization_step_policy(
     agent: str,
-    config: FineTuningDatasetConfig,
     *,
-    sft_train_record_count: int = 0,
-    dpo_train_record_count: int = 0,
+    sft_train_record_count: int,
+    dpo_train_record_count: int,
+    batch_size: int,
+    gradient_accumulation_steps: int,
 ) -> dict[str, Any]:
+    if type(sft_train_record_count) is not int or sft_train_record_count <= 0:
+        raise ValueError("SFT optimization requires a positive training-record count")
+    if type(dpo_train_record_count) is not int or dpo_train_record_count <= 0:
+        raise ValueError("DPO optimization requires a positive training-record count")
     high_reasoning = agent in {"cortex", "executor", "rem"}
-    fleet_strategy = "train_first" if agent == "fleet" else "per_slot_adapter"
-    training_lineage = default_training_lineage_contract()
-    batch_size = 1 if agent in {"cortex", "fleet"} else 2
-    gradient_accumulation_steps = (
-        16
-        if agent == "cortex"
-        else NON_CORTEX_GRADIENT_ACCUMULATION_STEPS[agent]
-    )
     base_sft_epochs = (
         3
         if agent in {"cortex", "fleet"}
@@ -13957,6 +14010,70 @@ def _agent_unsloth_config(
                 f"{agent} {lane} minimum-effective-step contract is unsatisfied: "
                 f"projected={projected}, minimum={minimum}"
             )
+    return {
+        "schemaVersion": "lumen.adapter-effective-steps/1.0.0",
+        "mode": (
+            "cortex_empirical_fixed"
+            if agent == "cortex"
+            else "non_cortex_minimum_effective_steps"
+        ),
+        "batchSize": batch_size,
+        "gradientAccumulationSteps": gradient_accumulation_steps,
+        "sft": {
+            "trainRecordCount": sft_train_record_count,
+            "baseEpochs": base_sft_epochs,
+            "selectedEpochs": sft_epochs,
+            "effectiveStepsPerEpoch": sft_steps_per_epoch,
+            "minimumEffectiveSteps": minimum_sft_steps,
+            "projectedEffectiveSteps": projected_sft_steps,
+            "minimumSatisfied": (
+                True
+                if minimum_sft_steps is None
+                else projected_sft_steps >= minimum_sft_steps
+            ),
+        },
+        "dpo": {
+            "trainRecordCount": dpo_train_record_count,
+            "baseEpochs": base_dpo_epochs,
+            "selectedEpochs": dpo_epochs,
+            "effectiveStepsPerEpoch": dpo_steps_per_epoch,
+            "minimumEffectiveSteps": minimum_dpo_steps,
+            "projectedEffectiveSteps": projected_dpo_steps,
+            "minimumSatisfied": (
+                True
+                if minimum_dpo_steps is None
+                else projected_dpo_steps >= minimum_dpo_steps
+            ),
+        },
+        "maximumEpochs": (
+            None if agent == "cortex" else NON_CORTEX_MAX_TRAINING_EPOCHS
+        ),
+    }
+
+
+def _agent_unsloth_config(
+    agent: str,
+    config: FineTuningDatasetConfig,
+    *,
+    sft_train_record_count: int,
+    dpo_train_record_count: int,
+) -> dict[str, Any]:
+    high_reasoning = agent in {"cortex", "executor", "rem"}
+    fleet_strategy = "train_first" if agent == "fleet" else "per_slot_adapter"
+    training_lineage = default_training_lineage_contract()
+    batch_size = 1 if agent in {"cortex", "fleet"} else 2
+    gradient_accumulation_steps = (
+        16
+        if agent == "cortex"
+        else NON_CORTEX_GRADIENT_ACCUMULATION_STEPS[agent]
+    )
+    optimization_step_policy = _adapter_optimization_step_policy(
+        agent,
+        sft_train_record_count=sft_train_record_count,
+        dpo_train_record_count=dpo_train_record_count,
+        batch_size=batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+    )
     base_config = {
         "agent": agent,
         "base_model_name": DEFAULT_BASE_MODEL_ID,
@@ -14011,7 +14128,9 @@ def _agent_unsloth_config(
         # optimizer steps, so use the conservative PEFT-scale DPO rate without
         # changing the independently tuned SFT rate or epoch count.
         "dpo_learning_rate": 0.0000001 if agent == "cortex" else 0.000005,
-        "dpo_num_train_epochs": dpo_epochs,
+        "dpo_num_train_epochs": optimization_step_policy["dpo"][
+            "selectedEpochs"
+        ],
         "dpo_beta": 0.1,
         # DPO only needs vocabulary logits for the chosen/rejected completion
         # tokens. Keeping prompt logits materializes a multi-gigabyte tensor on
@@ -14027,46 +14146,10 @@ def _agent_unsloth_config(
         "seed": 42,
         "batch_size": batch_size,
         "gradient_accumulation_steps": gradient_accumulation_steps,
-        "num_train_epochs": sft_epochs,
-        "optimizationStepPolicy": {
-            "schemaVersion": "lumen.adapter-effective-steps/1.0.0",
-            "mode": (
-                "cortex_empirical_fixed"
-                if agent == "cortex"
-                else "non_cortex_minimum_effective_steps"
-            ),
-            "batchSize": batch_size,
-            "gradientAccumulationSteps": gradient_accumulation_steps,
-            "sft": {
-                "trainRecordCount": sft_train_record_count,
-                "baseEpochs": base_sft_epochs,
-                "selectedEpochs": sft_epochs,
-                "effectiveStepsPerEpoch": sft_steps_per_epoch,
-                "minimumEffectiveSteps": minimum_sft_steps,
-                "projectedEffectiveSteps": projected_sft_steps,
-                "minimumSatisfied": (
-                    True
-                    if minimum_sft_steps is None
-                    else projected_sft_steps >= minimum_sft_steps
-                ),
-            },
-            "dpo": {
-                "trainRecordCount": dpo_train_record_count,
-                "baseEpochs": base_dpo_epochs,
-                "selectedEpochs": dpo_epochs,
-                "effectiveStepsPerEpoch": dpo_steps_per_epoch,
-                "minimumEffectiveSteps": minimum_dpo_steps,
-                "projectedEffectiveSteps": projected_dpo_steps,
-                "minimumSatisfied": (
-                    True
-                    if minimum_dpo_steps is None
-                    else projected_dpo_steps >= minimum_dpo_steps
-                ),
-            },
-            "maximumEpochs": (
-                None if agent == "cortex" else NON_CORTEX_MAX_TRAINING_EPOCHS
-            ),
-        },
+        "num_train_epochs": optimization_step_policy["sft"][
+            "selectedEpochs"
+        ],
+        "optimizationStepPolicy": optimization_step_policy,
         "publicCorpusLossShareContract": _public_corpus_loss_share_contract(
             config
         ),
@@ -14116,7 +14199,9 @@ def _unique_sft_records_by_messages(records: list[dict[str, Any]]) -> list[dict[
     return [deduped[key] for key in sorted(deduped)]
 
 
-def _sft_record_preference_score(record: dict[str, Any]) -> tuple[int, int, int]:
+def _sft_record_preference_score(
+    record: dict[str, Any],
+) -> tuple[int, int, int, int]:
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
     task_type = str(metadata.get("taskType") or "")
     source_family = str(metadata.get("sourceFamily") or "")
@@ -14129,6 +14214,10 @@ def _sft_record_preference_score(record: dict[str, Any]) -> tuple[int, int, int]
         1 if metadata.get("requiredSplit") in {"train", "validation"} else 0,
         1 if _public_corpus_metadata(record) is None else 0,
         1 if role_specific_task else 0,
+        # When a preference-derived SFT anchor duplicates a native SFT drill,
+        # retain the native record and its intentionally different split. The
+        # remaining non-duplicate anchors still provide complete DPO parity.
+        0 if metadata.get("sftAnchorFromPreference") is True else 1,
     )
 
 
@@ -15923,6 +16012,46 @@ def _public_source_id(public_corpus: dict[str, Any]) -> str:
     return "unknown"
 
 
+def _variant_training_config(
+    *,
+    agent: str,
+    training_config: dict[str, Any],
+    train_sft: list[dict[str, Any]],
+    train_dpo: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Bind optimizer-step state to the exact selected variant lanes."""
+
+    variant_config = dict(training_config)
+    if "optimizationStepPolicy" not in variant_config:
+        raise ValueError("Variant training config lacks an optimization-step policy")
+    batch_size = variant_config.get("batch_size")
+    gradient_accumulation_steps = variant_config.get(
+        "gradient_accumulation_steps"
+    )
+    if (
+        type(batch_size) is not int
+        or batch_size <= 0
+        or type(gradient_accumulation_steps) is not int
+        or gradient_accumulation_steps <= 0
+    ):
+        raise ValueError(
+            "Variant optimization policy requires positive integer batch state"
+        )
+    policy = _adapter_optimization_step_policy(
+        agent,
+        sft_train_record_count=len(train_sft),
+        dpo_train_record_count=len(train_dpo),
+        batch_size=batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+    )
+    variant_config["optimizationStepPolicy"] = policy
+    variant_config["num_train_epochs"] = policy["sft"]["selectedEpochs"]
+    variant_config["dpo_num_train_epochs"] = policy["dpo"][
+        "selectedEpochs"
+    ]
+    return variant_config
+
+
 def _build_experiment_variants(
     *,
     agent: str,
@@ -16061,12 +16190,22 @@ def _build_experiment_variants(
             *lanes["val_dpo"],
         ]
         contamination = build_contamination_report(training_records, evaluation_records)
+        variant_training_config = _variant_training_config(
+            agent=agent,
+            training_config=training_config,
+            train_sft=lanes["train_sft"],
+            train_dpo=lanes["train_dpo"],
+        )
         variant_manifest = build_experiment_variant_manifest(
             agent=agent,
             variant=variant,
-            base_model_id=str(training_config.get("baseModelID") or training_config.get("base_model_name") or "Qwen/Qwen3-1.7B"),
-            seed=int(training_config.get("seed") or 42),
-            training_config=training_config,
+            base_model_id=str(
+                variant_training_config.get("baseModelID")
+                or variant_training_config.get("base_model_name")
+                or "Qwen/Qwen3-1.7B"
+            ),
+            seed=int(variant_training_config.get("seed") or 42),
+            training_config=variant_training_config,
             train_sft=lanes["train_sft"],
             validation_sft=lanes["val_sft"],
             dpo_records=lanes["train_dpo"],

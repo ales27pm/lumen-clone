@@ -31,6 +31,10 @@ RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION = (
 RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION = (
     "lumen.resolved-training-environment-cache/1.0.0"
 )
+RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.2.0"
+TRAINING_VARIANT_ATTESTATION_SCHEMA = (
+    "lumen.training-variant-attestation/1.3.0"
+)
 ZERO_GPU_ALLOWED_SIZES = frozenset({"large", "xlarge"})
 RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY = {
     "hashAlgorithm": "sha256",

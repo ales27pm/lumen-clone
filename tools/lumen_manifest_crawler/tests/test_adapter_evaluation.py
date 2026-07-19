@@ -33,6 +33,9 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _ultra_specific_eval_templates,
     _with_cortex_route_contract_metric,
 )
+from lumen_manifest_crawler.dataset.optimization_policy import (
+    expected_optimization_step_policy,
+)
 
 
 def _custom_tokenizer_closure(
@@ -75,6 +78,26 @@ def _minimum_step_fixture_records() -> dict[str, list[dict[str, object]]]:
     """Keep sparse manifest tests honest under the fail-closed step policy."""
 
     records: dict[str, list[dict[str, object]]] = {
+        "codebase_home_sft": [
+            {
+                "recordType": "sft",
+                "sourceFamily": "codebase_home_sft",
+                "taskType": "codebase_home_grounding",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Ground fixture source boundary {index:03d}.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": (
+                            f"Fixture source boundary {index:03d} is static tracked text."
+                        ),
+                    },
+                ],
+            }
+            for index in range(4)
+        ],
         "executor_tool_calls": [
             {
                 "recordType": "sft",
@@ -118,6 +141,44 @@ def _minimum_step_fixture_records() -> dict[str, list[dict[str, object]]]:
                 ],
             }
             for index in range(24)
+        ],
+        "mimicry_style": [
+            {
+                "recordType": "sft",
+                "sourceFamily": "mimicry_style",
+                "agentRole": "mimicry",
+                "taskType": "safe_style_adaptation",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Adapt fixture style sample {index:03d} safely.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": f"Safely adapted fixture style {index:03d}.",
+                    },
+                ],
+            }
+            for index in range(4)
+        ],
+        "rem_reflection": [
+            {
+                "recordType": "sft",
+                "sourceFamily": "rem_reflection",
+                "agentRole": "rem",
+                "taskType": "failure_analysis",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Diagnose fixture failure {index:03d}.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": f"Fixture failure {index:03d} needs a regression sample.",
+                    },
+                ],
+            }
+            for index in range(4)
         ],
         "adapter_ultra_specific": [
             {
@@ -327,6 +388,10 @@ def _sft_parent_lineage(
         "baseModelTokenizerFiles": manifest["baseModelTokenizerFiles"],
         "baseModelTokenizerClosureSHA256": manifest[
             "baseModelTokenizerClosureSHA256"
+        ],
+        "trainingConfigSHA256": manifest["trainingConfigSHA256"],
+        "trainingConfigInvariantSHA256": manifest[
+            "trainingConfigInvariantSHA256"
         ],
         "trainingEnvironmentLockSHA256": manifest[
             "trainingEnvironmentLockSHA256"
@@ -5397,6 +5462,87 @@ def test_experiment_manifest_rejects_training_code_and_dependency_drift() -> Non
         )
 
 
+def test_experiment_manifest_allows_only_exact_dataset_derived_optimizer_drift() -> None:
+    manifests: dict[str, dict] = {}
+    sft_counts = {
+        "internal_only": 96,
+        "internal_plus_public_baseline": 128,
+        "internal_plus_public_optimized": 160,
+    }
+    for variant in EXPERIMENT_VARIANTS:
+        sft_count = sft_counts[variant]
+        dpo_count = 12
+        policy = expected_optimization_step_policy(
+            agent="executor",
+            sft_train_record_count=sft_count,
+            dpo_train_record_count=dpo_count,
+        )
+        config = {
+            "agent": "executor",
+            "batch_size": 2,
+            "gradient_accumulation_steps": 8,
+            "learning_rate": 0.00002,
+            "num_train_epochs": policy["sft"]["selectedEpochs"],
+            "dpo_num_train_epochs": policy["dpo"]["selectedEpochs"],
+            "optimizationStepPolicy": policy,
+        }
+        manifests[variant] = build_experiment_variant_manifest(
+            agent="executor",
+            variant=variant,
+            base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+            seed=42,
+            training_config=config,
+            train_sft=[{"row": index} for index in range(sft_count)],
+            validation_sft=[],
+            dpo_records=[{"pair": index} for index in range(dpo_count)],
+            evaluation_records=[],
+        )
+
+    experiment = build_experiment_manifest(
+        agent="executor",
+        variants=manifests,
+    )
+    assert len(
+        {item["trainingConfigSHA256"] for item in experiment["variants"]}
+    ) == 3
+    assert len(
+        {
+            item["trainingConfigInvariantSHA256"]
+            for item in experiment["variants"]
+        }
+    ) == 1
+
+    tampered = json.loads(
+        json.dumps(manifests["internal_plus_public_optimized"])
+    )
+    tampered.pop("variantManifestSHA256")
+    controlled = tampered["controlledTrainingConfig"]
+    controlled["optimizationStepPolicy"]["sft"][
+        "minimumEffectiveSteps"
+    ] += 1
+    tampered["trainingConfigSHA256"] = canonical_sha256(controlled)
+    tampered["variantManifestSHA256"] = canonical_sha256(tampered)
+    assert not adapter_evaluation._valid_variant_manifest(
+        tampered,
+        agent="executor",
+        expected_variant="internal_plus_public_optimized",
+    )
+
+    bool_epoch = json.loads(
+        json.dumps(manifests["internal_plus_public_optimized"])
+    )
+    bool_epoch.pop("variantManifestSHA256")
+    bool_controlled = bool_epoch["controlledTrainingConfig"]
+    bool_controlled["num_train_epochs"] = True
+    bool_epoch["trainingConfigSHA256"] = canonical_sha256(bool_controlled)
+    bool_epoch["variantManifestSHA256"] = canonical_sha256(bool_epoch)
+    assert not adapter_evaluation._valid_variant_manifest(
+        bool_epoch,
+        agent="executor",
+        expected_variant="internal_plus_public_optimized",
+    )
+
+
 def test_non_default_base_model_requires_non_default_explicit_provenance() -> None:
     kwargs = {
         "agent": "executor",
@@ -6638,8 +6784,24 @@ def test_promotion_requires_complete_clean_evidence_and_measured_improvement() -
 
 
 def test_fine_tuning_cards_and_export_plans_publish_honest_eval_and_dpo_contracts(tmp_path) -> None:
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="files.read",
+                displayName="Read File",
+                description="Read one local file",
+                arguments=[
+                    ToolArgumentManifest(
+                        name="path",
+                        type="string",
+                        required=True,
+                    )
+                ],
+            )
+        ]
+    )
     datasets = compile_agent_fine_tuning_datasets(
-        AgentBehaviorManifest(),
+        manifest,
         _minimum_step_fixture_records(),
     )
     executor = datasets["executor"]
@@ -6729,11 +6891,16 @@ def test_fine_tuning_cards_and_export_plans_publish_honest_eval_and_dpo_contract
     for field in (
         "baseModelID",
         "seed",
-        "trainingConfigSHA256",
+        "trainingConfigInvariantSHA256",
         "frozenEvaluationSHA256",
         "publicEvaluationBundleSHA256",
     ):
         assert len({manifest[field] for manifest in variant_manifests}) == 1
+    assert all(
+        manifest["trainingConfigSHA256"]
+        == canonical_sha256(manifest["controlledTrainingConfig"])
+        for manifest in variant_manifests
+    )
     written_report = json.loads((tmp_path / "executor" / "contamination_report.json").read_text())
     assert written_report["reportSHA256"] == executor.contamination_report["reportSHA256"]
 
@@ -7156,8 +7323,17 @@ def test_native_fleet_boundary_eval_rejects_tampered_event_payloads() -> None:
 
 
 def test_rem_runtime_backfill_refreshes_dependent_counts_and_contamination_evidence() -> None:
+    manifest = AgentBehaviorManifest(
+        tools=[
+            ToolManifest(
+                id="files.read",
+                displayName="Read File",
+                description="Read one local file",
+            )
+        ]
+    )
     datasets = compile_agent_fine_tuning_datasets(
-        AgentBehaviorManifest(),
+        manifest,
         _minimum_step_fixture_records(),
         runtime_audit_reports=[{"status": "failed"}],
     )

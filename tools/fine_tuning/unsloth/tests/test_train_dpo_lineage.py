@@ -367,6 +367,13 @@ def _sft_parent_fixture(
         "runtimeSourceBindingStatus": "operator_declared_unverified",
         "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
         "variantAttestation": {
+            "schema": train_dpo.TRAINING_VARIANT_ATTESTATION_SCHEMA,
+            "effectiveTrainingConfigSHA256": pending[
+                "trainingConfigSHA256"
+            ],
+            "trainingConfigInvariantSHA256": pending[
+                "trainingConfigInvariantSHA256"
+            ],
             "trainingEnvironmentLockSHA256": pending[
                 "trainingEnvironmentLockSHA256"
             ]
@@ -386,6 +393,24 @@ def test_verified_sft_parent_returns_complete_audit_lineage(tmp_path: Path) -> N
     assert lineage["variantManifestSHA256"] == payload["variantManifestSHA256"]
     assert lineage["runtimeSourceRevision"] == RUNTIME_SOURCE_REVISION
     assert lineage["baseModelWeightShards"] == cfg["baseModelWeightShards"]
+    assert lineage["trainingConfigSHA256"] == payload[
+        "trainingConfigSHA256"
+    ]
+    assert lineage["trainingConfigInvariantSHA256"] == payload[
+        "trainingConfigInvariantSHA256"
+    ]
+
+
+def test_expected_sft_parent_rejects_wrong_attestation_schema(
+    tmp_path: Path,
+) -> None:
+    _, _, cfg, _ = _sft_parent_fixture(tmp_path)
+    attestation = dict(cfg["variantAttestation"])
+    attestation["schema"] = "lumen.training-variant-attestation/1.2.0"
+    cfg["variantAttestation"] = attestation
+
+    with pytest.raises(RuntimeError, match="missing its variant attestation"):
+        train_dpo._expected_sft_parent_lineage(cfg)
 
 
 @pytest.mark.parametrize(
@@ -405,6 +430,8 @@ def test_verified_sft_parent_returns_complete_audit_lineage(tmp_path: Path) -> N
         "baseModelTokenizerDigest",
         "baseModelTokenizerFiles",
         "baseModelTokenizerClosureSHA256",
+        "trainingConfigSHA256",
+        "trainingConfigInvariantSHA256",
         "trainingEnvironmentLockSHA256",
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
@@ -1221,6 +1248,13 @@ def _private_runtime_snapshot_fixture(
     shared_cache.mkdir()
     shared_shard = shared_cache / shard_name
     shared_shard.write_bytes(b"weights")
+    tokenizer_snapshot = tmp_path / "private-tokenizer-snapshot"
+    tokenizer_snapshot.mkdir(mode=0o700)
+    tokenizer_snapshot.chmod(0o700)
+    for filename, payload in tokenizer_payloads.items():
+        path = tokenizer_snapshot / filename
+        path.write_bytes(payload)
+        path.chmod(0o400)
     runtime = tmp_path / "private-runtime-snapshot"
     runtime.mkdir(mode=0o700)
     runtime.chmod(0o700)
@@ -1270,8 +1304,21 @@ def _private_runtime_snapshot_fixture(
         ).hexdigest(),
         "baseModelTokenizerFiles": tokenizer_files,
         "baseModelTokenizerClosureSHA256": tokenizer_closure_sha256,
+        "baseModelTokenizerSnapshotPath": str(tokenizer_snapshot),
         "baseModelRuntimeSnapshotPath": str(runtime),
     }
+    tokenizer_verification = (
+        train_sft.verify_private_base_model_tokenizer_snapshot(
+            tokenizer_snapshot,
+            base_model_id="example/model",
+            base_model_name="example/model",
+            base_model_revision=revision,
+            tokenizer_files=tokenizer_files,
+            tokenizer_digest=str(cfg["baseModelTokenizerDigest"]),
+            tokenizer_closure_sha256=tokenizer_closure_sha256,
+        )
+    )
+    cfg["baseModelTokenizerSnapshotVerification"] = tokenizer_verification
     verification = train_sft.verify_private_base_model_conversion_snapshot(
         runtime,
         base_model_id="example/model",

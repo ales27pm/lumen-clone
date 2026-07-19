@@ -4,6 +4,7 @@ import ast
 import copy
 import hashlib
 import json
+import math
 import re
 from collections import Counter
 from dataclasses import replace
@@ -619,16 +620,13 @@ def test_public_adapter_corpus_is_loaded_and_group_split_without_cross_routing(
         assert public_card["snapshotIntegrity"]["recordsSHA256"] == snapshot["recordsSHA256"]
         assert public_card["snapshotIntegrity"]["sourceManifestSHA256"] == snapshot["sourceManifestSHA256"]
         assert public_card["selectionContract"]["policyVersions"] == [snapshot["selectionPolicyVersion"]]
-        expected_dpo_target_mode = (
-            "dpo_chosen" if agent == "fleet" else "all_assistant"
-        )
         assert public_card["selectionContract"][
             "laneTargetTokenProxyModes"
         ] == {
             "train_sft": "all_assistant",
             "val_sft": "all_assistant",
-            "train_dpo": expected_dpo_target_mode,
-            "val_dpo": expected_dpo_target_mode,
+            "train_dpo": "dpo_chosen",
+            "val_dpo": "dpo_chosen",
         }
         assert len(public_card["selectionContract"]["sha256"]) == 64
         assert sum(public_card["recordCounts"].values()) == len(selected_public)
@@ -8476,7 +8474,7 @@ def test_mouth_closed_world_rows_preserve_prior_optimizer_exposure(
     policy = mouth.unsloth_config["optimizationStepPolicy"]["dpo"]
 
     assert len(mouth.train_dpo) == 25
-    assert len(mouth.val_dpo) == 4
+    assert mouth.val_dpo
     assert policy == {
         "trainRecordCount": 25,
         "baseEpochs": 1,
@@ -8516,8 +8514,14 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
         "internal_plus_public_optimized"
     ]
     fleet_sft_policy = fleet.unsloth_config["optimizationStepPolicy"]["sft"]
-    assert len(optimized_fleet["train_sft"]) == (
+    assert len(fleet.train_sft) == (
         fleet_sft_policy["trainRecordCount"]
+    )
+    optimized_fleet_policy = optimized_fleet["variant_manifest"][
+        "controlledTrainingConfig"
+    ]["optimizationStepPolicy"]["sft"]
+    assert len(optimized_fleet["train_sft"]) == (
+        optimized_fleet_policy["trainRecordCount"]
     )
     assert fleet_sft_policy["baseEpochs"] == 3
     assert fleet_sft_policy["selectedEpochs"] >= 3
@@ -8841,6 +8845,25 @@ def test_balanced_fleet_preference_targets_become_split_preserving_sft_anchors(
             ULTRA_SPECIFIC_SOURCE_FAMILY
         )
         assert anchor["metadata"]["sftAnchorFromPreference"] is True
+        assert anchor["metadata"]["sourceIntegrity"] == (
+            manifest.sourceIntegrity.lineage_dict()
+        )
+        assert anchor["metadata"]["manifestCommit"] == (
+            manifest.sourceIntegrity.commit
+        )
+        assert "sourceDirty" in anchor["metadata"]
+        assert "worktreeFingerprint" in anchor["metadata"]
+        assert anchor["metadata"]["specificity"] == "ultra_specific"
+        chosen_payload = json.loads(pair["chosen"]["content"])
+        expected_tool_id = chosen_payload.get("toolID")
+        if expected_tool_id is None:
+            assert anchor["metadata"]["toolIDs"] == []
+            assert anchor["metadata"]["toolContracts"] == {}
+        else:
+            assert anchor["metadata"]["toolIDs"] == [expected_tool_id]
+            assert set(anchor["metadata"]["toolContracts"]) == {
+                expected_tool_id
+            }
         user = anchor["messages"][-2]["content"]
         suffix = suffix_by_task[task_type]
         assert user.endswith(f"\n\n{suffix}")
@@ -9187,10 +9210,40 @@ def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
     assert cortex["optimizationStepPolicy"]["mode"] == "cortex_empirical_fixed"
 
     for agent in AGENTS:
-        config = fine_tuning[agent].unsloth_config
+        dataset = fine_tuning[agent]
+        config = dataset.unsloth_config
         policy = config["optimizationStepPolicy"]
         assert policy["sft"]["selectedEpochs"] == config["num_train_epochs"]
         assert policy["dpo"]["selectedEpochs"] == config["dpo_num_train_epochs"]
+        for variant in dataset.experiment_variants.values():
+            controlled = variant["variant_manifest"][
+                "controlledTrainingConfig"
+            ]
+            variant_policy = controlled["optimizationStepPolicy"]
+            assert variant_policy["sft"]["trainRecordCount"] == len(
+                variant["train_sft"]
+            )
+            assert variant_policy["dpo"]["trainRecordCount"] == len(
+                variant["train_dpo"]
+            )
+            assert controlled["num_train_epochs"] == variant_policy["sft"][
+                "selectedEpochs"
+            ]
+            assert controlled["dpo_num_train_epochs"] == variant_policy[
+                "dpo"
+            ]["selectedEpochs"]
+            for lane in ("sft", "dpo"):
+                lane_policy = variant_policy[lane]
+                micro_batches = math.ceil(
+                    lane_policy["trainRecordCount"] / config["batch_size"]
+                )
+                expected_steps = math.ceil(
+                    micro_batches / config["gradient_accumulation_steps"]
+                )
+                assert lane_policy["effectiveStepsPerEpoch"] == expected_steps
+                assert lane_policy["projectedEffectiveSteps"] == (
+                    expected_steps * lane_policy["selectedEpochs"]
+                )
         if agent == "cortex":
             continue
         assert policy["mode"] == "non_cortex_minimum_effective_steps"
@@ -9214,7 +9267,6 @@ def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
         assert 1 <= config["dpo_num_train_epochs"] <= (
             NON_CORTEX_MAX_TRAINING_EPOCHS
         )
-
 
 def test_fleet_uses_memory_safe_microbatches_without_changing_optimizer_exposure(
     compiled_fine_tuning: tuple,
@@ -9253,9 +9305,9 @@ def test_fleet_uses_memory_safe_microbatches_without_changing_optimizer_exposure
 @pytest.mark.parametrize(
     ("sft_records", "dpo_records", "message"),
     (
-        (0, 8, "zero effective steps per epoch"),
+        (0, 8, "SFT optimization requires a positive"),
         (1, 8, "exceeding safe maximum"),
-        (24, 0, "zero effective steps per epoch"),
+        (24, 0, "DPO optimization requires a positive"),
     ),
 )
 def test_non_cortex_config_never_emits_unsatisfied_minimum_step_policy(

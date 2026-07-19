@@ -25,6 +25,20 @@ import gradio as gr
 import spaces
 from huggingface_hub import HfApi, snapshot_download
 try:
+    from lumen_manifest_crawler.dataset.optimization_policy import (
+        EXPERIMENT_VARIANT_SCHEMA_VERSION,
+        NON_TRAINING_CONFIG_FIELDS as _BASE_CONFIG_NON_TRAINING_FIELDS,
+        effective_variant_training_config as _effective_variant_training_config,
+        invariant_training_config as _normalized_invariant_training_config,
+    )
+except ImportError:
+    from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.optimization_policy import (
+        EXPERIMENT_VARIANT_SCHEMA_VERSION,
+        NON_TRAINING_CONFIG_FIELDS as _BASE_CONFIG_NON_TRAINING_FIELDS,
+        effective_variant_training_config as _effective_variant_training_config,
+        invariant_training_config as _normalized_invariant_training_config,
+    )
+try:
     from lumen_training.adapter_artifact import verify_adapter_artifact
     from lumen_training.training_lineage import (
         build_resolved_training_environment_snapshot,
@@ -32,6 +46,8 @@ try:
         DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE,
         installed_controlled_package_versions,
         private_base_model_runtime_snapshot_required_bytes,
+        RUN_RESUME_LINEAGE_SCHEMA,
+        TRAINING_VARIANT_ATTESTATION_SCHEMA,
         sign_resolved_training_environment_cache,
         validate_runtime_source,
         verify_resolved_training_environment,
@@ -54,6 +70,8 @@ except ImportError:
         DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE,
         installed_controlled_package_versions,
         private_base_model_runtime_snapshot_required_bytes,
+        RUN_RESUME_LINEAGE_SCHEMA,
+        TRAINING_VARIANT_ATTESTATION_SCHEMA,
         sign_resolved_training_environment_cache,
         validate_runtime_source,
         verify_resolved_training_environment,
@@ -88,7 +106,6 @@ RUN_MANIFEST_NAME = "lumen_zerogpu_run_manifest.json"
 PRIVATE_TOKENIZER_SNAPSHOT_DIRNAME = "base_model_tokenizer_snapshot"
 PRIVATE_BASE_MODEL_RUNTIME_SNAPSHOT_DIRNAME = "base_model_runtime_snapshot"
 CHECKPOINT_LINEAGE_SCHEMA = "lumen.zerogpu.checkpoint_lineage/1.0.0"
-RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.1.0"
 TRAINING_RUN_SCHEMA = "lumen.zerogpu.training_run/2.1.0"
 TRAINING_SUMMARY_SCHEMA = "lumen.zerogpu.training_summary/2.1.0"
 CONTAINER_IMAGE_DIGEST_SOURCE = "operator_declared"
@@ -136,8 +153,10 @@ RUNTIME_LINEAGE_CONFIG_FIELDS = {
     "trainingContainerImageDigest",
     "trainingEnvironmentSHA256",
     "checkpointLineagePath",
+    "datasetPath",
     "datasetRepository",
     "datasetRevision",
+    "localDatasetSnapshot",
     "requirementsSHA256",
     "resolvedTrainingEnvironment",
     "resolvedTrainingEnvironmentCacheAttestation",
@@ -218,6 +237,40 @@ def _sha256(path: Path) -> str:
 def _canonical_sha256(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _variant_effective_training_config(
+    *,
+    agent: str,
+    base_config: dict[str, Any],
+    controlled_config: dict[str, Any],
+    train_sft_record_count: int,
+    train_dpo_record_count: int,
+    declared_invariant_sha256: Any,
+) -> dict[str, Any]:
+    try:
+        effective = _effective_variant_training_config(
+            agent=agent,
+            base_config=base_config,
+            controlled_config=controlled_config,
+            noncontrolled_fields=_BASE_CONFIG_NON_TRAINING_FIELDS,
+            sft_train_record_count=train_sft_record_count,
+            dpo_train_record_count=train_dpo_record_count,
+        )
+        controlled_invariant = _normalized_invariant_training_config(
+            controlled_config,
+            agent=agent,
+            sft_train_record_count=train_sft_record_count,
+            dpo_train_record_count=train_dpo_record_count,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Variant optimization-step policy is invalid") from exc
+    invariant_sha256 = _canonical_sha256(controlled_invariant)
+    if declared_invariant_sha256 != invariant_sha256:
+        raise ValueError(
+            "Variant invariant training config differs from the base config"
+        )
+    return effective
 
 
 def _initialize_startup_environment_cache() -> None:
@@ -765,6 +818,8 @@ def _variant_dataset(agent_root: Path, *, agent: str, variant: str) -> tuple[Pat
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError(f"Experiment variant manifest is not an object: {manifest_path}")
+    if manifest.get("schemaVersion") != EXPERIMENT_VARIANT_SCHEMA_VERSION:
+        raise ValueError(f"Experiment variant manifest schema is unsupported: {manifest_path}")
     if manifest.get("agent") != agent or manifest.get("variant") != variant:
         raise ValueError(f"Experiment variant manifest identity mismatch: {manifest_path}")
     expected_sha = manifest.get("variantManifestSHA256")
@@ -798,18 +853,57 @@ def _variant_dataset(agent_root: Path, *, agent: str, variant: str) -> tuple[Pat
     ]
     if manifest.get("trainingCorpusSHA256") != _canonical_sha256(training_corpus):
         raise ValueError(f"Experiment variant training-corpus hash mismatch: {manifest_path}")
+    controlled = manifest.get("controlledTrainingConfig")
+    if (
+        not isinstance(controlled, dict)
+        or manifest.get("trainingConfigSHA256") != _canonical_sha256(controlled)
+    ):
+        raise ValueError(
+            f"Experiment variant training-config hash mismatch: {manifest_path}"
+        )
+    if (
+        type(manifest.get("seed")) is not int
+        or type(controlled.get("seed")) is not int
+        or manifest.get("seed") != controlled.get("seed")
+    ):
+        raise ValueError(f"Experiment variant seed contract is invalid: {manifest_path}")
+    try:
+        invariant = _normalized_invariant_training_config(
+            controlled,
+            agent=agent,
+            sft_train_record_count=len(lanes["train_sft"]),
+            dpo_train_record_count=len(lanes["train_dpo"]),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Experiment variant optimization policy is invalid: {manifest_path}"
+        ) from exc
+    if manifest.get("trainingConfigInvariantSHA256") != _canonical_sha256(
+        invariant
+    ):
+        raise ValueError(
+            f"Experiment variant invariant training-config hash mismatch: {manifest_path}"
+        )
     return variant_root, manifest
 
 
 def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
     datasets = manifest["datasets"]
     controlled = manifest["controlledTrainingConfig"]
-    effective_controlled = {key: cfg.get(key) for key in controlled}
+    missing_controlled = set(controlled) - set(cfg)
+    effective_controlled = {key: cfg[key] for key in controlled if key in cfg}
     unexpected_fields = set(cfg) - set(controlled) - UNCONTROLLED_CONFIG_FIELDS - RUNTIME_LINEAGE_CONFIG_FIELDS
-    if effective_controlled != controlled or unexpected_fields:
+    effective_digest = _canonical_sha256(effective_controlled)
+    controlled_digest = _canonical_sha256(controlled)
+    if (
+        missing_controlled
+        or effective_digest != controlled_digest
+        or effective_digest != manifest.get("trainingConfigSHA256")
+        or unexpected_fields
+    ):
         raise ValueError("Effective training configuration drifted from the controlled variant")
     return {
-        "schema": "lumen.training-variant-attestation/1.1.0",
+        "schema": TRAINING_VARIANT_ATTESTATION_SCHEMA,
         "variant": manifest["variant"],
         "variantManifestSHA256": manifest["variantManifestSHA256"],
         "trainingCorpusSHA256": manifest["trainingCorpusSHA256"],
@@ -818,7 +912,10 @@ def _training_attestation(cfg: dict[str, Any], manifest: dict[str, Any]) -> dict
             for name, contract in sorted(datasets.items())
             if isinstance(contract, dict) and isinstance(contract.get("sha256"), str)
         },
-        "effectiveTrainingConfigSHA256": _canonical_sha256(effective_controlled),
+        "effectiveTrainingConfigSHA256": effective_digest,
+        "trainingConfigInvariantSHA256": manifest[
+            "trainingConfigInvariantSHA256"
+        ],
         "baseModelRevision": manifest["baseModelRevision"],
         "baseModelIndexDigest": manifest["baseModelIndexDigest"],
         "baseModelIndexReferencedShardNames": manifest["baseModelIndexReferencedShardNames"],
@@ -1211,6 +1308,10 @@ def _agent_run_lineage(
             manifest.get("trainingConfigSHA256"),
             label=f"{agent} training config",
         ),
+        "trainingConfigInvariantSHA256": _require_sha256(
+            manifest.get("trainingConfigInvariantSHA256"),
+            label=f"{agent} invariant training config",
+        ),
         "baseModelID": manifest.get("baseModelID"),
         "baseModelRevision": manifest.get("baseModelRevision"),
         "baseModelIndexDigest": manifest.get("baseModelIndexDigest"),
@@ -1266,6 +1367,8 @@ def _build_run_resume_lineage(
     assistant_only_loss: bool,
     runtime_lineage: dict[str, Any],
 ) -> dict[str, Any]:
+    if type(seed) is not int:
+        raise ValueError("Run-resume lineage seed must be an exact integer")
     dataset_revision = _immutable_hub_revision(
         dataset_revision,
         label="Dataset revision",
@@ -1279,7 +1382,10 @@ def _build_run_resume_lineage(
         )
         for agent in agents
     ]
-    if any(item.get("seed") != int(seed) for item in agent_lineage):
+    if any(
+        type(item.get("seed")) is not int or item.get("seed") != seed
+        for item in agent_lineage
+    ):
         raise ValueError("Requested seed drifted from the controlled agent lineage")
     payload = {
         "schema": RUN_RESUME_LINEAGE_SCHEMA,
@@ -1290,7 +1396,7 @@ def _build_run_resume_lineage(
         "localDatasetSnapshot": str(run_root / "generated" / "fine_tuning"),
         "selectedAgents": agents,
         "experimentVariant": variant,
-        "seed": int(seed),
+        "seed": seed,
         "assistantOnlyLoss": bool(assistant_only_loss),
         "trainingCodeSHA256": runtime_lineage["trainingCodeSHA256"],
         "trainingDependencyLockSHA256": runtime_lineage[
@@ -1584,24 +1690,31 @@ def _prepare_configs(
         if not isinstance(cfg, dict):
             raise ValueError(f"Generated training config is not an object: {cfg_path}")
         controlled = variant_manifest.get("controlledTrainingConfig")
-        controlled_keys = set(controlled) if isinstance(controlled, dict) else set()
-        unexpected_fields = (
-            set(cfg)
-            - controlled_keys
-            - UNCONTROLLED_CONFIG_FIELDS
-            - RUNTIME_LINEAGE_CONFIG_FIELDS
+        datasets = variant_manifest.get("datasets")
+        if not isinstance(controlled, dict) or not isinstance(datasets, dict):
+            raise ValueError(
+                f"Generated training config is not bound to the variant manifest: {cfg_path}"
+            )
+        cfg = _variant_effective_training_config(
+            agent=agent,
+            base_config=cfg,
+            controlled_config=controlled,
+            train_sft_record_count=datasets["trainSFT"]["count"],
+            train_dpo_record_count=datasets["trainDPO"]["count"],
+            declared_invariant_sha256=variant_manifest.get(
+                "trainingConfigInvariantSHA256"
+            ),
         )
-        if (
-            not isinstance(controlled, dict)
-            or variant_manifest.get("trainingConfigSHA256") != _canonical_sha256(controlled)
-            or any(cfg.get(key) != value for key, value in controlled.items())
-            or unexpected_fields
-        ):
-            raise ValueError(f"Generated training config is not bound to the variant manifest: {cfg_path}")
         base = base_model_override.strip() or base_by_agent.get(agent) or cfg.get("base_model_name") or "Qwen/Qwen3-1.7B"
         if variant_manifest.get("baseModelID") != base:
             raise ValueError(f"Base-model override would break the controlled variant for {agent}: {base}")
-        if variant_manifest.get("seed") != int(seed):
+        if (
+            type(seed) is not int
+            or type(variant_manifest.get("seed")) is not int
+            or variant_manifest.get("seed") != seed
+            or type(cfg.get("seed")) is not int
+            or cfg.get("seed") != seed
+        ):
             raise ValueError(f"Seed override would break the controlled variant for {agent}: {seed}")
         training_dir = run_root / "training" / agent
         adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
@@ -1640,7 +1753,7 @@ def _prepare_configs(
         cfg["adapter_output_dir"] = str(adapter_dir)
         cfg["dpo_output_dir"] = str(dpo_adapter_dir)
         cfg["adapter_gguf_output_path"] = str(adapter_gguf)
-        cfg["seed"] = int(seed)
+        cfg["seed"] = seed
         cfg["merge_adapters_by_default"] = False
         cfg["release_bake_enabled_by_default"] = False
         tokenizer_snapshot_path = (
@@ -1715,6 +1828,10 @@ def _prepare_configs(
             ]
             cfg["datasetRepository"] = run_lineage["datasetRepository"]
             cfg["datasetRevision"] = run_lineage["datasetRevision"]
+            cfg["datasetPath"] = run_lineage["datasetPath"]
+            cfg["localDatasetSnapshot"] = run_lineage[
+                "localDatasetSnapshot"
+            ]
             for field in RUNTIME_SOURCE_LINEAGE_FIELDS:
                 cfg[field] = run_lineage[field]
         if runtime_lineage is not None:
@@ -2232,6 +2349,8 @@ def _verify_finalized_variant_lineage(
         or finalized.get("trainingCorpusSHA256") != attestation.get("trainingCorpusSHA256")
         or finalized.get("trainingConfigSHA256")
         != attestation.get("effectiveTrainingConfigSHA256")
+        or finalized.get("trainingConfigInvariantSHA256")
+        != attestation.get("trainingConfigInvariantSHA256")
         or {
             name: contract.get("sha256")
             for name, contract in sorted((finalized.get("datasets") or {}).items())

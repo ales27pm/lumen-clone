@@ -12,6 +12,7 @@ from typing import Any
 
 try:
     from .adapter_artifact import verify_adapter_artifact
+    from .training_lineage import TRAINING_VARIANT_ATTESTATION_SCHEMA
     from .train_sft import (
         ADAPTER_BASE_TOKENIZER_FILES,
         ADAPTER_DERIVED_TOKENIZER_FILES,
@@ -28,6 +29,7 @@ except ImportError:
     if module_dir not in sys.path:
         sys.path.insert(0, module_dir)
     from adapter_artifact import verify_adapter_artifact
+    from training_lineage import TRAINING_VARIANT_ATTESTATION_SCHEMA
     from train_sft import (
         ADAPTER_BASE_TOKENIZER_FILES,
         ADAPTER_DERIVED_TOKENIZER_FILES,
@@ -349,12 +351,30 @@ def _verified_release_bake_lineage(cfg: dict[str, Any]) -> dict[str, Any]:
     attestation = cfg.get("variantAttestation")
     if (
         not isinstance(attestation, dict)
-        or attestation.get("variant") != variant
+        or attestation.get("schema")
+        != TRAINING_VARIANT_ATTESTATION_SCHEMA
+    ):
+        raise ValueError("GGUF config lacks a variant training attestation")
+    for field in (
+        "effectiveTrainingConfigSHA256",
+        "trainingConfigInvariantSHA256",
+    ):
+        if re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(attestation.get(field) or ""),
+        ) is None:
+            raise ValueError(
+                f"GGUF variant attestation lacks a valid {field}"
+            )
+    if (
+        attestation.get("variant") != variant
         or attestation.get("variantManifestSHA256") != source_manifest_sha
         or attestation.get("trainingEnvironmentSHA256") != training_environment_sha
         or finalized.get("trainingCorpusSHA256") != attestation.get("trainingCorpusSHA256")
         or finalized.get("trainingConfigSHA256")
         != attestation.get("effectiveTrainingConfigSHA256")
+        or finalized.get("trainingConfigInvariantSHA256")
+        != attestation.get("trainingConfigInvariantSHA256")
         or {
             name: contract.get("sha256")
             for name, contract in sorted((finalized.get("datasets") or {}).items())
@@ -434,6 +454,12 @@ def _verified_release_bake_lineage(cfg: dict[str, Any]) -> dict[str, Any]:
         "adapterTrainingPhase": expected_phase,
         "finalizedVariantManifestSHA256": expected_manifest_sha,
         "sourceVariantManifestSHA256": source_manifest_sha,
+        "trainingConfigSHA256": attestation[
+            "effectiveTrainingConfigSHA256"
+        ],
+        "trainingConfigInvariantSHA256": attestation[
+            "trainingConfigInvariantSHA256"
+        ],
         "baseModelRevision": cfg["baseModelRevision"],
         "baseModelIndexDigest": cfg["baseModelIndexDigest"],
         "baseModelIndexReferencedShardNames": cfg["baseModelIndexReferencedShardNames"],

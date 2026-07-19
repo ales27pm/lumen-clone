@@ -205,6 +205,8 @@ def test_skip_existing_requires_matching_current_lineage(
         "adapterTrainingPhase": "sft",
         "finalizedVariantManifestSHA256": "2" * 64,
         "sourceVariantManifestSHA256": "3" * 64,
+        "trainingConfigSHA256": "5" * 64,
+        "trainingConfigInvariantSHA256": "6" * 64,
         "baseModelRevision": cfg["baseModelRevision"],
         "baseModelIndexDigest": cfg["baseModelIndexDigest"],
         "baseModelIndexReferencedShardNames": cfg["baseModelIndexReferencedShardNames"],
@@ -284,6 +286,125 @@ def test_skip_existing_requires_matching_current_lineage(
             output_root=tmp_path / "unused",
             quantization_override=None,
         )
+
+
+def test_release_bake_rejects_rehashed_training_config_invariant_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_gguf = _load_export_module()
+    adapter_dir = tmp_path / "models/lora/cortex"
+    adapter_dir.mkdir(parents=True)
+    finalized_path = tmp_path / "finalized_variant_manifest.json"
+    training_environment = {"schemaVersion": "fixture/1.0.0"}
+    training_environment_sha = export_gguf._canonical_sha256(
+        training_environment
+    )
+    lane_hashes = {
+        "trainSFT": "1" * 64,
+        "validationSFT": "2" * 64,
+        "trainDPO": "3" * 64,
+        "validationDPO": "4" * 64,
+    }
+    source_manifest_sha = "5" * 64
+    attestation = {
+        "schema": export_gguf.TRAINING_VARIANT_ATTESTATION_SCHEMA,
+        "variant": "internal_plus_public_optimized",
+        "variantManifestSHA256": source_manifest_sha,
+        "trainingEnvironmentSHA256": training_environment_sha,
+        "trainingCorpusSHA256": "6" * 64,
+        "effectiveTrainingConfigSHA256": "7" * 64,
+        "trainingConfigInvariantSHA256": "8" * 64,
+        "laneHashes": lane_hashes,
+    }
+    config = {
+        "agent": "cortex",
+        "variant": "internal_plus_public_optimized",
+        "variantManifestSHA256": source_manifest_sha,
+        "adapter_output_dir": str(adapter_dir),
+        "output_dir": str(tmp_path / "training/cortex"),
+        "finalized_variant_manifest": str(finalized_path),
+        "base_model_name": "Qwen/Qwen3-1.7B",
+        "baseModelID": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": "a" * 40,
+        "baseModelIndexDigest": "9" * 64,
+        "baseModelIndexReferencedShardNames": ["model.safetensors"],
+        "baseModelIndexShardBindingSHA256": "a" * 64,
+        "baseModelArtifactDigest": "b" * 64,
+        "baseModelWeightShards": [
+            {"filename": "model.safetensors", "sha256": "c" * 64}
+        ],
+        "baseModelTokenizerDigest": "d" * 64,
+        "baseModelTokenizerFiles": [],
+        "baseModelTokenizerClosureSHA256": "e" * 64,
+        "trainingEnvironmentSHA256": training_environment_sha,
+        "variantAttestation": attestation,
+    }
+    finalized = {
+        "agent": config["agent"],
+        "variant": config["variant"],
+        "sourceVariantManifestSHA256": source_manifest_sha,
+        **{
+            field: config[field]
+            for field in (
+                "baseModelRevision",
+                "baseModelIndexDigest",
+                "baseModelIndexReferencedShardNames",
+                "baseModelIndexShardBindingSHA256",
+                "baseModelArtifactDigest",
+                "baseModelWeightShards",
+                "baseModelTokenizerDigest",
+                "baseModelTokenizerFiles",
+                "baseModelTokenizerClosureSHA256",
+            )
+        },
+        "baseModelID": config["baseModelID"],
+        "trainingEnvironment": training_environment,
+        "trainingEnvironmentSHA256": training_environment_sha,
+        "trainingCorpusSHA256": attestation["trainingCorpusSHA256"],
+        "trainingConfigSHA256": attestation[
+            "effectiveTrainingConfigSHA256"
+        ],
+        "trainingConfigInvariantSHA256": "f" * 64,
+        "datasets": {
+            name: {"sha256": digest}
+            for name, digest in lane_hashes.items()
+        },
+    }
+    finalized["variantManifestSHA256"] = export_gguf._canonical_sha256(
+        finalized
+    )
+    finalized_path.write_text(json.dumps(finalized), encoding="utf-8")
+    monkeypatch.setattr(export_gguf, "_verify_base_model_lineage", lambda _cfg: None)
+
+    with pytest.raises(
+        ValueError,
+        match="does not match the prepared training attestation",
+    ):
+        export_gguf._verified_release_bake_lineage(config)
+
+    attestation.pop("trainingConfigInvariantSHA256")
+    finalized.pop("trainingConfigInvariantSHA256")
+    finalized.pop("variantManifestSHA256")
+    finalized["variantManifestSHA256"] = export_gguf._canonical_sha256(
+        finalized
+    )
+    finalized_path.write_text(json.dumps(finalized), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="lacks a valid trainingConfigInvariantSHA256",
+    ):
+        export_gguf._verified_release_bake_lineage(config)
+
+    attestation["trainingConfigInvariantSHA256"] = "8" * 64
+    attestation["schema"] = "lumen.training-variant-attestation/1.2.0"
+
+    with pytest.raises(
+        ValueError,
+        match="lacks a variant training attestation",
+    ):
+        export_gguf._verified_release_bake_lineage(config)
 
 
 def test_ubuntu_post_training_gate_requires_finalized_source_and_artifact_lineage() -> None:

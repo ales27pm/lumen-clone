@@ -17,14 +17,21 @@ from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
     build_public_adapter_eval_fingerprint_bundle,
     public_evaluation_text_shingle_hashes,
 )
+from lumen_manifest_crawler.dataset.optimization_policy import (
+    EXPERIMENT_VARIANT_SCHEMA_VERSION,
+    NON_TRAINING_CONFIG_FIELDS,
+    VARIANT_DERIVED_TRAINING_CONFIG_PATHS,
+    VARIANT_SPECIFIC_TRAINING_CONFIG_FIELDS,
+    invariant_training_config as _normalized_invariant_training_config,
+)
 
 
 EVALUATION_SCHEMA_VERSION = "lumen.adapter-eval/1.1.0"
-EVALUATION_REPORT_SCHEMA_VERSION = "lumen.adapter-eval-report/1.3.0"
+EVALUATION_REPORT_SCHEMA_VERSION = "lumen.adapter-eval-report/1.4.0"
 CONTAMINATION_SCHEMA_VERSION = "lumen.adapter-contamination/1.4.0"
-EXPERIMENT_SCHEMA_VERSION = "lumen.adapter-experiment/1.2.0"
-VARIANT_SCHEMA_VERSION = "lumen.adapter-experiment-variant/1.2.0"
-PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.1.0"
+EXPERIMENT_SCHEMA_VERSION = "lumen.adapter-experiment/1.3.0"
+VARIANT_SCHEMA_VERSION = EXPERIMENT_VARIANT_SCHEMA_VERSION
+PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.2.0"
 EVALUATION_CANDIDATE_HASH_SCHEMA_VERSION = "lumen.eval-candidate-hash/1.0.0"
 _CANDIDATE_JSON_MAX_NESTING_DEPTH = 128
 _CANDIDATE_JSON_NESTING_ERROR = "json_nesting_too_deep"
@@ -417,33 +424,6 @@ _CONTAMINATION_REPORT_FIELDS = frozenset(
         "reportSHA256",
     }
 )
-_NON_TRAINING_CONFIG_FIELDS = {
-    "adapterExport",
-    "adapter_gguf_output_path",
-    "adapter_output_dir",
-    "dataset_dir",
-    "dpo_output_dir",
-    "gguf_output_dir",
-    "gguf_repo_id",
-    "mergeExport",
-    "output_dir",
-    "runtimeSourceKind",
-    "runtimeSourceRevision",
-    "expectedRuntimeSourceRevision",
-    "observedRepositoryRevision",
-    "observedRuntimeRevision",
-    "runtimeSourceBindingStatus",
-    "runtimeSourceBindingMethod",
-    "workingTreeDigest",
-    "ubuntuOrchestrationCodeSHA256",
-    "ubuntuSourceIntegritySHA256",
-    "ubuntuSourceIntegrity",
-    "spaceConfigurationSHA256",
-    "zeroGPUSize",
-    "zeroGPUDurationSeconds",
-    "observedAccelerator",
-}
-
 RUNTIME_SOURCE_AUDIT_FIELDS = (
     "runtimeSourceKind",
     "runtimeSourceRevision",
@@ -483,6 +463,8 @@ SFT_PARENT_CONTROLLED_FIELDS = (
     "baseModelTokenizerDigest",
     "baseModelTokenizerFiles",
     "baseModelTokenizerClosureSHA256",
+    "trainingConfigSHA256",
+    "trainingConfigInvariantSHA256",
     "trainingEnvironmentLockSHA256",
     "trainingDependencyLockSHA256",
     "requirementsSHA256",
@@ -1078,8 +1060,57 @@ def controlled_training_config(config: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: value
         for key, value in sorted(config.items())
-        if key not in _NON_TRAINING_CONFIG_FIELDS
+        if key not in NON_TRAINING_CONFIG_FIELDS
     }
+
+
+def invariant_training_config(
+    config: Mapping[str, Any],
+    *,
+    agent: str | None = None,
+    sft_train_record_count: int | None = None,
+    dpo_train_record_count: int | None = None,
+) -> dict[str, Any]:
+    """Normalize only typed, dataset-derived optimizer integers."""
+
+    return _normalized_invariant_training_config(
+        config,
+        agent=agent,
+        sft_train_record_count=sft_train_record_count,
+        dpo_train_record_count=dpo_train_record_count,
+    )
+
+
+def _valid_training_config_lineage(manifest: Mapping[str, Any]) -> bool:
+    controlled = manifest.get("controlledTrainingConfig")
+    if not isinstance(controlled, Mapping):
+        return False
+    try:
+        datasets = manifest.get("datasets")
+        if not isinstance(datasets, Mapping):
+            return False
+        train_sft = datasets.get("trainSFT")
+        train_dpo = datasets.get("trainDPO")
+        if not isinstance(train_sft, Mapping) or not isinstance(
+            train_dpo, Mapping
+        ):
+            return False
+        invariant = invariant_training_config(
+            controlled,
+            agent=manifest.get("agent"),
+            sft_train_record_count=train_sft.get("count"),
+            dpo_train_record_count=train_dpo.get("count"),
+        )
+    except (TypeError, ValueError):
+        return False
+    return (
+        _is_sha256(manifest.get("trainingConfigSHA256"))
+        and canonical_sha256(dict(controlled))
+        == manifest.get("trainingConfigSHA256")
+        and _is_sha256(manifest.get("trainingConfigInvariantSHA256"))
+        and canonical_sha256(invariant)
+        == manifest.get("trainingConfigInvariantSHA256")
+    )
 
 
 def _semantic_allowance_contract(
@@ -2086,6 +2117,16 @@ def score_evaluation_suite(
         ),
         "requirementsSHA256": (
             variant_manifest.get("requirementsSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "trainingConfigSHA256": (
+            variant_manifest.get("trainingConfigSHA256")
+            if isinstance(variant_manifest, Mapping)
+            else None
+        ),
+        "trainingConfigInvariantSHA256": (
+            variant_manifest.get("trainingConfigInvariantSHA256")
             if isinstance(variant_manifest, Mapping)
             else None
         ),
@@ -5565,6 +5606,12 @@ def build_experiment_variant_manifest(
     evaluation_sha256 = canonical_sha256(upgraded_eval)
     public_evaluation_bundle = build_public_adapter_eval_fingerprint_bundle()
     controlled_config = controlled_training_config(training_config)
+    invariant_config = invariant_training_config(
+        controlled_config,
+        agent=agent,
+        sft_train_record_count=len(train_sft),
+        dpo_train_record_count=len(dpo_records),
+    )
     if (
         contamination.get("trainingRecordsSHA256") != training_corpus_sha256
         or contamination.get("evaluationRecordsSHA256") != evaluation_sha256
@@ -5609,6 +5656,7 @@ def build_experiment_variant_manifest(
         "seed": seed,
         "controlledTrainingConfig": controlled_config,
         "trainingConfigSHA256": canonical_sha256(controlled_config),
+        "trainingConfigInvariantSHA256": canonical_sha256(invariant_config),
         "frozenEvaluationSHA256": evaluation_sha256,
         "publicEvaluationBundleSHA256": public_evaluation_bundle["bundleSHA256"],
         "trainingCorpusSHA256": training_corpus_sha256,
@@ -5659,6 +5707,17 @@ def build_experiment_manifest(
             expected_variant=expected_variant,
         ):
             raise ValueError("Variant manifest integrity, agent, or name mismatch")
+    invariant_configs = [
+        invariant_training_config(
+            manifest["controlledTrainingConfig"],
+            agent=agent,
+            sft_train_record_count=manifest["datasets"]["trainSFT"]["count"],
+            dpo_train_record_count=manifest["datasets"]["trainDPO"]["count"],
+        )
+        for manifest in ordered
+    ]
+    if any(config != invariant_configs[0] for config in invariant_configs[1:]):
+        raise ValueError("All variants must share the invariant training config")
     for field in (
         "baseModelID",
         "baseModelRevision",
@@ -5677,7 +5736,7 @@ def build_experiment_manifest(
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
         "seed",
-        "trainingConfigSHA256",
+        "trainingConfigInvariantSHA256",
         "frozenEvaluationSHA256",
         "publicEvaluationBundleSHA256",
     ):
@@ -5710,7 +5769,9 @@ def build_experiment_manifest(
             "trainingDependencyLockSHA256": ordered[0]["trainingDependencyLockSHA256"],
             "requirementsSHA256": ordered[0]["requirementsSHA256"],
             "seed": ordered[0]["seed"],
-            "trainingConfigSHA256": ordered[0]["trainingConfigSHA256"],
+            "trainingConfigInvariantSHA256": ordered[0][
+                "trainingConfigInvariantSHA256"
+            ],
             "frozenEvaluationSHA256": ordered[0]["frozenEvaluationSHA256"],
             "publicEvaluationBundleSHA256": ordered[0]["publicEvaluationBundleSHA256"],
         },
@@ -6037,6 +6098,13 @@ def promotion_contract() -> dict[str, Any]:
         "requiresIdenticalTrainingEnvironment": True,
         "requiresIdenticalTrainingCode": True,
         "requiresIdenticalTrainingDependencyLock": True,
+        "requiresIdenticalInvariantTrainingConfig": True,
+        "variantSpecificTrainingConfigFields": sorted(
+            VARIANT_SPECIFIC_TRAINING_CONFIG_FIELDS
+        ),
+        "variantDerivedTrainingConfigPaths": list(
+            VARIANT_DERIVED_TRAINING_CONFIG_PATHS
+        ),
         "runtimeSourceRevisionIsAuditOnly": True,
         "requiresHonestRuntimeSourceBindingAudit": True,
         "runtimeSourceBindingCanSatisfyTrustedAttestation": False,
@@ -6175,7 +6243,7 @@ def decide_adapter_promotion(
             *ZERO_GPU_LINEAGE_FIELDS,
             "spaceConfigurationSHA256",
             "seed",
-            "trainingConfigSHA256",
+            "trainingConfigInvariantSHA256",
             "frozenEvaluationSHA256",
             "publicEvaluationBundleSHA256",
         )
@@ -6300,6 +6368,15 @@ def decide_adapter_promotion(
         "requirementsSHA256": optimized_variant_manifest.get(
             "requirementsSHA256"
         ),
+        "trainingConfigInvariantSHA256": optimized_variant_manifest.get(
+            "trainingConfigInvariantSHA256"
+        ),
+        "baselineTrainingConfigSHA256": baseline_variant_manifest.get(
+            "trainingConfigSHA256"
+        ),
+        "optimizedTrainingConfigSHA256": optimized_variant_manifest.get(
+            "trainingConfigSHA256"
+        ),
         "resolvedTrainingEnvironmentSHA256": optimized_variant_manifest.get(
             "resolvedTrainingEnvironmentSHA256"
         ),
@@ -6358,6 +6435,8 @@ def _valid_evaluation_report(
         and _is_sha256(report.get("trainingCodeBundleSHA256"))
         and _is_sha256(report.get("trainingDependencyLockSHA256"))
         and _is_sha256(report.get("requirementsSHA256"))
+        and _is_sha256(report.get("trainingConfigSHA256"))
+        and _is_sha256(report.get("trainingConfigInvariantSHA256"))
         and _is_sha256(report.get("resolvedTrainingEnvironmentSHA256"))
         and _valid_space_configuration_lineage(report)
         and _valid_hardware_lineage(report, pending=False)
@@ -6721,10 +6800,7 @@ def _valid_variant_manifest(
                 )
             )
         )
-        and _is_sha256(manifest.get("trainingConfigSHA256"))
-        and isinstance(manifest.get("controlledTrainingConfig"), Mapping)
-        and canonical_sha256(dict(manifest["controlledTrainingConfig"]))
-        == manifest.get("trainingConfigSHA256")
+        and _valid_training_config_lineage(manifest)
         and _valid_dpo_training_lineage(manifest, dpo_training, artifact)
         and _is_sha256(manifest.get("frozenEvaluationSHA256"))
         and _is_sha256(manifest.get("publicEvaluationBundleSHA256"))
@@ -6912,6 +6988,10 @@ def _report_matches_variant(
         and report.get("trainingDependencyLockSHA256")
         == manifest.get("trainingDependencyLockSHA256")
         and report.get("requirementsSHA256") == manifest.get("requirementsSHA256")
+        and report.get("trainingConfigSHA256")
+        == manifest.get("trainingConfigSHA256")
+        and report.get("trainingConfigInvariantSHA256")
+        == manifest.get("trainingConfigInvariantSHA256")
         and report.get("resolvedTrainingEnvironmentSHA256")
         == manifest.get("resolvedTrainingEnvironmentSHA256")
         and report.get("spaceConfigurationSHA256")
@@ -6958,7 +7038,7 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
             *ZERO_GPU_LINEAGE_FIELDS,
             "spaceConfigurationSHA256",
             "seed",
-            "trainingConfigSHA256",
+            "trainingConfigInvariantSHA256",
             "frozenEvaluationSHA256",
             "publicEvaluationBundleSHA256",
         )

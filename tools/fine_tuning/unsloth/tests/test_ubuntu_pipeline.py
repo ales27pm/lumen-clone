@@ -20,6 +20,9 @@ from lumen_manifest_crawler.dataset import adapter_evaluation
 from lumen_manifest_crawler.dataset.chat_template_contract import (
     chat_template_contract,
 )
+from lumen_manifest_crawler.dataset.optimization_policy import (
+    expected_optimization_step_policy,
+)
 from tools.fine_tuning.unsloth import (
     evaluate_adapter,
     runtime_binding_smoke_gate,
@@ -618,6 +621,199 @@ def _validate_copied_cortex_variant(source_root: Path) -> None:
         seed=42,
         base_model_override="",
     )
+
+
+def test_validate_variant_rejects_rehashed_wrong_schema(tmp_path: Path) -> None:
+    source_root = _copy_cortex_variant_source(tmp_path)
+    manifest_path = (
+        source_root
+        / "cortex"
+        / "experiments"
+        / OPTIMIZED_VARIANT
+        / "variant_manifest.json"
+    )
+    manifest = ubuntu_pipeline.read_object(manifest_path)
+    manifest["schemaVersion"] = "lumen.adapter-experiment-variant/1.2.0"
+    ubuntu_pipeline.write_object(manifest_path, manifest)
+    _rehash_variant_manifest(manifest_path)
+
+    with pytest.raises(RuntimeError, match="schema is unsupported"):
+        _validate_copied_cortex_variant(source_root)
+
+
+@pytest.mark.parametrize("seed", [True, 42.0])
+def test_validate_variant_rejects_non_integer_requested_seed(
+    tmp_path: Path,
+    seed: object,
+) -> None:
+    source_root = _copy_cortex_variant_source(tmp_path)
+
+    with pytest.raises(RuntimeError, match="would break the controlled variant"):
+        ubuntu_pipeline.validate_variant(
+            source_root,
+            agent="cortex",
+            variant=OPTIMIZED_VARIANT,
+            seed=seed,  # type: ignore[arg-type]
+            base_model_override="",
+        )
+
+
+def _executor_optimization_config(
+    *,
+    sft_count: int,
+    dpo_count: int,
+) -> dict[str, Any]:
+    policy = expected_optimization_step_policy(
+        agent="executor",
+        sft_train_record_count=sft_count,
+        dpo_train_record_count=dpo_count,
+    )
+    return {
+        "agent": "executor",
+        "batch_size": 2,
+        "gradient_accumulation_steps": 8,
+        "learning_rate": 0.00002,
+        "num_train_epochs": policy["sft"]["selectedEpochs"],
+        "dpo_num_train_epochs": policy["dpo"]["selectedEpochs"],
+        "optimizationStepPolicy": policy,
+    }
+
+
+def test_variant_optimizer_overlay_is_exact_and_type_safe() -> None:
+    base = _executor_optimization_config(sft_count=128, dpo_count=32)
+    controlled = _executor_optimization_config(sft_count=96, dpo_count=16)
+    effective = ubuntu_pipeline._variant_effective_training_config(
+        agent="executor",
+        base_config=base,
+        controlled_config=controlled,
+        train_sft_record_count=96,
+        train_dpo_record_count=16,
+    )
+    assert effective == controlled
+    assert ubuntu_pipeline.canonical_sha256(
+        ubuntu_pipeline._variant_invariant_training_config(
+            base,
+            agent="executor",
+        )
+    ) == ubuntu_pipeline.canonical_sha256(
+        ubuntu_pipeline._variant_invariant_training_config(
+            controlled,
+            agent="executor",
+            sft_train_record_count=96,
+            dpo_train_record_count=16,
+        )
+    )
+
+    nonvariant_drift = json.loads(json.dumps(controlled))
+    nonvariant_drift["learning_rate"] = 0.9
+    with pytest.raises(RuntimeError, match="non-variant field"):
+        ubuntu_pipeline._variant_effective_training_config(
+            agent="executor",
+            base_config=base,
+            controlled_config=nonvariant_drift,
+            train_sft_record_count=96,
+            train_dpo_record_count=16,
+        )
+
+    policy_drift = json.loads(json.dumps(controlled))
+    policy_drift["optimizationStepPolicy"]["sft"][
+        "minimumEffectiveSteps"
+    ] += 1
+    with pytest.raises(RuntimeError, match="does not match its training lanes"):
+        ubuntu_pipeline._variant_effective_training_config(
+            agent="executor",
+            base_config=base,
+            controlled_config=policy_drift,
+            train_sft_record_count=96,
+            train_dpo_record_count=16,
+        )
+
+    bool_epoch = json.loads(json.dumps(controlled))
+    bool_epoch["num_train_epochs"] = True
+    with pytest.raises(RuntimeError, match="does not match its training lanes"):
+        ubuntu_pipeline._variant_effective_training_config(
+            agent="executor",
+            base_config=base,
+            controlled_config=bool_epoch,
+            train_sft_record_count=96,
+            train_dpo_record_count=16,
+        )
+
+
+@pytest.mark.parametrize("field,value", [("batch_size", True), ("gradient_accumulation_steps", 8.0)])
+def test_variant_optimizer_invariant_rejects_bool_and_float_batch_state(
+    field: str,
+    value: Any,
+) -> None:
+    config = _executor_optimization_config(sft_count=96, dpo_count=16)
+    config[field] = value
+    with pytest.raises(RuntimeError, match="invariant training config is invalid"):
+        ubuntu_pipeline._variant_invariant_training_config(
+            config,
+            agent="executor",
+            sft_train_record_count=96,
+            dpo_train_record_count=16,
+        )
+
+
+def test_training_attestation_rejects_missing_null_controlled_field() -> None:
+    config = {
+        "runExecutionPlan": _test_execution_plan(
+            evaluation_scope="smoke",
+            evaluation_max_examples=1,
+            gguf_requested=False,
+        )
+    }
+    manifest = {
+        "controlledTrainingConfig": {"spaceConfigurationSHA256": None}
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="lacks controlled fields: spaceConfigurationSHA256",
+    ):
+        ubuntu_pipeline._training_attestation(config, manifest)
+
+
+@pytest.mark.parametrize("controlled_seed", [True, 1.0])
+def test_training_attestation_rejects_python_numeric_equality(
+    controlled_seed: object,
+) -> None:
+    controlled = {"seed": controlled_seed}
+    config = {
+        "runExecutionPlan": _test_execution_plan(
+            evaluation_scope="smoke",
+            evaluation_max_examples=1,
+            gguf_requested=False,
+        ),
+        "seed": 1,
+    }
+    manifest = {
+        "controlledTrainingConfig": controlled,
+        "trainingConfigSHA256": ubuntu_pipeline.canonical_sha256(controlled),
+    }
+
+    with pytest.raises(RuntimeError, match="drifted from the controlled variant"):
+        ubuntu_pipeline._training_attestation(config, manifest)
+
+
+def test_training_attestation_rejects_declared_exact_hash_drift() -> None:
+    controlled = {"seed": 42}
+    config = {
+        "runExecutionPlan": _test_execution_plan(
+            evaluation_scope="smoke",
+            evaluation_max_examples=1,
+            gguf_requested=False,
+        ),
+        "seed": 42,
+    }
+    manifest = {
+        "controlledTrainingConfig": controlled,
+        "trainingConfigSHA256": "0" * 64,
+    }
+
+    with pytest.raises(RuntimeError, match="drifted from the controlled variant"):
+        ubuntu_pipeline._training_attestation(config, manifest)
 
 
 def _evaluation_record(eval_id: str = "eval-one", *, agent: str = "cortex") -> dict:
