@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import replace
 from itertools import combinations
 from pathlib import Path
@@ -8529,7 +8529,7 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
     )
     assert train_counts == Counter(
         {
-            "fleet_contract_delegation": 36,
+            "fleet_contract_delegation": 88,
             "fleet_contract_known_slots": 21,
             "fleet_contract_tool_boundary": 21,
         }
@@ -8587,24 +8587,25 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
             == "fleet_contract_delegation"
         ],
     }
-    for split, expected_per_owner in (
-        (
-            "train",
-            FLEET_DELEGATION_PROMPTS_PER_OWNER
-            - FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER,
-        ),
-        ("validation", FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER),
-    ):
+    for split in ("train", "validation"):
         owner_counts = Counter(
             json.loads(record["chosen"]["content"])["delegateTo"]
             for record in delegation_by_split[split]
         )
-        assert owner_counts == Counter(
-            {
-                slot_ids_by_agent[owner]: expected_per_owner
-                for owner in delegation_tasks
-            }
+        expected_per_owner = (
+            FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER
+            if split == "validation"
+            else FLEET_DELEGATION_PROMPTS_PER_OWNER
+            - FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER
         )
+        expected_counts = {
+            slot_ids_by_agent[owner]: expected_per_owner
+            for owner in delegation_tasks
+        }
+        if split == "train":
+            expected_counts[slot_ids_by_agent["embedding"]] += 8
+            expected_counts[slot_ids_by_agent["executor"]] += 8
+        assert owner_counts == Counter(expected_counts)
 
     for owner in delegation_tasks:
         target_slot_id = slot_ids_by_agent[owner]
@@ -8614,15 +8615,40 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
             if json.loads(record["chosen"]["content"])["delegateTo"]
             == target_slot_id
         ]
-        assert Counter(
+        rejected_counts = Counter(
             json.loads(record["rejected"]["content"])["delegateTo"]
             for record in owner_train
-        ) == Counter(
-            [
-                *[slot_id for slot_id in slot_ids if slot_id != target_slot_id],
-                "invented_shadow_slot",
-            ]
         )
+        expected_alternatives = {
+            *[slot_id for slot_id in slot_ids if slot_id != target_slot_id],
+            "invented_shadow_slot",
+        }
+        assert set(rejected_counts) == expected_alternatives
+        assert min(rejected_counts.values()) >= 2
+        contrast_modes = Counter(
+            record["metadata"]["contrastMode"] for record in owner_train
+        )
+        assert contrast_modes["balanced_rotation"] == 12
+        assert contrast_modes["observed_mimicry_confusion"] == (
+            7 if owner in {"embedding", "executor"} else 0
+        )
+        assert contrast_modes["independent_semantic_confusion"] == (
+            1 if owner in {"embedding", "executor"} else 0
+        )
+        for record in owner_train:
+            mode = record["metadata"]["contrastMode"]
+            rejected_slot = json.loads(record["rejected"]["content"])[
+                "delegateTo"
+            ]
+            if mode == "observed_mimicry_confusion":
+                assert rejected_slot == slot_ids_by_agent["mimicry"]
+                assert "observed Mimicry" in record["metadata"]["reason"]
+            elif mode == "independent_semantic_confusion":
+                assert rejected_slot != slot_ids_by_agent["mimicry"]
+                assert (
+                    "independent wrong semantic owner"
+                    in record["metadata"]["reason"]
+                )
 
     records = [
         record
@@ -9096,13 +9122,14 @@ def test_balanced_fleet_preference_targets_become_split_preserving_sft_anchors(
         ],
     }
 
-    pair_by_prompt = {
-        (
-            record["metadata"]["taskType"],
-            _canonical_rendered_prompt_key(record, lane="dpo"),
-        ): record
-        for record in pairs
-    }
+    pairs_by_prompt = defaultdict(list)
+    for record in pairs:
+        pairs_by_prompt[
+            (
+                record["metadata"]["taskType"],
+                _canonical_rendered_prompt_key(record, lane="dpo"),
+            )
+        ].append(record)
     anchor_by_prompt = {
         (
             record["metadata"]["taskType"],
@@ -9110,29 +9137,38 @@ def test_balanced_fleet_preference_targets_become_split_preserving_sft_anchors(
         ): record
         for record in anchors
     }
-    assert len(pair_by_prompt) == len(pairs)
     assert len(anchor_by_prompt) == len(anchors)
-    assert pair_by_prompt.keys() == anchor_by_prompt.keys()
+    assert pairs_by_prompt.keys() == anchor_by_prompt.keys()
     assert {
         task_type for task_type, _ in anchor_by_prompt
     } == FLEET_BALANCED_CONTRACT_TASK_TYPES
-    assert Counter(
-        (
-            record["metadata"]["taskType"],
-            record["metadata"]["requiredSplit"],
+    assert all(
+        len(records) == (
+            2
+            if any(
+                record["metadata"].get("contrastMode")
+                in {
+                    "observed_mimicry_confusion",
+                    "independent_semantic_confusion",
+                }
+                for record in records
+            )
+            else 1
         )
-        for record in anchors
-    ) == Counter(
-        (
-            record["metadata"]["taskType"],
-            record["metadata"]["requiredSplit"],
-        )
-        for record in pairs
+        for records in pairs_by_prompt.values()
     )
 
     for key, anchor in anchor_by_prompt.items():
         task_type, _ = key
-        pair = pair_by_prompt[key]
+        prompt_pairs = pairs_by_prompt[key]
+        pair = prompt_pairs[0]
+        assert all(record["prompt"] == pair["prompt"] for record in prompt_pairs)
+        assert all(record["chosen"] == pair["chosen"] for record in prompt_pairs)
+        assert all(
+            record["metadata"]["requiredSplit"]
+            == pair["metadata"]["requiredSplit"]
+            for record in prompt_pairs
+        )
         assert anchor["messages"][:-1] == pair["prompt"]
         assert anchor["messages"][-1] == pair["chosen"]
         assert anchor["metadata"]["requiredSplit"] == (
@@ -9249,7 +9285,7 @@ def test_compiled_fleet_anchors_survive_with_dpo_parity_and_clean_evaluation(
         slot_ids_by_agent[owner] for owner in _fleet_delegation_tasks()
     }
     for split, records, expected_per_owner in (
-        ("train", fleet.train_sft, 5),
+        ("train", fleet.train_sft, 11),
         ("validation", fleet.val_sft, 3),
     ):
         owner_counts = Counter(

@@ -8,6 +8,7 @@ import pytest
 from lumen_manifest_crawler import fleet_artifacts as fleet_artifact_module
 from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
+from lumen_manifest_crawler.dataset import fine_tuning as fine_tuning_module
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
     _score_orchestration_graph,
     canonical_sha256,
@@ -298,15 +299,15 @@ def test_native_fleet_orchestration_covers_event_graph_boundaries_and_eval_contr
 
     assert Counter(
         record["metadata"]["behaviorClass"] for record in sft_records
-    ) == Counter({behavior_class: 5 for behavior_class in expected_classes})
+    ) == Counter({behavior_class: 6 for behavior_class in expected_classes})
     assert Counter(
         (record["recordType"], record["metadata"]["requiredSplit"])
         for record in native_training
     ) == Counter(
         {
-            ("sft", "train"): 36,
+            ("sft", "train"): 45,
             ("sft", "validation"): 9,
-            ("dpo", "train"): 21,
+            ("dpo", "train"): 40,
             ("dpo", "validation"): 4,
         }
     )
@@ -326,8 +327,11 @@ def test_native_fleet_orchestration_covers_event_graph_boundaries_and_eval_contr
         record["metadata"]["requiredSplit"]
         == (
             "validation"
-            if record["metadata"]["trainingMatrixVariant"]
-            == "normalization-policy-audited"
+            if record["metadata"]["trainingMatrixVariant"] in {
+                "normalized-intake",
+                "policy-audited",
+                "normalization-policy-audited",
+            }
             else "train"
         )
         for record in native_training
@@ -380,11 +384,11 @@ def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
     train_dpo = native_by_behavior(fleet.train_dpo)
     assert set(train_sft) == expected_sft
     assert set(train_dpo) == expected_dpo
-    assert sum(map(len, train_sft.values())) == 36
-    assert sum(map(len, train_dpo.values())) == 21
-    assert all(len(records) == 4 for records in train_sft.values())
+    assert sum(map(len, train_sft.values())) == 45
+    assert sum(map(len, train_dpo.values())) == 40
+    assert all(len(records) == 5 for records in train_sft.values())
     assert all(
-        len(records) == (4 if behavior in full_matrix_dpo else 1)
+        len(records) == (5 if behavior in full_matrix_dpo else 4)
         for behavior, records in train_dpo.items()
     )
     val_sft = native_by_behavior(fleet.val_sft)
@@ -401,8 +405,6 @@ def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
     expected_train_variants = {
         "core",
         "behavior-conditioned",
-        "normalized-intake",
-        "policy-audited",
     }
     for behavior, records in train_sft.items():
         assert {
@@ -423,7 +425,7 @@ def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
     for grouped in (train_sft, train_dpo):
         for behavior, records in grouped.items():
             expected_topology_count = (
-                4
+                2
                 if grouped is train_sft or behavior in full_matrix_dpo
                 else 1
             )
@@ -442,12 +444,120 @@ def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
                 ]
                 topology_hashes.add(topology_hash)
             assert len(topology_hashes) == expected_topology_count
+            behavior_conditioned = [
+                record
+                for record in records
+                if record["metadata"]["trainingMatrixVariant"]
+                == "behavior-conditioned"
+            ]
+            assert len(behavior_conditioned) == 4
+            assert {
+                record["metadata"]["behaviorConditionedInstanceIndex"]
+                for record in behavior_conditioned
+            } == {1, 2, 3, 4}
+            assert {
+                record["metadata"]["atomicPreferenceMutation"]
+                for record in behavior_conditioned
+            } == {
+                "aggregation_owner_type",
+                "event_type_vocabulary",
+                "decision_strategy_literal",
+                "decision_stop_reason_literal",
+            }
+            assert all(
+                record["metadata"]["topologyCoverageMode"]
+                == "trained_policy_topology_unseen_frozen_instance"
+                for record in behavior_conditioned
+            )
     for grouped in (val_sft, val_dpo):
         for records in grouped.values():
             assert {
                 record["metadata"]["trainingMatrixVariant"]
                 for record in records
             } == {"normalization-policy-audited"}
+
+
+def test_compiled_fleet_native_coverage_guard_rejects_replica_loss_and_mutation_collapse(
+    production_fleet_compilation,
+) -> None:
+    _, _, _, compiled = production_fleet_compilation
+    fleet = compiled["fleet"]
+    target = next(
+        record
+        for record in fleet.train_sft
+        if record["metadata"].get("sourceFamily")
+        == "fleet_orchestration_native"
+        and record["metadata"].get("behaviorClass") == "no-delegation"
+        and record["metadata"].get("trainingMatrixVariant")
+        == "behavior-conditioned"
+        and record["metadata"].get("behaviorConditionedInstanceIndex") == 4
+    )
+
+    with pytest.raises(ValueError, match="variant counts are incomplete"):
+        fine_tuning_module._assert_fleet_native_orchestration_training_coverage(
+            train_sft=[record for record in fleet.train_sft if record is not target],
+            val_sft=fleet.val_sft,
+            train_dpo=fleet.train_dpo,
+            val_dpo=fleet.val_dpo,
+        )
+
+    collapsed = []
+    for record in fleet.train_sft:
+        if record is target:
+            record = {**record, "metadata": dict(record["metadata"])}
+            record["metadata"]["atomicPreferenceMutation"] = (
+                "aggregation_owner_type"
+            )
+        collapsed.append(record)
+    with pytest.raises(ValueError, match="atomic mutation coverage is incomplete"):
+        fine_tuning_module._assert_fleet_native_orchestration_training_coverage(
+            train_sft=collapsed,
+            val_sft=fleet.val_sft,
+            train_dpo=fleet.train_dpo,
+            val_dpo=fleet.val_dpo,
+        )
+
+    missing_target = {
+        **target,
+        "messages": [],
+        "metadata": dict(target["metadata"]),
+    }
+    with pytest.raises(ValueError, match="lacks one assistant target"):
+        fine_tuning_module._assert_fleet_native_orchestration_training_coverage(
+            train_sft=[
+                missing_target if record is target else record
+                for record in fleet.train_sft
+            ],
+            val_sft=fleet.val_sft,
+            train_dpo=fleet.train_dpo,
+            val_dpo=fleet.val_dpo,
+        )
+
+    dpo_target = next(
+        record
+        for record in fleet.train_dpo
+        if record["metadata"].get("sourceFamily")
+        == "fleet_orchestration_native"
+        and record["metadata"].get("behaviorClass") == "no-delegation"
+        and record["metadata"].get("trainingMatrixVariant")
+        == "behavior-conditioned"
+        and record["metadata"].get("behaviorConditionedInstanceIndex") == 4
+    )
+    collapsed_preference = {
+        **dpo_target,
+        "rejected": dict(dpo_target["chosen"]),
+        "metadata": dict(dpo_target["metadata"]),
+    }
+    with pytest.raises(ValueError, match="preference mutation is invalid"):
+        fine_tuning_module._assert_fleet_native_orchestration_training_coverage(
+            train_sft=fleet.train_sft,
+            val_sft=fleet.val_sft,
+            train_dpo=[
+                collapsed_preference if record is dpo_target else record
+                for record in fleet.train_dpo
+            ],
+            val_dpo=fleet.val_dpo,
+        )
 
 
 def test_native_fleet_orchestration_is_fleet_owned_and_manifest_grounded():
@@ -557,9 +667,9 @@ def test_native_fleet_orchestration_preferences_reject_boundary_violations():
         "nonexistent-slot-negative",
     }
     assert set(dpo_by_class) == expected_classes
-    assert sum(map(len, dpo_by_class.values())) == 25
+    assert sum(map(len, dpo_by_class.values())) == 44
     assert all(
-        len(records) == (5 if behavior_class in full_matrix_classes else 1)
+        len(records) == (6 if behavior_class in full_matrix_classes else 4)
         for behavior_class, records in dpo_by_class.items()
     )
     for behavior_class, records in dpo_by_class.items():
@@ -567,8 +677,6 @@ def test_native_fleet_orchestration_preferences_reject_boundary_violations():
             {
                 "core",
                 "behavior-conditioned",
-                "normalized-intake",
-                "policy-audited",
                 "normalization-policy-audited",
             }
             if behavior_class in full_matrix_classes
@@ -641,75 +749,68 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
         == "behavior-conditioned"
     ]
     expected_mutations = {
-        "no-delegation": (
-            "aggregation_owner_type",
+        "aggregation_owner_type": (
             "$.decision.aggregationOwnerSlotID",
             "aggregation_owner_mismatch",
         ),
-        "sequential-dependencies": (
-            "event_type_vocabulary",
+        "event_type_vocabulary": (
             "$.events[1].type",
             "event_type_schema_unknown",
         ),
-        "parallel-dependencies": (
-            "decision_strategy_literal",
+        "decision_strategy_literal": (
             "$.decision.strategy",
             "strategy_mismatch",
         ),
-        "context-handoff": (
-            "decision_stop_reason_literal",
+        "decision_stop_reason_literal": (
             "$.decision.stopReason",
             "stop_reason_mismatch",
-        ),
-        "duplicate-suppression": (
-            "aggregation_owner_type",
-            "$.decision.aggregationOwnerSlotID",
-            "aggregation_owner_mismatch",
-        ),
-        "aggregation-owner": (
-            "event_type_vocabulary",
-            "$.events[1].type",
-            "event_type_schema_unknown",
-        ),
-        "approval-boundary": (
-            "decision_strategy_literal",
-            "$.decision.strategy",
-            "strategy_mismatch",
-        ),
-        "unavailable-boundary": (
-            "decision_stop_reason_literal",
-            "$.decision.stopReason",
-            "stop_reason_mismatch",
-        ),
-        "nonexistent-slot-negative": (
-            "aggregation_owner_type",
-            "$.decision.aggregationOwnerSlotID",
-            "aggregation_owner_mismatch",
         ),
     }
 
-    assert len(atomic_records) == 9
-    assert {
+    assert len(atomic_records) == 36
+    assert Counter(
         record["metadata"]["behaviorClass"] for record in atomic_records
-    } == set(expected_mutations)
+    ) == Counter(
+        {
+            behavior_class: 4
+            for behavior_class in {
+                "no-delegation",
+                "sequential-dependencies",
+                "parallel-dependencies",
+                "context-handoff",
+                "duplicate-suppression",
+                "aggregation-owner",
+                "approval-boundary",
+                "unavailable-boundary",
+                "nonexistent-slot-negative",
+            }
+        }
+    )
     assert Counter(
         record["metadata"]["atomicPreferenceMutation"]
         for record in atomic_records
     ) == Counter(
         {
-            "aggregation_owner_type": 3,
-            "event_type_vocabulary": 2,
-            "decision_strategy_literal": 2,
-            "decision_stop_reason_literal": 2,
+            "aggregation_owner_type": 9,
+            "event_type_vocabulary": 9,
+            "decision_strategy_literal": 9,
+            "decision_stop_reason_literal": 9,
         }
+    )
+    mutations_by_behavior = defaultdict(set)
+    for record in atomic_records:
+        mutations_by_behavior[record["metadata"]["behaviorClass"]].add(
+            record["metadata"]["atomicPreferenceMutation"]
+        )
+    assert all(
+        mutations == set(expected_mutations)
+        for mutations in mutations_by_behavior.values()
     )
 
     for record in atomic_records:
         metadata = record["metadata"]
-        behavior_class = metadata["behaviorClass"]
-        expected_kind, expected_path, rejected_reason = expected_mutations[
-            behavior_class
-        ]
+        expected_kind = metadata["atomicPreferenceMutation"]
+        expected_path, rejected_reason = expected_mutations[expected_kind]
         chosen = json.loads(record["chosen"]["content"])
         rejected = json.loads(record["rejected"]["content"])
         differences = fleet_artifact_module._orchestration_scalar_leaf_differences(
@@ -720,7 +821,7 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
         assert metadata["atomicPreferenceMutation"] == expected_kind
         assert differences == [expected_path]
         if expected_kind == "aggregation_owner_type":
-            assert chosen["decision"]["aggregationOwnerSlotID"] is None
+            assert chosen["decision"]["aggregationOwnerSlotID"] != "null"
             assert rejected["decision"]["aggregationOwnerSlotID"] == "null"
         elif expected_kind == "event_type_vocabulary":
             assert rejected["events"][1]["type"] == "invented_event_alias"
@@ -730,6 +831,7 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
             assert rejected["decision"]["stopReason"] == "invented_stop_reason"
 
         scenario = scenarios_by_id[metadata["scenarioID"]]
+        behavior_class = metadata["behaviorClass"]
         graph = scenario["graph"]
         decision = graph["decision"]
         metric = {
@@ -800,7 +902,7 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
         eval_by_class[scenario["behaviorClass"]].append(scenario)
 
     assert set(training_by_class) == set(eval_by_class)
-    assert all(len(scenarios) == 5 for scenarios in training_by_class.values())
+    assert all(len(scenarios) == 6 for scenarios in training_by_class.values())
     assert all(len(scenarios) == 1 for scenarios in eval_by_class.values())
 
     training_exact_hashes = {
@@ -827,7 +929,7 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
         )
         for scenario in eval_scenarios
     }
-    assert len(training_exact_hashes) == 45
+    assert len(training_exact_hashes) == 54
     assert len(eval_exact_hashes) == 9
     assert len(eval_topology_hashes) == 9
     assert training_exact_hashes.isdisjoint(eval_exact_hashes)
@@ -842,7 +944,7 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
                 )
                 for scenario in scenarios
             }
-        ) == 5
+        ) == 3
         assert all(
             fleet_artifact_module._orchestration_prompt_reconstructs_graph(
                 fleet_artifact_module._orchestration_training_prompt(scenario),
@@ -977,13 +1079,16 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
         heldout_event_types = [
             event["type"] for event in heldout[0]["graph"]["events"]
         ]
-        assert len(topology_matches) == 1
-        assert topology_matches[0]["trainingMatrixVariant"] == (
-            "behavior-conditioned"
+        assert len(topology_matches) == 4
+        assert all(
+            match["trainingMatrixVariant"] == "behavior-conditioned"
+            for match in topology_matches
         )
-        assert heldout_event_types == [
-            event["type"] for event in topology_matches[0]["graph"]["events"]
-        ]
+        assert all(
+            heldout_event_types
+            == [event["type"] for event in match["graph"]["events"]]
+            for match in topology_matches
+        )
         assert all(
             heldout_event_types
             != [event["type"] for event in scenario["graph"]["events"]]
@@ -1101,19 +1206,20 @@ def test_native_fleet_holdout_guard_rejects_exact_and_invalid_topology_coverage(
             eval_scenarios=[exact_collision],
         )
 
-    controlled_match = next(
+    controlled_matches = [
         scenario
         for scenario in training
         if scenario["behaviorClass"] == heldout["behaviorClass"]
         and scenario["trainingMatrixVariant"] == "behavior-conditioned"
-    )
+    ]
+    assert len(controlled_matches) == 4
     missing_coverage = [
-        scenario for scenario in training if scenario is not controlled_match
+        scenario for scenario in training if scenario not in controlled_matches
     ]
     with pytest.raises(
         ValueError,
         match=(
-            "lacks controlled trained-topology coverage: .*observed=0 required=1"
+            "lacks controlled trained-topology coverage: .*observed=0 required=4"
         ),
     ):
         fleet_artifact_module._assert_orchestration_holdouts_disjoint(
@@ -1121,7 +1227,7 @@ def test_native_fleet_holdout_guard_rejects_exact_and_invalid_topology_coverage(
             eval_scenarios=[heldout],
         )
 
-    duplicate_match = json.loads(json.dumps(controlled_match))
+    duplicate_match = json.loads(json.dumps(controlled_matches[0]))
     duplicate_match["id"] = "duplicate-controlled-topology"
     duplicate_match["graph"]["scenarioID"] = "duplicate-controlled-topology"
     id_map = {
@@ -1136,11 +1242,25 @@ def test_native_fleet_holdout_guard_rejects_exact_and_invalid_topology_coverage(
     with pytest.raises(
         ValueError,
         match=(
-            "lacks controlled trained-topology coverage: .*observed=2 required=1"
+            "lacks controlled trained-topology coverage: .*observed=5 required=4"
         ),
     ):
         fleet_artifact_module._assert_orchestration_holdouts_disjoint(
             training_scenarios=[*training, duplicate_match],
+            eval_scenarios=[heldout],
+        )
+
+    repeated_match_training = [
+        scenario
+        for scenario in training
+        if scenario not in controlled_matches
+    ] + [controlled_matches[0]] * 4
+    with pytest.raises(
+        ValueError,
+        match="trained-topology replicas are not distinct and complete",
+    ):
+        fleet_artifact_module._assert_orchestration_holdouts_disjoint(
+            training_scenarios=repeated_match_training,
             eval_scenarios=[heldout],
         )
 
@@ -1209,12 +1329,12 @@ def test_native_orchestration_training_routes_only_to_fleet_adapter(
             == "fleet_orchestration_event_graph_preference"
         ]
         if agent == "fleet":
-            assert len(train_orchestration_sft) == 36
+            assert len(train_orchestration_sft) == 45
             assert len(val_orchestration_sft) == 9
-            assert len(train_orchestration_dpo) == 21
+            assert len(train_orchestration_dpo) == 40
             assert len(val_orchestration_dpo) == 4
-            assert len(train_orchestration_sft + val_orchestration_sft) == 45
-            assert len(train_orchestration_dpo + val_orchestration_dpo) == 25
+            assert len(train_orchestration_sft + val_orchestration_sft) == 54
+            assert len(train_orchestration_dpo + val_orchestration_dpo) == 44
         else:
             assert not train_orchestration_sft
             assert not val_orchestration_sft
