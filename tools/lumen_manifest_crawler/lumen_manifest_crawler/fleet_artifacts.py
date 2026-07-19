@@ -19,7 +19,7 @@ ORCHESTRATION_DERIVATION_SCHEMA_VERSION = (
 )
 ORCHESTRATION_EVENT_ID_GRAMMAR = "<scenarioID>::event::<one-based two-digit order>"
 ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT = "behavior-conditioned"
-ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS = 1
+ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS = 4
 ORCHESTRATION_OUTPUT_INTERFACE = (
     "Canonical output interface: the top-level keys are exactly `decision`, "
     "`dependencies`, `events`, `graphSchemaVersion`, `knownSlotIDs`, and "
@@ -1320,14 +1320,18 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             **_native_orchestration_metadata(manifest, scenario["id"]),
             "behaviorClass": scenario["behaviorClass"],
             "trainingMatrixVariant": scenario["trainingMatrixVariant"],
-            # The missing behavior-conditioned policy cell and three wrapper
-            # matrices are optimizer-visible. The combined wrapper matrix is
-            # validation-only, while frozen facts, prompts, IDs, and exact
-            # graphs remain unseen evaluation instances.
+            # Core and four independent behavior-conditioned instances are
+            # optimizer-visible. The combined wrapper remains validation-only:
+            # its extra stages and suffixed decision
+            # literals must not outweigh the canonical behavior topology.
+            # Frozen facts, prompts, IDs, and exact graphs remain unseen.
             "requiredSplit": (
                 "validation"
-                if scenario["trainingMatrixVariant"]
-                == "normalization-policy-audited"
+                if scenario["trainingMatrixVariant"] in {
+                    "normalized-intake",
+                    "policy-audited",
+                    "normalization-policy-audited",
+                }
                 else "train"
             ),
             "trainingTopologySHA256": canonical_sha256(
@@ -1761,22 +1765,6 @@ def _orchestration_training_scenarios(
                     ),
                 )
             )
-        matrix.append(
-            _orchestration_training_variant(
-                manifest,
-                scenario,
-                variant="normalized-intake",
-                boundary_value_index=1,
-            )
-        )
-        matrix.append(
-            _orchestration_training_variant(
-                manifest,
-                scenario,
-                variant="policy-audited",
-                boundary_value_index=2,
-            )
-        )
         matrix.append(
             _orchestration_training_variant(
                 manifest,
@@ -3360,6 +3348,47 @@ def _assert_orchestration_holdouts_disjoint(
                 "Fleet holdout lacks controlled trained-topology coverage: "
                 f"scenario={scenario['id']} observed={len(topology_matches)} "
                 f"required={ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS}"
+            )
+        replica_identity_values = [
+            training.get("id") for training in topology_matches
+        ]
+        replica_identities = set(replica_identity_values)
+        replica_graph_hashes = {
+            canonical_sha256(training["graph"])
+            for training in topology_matches
+        }
+        replica_index_values = [
+            training.get("behaviorConditionedInstanceIndex")
+            for training in topology_matches
+        ]
+        replica_indices = set(replica_index_values)
+        replica_mutations = {
+            training.get("atomicPreferenceMutation")
+            for training in topology_matches
+        }
+        if (
+            len(replica_identities)
+            != ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS
+            or not all(
+                isinstance(identity, str) and identity
+                for identity in replica_identity_values
+            )
+            or len(replica_graph_hashes)
+            != ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS
+            or not all(type(index) is int for index in replica_index_values)
+            or replica_indices
+            != set(range(1, ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS + 1))
+            or replica_mutations
+            != {
+                "aggregation_owner_type",
+                "event_type_vocabulary",
+                "decision_strategy_literal",
+                "decision_stop_reason_literal",
+            }
+        ):
+            raise ValueError(
+                "Fleet holdout trained-topology replicas are not distinct and "
+                f"complete: scenario={scenario['id']}"
             )
         if topology_hash not in training_topology_hashes:
             raise ValueError(

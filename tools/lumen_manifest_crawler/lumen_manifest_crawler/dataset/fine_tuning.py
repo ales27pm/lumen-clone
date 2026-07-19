@@ -47,6 +47,10 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     promotion_contract,
     upgrade_evaluation_record,
 )
+from lumen_manifest_crawler.fleet_artifacts import (
+    _orchestration_scalar_leaf_differences,
+    _orchestration_topology_contract,
+)
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
@@ -109,7 +113,7 @@ FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL = "public_behavioral"
 FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC = "supplemental_static"
 FLEET_SOURCE_ROLE_REGISTRY_SCHEMA_VERSION = "lumen.fleet-source-role/1.0.0"
 FLEET_DELEGATION_REASON = "manifest_responsibility_match"
-FLEET_DELEGATION_PROMPTS_PER_OWNER = 8
+FLEET_DELEGATION_PROMPTS_PER_OWNER = 14
 FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER = 2
 FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES = 3
 SOURCE_TOKEN_PROXY_SCHEMA_VERSION = "lumen.source-token-proxy/1.0.0"
@@ -148,13 +152,29 @@ FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS = frozenset(
     {
         "core",
         "behavior-conditioned",
-        "normalized-intake",
-        "policy-audited",
     }
 )
 FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS = frozenset(
     {"normalization-policy-audited"}
 )
+FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT = {
+    "aggregation_owner_type": (
+        "$.decision.aggregationOwnerSlotID",
+        "null",
+    ),
+    "event_type_vocabulary": (
+        "$.events[1].type",
+        "invented_event_alias",
+    ),
+    "decision_strategy_literal": (
+        "$.decision.strategy",
+        "invented_strategy",
+    ),
+    "decision_stop_reason_literal": (
+        "$.decision.stopReason",
+        "invented_stop_reason",
+    ),
+}
 FLEET_BALANCED_CONTRACT_TASK_TYPES = frozenset(
     {
         "fleet_contract_delegation",
@@ -1785,6 +1805,126 @@ def _fleet_source_role_counts(
     return counts
 
 
+def _fleet_native_graph_payload(
+    content: Any,
+    *,
+    lane: str,
+    behavior: str,
+    output_kind: str,
+) -> dict[str, Any]:
+    if not isinstance(content, str) or not content:
+        raise ValueError(
+            f"Fleet native {lane} {behavior} lacks {output_kind} graph content"
+        )
+    try:
+        graph = _strict_json_loads(content)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(
+            f"Fleet native {lane} {behavior} has invalid {output_kind} graph JSON"
+        ) from exc
+    required_keys = {
+        "decision",
+        "dependencies",
+        "events",
+        "graphSchemaVersion",
+        "knownSlotIDs",
+        "scenarioID",
+    }
+    if not isinstance(graph, dict) or set(graph) != required_keys:
+        raise ValueError(
+            f"Fleet native {lane} {behavior} has invalid {output_kind} graph schema"
+        )
+    decision = graph.get("decision")
+    if not isinstance(decision, dict) or set(decision) != {
+        "aggregationOwnerSlotID",
+        "delegatedSlotIDs",
+        "stopReason",
+        "strategy",
+    }:
+        raise ValueError(
+            f"Fleet native {lane} {behavior} has invalid {output_kind} decision schema"
+        )
+    if (
+        not isinstance(graph.get("events"), list)
+        or not graph["events"]
+        or not isinstance(graph.get("dependencies"), list)
+        or not isinstance(graph.get("knownSlotIDs"), list)
+        or not graph["knownSlotIDs"]
+        or not isinstance(graph.get("graphSchemaVersion"), str)
+        or not isinstance(graph.get("scenarioID"), str)
+        or not graph["scenarioID"]
+    ):
+        raise ValueError(
+            f"Fleet native {lane} {behavior} has incomplete {output_kind} graph"
+        )
+    return graph
+
+
+def _fleet_native_record_graphs(
+    record: dict[str, Any],
+    *,
+    lane: str,
+    behavior: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if lane.endswith("SFT"):
+        messages = record.get("messages")
+        assistants = (
+            [
+                message.get("content")
+                for message in messages
+                if isinstance(message, dict)
+                and message.get("role") == "assistant"
+            ]
+            if isinstance(messages, list)
+            else []
+        )
+        if len(assistants) != 1:
+            raise ValueError(
+                f"Fleet native {lane} {behavior} lacks one assistant target"
+            )
+        return (
+            _fleet_native_graph_payload(
+                assistants[0],
+                lane=lane,
+                behavior=behavior,
+                output_kind="chosen",
+            ),
+            None,
+        )
+
+    chosen = record.get("chosen")
+    rejected = record.get("rejected")
+    return (
+        _fleet_native_graph_payload(
+            chosen.get("content") if isinstance(chosen, dict) else None,
+            lane=lane,
+            behavior=behavior,
+            output_kind="chosen",
+        ),
+        _fleet_native_graph_payload(
+            rejected.get("content") if isinstance(rejected, dict) else None,
+            lane=lane,
+            behavior=behavior,
+            output_kind="rejected",
+        ),
+    )
+
+
+def _fleet_native_rejected_mutation_value(
+    rejected: dict[str, Any],
+    mutation: str,
+) -> Any:
+    if mutation == "aggregation_owner_type":
+        return rejected["decision"]["aggregationOwnerSlotID"]
+    if mutation == "event_type_vocabulary":
+        return rejected["events"][1]["type"]
+    if mutation == "decision_strategy_literal":
+        return rejected["decision"]["strategy"]
+    if mutation == "decision_stop_reason_literal":
+        return rejected["decision"]["stopReason"]
+    raise ValueError(f"Unsupported Fleet native mutation: {mutation!r}")
+
+
 def _assert_fleet_native_orchestration_training_coverage(
     *,
     train_sft: list[dict[str, Any]],
@@ -1848,23 +1988,35 @@ def _assert_fleet_native_orchestration_training_coverage(
     ):
         return
     train_sft_variants = {
-        behavior: FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS
+        behavior: {
+            variant: 4 if variant == "behavior-conditioned" else 1
+            for variant in FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS
+        }
         for behavior in FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
     }
     train_dpo_variants = {
         behavior: (
-            FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS
+            {
+                variant: 4 if variant == "behavior-conditioned" else 1
+                for variant in FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS
+            }
             if behavior in FLEET_NATIVE_ORCHESTRATION_FULL_MATRIX_DPO_BEHAVIORS
-            else frozenset({"behavior-conditioned"})
+            else {"behavior-conditioned": 4}
         )
         for behavior in FLEET_NATIVE_ORCHESTRATION_DPO_BEHAVIORS
     }
     validation_sft_variants = {
-        behavior: FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS
+        behavior: {
+            variant: 1
+            for variant in FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS
+        }
         for behavior in FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
     }
     validation_dpo_variants = {
-        behavior: FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS
+        behavior: {
+            variant: 1
+            for variant in FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS
+        }
         for behavior in FLEET_NATIVE_ORCHESTRATION_FULL_MATRIX_DPO_BEHAVIORS
     }
     expected_by_lane = {
@@ -1882,8 +2034,12 @@ def _assert_fleet_native_orchestration_training_coverage(
         )
     for lane, (grouped, expected_variants_by_behavior) in expected_by_lane.items():
         for behavior, records in sorted(grouped.items()):
-            expected_variants = expected_variants_by_behavior[behavior]
-            variants: set[str] = set()
+            expected_variant_counts = expected_variants_by_behavior[behavior]
+            variant_counts: dict[str, int] = {}
+            behavior_conditioned_indices: set[int] = set()
+            behavior_conditioned_mutations: set[str] = set()
+            behavior_conditioned_graph_hashes: set[str] = set()
+            behavior_conditioned_scenario_ids: set[str] = set()
             topology_hashes: set[str] = set()
             for record in records:
                 metadata = record["metadata"]
@@ -1899,14 +2055,107 @@ def _assert_fleet_native_orchestration_training_coverage(
                     raise ValueError(
                         f"Fleet native {lane} {behavior} lacks a topology digest"
                     )
-                variants.add(variant)
-                topology_hashes.add(topology_hash)
-            if variants != set(expected_variants):
-                raise ValueError(
-                    f"Fleet native {lane} {behavior} variants are "
-                    f"incomplete: {sorted(variants)}"
+                chosen_graph, rejected_graph = _fleet_native_record_graphs(
+                    record,
+                    lane=lane,
+                    behavior=behavior,
                 )
-            if len(topology_hashes) != len(expected_variants):
+                if chosen_graph["scenarioID"] != metadata.get("scenarioID"):
+                    raise ValueError(
+                        f"Fleet native {lane} {behavior} scenario identity is unbound"
+                    )
+                actual_topology_hash = canonical_sha256(
+                    _orchestration_topology_contract(chosen_graph)
+                )
+                if actual_topology_hash != topology_hash:
+                    raise ValueError(
+                        f"Fleet native {lane} {behavior} topology digest is unbound"
+                    )
+                variant_counts[variant] = variant_counts.get(variant, 0) + 1
+                if variant == "behavior-conditioned":
+                    instance_index = metadata.get(
+                        "behaviorConditionedInstanceIndex"
+                    )
+                    if type(instance_index) is not int:
+                        raise ValueError(
+                            f"Fleet native {lane} {behavior} lacks a "
+                            "behavior-conditioned instance index"
+                        )
+                    behavior_conditioned_indices.add(instance_index)
+                    mutation = metadata["atomicPreferenceMutation"]
+                    behavior_conditioned_mutations.add(mutation)
+                    behavior_conditioned_graph_hashes.add(
+                        canonical_sha256(chosen_graph)
+                    )
+                    behavior_conditioned_scenario_ids.add(
+                        chosen_graph["scenarioID"]
+                    )
+                    if rejected_graph is not None:
+                        expected_path, expected_value = (
+                            FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT[
+                                mutation
+                            ]
+                        )
+                        differences = _orchestration_scalar_leaf_differences(
+                            chosen_graph,
+                            rejected_graph,
+                        )
+                        try:
+                            rejected_value = (
+                                _fleet_native_rejected_mutation_value(
+                                    rejected_graph,
+                                    mutation,
+                                )
+                            )
+                        except (IndexError, KeyError, TypeError) as exc:
+                            raise ValueError(
+                                f"Fleet native {lane} {behavior} preference "
+                                "mutation is malformed"
+                            ) from exc
+                        if (
+                            differences != [expected_path]
+                            or rejected_value != expected_value
+                        ):
+                            raise ValueError(
+                                f"Fleet native {lane} {behavior} preference "
+                                "mutation is invalid"
+                            )
+                topology_hashes.add(actual_topology_hash)
+            if variant_counts != expected_variant_counts:
+                raise ValueError(
+                    f"Fleet native {lane} {behavior} variant counts are "
+                    f"incomplete: observed={variant_counts} "
+                    f"expected={expected_variant_counts}"
+                )
+            expected_behavior_conditioned_count = (
+                expected_variant_counts.get("behavior-conditioned", 0)
+            )
+            if behavior_conditioned_indices != set(
+                range(1, expected_behavior_conditioned_count + 1)
+            ):
+                raise ValueError(
+                    f"Fleet native {lane} {behavior} behavior-conditioned "
+                    "instance coverage is incomplete: "
+                    f"observed={sorted(behavior_conditioned_indices)}"
+                )
+            if expected_behavior_conditioned_count == 4 and (
+                behavior_conditioned_mutations
+                != set(FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT)
+            ):
+                raise ValueError(
+                    f"Fleet native {lane} {behavior} atomic mutation "
+                    "coverage is incomplete: "
+                    f"observed={sorted(behavior_conditioned_mutations)}"
+                )
+            if expected_behavior_conditioned_count == 4 and (
+                len(behavior_conditioned_graph_hashes) != 4
+                or len(behavior_conditioned_scenario_ids) != 4
+            ):
+                raise ValueError(
+                    f"Fleet native {lane} {behavior} behavior-conditioned "
+                    "graphs are not distinct"
+                )
+            if len(topology_hashes) != len(expected_variant_counts):
                 raise ValueError(
                     f"Fleet native {lane} {behavior} topologies are "
                     "not distinct"
@@ -2360,6 +2609,53 @@ def _is_public_adapter_corpus(source_family: str, record: dict[str, Any]) -> boo
     )
 
 
+def _fleet_native_matrix_metadata(
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Preserve and validate optimizer-critical Fleet matrix identity."""
+
+    resolved: dict[str, Any] = {}
+    for key in (
+        "behaviorClass",
+        "scenarioID",
+        "trainingMatrixVariant",
+        "trainingTopologySHA256",
+    ):
+        value = metadata.get(key)
+        if not isinstance(value, str) or not value:
+            raise ValueError(
+                f"Fleet native orchestration record is missing metadata.{key}"
+            )
+        resolved[key] = value
+    if resolved["trainingMatrixVariant"] != "behavior-conditioned":
+        return resolved
+
+    instance_index = metadata.get("behaviorConditionedInstanceIndex")
+    if type(instance_index) is not int or instance_index < 1:
+        raise ValueError(
+            "Fleet behavior-conditioned record has an invalid instance index"
+        )
+    mutation = metadata.get("atomicPreferenceMutation")
+    if mutation not in FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT:
+        raise ValueError(
+            "Fleet behavior-conditioned record has an invalid atomic mutation"
+        )
+    if metadata.get("topologyCoverageMode") != (
+        "trained_policy_topology_unseen_frozen_instance"
+    ):
+        raise ValueError(
+            "Fleet behavior-conditioned record lacks topology coverage identity"
+        )
+    resolved.update(
+        {
+            "atomicPreferenceMutation": mutation,
+            "behaviorConditionedInstanceIndex": instance_index,
+            "topologyCoverageMode": metadata["topologyCoverageMode"],
+        }
+    )
+    return resolved
+
+
 def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> dict[str, Any] | None:
     messages = _normalize_messages(record)
     user = _first_role_content(messages, "user")
@@ -2393,17 +2689,7 @@ def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> d
     if required_split is not None:
         normalized["requiredSplit"] = required_split
     if normalized["sourceFamily"] == "fleet_orchestration_native":
-        for key in (
-            "behaviorClass",
-            "trainingMatrixVariant",
-            "trainingTopologySHA256",
-        ):
-            value = metadata.get(key)
-            if not isinstance(value, str) or not value:
-                raise ValueError(
-                    f"Fleet native orchestration record is missing metadata.{key}"
-                )
-            normalized[key] = value
+        normalized.update(_fleet_native_matrix_metadata(metadata))
     public_corpus = _public_corpus_metadata(record)
     if public_corpus is not None:
         normalized["publicCorpus"] = public_corpus
@@ -2523,16 +2809,7 @@ def _to_sft_record(
     if required_split is not None:
         metadata["requiredSplit"] = required_split
     if normalized["sourceFamily"] == "fleet_orchestration_native":
-        metadata.update(
-            {
-                key: normalized[key]
-                for key in (
-                    "behaviorClass",
-                    "trainingMatrixVariant",
-                    "trainingTopologySHA256",
-                )
-            }
-        )
+        metadata.update(_fleet_native_matrix_metadata(normalized))
     public_corpus = normalized.get("publicCorpus")
     if isinstance(public_corpus, dict):
         metadata["publicCorpus"] = dict(public_corpus)
@@ -5209,6 +5486,12 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Send manifest-grounded tool selection to the slot that coordinates the remaining model peers.",
             "Choose the owner of task decomposition and model coordination for a new request.",
             "Route creation of a validated action plan to the fleet's orchestration owner.",
+            "Send a request that still needs decomposition to the manifested planner before execution.",
+            "Select the peer that converts a user goal into ordered persisted action steps.",
+            "Route manifest-aware intent classification and tool selection to the planning owner.",
+            "Choose the coordinator that decides which specialist runs next for an unexecuted request.",
+            "Which runtime slot owns creation of an executable plan from raw user intent?",
+            "Delegate pre-tool orchestration to the fleet member that persists required actions.",
         ),
         "executor": (
             "Assign an approved action to the peer that emits strict manifest-valid tool JSON.",
@@ -5219,6 +5502,12 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Send a fully planned action to the slot that owns strict JSON generation.",
             "Choose the owner that enforces approval boundaries around executable tool payloads.",
             "Route schema-valid tool argument construction to its manifested runtime owner.",
+            "Send a validated plan to the owner that emits schema-exact tool-call JSON.",
+            "Route strict JSON arguments for an approved invocation to their manifested owner.",
+            "Choose the peer that checks required fields and exact JSON types before native execution.",
+            "Delegate construction of a manifest-valid executable payload after planning completes.",
+            "Which runtime slot turns an approved plan into a validated native tool request?",
+            "Route final tool-schema enforcement to the declared execution component.",
         ),
         "mouth": (
             "Assign trusted tool observations to the peer that writes the final user-facing response.",
@@ -5229,6 +5518,12 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Send completed tool results to the slot that owns final response composition.",
             "Choose the owner of spoken output after execution evidence is available.",
             "Route a necessary clarification question to the fleet's user-response slot.",
+            "Send verified execution evidence to the manifested writer of the user-visible answer.",
+            "Choose the peer that turns trusted observations into concise final prose.",
+            "Route a completed grounded result to the owner of outward-facing communication.",
+            "Delegate final answer composition after all required tool results are available.",
+            "Which runtime slot asks the user a required clarification in natural language?",
+            "Route the final evidence-backed response to the declared presentation owner.",
         ),
         "mimicry": (
             "Assign fact-preserving tone adaptation to the peer that owns user style constraints.",
@@ -5239,6 +5534,12 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Send a grounded draft to the slot that adapts wording to the user's style.",
             "Choose the owner of response rewriting when only presentation may change.",
             "Route tone detection and language-style adaptation to their fleet owner.",
+            "Send a fact-complete draft to the manifested owner of tone-only rewriting.",
+            "Choose the peer that adjusts voice and phrasing without changing evidence.",
+            "Route presentation-style inference to the slot that preserves semantic content.",
+            "Delegate locale-aware wording adaptation while keeping every supplied fact fixed.",
+            "Which runtime slot owns stylistic imitation rather than planning or execution?",
+            "Route user-style alignment to the declared fact-preserving rewrite component.",
         ),
         "rem": (
             "Assign a repeated runtime failure to the peer that owns diagnosis and regression repair.",
@@ -5249,6 +5550,12 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Send idle-time memory pruning work to the slot that owns reflective maintenance.",
             "Choose the owner of manifest audits after a runtime regression is observed.",
             "Route post-execution failure diagnosis to the fleet's reflection component.",
+            "Send a recurring behavioral defect to the manifested owner of corrective learning records.",
+            "Choose the peer that diagnoses regressions across completed runtime attempts.",
+            "Route memory-retention policy repair to the fleet's reflective maintenance owner.",
+            "Delegate postmortem analysis for a repeated failure after execution has ended.",
+            "Which runtime slot converts validated failures into future training corrections?",
+            "Route idle-time self-audit work to the declared reflection component.",
         ),
         "embedding": (
             "Assign semantic vector generation to the manifested embedding destination.",
@@ -5259,6 +5566,12 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Send text destined for similarity indexing to the fleet's vector-generation owner.",
             "Choose the owner of embedding vectors used by semantic memory retrieval.",
             "Route memory-index representation generation to its manifested component.",
+            "Choose the vector-model slot that creates the numeric representation for text indexing.",
+            "Route text conversion into similarity-search vectors to the manifested encoding owner.",
+            "Send memory content needing a dense representation to the declared vector component.",
+            "Delegate numerical feature generation for semantic indexing to the embedding slot.",
+            "Which runtime peer produces retrieval vectors from a document's content?",
+            "Route vectorization for nearest-neighbor search to the manifested representation owner.",
         ),
     }
     prompt_counts = {owner: len(prompts) for owner, prompts in tasks.items()}
@@ -6003,14 +6316,9 @@ def _build_agent_dpo_records(
                                     else {}
                                 ),
                                 **(
-                                    {
-                                        key: source_metadata[key]
-                                        for key in (
-                                            "behaviorClass",
-                                            "trainingMatrixVariant",
-                                            "trainingTopologySHA256",
-                                        )
-                                    }
+                                    _fleet_native_matrix_metadata(
+                                        source_metadata
+                                    )
                                     if str(record.get("sourceFamily") or source_family)
                                     == "fleet_orchestration_native"
                                     else {}
@@ -12716,22 +13024,86 @@ def _balanced_fleet_contract_dpo_pairs(
                 - FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER
                 else "train"
             )
-            pairs.append(
-                _dpo(
+            chosen = json.dumps(
+                {
+                    "delegateTo": target_slot_id,
+                    "knownSlots": slot_ids,
+                    "reason": FLEET_DELEGATION_REASON,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            pair = _dpo(
+                "fleet",
+                prompt,
+                chosen,
+                json.dumps(
+                    {
+                        "delegateTo": rejected_slot,
+                        "knownSlots": slot_ids,
+                        "reason": FLEET_DELEGATION_REASON,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "fleet_contract_delegation",
+                "chosen uses the exact manifested owner; rejected uses a wrong or invented destination",
+                required_split=required_split,
+            )
+            pair["metadata"]["contrastMode"] = "balanced_rotation"
+            pairs.append(pair)
+
+            # The failed frozen SFT and DPO adapters both collapsed semantic
+            # vector and strict-tool requests to Mimicry. Give each of the
+            # first eight train surfaces for those two owners an independent
+            # hard negative for that observed confusion, while retaining a
+            # different rejection when rotation already selects Mimicry.
+            if target_agent in {"embedding", "executor"} and prompt_index < 8:
+                mimicry_slot_id = slot_ids_by_agent.get("mimicry")
+                if mimicry_slot_id is None:
+                    # Minimal/partial manifests still use the balanced lane;
+                    # the production-only observed-confusion contrast is
+                    # meaningful only when Mimicry is actually manifested.
+                    continue
+                hard_negative_slot = mimicry_slot_id
+                if hard_negative_slot == rejected_slot:
+                    hard_negative_slot = (
+                        slot_ids_by_agent.get("executor")
+                        if target_agent == "embedding"
+                        else slot_ids_by_agent.get("embedding")
+                    )
+                    if hard_negative_slot is None:
+                        # The balanced pair already rejects Mimicry, and a
+                        # partial manifest has no independent semantic peer.
+                        continue
+                if (
+                    hard_negative_slot is None
+                    or hard_negative_slot == target_slot_id
+                    or hard_negative_slot == rejected_slot
+                ):
+                    raise ValueError(
+                        "Fleet delegation hard negative is not independent"
+                    )
+                if hard_negative_slot == mimicry_slot_id:
+                    contrast_mode = "observed_mimicry_confusion"
+                    contrast_reason = (
+                        "chosen preserves semantic ownership; rejected targets "
+                        "the observed Mimicry cross-owner confusion"
+                    )
+                else:
+                    contrast_mode = "independent_semantic_confusion"
+                    contrast_reason = (
+                        "chosen preserves semantic ownership; rejected targets "
+                        "an independent wrong semantic owner because Mimicry "
+                        "is already rejected by the balanced pair"
+                    )
+                hard_pair = _dpo(
                     "fleet",
                     prompt,
+                    chosen,
                     json.dumps(
                         {
-                            "delegateTo": target_slot_id,
-                            "knownSlots": slot_ids,
-                            "reason": FLEET_DELEGATION_REASON,
-                        },
-                        ensure_ascii=False,
-                        sort_keys=True,
-                    ),
-                    json.dumps(
-                        {
-                            "delegateTo": rejected_slot,
+                            "delegateTo": hard_negative_slot,
                             "knownSlots": slot_ids,
                             "reason": FLEET_DELEGATION_REASON,
                         },
@@ -12739,10 +13111,11 @@ def _balanced_fleet_contract_dpo_pairs(
                         sort_keys=True,
                     ),
                     "fleet_contract_delegation",
-                    "chosen uses the exact manifested owner; rejected uses a wrong or invented destination",
+                    contrast_reason,
                     required_split=required_split,
                 )
-            )
+                hard_pair["metadata"]["contrastMode"] = contrast_mode
+                pairs.append(hard_pair)
 
     directory_prompts = (
         (
@@ -12983,7 +13356,10 @@ def _balanced_fleet_contract_sft_anchors(
             "Balanced Fleet SFT anchors lack required contract families: "
             f"observed={sorted(observed_task_types)}"
         )
-    return _unique_sorted_sft_records(anchors)
+    # Multiple DPO hard negatives may share one prompt and chosen completion.
+    # SFT needs one generative anchor for that conversation, not one duplicate
+    # per rejected alternative.
+    return _unique_sft_records_by_messages(anchors)
 
 
 def _build_agent_eval_records(
