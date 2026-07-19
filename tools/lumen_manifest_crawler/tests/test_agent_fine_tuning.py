@@ -45,8 +45,18 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     EXECUTOR_RUNTIME_SYSTEM_PROMPT,
     FLEET_BALANCED_CONTRACT_TASK_TYPES,
     FLEET_DELEGATION_OUTPUT_CONTRACT,
+    FLEET_DELEGATION_PROMPTS_PER_OWNER,
+    FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER,
     FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR,
     FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION,
+    FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS,
+    FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS,
+    FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
+    FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS,
+    FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS,
+    FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+    FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+    FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION,
     FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES,
     FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
     FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX,
@@ -89,6 +99,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _canonical_messages_key,
     _cap_public_corpus_token_share,
     _cortex_failure_repair_sft_records,
+    _fleet_delegation_tasks,
     _fleet_slot_contract,
     _finalize_fleet_optimizer_lane,
     _limit_supplemental_sft_records,
@@ -6995,6 +7006,56 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
         "completionSuffix": "append_tokenizer_eos_token_id",
         "appendedEOSTokensPerCompletion": 1,
     }
+    assert loss_share_contract["optimizerFamilyShareBands"] == {
+        "schemaVersion": FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION,
+        "enforcementScope": "optimizer_train_only",
+        "classification": {
+            "sourceFamily": FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+            "taskTypeByLane": {
+                "sft": FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+                "dpo": FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
+            },
+        },
+        "lanes": {
+            "sft": {
+                "basis": "assistant_mask_non_ignored_token_count",
+                "numeratorEvidenceField": (
+                    "nativeOrchestrationAssistantTargetTokenCount"
+                ),
+                "denominatorEvidenceField": "assistantTargetTokenCount",
+                "minimumBasisPoints": (
+                    FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS
+                ),
+                "maximumBasisPoints": (
+                    FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS
+                ),
+            },
+            "dpo": {
+                "basis": "preference_pair_count",
+                "numeratorEvidenceField": (
+                    "nativeOrchestrationPreferencePairCount"
+                ),
+                "denominatorEvidenceField": "preferencePairCount",
+                "minimumBasisPoints": (
+                    FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS
+                ),
+                "maximumBasisPoints": (
+                    FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS
+                ),
+            },
+        },
+        "comparisonRules": {
+            "minimum": (
+                "numeratorCount*basisPointDenominator>="
+                "denominatorCount*minimumBasisPoints"
+            ),
+            "maximum": (
+                "numeratorCount*basisPointDenominator<="
+                "denominatorCount*maximumBasisPoints"
+            ),
+        },
+        "failurePolicy": "abort_before_optimizer",
+    }
     for lane in evidence_contract["lanes"].values():
         assert set(lane) == {
             "denominatorTokenCount",
@@ -8199,8 +8260,20 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
         for record in fleet.val_dpo
         if record["metadata"].get("preferenceType") in contract_types
     )
-    assert train_counts == Counter({preference_type: 21 for preference_type in contract_types})
-    assert validation_counts == Counter({preference_type: 3 for preference_type in contract_types})
+    assert train_counts == Counter(
+        {
+            "fleet_contract_delegation": 36,
+            "fleet_contract_known_slots": 21,
+            "fleet_contract_tool_boundary": 21,
+        }
+    )
+    assert validation_counts == Counter(
+        {
+            "fleet_contract_delegation": 12,
+            "fleet_contract_known_slots": 3,
+            "fleet_contract_tool_boundary": 3,
+        }
+    )
     assert len(fleet.train_dpo) >= (
         fleet.unsloth_config["batch_size"]
         * fleet.unsloth_config["gradient_accumulation_steps"]
@@ -8208,6 +8281,81 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
     )
     assert fleet.contamination_report["contaminated"] is False
     assert fleet.contamination_report["matchCount"] == 0
+
+    delegation_tasks = _fleet_delegation_tasks()
+    assert set(delegation_tasks) == {
+        "cortex",
+        "executor",
+        "mouth",
+        "mimicry",
+        "rem",
+        "embedding",
+    }
+    assert {
+        owner: len(prompts) for owner, prompts in delegation_tasks.items()
+    } == {
+        owner: FLEET_DELEGATION_PROMPTS_PER_OWNER
+        for owner in delegation_tasks
+    }
+    assert len(
+        {
+            prompt
+            for prompts in delegation_tasks.values()
+            for prompt in prompts
+        }
+    ) == len(delegation_tasks) * FLEET_DELEGATION_PROMPTS_PER_OWNER
+
+    _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
+    delegation_by_split = {
+        "train": [
+            record
+            for record in fleet.train_dpo
+            if record["metadata"].get("preferenceType")
+            == "fleet_contract_delegation"
+        ],
+        "validation": [
+            record
+            for record in fleet.val_dpo
+            if record["metadata"].get("preferenceType")
+            == "fleet_contract_delegation"
+        ],
+    }
+    for split, expected_per_owner in (
+        (
+            "train",
+            FLEET_DELEGATION_PROMPTS_PER_OWNER
+            - FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER,
+        ),
+        ("validation", FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER),
+    ):
+        owner_counts = Counter(
+            json.loads(record["chosen"]["content"])["delegateTo"]
+            for record in delegation_by_split[split]
+        )
+        assert owner_counts == Counter(
+            {
+                slot_ids_by_agent[owner]: expected_per_owner
+                for owner in delegation_tasks
+            }
+        )
+
+    for owner in delegation_tasks:
+        target_slot_id = slot_ids_by_agent[owner]
+        owner_train = [
+            record
+            for record in delegation_by_split["train"]
+            if json.loads(record["chosen"]["content"])["delegateTo"]
+            == target_slot_id
+        ]
+        assert Counter(
+            json.loads(record["rejected"]["content"])["delegateTo"]
+            for record in owner_train
+        ) == Counter(
+            [
+                *[slot_id for slot_id in slot_ids if slot_id != target_slot_id],
+                "invented_shadow_slot",
+            ]
+        )
 
     records = [
         record
@@ -8696,6 +8844,7 @@ def test_balanced_fleet_preference_targets_become_split_preserving_sft_anchors(
         user = anchor["messages"][-2]["content"]
         suffix = suffix_by_task[task_type]
         assert user.endswith(f"\n\n{suffix}")
+        assert "complete manifest declaration order" in suffix
         assert re.findall(r"`([^`]+)`", suffix) == (
             quoted_keys_by_task[task_type]
         )
@@ -8754,14 +8903,46 @@ def test_compiled_fleet_anchors_survive_with_dpo_parity_and_clean_evaluation(
         if _canonical_rendered_prompt_key(record, lane="sft")
         in source_by_prompt
     }
-    assert train_prompt_keys == {
-        key for key, split in expected_split_by_prompt.items()
-        if split == "train"
+    non_delegation_keys = {
+        _canonical_rendered_prompt_key(record, lane="sft")
+        for record in source_anchors
+        if record["metadata"].get("taskType")
+        != "fleet_contract_delegation"
     }
-    assert val_prompt_keys == {
-        key for key, split in expected_split_by_prompt.items()
-        if split == "validation"
+    assert train_prompt_keys & non_delegation_keys == {
+        key
+        for key, split in expected_split_by_prompt.items()
+        if key in non_delegation_keys and split == "train"
     }
+    assert val_prompt_keys & non_delegation_keys == {
+        key
+        for key, split in expected_split_by_prompt.items()
+        if key in non_delegation_keys and split == "validation"
+    }
+
+    delegation_task_types = {
+        "ultra_specific_fleet_delegation",
+        "fleet_contract_delegation",
+    }
+    _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
+    delegation_owner_slots = {
+        slot_ids_by_agent[owner] for owner in _fleet_delegation_tasks()
+    }
+    for split, records, expected_per_owner in (
+        ("train", fleet.train_sft, 5),
+        ("validation", fleet.val_sft, 3),
+    ):
+        owner_counts = Counter(
+            json.loads(record["messages"][-1]["content"])["delegateTo"]
+            for record in records
+            if record["metadata"].get("taskType") in delegation_task_types
+        )
+        assert owner_counts == Counter(
+            {
+                slot_id: expected_per_owner
+                for slot_id in delegation_owner_slots
+            }
+        ), split
 
     for key, source_anchor in source_by_prompt.items():
         compiled_assistant = next(

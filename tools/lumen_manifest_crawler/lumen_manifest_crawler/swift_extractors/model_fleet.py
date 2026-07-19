@@ -8,11 +8,23 @@ from lumen_manifest_crawler.swift_extractors.base import SwiftExtractor, SwiftFi
 
 DEFAULT_SLOT_ROLES: dict[str, str] = {
     "cortex": "orchestrator",
+    "embedding": "embedding",
     "executor": "tool_executor",
     "toolExecutor": "tool_executor",
     "mouth": "user_response",
     "mimicry": "tone_adapter",
     "rem": "idle_reflection",
+}
+
+CONTRACT_DERIVED_RESPONSIBILITIES: dict[tuple[str, str, str], list[str]] = {
+    (
+        "embedding",
+        "Embedding model slot for semantic memory.",
+        "embeddingVector",
+    ): [
+        "semantic memory embedding",
+        "embedding vector generation",
+    ],
 }
 
 DEFAULT_RESPONSIBILITIES: dict[str, list[str]] = {
@@ -94,11 +106,22 @@ class ModelFleetExtractor(SwiftExtractor):
 
     @staticmethod
     def _extract_responsibilities(block: str, role: str) -> list[str]:
-        if "responsibilities" not in block:
-            return DEFAULT_RESPONSIBILITIES.get(role, [])
-        extracted = ModelFleetExtractor._extract_array_literals(block, "responsibilities")
-        values = [value for value in extracted if len(value.split()) > 1]
-        return values or DEFAULT_RESPONSIBILITIES.get(role, [])
+        if "responsibilities" in block:
+            extracted = ModelFleetExtractor._extract_array_literals(block, "responsibilities")
+            values = [value for value in extracted if len(value.split()) > 1]
+            if values:
+                return values
+
+        defaults = DEFAULT_RESPONSIBILITIES.get(role)
+        if defaults:
+            return defaults
+
+        system_contract = clean_swift_string(argument_value(block, "systemContract"))
+        output_contract = clean_swift_string(argument_value(block, "outputContract"))
+        return CONTRACT_DERIVED_RESPONSIBILITIES.get(
+            (role, system_contract or "", output_contract or ""),
+            [],
+        )
 
     @staticmethod
     def _extract_array_literals(block: str, label: str) -> list[str]:

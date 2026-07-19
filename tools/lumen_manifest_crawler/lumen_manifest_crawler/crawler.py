@@ -378,9 +378,11 @@ def _infer_handoff_tools(manifest: AgentBehaviorManifest) -> list[str]:
 
 
 def _slot_purpose(slot_id: str, role: str, responsibilities: list[str]) -> str:
+    lowered = f"{slot_id} {role}".lower()
+    if "embedding" in lowered:
+        return "Generate semantic vector representations for memory indexing and retrieval."
     if responsibilities:
         return responsibilities[0]
-    lowered = f"{slot_id} {role}".lower()
     if any(token in lowered for token in ["cortex", "router", "intent", "planner"]):
         return "Classify user goals, select allowed tools or slots, and coordinate the Lumen agent fleet."
     if any(token in lowered for token in ["executor", "tool"]):
@@ -396,6 +398,8 @@ def _slot_purpose(slot_id: str, role: str, responsibilities: list[str]) -> str:
 
 def _slot_input_signature(slot_id: str, role: str) -> str:
     lowered = f"{slot_id} {role}".lower()
+    if "embedding" in lowered:
+        return "Text or content selected for semantic memory indexing or retrieval."
     if any(token in lowered for token in ["cortex", "router", "intent", "planner"]):
         return "User request plus manifest routing matrix, available tools, memory context, and prior agent state."
     if any(token in lowered for token in ["executor", "tool"]):
@@ -411,6 +415,8 @@ def _slot_input_signature(slot_id: str, role: str) -> str:
 
 def _slot_output_signature(slot_id: str, role: str) -> str:
     lowered = f"{slot_id} {role}".lower()
+    if "embedding" in lowered:
+        return "Embedding vector only; no user-facing text, tool call, or hidden reasoning."
     if any(token in lowered for token in ["cortex", "router", "intent", "planner"]):
         return "Intent classification, selectedToolID or target slot, approval requirement, and concise routing summary."
     if any(token in lowered for token in ["executor", "tool"]):

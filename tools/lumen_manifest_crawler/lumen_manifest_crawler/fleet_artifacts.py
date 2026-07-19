@@ -18,6 +18,8 @@ ORCHESTRATION_DERIVATION_SCHEMA_VERSION = (
     "lumen.fleet-graph-derivation/1.0.0"
 )
 ORCHESTRATION_EVENT_ID_GRAMMAR = "<scenarioID>::event::<one-based two-digit order>"
+ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT = "behavior-conditioned"
+ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS = 1
 ORCHESTRATION_OUTPUT_INTERFACE = (
     "Canonical output interface: the top-level keys are exactly `decision`, "
     "`dependencies`, `events`, `graphSchemaVersion`, `knownSlotIDs`, and "
@@ -33,9 +35,12 @@ ORCHESTRATION_OUTPUT_INTERFACE = (
     "invented aliases. Copy the supplied graph schema version, scenario ID, "
     "and known slot IDs exactly. Substitute the actual supplied scenario ID into "
     "every event ID using a two-digit one-based order; never emit the literal "
-    "`<scenarioID>` placeholder. Emit one terminal `stop` event, no more than "
-    "12 events or 16 dependencies, and stop immediately after the minimal "
-    "graph's closing brace."
+    "`<scenarioID>` placeholder. Every dependency endpoint references an emitted "
+    "event ID. `delegatedSlotIDs` is the first-event-order list of unique known "
+    "`targetSlotID` values from `delegate` events. Emit one terminal `stop` event "
+    "whose `reason` exactly equals `decision.stopReason`, no more than 12 events "
+    "or 16 dependencies, and stop immediately after the minimal graph's closing "
+    "brace."
 )
 
 
@@ -325,7 +330,10 @@ def _orchestration_policy_conditions(
     training_variant: str | None,
 ) -> dict[str, bool]:
     conditions = {key: False for key in _ORCHESTRATION_POLICY_CONDITION_KEYS}
-    if training_variant == "normalized-intake":
+    if training_variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT:
+        for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
+            conditions[key] = True
+    elif training_variant == "normalized-intake":
         conditions["requestNormalizationRequired"] = True
         for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
             conditions[key] = True
@@ -494,6 +502,7 @@ def _training_orchestration_derivation_contract(
     variant = str(scenario.get("trainingMatrixVariant") or "")
     if variant not in {
         "core",
+        ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT,
         "normalized-intake",
         "policy-audited",
         "normalization-policy-audited",
@@ -1311,9 +1320,10 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             **_native_orchestration_metadata(manifest, scenario["id"]),
             "behaviorClass": scenario["behaviorClass"],
             "trainingMatrixVariant": scenario["trainingMatrixVariant"],
-            # Three topology-distinct matrices remain optimizer-visible while a
-            # fourth combined normalization/audit matrix is validation-only.
-            # The frozen orchestration suite remains the unseen graph holdout.
+            # The missing behavior-conditioned policy cell and three wrapper
+            # matrices are optimizer-visible. The combined wrapper matrix is
+            # validation-only, while frozen facts, prompts, IDs, and exact
+            # graphs remain unseen evaluation instances.
             "requiredSplit": (
                 "validation"
                 if scenario["trainingMatrixVariant"]
@@ -1326,6 +1336,15 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             "derivationSchemaVersion": derivation["schemaVersion"],
             "canonicalDerivationSHA256": canonical_sha256(derivation),
         }
+        atomic_mutation = scenario.get("atomicPreferenceMutation")
+        if isinstance(atomic_mutation, str):
+            metadata["atomicPreferenceMutation"] = atomic_mutation
+            metadata["behaviorConditionedInstanceIndex"] = scenario[
+                "behaviorConditionedInstanceIndex"
+            ]
+            metadata["topologyCoverageMode"] = (
+                "trained_policy_topology_unseen_frozen_instance"
+            )
         records.append({
             "id": _record_id("orchestration-sft", scenario["id"]),
             "schemaVersion": "2.1.0",
@@ -1720,14 +1739,28 @@ def _orchestration_scenarios(manifest: AgentBehaviorManifest) -> list[dict[str, 
 def _orchestration_training_scenarios(
     manifest: AgentBehaviorManifest,
 ) -> list[dict[str, Any]]:
-    """Expand each behavior into three train and one validation instance."""
+    """Expand every policy cell with fresh train identities and one held-out matrix."""
 
     matrix: list[dict[str, Any]] = []
-    for scenario in _orchestration_scenarios(manifest):
+    for behavior_index, scenario in enumerate(_orchestration_scenarios(manifest)):
         scenario["canonicalDerivation"] = (
             _training_orchestration_derivation_contract(scenario)
         )
         matrix.append(scenario)
+        for replica_index in range(ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS):
+            matrix.append(
+                _orchestration_training_variant(
+                    manifest,
+                    scenario,
+                    variant=ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT,
+                    boundary_value_index=replica_index + 1,
+                    replica_index=replica_index,
+                    atomic_mutation_index=(
+                        behavior_index * ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS
+                        + replica_index
+                    ),
+                )
+            )
         matrix.append(
             _orchestration_training_variant(
                 manifest,
@@ -1761,12 +1794,26 @@ def _orchestration_training_variant(
     *,
     variant: str,
     boundary_value_index: int,
+    replica_index: int | None = None,
+    atomic_mutation_index: int | None = None,
 ) -> dict[str, Any]:
     scenario = json.loads(json.dumps(source, ensure_ascii=False))
     behavior_class = str(source["behaviorClass"])
-    scenario_id = f"{behavior_class}--{variant}"
-    event_namespace = f"train-{behavior_class}-{variant}"
-    request_id = f"{event_namespace}-request"
+    replica_suffix = (
+        f"--instance-{replica_index + 1:02d}"
+        if replica_index is not None
+        else ""
+    )
+    scenario_id = f"{behavior_class}--{variant}{replica_suffix}"
+    event_namespace = f"train-{behavior_class}-{variant}{replica_suffix}"
+    request_id = (
+        None
+        if (
+            variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+            and behavior_class == "context-handoff"
+        )
+        else f"{event_namespace}-request"
+    )
     scenario["id"] = scenario_id
     scenario["behaviorClass"] = behavior_class
     scenario["trainingMatrixVariant"] = variant
@@ -1783,17 +1830,25 @@ def _orchestration_training_variant(
     scenario["id"] = scenario_id
     scenario["behaviorClass"] = behavior_class
     scenario["trainingMatrixVariant"] = variant
+    instance_binding = f"Use matrix instance `{scenario_id}`."
+    if request_id is not None:
+        instance_binding = (
+            f"Use matrix instance `{scenario_id}`, request identifier `{request_id}`."
+        )
     scenario["prompt"] = (
-        f"{scenario['prompt']} Use matrix instance `{scenario_id}`, request identifier "
-        f"`{request_id}`. "
+        f"{scenario['prompt']} {instance_binding} "
         + (
-            "Normalize the request before applying the behavior-class policy."
-            if variant == "normalized-intake"
+            "Apply only the enabled behavior-class conditions; normalization and policy audit are disabled."
+            if variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
             else (
-                "Normalize the request, load the policy snapshot, and record "
-                "completion only after all required branches finish."
-                if variant == "normalization-policy-audited"
-                else "Load the policy snapshot first and record completion only after all required branches finish."
+                "Normalize the request before applying the behavior-class policy."
+                if variant == "normalized-intake"
+                else (
+                    "Normalize the request, load the policy snapshot, and record "
+                    "completion only after all required branches finish."
+                    if variant == "normalization-policy-audited"
+                    else "Load the policy snapshot first and record completion only after all required branches finish."
+                )
             )
         )
     )
@@ -1821,7 +1876,24 @@ def _orchestration_training_variant(
         conditions=policy_conditions,
         facts=derivation_facts,
     )
-    if isinstance(scenario.get("rejectedGraph"), dict):
+    if variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT:
+        if replica_index is None or atomic_mutation_index is None:
+            raise ValueError(
+                "Behavior-conditioned Fleet instances require replica and "
+                "atomic-mutation indices"
+            )
+        scenario["rejectedGraph"] = _atomic_orchestration_rejection(
+            scenario["graph"],
+            mutation_index=atomic_mutation_index,
+        )
+        scenario["behaviorConditionedInstanceIndex"] = replica_index + 1
+        scenario["atomicPreferenceMutation"] = (
+            _atomic_orchestration_mutation_kind(atomic_mutation_index)
+        )
+        scenario["preferenceLesson"] = (
+            "Prefer the exact behavior-conditioned schema over a one-leaf contract mutation."
+        )
+    elif isinstance(scenario.get("rejectedGraph"), dict):
         scenario["rejectedGraph"] = _orchestration_training_variant_graph(
             scenario["rejectedGraph"],
             scenario_id=scenario_id,
@@ -1905,7 +1977,7 @@ def _orchestration_training_variant_graph(
     *,
     scenario_id: str,
     event_namespace: str,
-    request_id: str,
+    request_id: str | None,
     variant: str,
 ) -> dict[str, Any]:
     graph = json.loads(json.dumps(source, ensure_ascii=False))
@@ -1917,11 +1989,17 @@ def _orchestration_training_variant_graph(
     invalid_slot_replacements: dict[str, str] = {}
     for event in graph["events"]:
         event["id"] = id_map[str(event["id"])]
-        if event.get("type") == "request_received":
+        if event.get("type") == "request_received" and request_id is not None:
             event["requestID"] = request_id
-        if isinstance(event.get("workKey"), str):
+        if (
+            isinstance(event.get("workKey"), str)
+            and variant != ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+        ):
             event["workKey"] = f"{event['workKey']}--{variant}"
-        if isinstance(event.get("requestedSlotID"), str):
+        if (
+            isinstance(event.get("requestedSlotID"), str)
+            and variant != ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+        ):
             original_requested_slot = str(event["requestedSlotID"])
             heldout_requested_slot = (
                 f"{original_requested_slot}--{variant.replace('-', '_')}"
@@ -1931,7 +2009,10 @@ def _orchestration_training_variant_graph(
             )
             event["requestedSlotID"] = heldout_requested_slot
         context_keys = event.get("contextKeys")
-        if isinstance(context_keys, list):
+        if (
+            isinstance(context_keys, list)
+            and variant != ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+        ):
             prefix = (
                 "reviewed"
                 if variant == "normalization-policy-audited"
@@ -1953,6 +2034,7 @@ def _orchestration_training_variant_graph(
 
     request_event_id = str(graph["events"][0]["id"])
     stop_event_id = str(graph["events"][-1]["id"])
+    behavior_conditioned = variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
     normalization_required = variant in {
         "normalized-intake",
         "normalization-policy-audited",
@@ -1961,7 +2043,7 @@ def _orchestration_training_variant_graph(
         "policy-audited",
         "normalization-policy-audited",
     }
-    if not normalization_required and not audit_required:
+    if not behavior_conditioned and not normalization_required and not audit_required:
         raise ValueError(f"Unknown Fleet training matrix variant: {variant}")
 
     request_successor_id = request_event_id
@@ -2016,6 +2098,12 @@ def _orchestration_training_variant_graph(
         graph["dependencies"].append(
             _orchestration_dependency(completion_event_id, stop_event_id)
         )
+    if behavior_conditioned:
+        graph["decision"]["delegatedSlotIDs"] = _delegated_slots_from_events(
+            graph["events"]
+        )
+        return _canonicalize_orchestration_event_ids(graph)
+
     suffix = (
         "normalization_policy_audited"
         if normalization_required and audit_required
@@ -2031,6 +2119,89 @@ def _orchestration_training_variant_graph(
     graph["events"][-1]["reason"] = stop_reason
     decision["delegatedSlotIDs"] = _delegated_slots_from_events(graph["events"])
     return _canonicalize_orchestration_event_ids(graph)
+
+
+def _atomic_orchestration_rejection(
+    source: dict[str, Any],
+    *,
+    mutation_index: int,
+) -> dict[str, Any]:
+    """Return a scorer-invalid graph differing in exactly one JSON leaf."""
+
+    graph = json.loads(json.dumps(source, ensure_ascii=False))
+    mutation = mutation_index % 4
+    if mutation == 0:
+        graph["decision"]["aggregationOwnerSlotID"] = "null"
+    elif mutation == 1:
+        mutable_events = [
+            event
+            for event in graph["events"]
+            if event.get("type") not in {"request_received", "stop"}
+        ]
+        if not mutable_events:
+            raise ValueError("Atomic Fleet rejection lacks a behavior event")
+        mutable_events[0]["type"] = "invented_event_alias"
+    elif mutation == 2:
+        graph["decision"]["strategy"] = "invented_strategy"
+    else:
+        graph["decision"]["stopReason"] = "invented_stop_reason"
+    differences = _orchestration_scalar_leaf_differences(source, graph)
+    if len(differences) != 1:
+        raise ValueError(
+            "Atomic Fleet rejection must change exactly one scalar leaf: "
+            f"observed={differences}"
+        )
+    return graph
+
+
+def _atomic_orchestration_mutation_kind(mutation_index: int) -> str:
+    return (
+        "aggregation_owner_type",
+        "event_type_vocabulary",
+        "decision_strategy_literal",
+        "decision_stop_reason_literal",
+    )[mutation_index % 4]
+
+
+def _orchestration_scalar_leaf_differences(
+    chosen: Any,
+    rejected: Any,
+    *,
+    path: str = "$",
+) -> list[str]:
+    """Return scalar paths that differ, rejecting structural mutations."""
+
+    if type(chosen) is not type(rejected):
+        return [path]
+    if isinstance(chosen, dict):
+        if set(chosen) != set(rejected):
+            return [path]
+        differences: list[str] = []
+        for key in sorted(chosen):
+            differences.extend(
+                _orchestration_scalar_leaf_differences(
+                    chosen[key],
+                    rejected[key],
+                    path=f"{path}.{key}",
+                )
+            )
+        return differences
+    if isinstance(chosen, list):
+        if len(chosen) != len(rejected):
+            return [path]
+        differences = []
+        for index, (chosen_item, rejected_item) in enumerate(
+            zip(chosen, rejected, strict=True)
+        ):
+            differences.extend(
+                _orchestration_scalar_leaf_differences(
+                    chosen_item,
+                    rejected_item,
+                    path=f"{path}[{index}]",
+                )
+            )
+        return differences
+    return [] if chosen == rejected else [path]
 
 
 def _apply_training_policy_condition_support(
@@ -2975,6 +3146,16 @@ def _canonicalize_orchestration_event_ids(
             raise ValueError("Fleet graph dependency references an unknown event")
         dependency["fromEventID"] = id_map[str(from_id)]
         dependency["toEventID"] = id_map[str(to_id)]
+    canonical_positions = {
+        event["id"]: index for index, event in enumerate(events)
+    }
+    dependencies.sort(
+        key=lambda dependency: (
+            canonical_positions[dependency["fromEventID"]],
+            canonical_positions[dependency["toEventID"]],
+            dependency["kind"],
+        )
+    )
     return canonical
 
 
@@ -3109,6 +3290,14 @@ def _assert_orchestration_holdouts_disjoint(
     training_scenarios: list[dict[str, Any]],
     eval_scenarios: list[dict[str, Any]],
 ) -> None:
+    """Keep frozen instances disjoint while requiring learned policy coverage.
+
+    Exact prompts, facts, identifiers, and graphs remain held out. The canonical
+    behavior topology is the contract being trained, so each evaluation topology
+    must be represented by a controlled fresh behavior-conditioned instance
+    instead of occupying an unlearnable Boolean cell.
+    """
+
     training_graphs = [
         scenario["graph"]
         for scenario in training_scenarios
@@ -3119,6 +3308,22 @@ def _assert_orchestration_holdouts_disjoint(
         canonical_sha256(_orchestration_topology_contract(graph))
         for graph in training_graphs
     }
+    training_scenario_ids = {
+        str(scenario.get("id"))
+        for scenario in training_scenarios
+        if isinstance(scenario.get("id"), str)
+    }
+    training_holdout_values = {
+        value
+        for graph in training_graphs
+        for value in _orchestration_scalar_values(graph)
+        if isinstance(value, str) and value.startswith("holdout")
+    }
+    if training_holdout_values:
+        raise ValueError(
+            "Fleet training graph contains frozen holdout identifiers: "
+            f"{sorted(training_holdout_values)}"
+        )
     seen_eval_exact: set[str] = set()
     seen_eval_topologies: set[str] = set()
     for scenario in eval_scenarios:
@@ -3127,13 +3332,38 @@ def _assert_orchestration_holdouts_disjoint(
             raise ValueError(f"Fleet holdout graph missing: {scenario.get('id')}")
         exact_hash = canonical_sha256(graph)
         topology_hash = canonical_sha256(_orchestration_topology_contract(graph))
+        scenario_id = str(scenario.get("id") or "")
+        if scenario_id in training_scenario_ids:
+            raise ValueError(
+                f"Fleet holdout scenario identity collides with training: {scenario_id}"
+            )
         if exact_hash in training_exact_hashes:
             raise ValueError(
                 f"Fleet holdout exact graph collides with training: {scenario['id']}"
             )
-        if topology_hash in training_topology_hashes:
+        topology_matches = [
+            training
+            for training in training_scenarios
+            if (
+                training.get("behaviorClass") == scenario.get("behaviorClass")
+                and training.get("trainingMatrixVariant")
+                == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+                and isinstance(training.get("graph"), dict)
+                and canonical_sha256(
+                    _orchestration_topology_contract(training["graph"])
+                )
+                == topology_hash
+            )
+        ]
+        if len(topology_matches) != ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS:
             raise ValueError(
-                f"Fleet holdout semantic topology collides with training: {scenario['id']}"
+                "Fleet holdout lacks controlled trained-topology coverage: "
+                f"scenario={scenario['id']} observed={len(topology_matches)} "
+                f"required={ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS}"
+            )
+        if topology_hash not in training_topology_hashes:
+            raise ValueError(
+                f"Fleet holdout topology is absent from training: {scenario['id']}"
             )
         if exact_hash in seen_eval_exact:
             raise ValueError(f"Duplicate Fleet holdout graph: {scenario['id']}")
@@ -3455,17 +3685,25 @@ def _tools_by_slot(manifest: AgentBehaviorManifest) -> dict[str, list[ToolManife
 
 
 def _best_slot_for_tool(tool: ToolManifest, slots: list[ModelSlotManifest]) -> ModelSlotManifest:
+    eligible_slots = [
+        slot
+        for slot in slots
+        if "embedding" not in {slot.id.lower(), slot.role.lower()}
+    ]
+    if not eligible_slots:
+        raise ValueError("Fleet tool assignment requires a non-embedding slot")
+
     tool_text = f"{tool.id} {tool.displayName or ''} {tool.description or ''}".lower()
-    for slot in slots:
+    for slot in eligible_slots:
         slot_text = f"{slot.id} {slot.role} {' '.join(slot.responsibilities)}".lower()
         if any(token in slot_text for token in ["executor", "tool"]) and any(token in tool_text for token in ["create", "send", "search", "open", "save", "tool", "calendar", "email"]):
             return slot
         if any(token in slot_text for token in ["memory", "rem"]) and any(token in tool_text for token in ["memory", "remember", "recall"]):
             return slot
-    for slot in slots:
+    for slot in eligible_slots:
         if any(token in f"{slot.id} {slot.role}".lower() for token in ["executor", "tool"]):
             return slot
-    return slots[0]
+    return eligible_slots[0]
 
 
 def _public_model_directory(manifest: AgentBehaviorManifest, *, current_slot_id: str) -> list[dict[str, str]]:

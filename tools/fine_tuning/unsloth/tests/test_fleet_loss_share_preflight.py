@@ -12,6 +12,10 @@ from typing import Any
 
 import pytest
 
+from lumen_manifest_crawler.dataset.fine_tuning import (
+    FineTuningDatasetConfig,
+    _fleet_loss_share_contract,
+)
 from tools.fine_tuning.unsloth import train_dpo, train_sft, ubuntu_pipeline
 
 
@@ -40,7 +44,7 @@ TOKENIZER_CLOSURE_SHA256 = ubuntu_pipeline.canonical_sha256(
 def _contract() -> dict[str, Any]:
     fields = train_sft.FLEET_LOSS_SHARE_FIELD_NAMES
     return {
-        "schemaVersion": "lumen.fleet-loss-share/1.2.0",
+        "schemaVersion": "lumen.fleet-loss-share/1.3.0",
         "enforcementRequired": True,
         "enforcementPhase": "post_tokenizer_load_pre_optimizer",
         "requiredLanes": ["sft", "dpo"],
@@ -53,7 +57,7 @@ def _contract() -> dict[str, Any]:
         },
         "exactTokenEvidenceContract": {
             "required": True,
-            "schemaVersion": "lumen.fleet-loss-share-evidence/1.1.0",
+            "schemaVersion": "lumen.fleet-loss-share-evidence/1.2.0",
             "statusAtGeneration": "pending_exact_tokenizer_preflight",
             "tokenizer": "pinned_qwen_tokenizer",
             "comparisonRule": (
@@ -81,6 +85,24 @@ def _contract() -> dict[str, Any]:
         "dpoTokenizationPolicy": copy.deepcopy(
             train_sft.FLEET_DPO_TOKENIZATION_POLICY
         ),
+        "optimizerFamilyShareBands": {
+            "schemaVersion": "lumen.fleet-optimizer-family-share/1.0.0",
+            "enforcementScope": "optimizer_train_only",
+            "classification": {
+                "sourceFamily": "fleet_orchestration_native",
+                "taskTypeByLane": {
+                    "sft": "fleet_orchestration_event_graph",
+                    "dpo": "fleet_orchestration_event_graph_preference",
+                },
+            },
+            "lanes": copy.deepcopy(
+                train_sft.FLEET_OPTIMIZER_FAMILY_SHARE_LANES
+            ),
+            "comparisonRules": copy.deepcopy(
+                train_sft.FLEET_OPTIMIZER_FAMILY_SHARE_COMPARISON_RULES
+            ),
+            "failurePolicy": "abort_before_optimizer",
+        },
         "rowMetadataContract": {
             "requiredCanonicalFields": ["sourceFamily", "taskType"],
             "missingOrUnknown": "hard_fail",
@@ -94,6 +116,16 @@ def _contract() -> dict[str, Any]:
                 "supplemental_static",
             ],
             "registeredPairs": [
+                {
+                    "sourceFamily": "fleet_orchestration_native",
+                    "taskType": "fleet_orchestration_event_graph",
+                    "category": "behavioral_primary",
+                },
+                {
+                    "sourceFamily": "fleet_orchestration_native",
+                    "taskType": "fleet_orchestration_event_graph_preference",
+                    "category": "behavioral_primary",
+                },
                 {
                     "sourceFamily": "adapter_ultra_specific",
                     "taskType": "delegation_protocol",
@@ -211,6 +243,16 @@ def _config() -> dict[str, Any]:
 
 
 def _metadata(kind: str) -> dict[str, Any]:
+    if kind == "native_sft":
+        return {
+            "sourceFamily": "fleet_orchestration_native",
+            "taskType": "fleet_orchestration_event_graph",
+        }
+    if kind == "native_dpo":
+        return {
+            "sourceFamily": "fleet_orchestration_native",
+            "taskType": "fleet_orchestration_event_graph_preference",
+        }
     if kind == "primary":
         return {
             "sourceFamily": "adapter_ultra_specific",
@@ -248,7 +290,9 @@ def _sft_rows(specification: list[tuple[str, int]]) -> list[dict[str, Any]]:
                 {"role": "user", "content": f"request {index}"},
                 {"role": "assistant", "content": _words(tokens, f"a{index}_")},
             ],
-            "metadata": _metadata(kind),
+            "metadata": _metadata(
+                "native_sft" if kind == "native" else kind
+            ),
         }
         for index, (kind, tokens) in enumerate(specification)
     ]
@@ -265,7 +309,9 @@ def _dpo_source_rows(
                 "content": _words(tokens, f"c{index}_"),
             },
             "rejected": {"role": "assistant", "content": "reject"},
-            "metadata": _metadata(kind),
+            "metadata": _metadata(
+                "native_dpo" if kind == "native" else kind
+            ),
         }
         for index, (kind, tokens) in enumerate(specification)
     ]
@@ -351,11 +397,28 @@ def _render_preference(
 
 
 HAPPY_SPECIFICATION = [
-    ("primary", 70),
+    ("native", 55),
+    ("primary", 15),
     ("supplemental_a", 5),
     ("supplemental_b", 5),
     ("public", 20),
 ]
+
+
+def _dpo_family_share_specification(
+    native_pairs: int,
+) -> list[tuple[str, int]]:
+    total_pairs = 100
+    fixed_kinds = (
+        ["native"] * native_pairs
+        + ["supplemental_a"] * 10
+        + ["supplemental_b"] * 10
+        + ["public"] * 30
+    )
+    primary_pairs = total_pairs - len(fixed_kinds)
+    if primary_pairs < 0:
+        raise AssertionError(native_pairs)
+    return [(kind, 1) for kind in fixed_kinds + ["primary"] * primary_pairs]
 
 
 def _sft_preflight(
@@ -440,7 +503,7 @@ def test_sft_and_dpo_happy_paths_record_exact_split_evidence() -> None:
         assert evidence["splits"]["validation"]["capEnforcementStatus"] == (
             "observed_non_optimizer_split"
         )
-        expected_denominator = 100 if evidence["lane"] == "sft" else 104
+        expected_denominator = 100 if evidence["lane"] == "sft" else 105
         expected_categories = (
             {
                 "behavioral_primary": 70,
@@ -449,7 +512,7 @@ def test_sft_and_dpo_happy_paths_record_exact_split_evidence() -> None:
             }
             if evidence["lane"] == "sft"
             else {
-                "behavioral_primary": 71,
+                "behavioral_primary": 72,
                 "public_behavioral": 21,
                 "supplemental_static": 12,
             }
@@ -466,6 +529,27 @@ def test_sft_and_dpo_happy_paths_record_exact_split_evidence() -> None:
     assert dpo_evidence["dpoTokenizationPolicy"] == (
         train_dpo.DPO_COMPLETION_TOKENIZATION_POLICY
     )
+    assert sft["optimizerFamilyShareBand"] == (
+        _contract()["optimizerFamilyShareBands"]["lanes"]["sft"]
+    )
+    assert dpo_evidence["optimizerFamilyShareBand"] == (
+        _contract()["optimizerFamilyShareBands"]["lanes"]["dpo"]
+    )
+    assert sft["splits"]["train"][
+        "nativeOrchestrationAssistantTargetTokenCount"
+    ] == 55
+    assert sft["splits"]["train"]["assistantTargetTokenCount"] == 100
+    assert dpo_evidence["splits"]["train"][
+        "nativeOrchestrationPreferencePairCount"
+    ] == 1
+    assert dpo_evidence["splits"]["train"]["preferencePairCount"] == 5
+    for evidence in (sft, dpo_evidence):
+        assert evidence["splits"]["train"][
+            "optimizerFamilyBandEnforcementStatus"
+        ] == "optimizer_enforced"
+        assert evidence["splits"]["validation"][
+            "optimizerFamilyBandEnforcementStatus"
+        ] == "observed_non_optimizer_split"
 
 
 def test_public_verifier_rejects_rehashed_self_consistent_false_counts(
@@ -602,7 +686,7 @@ def test_small_validation_denominator_is_observed_without_false_optimizer_block(
         HAPPY_SPECIFICATION,
         validation,
     )["fleetLossShareEvidence"]
-    dpo, _ = _dpo_preflight(HAPPY_SPECIFICATION, validation)
+    dpo, dpo_source_splits = _dpo_preflight(HAPPY_SPECIFICATION, validation)
 
     assert sft["splits"]["validation"][
         "supplementalStaticAssistantTargetTokenCount"
@@ -613,6 +697,19 @@ def test_small_validation_denominator_is_observed_without_false_optimizer_block(
     assert sft["splits"]["validation"]["capEnforcementStatus"] == (
         "observed_non_optimizer_split"
     )
+    assert sft["splits"]["validation"][
+        "optimizerFamilyBandEnforcementStatus"
+    ] == "observed_non_optimizer_split"
+    assert sft["splits"]["validation"][
+        "nativeOrchestrationAssistantTargetTokenCount"
+    ] == 0
+    assert sft["splits"]["validation"]["assistantTargetTokenCount"] == 1
+    dpo_validation = dpo["fleetLossShareEvidence"]["splits"]["validation"]
+    assert dpo_validation["optimizerFamilyBandEnforcementStatus"] == (
+        "observed_non_optimizer_split"
+    )
+    assert dpo_validation["nativeOrchestrationPreferencePairCount"] == 0
+    assert dpo_validation["preferencePairCount"] == 1
     dataset_dir = tmp_path / "fleet"
     _write_jsonl(dataset_dir / "train_sft.jsonl", _sft_rows(HAPPY_SPECIFICATION))
     _write_jsonl(dataset_dir / "val_sft.jsonl", _sft_rows(validation))
@@ -622,25 +719,161 @@ def test_small_validation_denominator_is_observed_without_false_optimizer_block(
         phase="sft",
         dataset_dir=dataset_dir,
     ) == sft
+    _write_jsonl(
+        dataset_dir / "train_dpo.jsonl",
+        dpo_source_splits["train"],
+    )
+    _write_jsonl(
+        dataset_dir / "val_dpo.jsonl",
+        dpo_source_splits["validation"],
+    )
+    assert ubuntu_pipeline._verify_fleet_loss_share_evidence(
+        value=dpo["fleetLossShareEvidence"],
+        config=_config(),
+        phase="preference",
+        dataset_dir=dataset_dir,
+    ) == dpo["fleetLossShareEvidence"]
+
+
+@pytest.mark.parametrize("native_tokens", [50, 60])
+def test_sft_optimizer_family_share_band_accepts_inclusive_boundaries(
+    native_tokens: int,
+) -> None:
+    evidence = _sft_preflight(
+        [
+            ("native", native_tokens),
+            ("primary", 70 - native_tokens),
+            ("supplemental_a", 5),
+            ("supplemental_b", 5),
+            ("public", 20),
+        ]
+    )["fleetLossShareEvidence"]["splits"]["train"]
+
+    assert evidence["nativeOrchestrationAssistantTargetTokenCount"] == (
+        native_tokens
+    )
+    assert evidence["assistantTargetTokenCount"] == 100
+
+
+@pytest.mark.parametrize("native_pairs", [18, 22])
+def test_dpo_optimizer_family_share_band_accepts_inclusive_boundaries(
+    native_pairs: int,
+) -> None:
+    preflight, _ = _dpo_preflight(
+        _dpo_family_share_specification(native_pairs)
+    )
+    evidence = preflight["fleetLossShareEvidence"]["splits"]["train"]
+
+    assert evidence["nativeOrchestrationPreferencePairCount"] == native_pairs
+    assert evidence["preferencePairCount"] == 100
+
+
+@pytest.mark.parametrize("native_pairs", [17, 23])
+def test_dpo_optimizer_family_share_band_rejects_just_outside_boundaries(
+    native_pairs: int,
+) -> None:
+    with pytest.raises(RuntimeError, match="optimizer-family share band failed"):
+        _dpo_preflight(_dpo_family_share_specification(native_pairs))
+
+
+@pytest.mark.parametrize(
+    "specification",
+    [
+        [
+            ("native", 49),
+            ("primary", 21),
+            ("supplemental_a", 5),
+            ("supplemental_b", 5),
+            ("public", 20),
+        ],
+        [
+            ("native", 61),
+            ("primary", 9),
+            ("supplemental_a", 5),
+            ("supplemental_b", 5),
+            ("public", 20),
+        ],
+    ],
+)
+def test_sft_optimizer_family_share_band_rejects_under_and_over_range(
+    specification: list[tuple[str, int]],
+) -> None:
+    with pytest.raises(RuntimeError, match="optimizer-family share band failed"):
+        _sft_preflight(specification)
+
+
+@pytest.mark.parametrize(
+    "specification",
+    [
+        [
+            ("native", 55),
+            ("primary", 10),
+            ("primary", 10),
+            ("supplemental_a", 5),
+            ("supplemental_b", 5),
+            ("public", 15),
+        ],
+        [
+            ("native", 30),
+            ("native", 25),
+            ("primary", 20),
+            ("supplemental_a", 5),
+            ("public", 20),
+        ],
+    ],
+)
+def test_dpo_optimizer_family_share_band_rejects_under_and_over_range(
+    specification: list[tuple[str, int]],
+) -> None:
+    with pytest.raises(RuntimeError, match="optimizer-family share band failed"):
+        _dpo_preflight(specification)
+
+
+def test_optimizer_family_classification_requires_exact_lane_task_pair() -> None:
+    sft = _sft_preflight(
+        [
+            ("native", 50),
+            ("native_dpo", 5),
+            ("primary", 15),
+            ("supplemental_a", 5),
+            ("supplemental_b", 5),
+            ("public", 20),
+        ]
+    )["fleetLossShareEvidence"]["splits"]["train"]
+    assert sft["nativeOrchestrationAssistantTargetTokenCount"] == 50
+    assert sft["assistantTargetTokenCount"] == 100
+
+    dpo, _ = _dpo_preflight(
+        [
+            ("native", 50),
+            ("native_sft", 5),
+            ("primary", 20),
+            ("supplemental_a", 5),
+            ("public", 20),
+        ]
+    )
+    dpo_train = dpo["fleetLossShareEvidence"]["splits"]["train"]
+    assert dpo_train["nativeOrchestrationPreferencePairCount"] == 1
+    assert dpo_train["preferencePairCount"] == 5
 
 
 @pytest.mark.parametrize(
     ("specification", "message"),
     [
         (
-            [("primary", 60), ("supplemental_a", 15), ("supplemental_b", 15), ("public", 10)],
+            [("native", 55), ("primary", 5), ("supplemental_a", 15), ("supplemental_b", 15), ("public", 10)],
             "supplemental-static requested",
         ),
         (
-            [("primary", 80), ("supplemental_a", 11), ("public", 9)],
+            [("native", 55), ("primary", 12), ("primary", 12), ("supplemental_a", 11), ("public", 10)],
             "supplemental source family",
         ),
         (
-            [("primary", 59), ("supplemental_a", 5), ("public", 36)],
+            [("native", 51), ("primary", 6), ("primary", 6), ("supplemental_a", 1), ("public", 36)],
             "public-behavioral requested",
         ),
         (
-            [("unknown", 70), ("supplemental_a", 5), ("public", 25)],
+            [("native", 55), ("primary", 5), ("unknown", 10), ("supplemental_a", 5), ("public", 25)],
             "Unregistered Fleet source-role pair",
         ),
     ],
@@ -657,19 +890,19 @@ def test_sft_gate_rejects_cap_and_registry_violations(
     ("specification", "message"),
     [
         (
-            [("primary", 60), ("supplemental_a", 15), ("supplemental_b", 15), ("public", 10)],
+            [("native", 55), ("primary", 5), ("supplemental_a", 15), ("supplemental_b", 15), ("public", 10)],
             "supplemental-static requested",
         ),
         (
-            [("primary", 80), ("supplemental_a", 11), ("public", 9)],
+            [("native", 55), ("primary", 12), ("primary", 12), ("supplemental_a", 11), ("public", 10)],
             "supplemental source family",
         ),
         (
-            [("primary", 59), ("supplemental_a", 5), ("public", 36)],
+            [("native", 51), ("primary", 6), ("primary", 6), ("supplemental_a", 1), ("public", 36)],
             "public-behavioral requested",
         ),
         (
-            [("unknown", 70), ("supplemental_a", 5), ("public", 25)],
+            [("native", 55), ("primary", 5), ("unknown", 10), ("supplemental_a", 5), ("public", 25)],
             "Unregistered Fleet source-role pair",
         ),
     ],
@@ -719,6 +952,72 @@ def test_contract_and_metadata_are_fail_closed() -> None:
             ],
             fleet_config=config,
         )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "extra_family_key",
+        "floating_minimum",
+        "extra_lane_key",
+        "wrong_lane_task_type",
+    ],
+)
+def test_nested_optimizer_family_contract_mutations_fail_both_validators(
+    mutation: str,
+) -> None:
+    contract = _contract()
+    family_share = contract["optimizerFamilyShareBands"]
+    if mutation == "extra_family_key":
+        family_share["unexpected"] = "unbound"
+    elif mutation == "floating_minimum":
+        family_share["lanes"]["sft"]["minimumBasisPoints"] = 5_000.0
+    elif mutation == "extra_lane_key":
+        family_share["lanes"]["dpo"]["unexpected"] = "unbound"
+    elif mutation == "wrong_lane_task_type":
+        family_share["classification"]["taskTypeByLane"]["dpo"] = (
+            "fleet_orchestration_event_graph"
+        )
+    else:
+        raise AssertionError(mutation)
+
+    for verifier in (
+        lambda: train_sft._validated_fleet_loss_share_contract(
+            contract,
+            lane="sft",
+            config=_config(),
+        ),
+        lambda: ubuntu_pipeline._pipeline_validated_fleet_loss_share_contract(
+            contract,
+            config=_config(),
+        ),
+    ):
+        with pytest.raises(RuntimeError):
+            verifier()
+
+
+def test_compiler_contract_is_accepted_by_both_independent_validators() -> None:
+    contract = _fleet_loss_share_contract(FineTuningDatasetConfig())
+    tokenizer = contract["tokenizer"]
+    config = {
+        "base_model_name": tokenizer["baseModelID"],
+        "baseModelRevision": tokenizer["baseModelRevision"],
+        "baseModelTokenizerDigest": tokenizer["tokenizerSHA256"],
+        "baseModelTokenizerClosureSHA256": tokenizer[
+            "tokenizerClosureSHA256"
+        ],
+    }
+
+    for lane in ("sft", "dpo"):
+        assert train_sft._validated_fleet_loss_share_contract(
+            contract,
+            lane=lane,
+            config=config,
+        ) == contract
+    assert ubuntu_pipeline._pipeline_validated_fleet_loss_share_contract(
+        contract,
+        config=config,
+    ) == contract
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -811,7 +1110,7 @@ def test_independent_verifier_rejects_missing_noninteger_zero_and_over_cap(
 
     over_cap = copy.deepcopy(baseline)
     split = over_cap["splits"]["train"]
-    row_counts = [40, 20, 20, 20]
+    row_counts = [20, 20, 20, 20, 20]
     for row_evidence, count in zip(split["rowTokenEvidence"], row_counts):
         row_evidence["targetTokenCount"] = count
     split["targetTokenCountsByCategory"] = {
@@ -826,11 +1125,172 @@ def test_independent_verifier_rejects_missing_noninteger_zero_and_over_cap(
         "codebase_home_sft": 20,
         "self_model_sft": 20,
     }
+    split["nativeOrchestrationAssistantTargetTokenCount"] = 20
     with pytest.raises(RuntimeError, match="total token cap failed"):
         ubuntu_pipeline._verify_fleet_loss_share_evidence(
             value=over_cap,
             config=config,
             phase="sft",
+            dataset_dir=dataset_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("native_tokens", "primary_tokens"),
+    [(49, 21), (61, 9)],
+)
+def test_independent_verifier_rejects_reconstructed_sft_family_band_violation(
+    tmp_path: Path,
+    native_tokens: int,
+    primary_tokens: int,
+) -> None:
+    config = _config()
+    dataset_dir = tmp_path / "fleet"
+    rows = _sft_rows(HAPPY_SPECIFICATION)
+    _write_jsonl(dataset_dir / "train_sft.jsonl", rows)
+    _write_jsonl(dataset_dir / "val_sft.jsonl", rows)
+    evidence = copy.deepcopy(
+        _sft_preflight(HAPPY_SPECIFICATION)["fleetLossShareEvidence"]
+    )
+    train = evidence["splits"]["train"]
+    train["rowTokenEvidence"][0]["targetTokenCount"] = native_tokens
+    train["rowTokenEvidence"][1]["targetTokenCount"] = primary_tokens
+    train["nativeOrchestrationAssistantTargetTokenCount"] = native_tokens
+
+    with pytest.raises(RuntimeError, match="optimizer-family share band failed"):
+        ubuntu_pipeline._verify_fleet_loss_share_evidence(
+            value=evidence,
+            config=config,
+            phase="sft",
+            dataset_dir=dataset_dir,
+        )
+
+
+@pytest.mark.parametrize(
+    ("row_index", "replacement_kind", "expected_native_pairs"),
+    [(0, "primary", 0), (1, "native_dpo", 2)],
+)
+def test_independent_verifier_rejects_reconstructed_dpo_family_band_violation(
+    tmp_path: Path,
+    row_index: int,
+    replacement_kind: str,
+    expected_native_pairs: int,
+) -> None:
+    config = _config()
+    preflight, source_splits = _dpo_preflight(HAPPY_SPECIFICATION)
+    evidence = copy.deepcopy(preflight["fleetLossShareEvidence"])
+    train_rows = copy.deepcopy(source_splits["train"])
+    train_rows[row_index]["metadata"] = _metadata(replacement_kind)
+    train_evidence = evidence["splits"]["train"]
+    row_evidence = train_evidence["rowTokenEvidence"][row_index]
+    row_evidence["sourceRowSHA256"] = ubuntu_pipeline.canonical_sha256(
+        train_rows[row_index]
+    )
+    row_evidence["sourceFamily"] = train_rows[row_index]["metadata"][
+        "sourceFamily"
+    ]
+    row_evidence["taskType"] = train_rows[row_index]["metadata"]["taskType"]
+    train_evidence["sourceRowsSHA256"] = ubuntu_pipeline.canonical_sha256(
+        [item["sourceRowSHA256"] for item in train_evidence["rowTokenEvidence"]]
+    )
+    train_evidence["nativeOrchestrationPreferencePairCount"] = (
+        expected_native_pairs
+    )
+    dataset_dir = tmp_path / f"fleet-{expected_native_pairs}"
+    _write_jsonl(dataset_dir / "train_dpo.jsonl", train_rows)
+    _write_jsonl(
+        dataset_dir / "val_dpo.jsonl",
+        source_splits["validation"],
+    )
+
+    with pytest.raises(RuntimeError, match="optimizer-family share band failed"):
+        ubuntu_pipeline._verify_fleet_loss_share_evidence(
+            value=evidence,
+            config=config,
+            phase="preference",
+            dataset_dir=dataset_dir,
+        )
+
+
+def test_independent_verifier_rejects_family_band_evidence_tampering(
+    tmp_path: Path,
+) -> None:
+    config = _config()
+    dataset_dir = tmp_path / "fleet"
+    rows = _sft_rows(HAPPY_SPECIFICATION)
+    _write_jsonl(dataset_dir / "train_sft.jsonl", rows)
+    _write_jsonl(dataset_dir / "val_sft.jsonl", rows)
+    baseline = _sft_preflight(HAPPY_SPECIFICATION)["fleetLossShareEvidence"]
+
+    rebound_band = copy.deepcopy(baseline)
+    rebound_band["optimizerFamilyShareBand"]["minimumBasisPoints"] = 4_999
+    with pytest.raises(RuntimeError, match="evidence bindings drifted"):
+        ubuntu_pipeline._verify_fleet_loss_share_evidence(
+            value=rebound_band,
+            config=config,
+            phase="sft",
+            dataset_dir=dataset_dir,
+        )
+
+    false_numerator = copy.deepcopy(baseline)
+    false_numerator["splits"]["train"][
+        "nativeOrchestrationAssistantTargetTokenCount"
+    ] -= 1
+    with pytest.raises(RuntimeError, match="failed reconstruction"):
+        ubuntu_pipeline._verify_fleet_loss_share_evidence(
+            value=false_numerator,
+            config=config,
+            phase="sft",
+            dataset_dir=dataset_dir,
+        )
+
+    validation_promoted = copy.deepcopy(baseline)
+    validation_promoted["splits"]["validation"][
+        "optimizerFamilyBandEnforcementStatus"
+    ] = "optimizer_enforced"
+    with pytest.raises(RuntimeError, match="failed reconstruction"):
+        ubuntu_pipeline._verify_fleet_loss_share_evidence(
+            value=validation_promoted,
+            config=config,
+            phase="sft",
+            dataset_dir=dataset_dir,
+        )
+
+
+def test_independent_verifier_rejects_dpo_family_evidence_tampering(
+    tmp_path: Path,
+) -> None:
+    config = _config()
+    dataset_dir = tmp_path / "fleet"
+    preflight, source_splits = _dpo_preflight(HAPPY_SPECIFICATION)
+    _write_jsonl(dataset_dir / "train_dpo.jsonl", source_splits["train"])
+    _write_jsonl(
+        dataset_dir / "val_dpo.jsonl",
+        source_splits["validation"],
+    )
+    baseline = preflight["fleetLossShareEvidence"]
+
+    false_numerator = copy.deepcopy(baseline)
+    false_numerator["splits"]["train"][
+        "nativeOrchestrationPreferencePairCount"
+    ] += 1
+    with pytest.raises(RuntimeError, match="failed reconstruction"):
+        ubuntu_pipeline._verify_fleet_loss_share_evidence(
+            value=false_numerator,
+            config=config,
+            phase="preference",
+            dataset_dir=dataset_dir,
+        )
+
+    validation_promoted = copy.deepcopy(baseline)
+    validation_promoted["splits"]["validation"][
+        "optimizerFamilyBandEnforcementStatus"
+    ] = "optimizer_enforced"
+    with pytest.raises(RuntimeError, match="failed reconstruction"):
+        ubuntu_pipeline._verify_fleet_loss_share_evidence(
+            value=validation_promoted,
+            config=config,
+            phase="preference",
             dataset_dir=dataset_dir,
         )
 
