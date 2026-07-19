@@ -9,7 +9,11 @@ from itertools import combinations
 from typing import Any
 
 from lumen_manifest_crawler.dataset.adapter_export import augment_unsloth_config_for_adapter_export
-from lumen_manifest_crawler.dataset.chat_template_contract import chat_template_contract
+from lumen_manifest_crawler.dataset.chat_template_contract import (
+    STRUCTURED_OUTPUT_INSTRUCTION,
+    chat_template_contract,
+    structured_output_instruction_status,
+)
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
     DEFAULT_BASE_MODEL_ID,
@@ -271,10 +275,6 @@ CORTEX_CODEBASE_SYSTEM_PROMPT = (
     "Ground it only in the supplied static source-map, manifest, or self-model evidence. "
     "Do not emit a route, selectedToolID, "
     "actionStep, handoff, or claim live runtime state."
-)
-STRUCTURED_OUTPUT_INSTRUCTION = (
-    "Response format contract: output exactly one valid JSON object. Do not include "
-    "prose, markdown, code fences, or hidden reasoning."
 )
 EXECUTOR_RUNTIME_SYSTEM_PROMPT = (
     "You are Executor, Lumen's structured routing executor. "
@@ -4413,8 +4413,13 @@ def _bind_structured_output_instruction(
     content = system.get("content")
     if not isinstance(content, str) or not content.strip():
         raise ValueError("Structured-output training system message is empty")
-    if STRUCTURED_OUTPUT_INSTRUCTION in content:
+    instruction_status = structured_output_instruction_status(content)
+    if instruction_status == "exact_once":
         return
+    if instruction_status == "drifted":
+        raise ValueError(
+            "Structured-output training system message contains a drifted contract"
+        )
     system["content"] = content.rstrip() + "\n\n" + STRUCTURED_OUTPUT_INSTRUCTION
 
 

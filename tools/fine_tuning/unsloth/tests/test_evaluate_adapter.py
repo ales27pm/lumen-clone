@@ -19,7 +19,9 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     CORTEX_ROUTE_DECISION_ENDCAP as TRAINING_CORTEX_ROUTE_DECISION_ENDCAP,
     CORTEX_ROUTE_INSTRUCTION as TRAINING_CORTEX_ROUTE_INSTRUCTION,
     CORTEX_ROUTE_SYSTEM_PROMPT,
+    EXECUTOR_RUNTIME_SYSTEM_PROMPT,
     STRUCTURED_OUTPUT_INSTRUCTION as TRAINING_STRUCTURED_OUTPUT_INSTRUCTION,
+    SYSTEM_PROMPTS as TRAINING_SYSTEM_PROMPTS,
     cortex_runtime_route_system_prompt,
 )
 from lumen_manifest_crawler.manifest import (
@@ -28,6 +30,9 @@ from lumen_manifest_crawler.manifest import (
     ToolManifest,
 )
 from tools.fine_tuning.unsloth import evaluate_adapter, ubuntu_pipeline
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 _STRICT_JSON_EDGE_CASES = (
@@ -1114,6 +1119,142 @@ def test_structured_output_messages_harden_json_roles_without_mutating_records()
     assert evaluate_adapter.STRUCTURED_OUTPUT_INSTRUCTION in without_system[0]["content"]
     assert "files.read" in without_system[0]["content"]
     assert without_system[1]["role"] == "user"
+
+
+@pytest.mark.parametrize(
+    ("agent", "system_prompt"),
+    (
+        ("fleet", TRAINING_SYSTEM_PROMPTS["fleet"]),
+        ("executor", EXECUTOR_RUNTIME_SYSTEM_PROMPT),
+    ),
+)
+def test_structured_output_messages_accept_canonical_embedded_contracts(
+    agent: str,
+    system_prompt: str,
+) -> None:
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "Return the structured result."},
+    ]
+
+    bound = evaluate_adapter._structured_output_messages(
+        agent,
+        messages,
+        output_mode="json",
+    )
+
+    assert bound == canonical_non_thinking_messages(messages)
+    assert bound[0]["content"].count(TRAINING_STRUCTURED_OUTPUT_INSTRUCTION) == 1
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("duplicate", "altered_body", "altered_prefix"),
+)
+def test_structured_output_messages_reject_non_cortex_contract_drift(
+    mutation: str,
+) -> None:
+    system_prompt = TRAINING_SYSTEM_PROMPTS["fleet"]
+    if mutation == "duplicate":
+        system_prompt += "\n\n" + TRAINING_STRUCTURED_OUTPUT_INSTRUCTION
+    elif mutation == "altered_body":
+        system_prompt = system_prompt.replace(
+            "output exactly one valid JSON object",
+            "output exactly one YAML mapping",
+        )
+    else:
+        system_prompt = system_prompt.replace(
+            "Response format contract:",
+            "Response-format contract:",
+        )
+
+    with pytest.raises(ValueError, match="drifted structured-output contract"):
+        evaluate_adapter._structured_output_messages(
+            "fleet",
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Return the structured result."},
+            ],
+            output_mode="json",
+        )
+
+
+@pytest.mark.parametrize(
+    "cortex_marker",
+    (
+        "Manifest-tools TSV: id name defaultIntent",
+        "Cortex route-mode: select a manifest row.",
+        "Final-route decision: copy the selected row.",
+    ),
+)
+def test_non_cortex_prompts_reject_cortex_contract_markers(
+    cortex_marker: str,
+) -> None:
+    with pytest.raises(ValueError, match="drifted structured-output contract"):
+        evaluate_adapter._structured_output_messages(
+            "fleet",
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        TRAINING_SYSTEM_PROMPTS["fleet"]
+                        + "\n\n"
+                        + cortex_marker
+                    ),
+                },
+                {"role": "user", "content": "Return the structured result."},
+            ],
+            output_mode="json",
+        )
+
+
+def test_evaluation_prompt_preflight_reports_exact_drifted_case() -> None:
+    record = _record("eval-drift", agent="fleet")
+    record["messages"][0]["content"] = (
+        TRAINING_SYSTEM_PROMPTS["fleet"].replace(
+            "Response format contract:",
+            "Response-format contract:",
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"fleet/eval-drift at case 1: .*"
+            r"drifted structured-output contract"
+        ),
+    ):
+        evaluate_adapter.evaluation_prompt_preflight(
+            [record],
+            agent="fleet",
+        )
+
+
+def test_all_current_frozen_evaluation_prompts_pass_evaluator_preflight() -> None:
+    behavior_path = (
+        REPO_ROOT
+        / "generated"
+        / "agent_manifest"
+        / "AgentBehaviorManifest.json"
+    )
+    tool_contracts, _, _ = evaluate_adapter.load_behavior_contract(behavior_path)
+    evaluation_module = evaluate_adapter._load_evaluation_module()
+
+    for agent in evaluate_adapter.SUPPORTED_AGENTS:
+        records, _ = evaluate_adapter.load_evaluation_records(
+            REPO_ROOT / "generated" / "fine_tuning" / agent / "eval.jsonl",
+            agent=agent,
+            evaluation_module=evaluation_module,
+        )
+        evidence = evaluate_adapter.evaluation_prompt_preflight(
+            records,
+            agent=agent,
+            tool_contracts=tool_contracts,
+        )
+        assert evidence["agent"] == agent
+        assert evidence["caseCount"] == len(records)
+        assert len(evidence["promptSetSHA256"]) == 64
+        assert len(evidence["evaluationPromptPreflightSHA256"]) == 64
 
 
 def test_cortex_structured_prompt_binds_sorted_manifest_catalog() -> None:

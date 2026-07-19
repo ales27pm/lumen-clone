@@ -50,6 +50,34 @@ def test_contract_is_self_hashed_and_fail_closed() -> None:
         contract_module.verify_chat_template_contract(mutated)
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    (
+        ("No structured response is requested.", "absent"),
+        (contract_module.STRUCTURED_OUTPUT_INSTRUCTION, "exact_once"),
+        (
+            contract_module.STRUCTURED_OUTPUT_INSTRUCTION
+            + "\n"
+            + contract_module.STRUCTURED_OUTPUT_INSTRUCTION,
+            "drifted",
+        ),
+        (
+            contract_module.STRUCTURED_OUTPUT_INSTRUCTION.replace(
+                "Response format contract:",
+                "Response-format contract:",
+            ),
+            "drifted",
+        ),
+        ("Response_format_contract: emit JSON.", "drifted"),
+    ),
+)
+def test_structured_output_instruction_status_fails_closed(
+    content: str,
+    expected: str,
+) -> None:
+    assert contract_module.structured_output_instruction_status(content) == expected
+
+
 def test_wrapper_forces_non_thinking_for_every_render() -> None:
     tokenizer = ContractTokenizer()
     contract_module.apply_non_thinking_chat_template(

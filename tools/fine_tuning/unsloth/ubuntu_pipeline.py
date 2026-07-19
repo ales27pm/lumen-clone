@@ -2189,6 +2189,8 @@ def static_preflight(
     gguf_requested: bool = True,
     precreated_bind_root: bool = False,
 ) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth import evaluate_adapter
+
     require_variant(variant)
     require_container_digest(container_digest)
     resolved_run_root = validate_run_root(run_root, allowed_parent=allowed_parent)
@@ -2219,8 +2221,13 @@ def static_preflight(
     if not dataset_source.is_dir():
         raise RuntimeError(f"Dataset source does not exist: {dataset_source}")
     runtime_manifest = read_object(dataset_source / "adapter_runtime_manifest.json")
-    read_object(
+    behavior_manifest_path = (
         root / "generated" / "agent_manifest" / "AgentBehaviorManifest.json"
+    )
+    read_object(behavior_manifest_path)
+    evaluation_module = evaluate_adapter._load_evaluation_module()
+    tool_contracts, allowed_slots, _ = evaluate_adapter.load_behavior_contract(
+        behavior_manifest_path
     )
     prepared_execution_plan = execution_plan(
         evaluation_scope=evaluation_scope,
@@ -2236,11 +2243,31 @@ def static_preflight(
             seed=seed,
             base_model_override=base_model_override,
         )
+        evaluation_path = dataset_source / agent / "eval.jsonl"
+        evaluation_records, evaluation_sha256 = (
+            evaluate_adapter.load_evaluation_records(
+                evaluation_path,
+                agent=agent,
+                evaluation_module=evaluation_module,
+            )
+        )
+        evaluate_adapter.validate_scoring_contracts(
+            evaluation_records,
+            tool_contracts=tool_contracts,
+            allowed_slots=allowed_slots,
+        )
+        prompt_preflight = evaluate_adapter.evaluation_prompt_preflight(
+            evaluation_records,
+            agent=agent,
+            tool_contracts=tool_contracts,
+        )
         checked.append(
             {
                 "agent": agent,
                 "variantManifestSHA256": manifest["variantManifestSHA256"],
                 "trainingCorpusSHA256": manifest["trainingCorpusSHA256"],
+                "evaluationSHA256": evaluation_sha256,
+                "evaluationPromptPreflight": prompt_preflight,
             }
         )
     _verify_smoke_plan_against_frozen_suites(
@@ -2249,7 +2276,7 @@ def static_preflight(
         prepared_execution_plan,
     )
     return {
-        "schema": "lumen.ubuntu-training-static-preflight/2.0.0",
+        "schema": "lumen.ubuntu-training-static-preflight/2.1.0",
         "status": "static_ready",
         "trainingReady": False,
         "unchecked": ["python_environment", "cuda_runtime", "accelerator", "network"],
@@ -3995,6 +4022,7 @@ def validate_prepared_runtime(
     gguf_requested: bool = True,
     observe_runtime: bool = True,
 ) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth import evaluate_adapter
     from tools.fine_tuning.unsloth.train_dpo import (
         _validate_preference_training_config,
     )
@@ -4049,6 +4077,25 @@ def validate_prepared_runtime(
         or read_object(training_environment_path) != manifest.get("trainingEnvironment")
     ):
         raise RuntimeError("Prepared training environment record drifted")
+    behavior_manifest_path = (
+        run_root
+        / "generated"
+        / "agent_manifest"
+        / "AgentBehaviorManifest.json"
+    )
+    if (
+        behavior_manifest_path.is_symlink()
+        or not behavior_manifest_path.is_file()
+        or manifest.get("behaviorManifest") != str(behavior_manifest_path)
+        or manifest.get("behaviorManifestFileSHA256")
+        != file_sha256(behavior_manifest_path)
+    ):
+        raise RuntimeError("Prepared behavior manifest drifted")
+    evaluation_module = evaluate_adapter._load_evaluation_module()
+    tool_contracts, allowed_slots, _ = evaluate_adapter.load_behavior_contract(
+        behavior_manifest_path
+    )
+    evaluation_prompt_preflights: dict[str, dict[str, Any]] = {}
     seed = manifest.get("seed")
     if type(seed) is not int:
         raise RuntimeError("Prepared run manifest has an invalid seed")
@@ -4097,6 +4144,36 @@ def validate_prepared_runtime(
             variant=variant,
             seed=seed,
             base_model_override=str(prepared_config.get("base_model_name") or ""),
+        )
+        evaluation_path = snapshot_root / agent / "eval.jsonl"
+        evaluation_records, evaluation_sha256 = (
+            evaluate_adapter.load_evaluation_records(
+                evaluation_path,
+                agent=agent,
+                evaluation_module=evaluation_module,
+            )
+        )
+        contamination = pending_manifest.get("contamination")
+        if (
+            not isinstance(contamination, Mapping)
+            or evaluation_sha256 != pending_manifest.get("frozenEvaluationSHA256")
+            or evaluation_sha256
+            != contamination.get("evaluationRecordsSHA256")
+        ):
+            raise RuntimeError(
+                f"Prepared frozen evaluation binding drifted for {agent}"
+            )
+        evaluate_adapter.validate_scoring_contracts(
+            evaluation_records,
+            tool_contracts=tool_contracts,
+            allowed_slots=allowed_slots,
+        )
+        evaluation_prompt_preflights[agent] = (
+            evaluate_adapter.evaluation_prompt_preflight(
+                evaluation_records,
+                agent=agent,
+                tool_contracts=tool_contracts,
+            )
         )
         _verify_prepared_agent_entry(
             prepared_entry,
@@ -4207,6 +4284,7 @@ def validate_prepared_runtime(
             "status": "postexit_artifacts_ready",
             "trainingEnvironmentSHA256": environment_digest,
             "observedAccelerator": dict(observed_accelerator),
+            "evaluationPromptPreflights": evaluation_prompt_preflights,
         }
 
     config = read_object(run_root / "configs" / f"{agents[0]}.json")
@@ -4224,6 +4302,7 @@ def validate_prepared_runtime(
         "status": "resume_ready",
         "trainingEnvironmentSHA256": environment["trainingEnvironmentSHA256"],
         "observedAccelerator": lineage["observedAccelerator"],
+        "evaluationPromptPreflights": evaluation_prompt_preflights,
     }
 
 
