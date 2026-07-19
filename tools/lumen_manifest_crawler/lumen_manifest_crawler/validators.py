@@ -736,10 +736,199 @@ def _validate_sft_collection_integrity(
         if invalid_sources:
             failures.append(ValidationFailure(code="off_role_sft_source", message=f"{agent} contains off-role sources: {', '.join(invalid_sources)}", path=f"fine_tuning.{agent}"))
 
-    if agent in {"cortex", "fleet"} and records:
-        supplemental_count = sum(source_counts.get(source, 0) for source in ADAPTER_CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES)
-        if supplemental_count / len(records) > 0.251:
-            failures.append(ValidationFailure(code="supplemental_sft_ratio_exceeded", message=f"{agent} codebase grounding exceeds 25% of materialized SFT", path=f"fine_tuning.{agent}"))
+    constraints = (
+        ds.dataset_card.get("constraints")
+        if isinstance(ds.dataset_card, dict)
+        and isinstance(ds.dataset_card.get("constraints"), dict)
+        else {}
+    )
+    fleet_optimizer_only = (
+        agent == "fleet"
+        and constraints.get("fleetLossShareEnforcementScope")
+        == "optimizer_train_only"
+        and constraints.get("fleetValidationLossSharePolicy")
+        == "observed_not_enforced"
+    )
+    if agent == "fleet":
+        validation_policy = constraints.get("fleetValidationSamplingPolicy")
+        policy_path = (
+            f"fine_tuning.{agent}.dataset_card.constraints."
+            "fleetValidationSamplingPolicy"
+        )
+        if not isinstance(validation_policy, dict):
+            failures.append(
+                ValidationFailure(
+                    code="fleet_validation_sampling_contract_invalid",
+                    message="Fleet SFT validation sampling policy is missing",
+                    path=policy_path,
+                )
+            )
+        else:
+            maximum = validation_policy.get("maximumRecords")
+            selected_count = validation_policy.get("selectedRecordCount")
+            candidate_count = validation_policy.get(
+                "candidateBeforePublicSelectionRecordCount"
+            )
+            sampling_input_count = validation_policy.get(
+                "samplingInputRecordCount"
+            )
+            rejected_public = validation_policy.get(
+                "rejectedByPublicSelectionCount"
+            )
+            rejected_sampling = validation_policy.get(
+                "rejectedByValidationSamplingCount"
+            )
+            contract_valid = (
+                validation_policy.get("schemaVersion")
+                == "lumen.fleet-validation-sampling/1.0.0"
+                and validation_policy.get("status")
+                == "bounded_stratified_observation"
+                and validation_policy.get("lane") == "sft_validation"
+                and type(maximum) is int
+                and maximum > 0
+                and type(selected_count) is int
+                and type(candidate_count) is int
+                and type(sampling_input_count) is int
+                and type(rejected_public) is int
+                and type(rejected_sampling) is int
+                and 0 <= selected_count <= sampling_input_count <= candidate_count
+                and rejected_public == candidate_count - sampling_input_count
+                and rejected_sampling == sampling_input_count - selected_count
+                and validation_policy.get(
+                    "explicitValidationAssignmentsPreserved"
+                )
+                is True
+                and validation_policy.get("allSamplingInputStrataPreserved")
+                is True
+                and validation_policy.get("optimizerLossShareCapsApplied")
+                is False
+                and validation_policy.get("selectionStrategy")
+                == "least_represented_stratum_then_salted_stable_hash_v1"
+            )
+            cohort_digest = hashlib.sha256(
+                json.dumps(
+                    sorted(
+                        _canonical_sft_messages_key(record)
+                        for record in ds.val_sft
+                    ),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            if (
+                not contract_valid
+                or selected_count != len(ds.val_sft)
+                or len(ds.val_sft) > maximum
+                or validation_policy.get("selectedCohortSHA256")
+                != cohort_digest
+                or validation_policy.get("samplingInputStratumCount")
+                != validation_policy.get("selectedStratumCount")
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="fleet_validation_sampling_contract_invalid",
+                        message=(
+                            "Fleet SFT validation sampling policy does not "
+                            "match the selected cohort"
+                        ),
+                        path=policy_path,
+                    )
+                )
+
+        required_validation_keys = {
+            _canonical_sft_messages_key(record)
+            for record in ds.val_sft
+            if isinstance(record.get("metadata"), dict)
+            and record["metadata"].get("requiredSplit") == "validation"
+        }
+        for variant, payload in sorted(ds.experiment_variants.items()):
+            if not isinstance(payload, dict):
+                failures.append(
+                    ValidationFailure(
+                        code="fleet_variant_validation_sampling_invalid",
+                        message=f"Fleet variant {variant} payload is invalid",
+                        path=f"fine_tuning.{agent}.experiments.{variant}",
+                    )
+                )
+                continue
+            variant_train = payload.get("train_sft")
+            variant_validation = payload.get("val_sft")
+            variant_manifest = payload.get("variant_manifest")
+            variant_policy = (
+                variant_manifest.get("validationSamplingPolicy")
+                if isinstance(variant_manifest, dict)
+                else None
+            )
+            variant_path = (
+                f"fine_tuning.{agent}.experiments.{variant}."
+                "variant_manifest.validationSamplingPolicy"
+            )
+            if (
+                not isinstance(variant_train, list)
+                or not isinstance(variant_validation, list)
+                or not isinstance(variant_policy, dict)
+                or type(variant_policy.get("maximumRecords")) is not int
+                or len(variant_validation)
+                > variant_policy.get("maximumRecords", -1)
+                or variant_policy.get("selectedRecordCount")
+                != len(variant_validation)
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="fleet_variant_validation_sampling_invalid",
+                        message=(
+                            f"Fleet variant {variant} validation bound or "
+                            "manifest policy is invalid"
+                        ),
+                        path=variant_path,
+                    )
+                )
+                continue
+            variant_validation_keys = {
+                _canonical_sft_messages_key(record)
+                for record in variant_validation
+            }
+            variant_digest = hashlib.sha256(
+                json.dumps(
+                    sorted(variant_validation_keys),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            train_prompt_keys = {
+                _canonical_sft_prompt_key(record) for record in variant_train
+            }
+            validation_prompt_keys = {
+                _canonical_sft_prompt_key(record)
+                for record in variant_validation
+            }
+            if (
+                variant_policy.get("selectedCohortSHA256") != variant_digest
+                or not required_validation_keys <= variant_validation_keys
+                or train_prompt_keys.intersection(validation_prompt_keys)
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="fleet_variant_validation_sampling_invalid",
+                        message=(
+                            f"Fleet variant {variant} validation cohort "
+                            "digest, assignments, or split isolation is invalid"
+                        ),
+                        path=variant_path,
+                    )
+                )
+    limit_records = ds.train_sft if fleet_optimizer_only else records
+    if agent in {"cortex", "fleet"} and limit_records:
+        limit_source_counts = _sft_metadata_counts(limit_records, "sourceFamily")
+        supplemental_count = sum(
+            limit_source_counts.get(source, 0)
+            for source in ADAPTER_CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES
+        )
+        if supplemental_count / len(limit_records) > 0.251:
+            scope = "optimizer SFT" if fleet_optimizer_only else "materialized SFT"
+            failures.append(ValidationFailure(code="supplemental_sft_ratio_exceeded", message=f"{agent} codebase grounding exceeds 25% of {scope}", path=f"fine_tuning.{agent}"))
 
     max_sequence_length = ds.unsloth_config.get("max_seq_length")
     if isinstance(max_sequence_length, int) and max_sequence_length > 0:
@@ -753,10 +942,43 @@ def _validate_sft_collection_integrity(
 
     train_sources = _sft_metadata_counts(ds.train_sft, "sourceFamily")
     val_sources = _sft_metadata_counts(ds.val_sft, "sourceFamily")
+    fleet_registry = constraints.get("fleetSourceRoleRegistry")
+    registered_pairs = (
+        fleet_registry.get("registeredPairs")
+        if isinstance(fleet_registry, dict)
+        and isinstance(fleet_registry.get("registeredPairs"), list)
+        else []
+    )
+    fleet_supplemental_pairs = {
+        (str(item.get("sourceFamily") or ""), str(item.get("taskType") or ""))
+        for item in registered_pairs
+        if isinstance(item, dict) and item.get("category") == "supplemental_static"
+    }
     for source, count in source_counts.items():
+        source_records = [
+            record
+            for record in records
+            if isinstance(record.get("metadata"), dict)
+            and record["metadata"].get("sourceFamily") == source
+        ]
+        optimizer_pruned_static_source = (
+            fleet_optimizer_only
+            and source not in train_sources
+            and source in val_sources
+            and bool(source_records)
+            and all(
+                (
+                    str(record["metadata"].get("sourceFamily") or ""),
+                    str(record["metadata"].get("taskType") or ""),
+                )
+                in fleet_supplemental_pairs
+                for record in source_records
+            )
+        )
         if (
             count >= 2
             and not source.startswith(PUBLIC_ADAPTER_CORPUS_PREFIX)
+            and not optimizer_pruned_static_source
             and (source not in train_sources or source not in val_sources)
         ):
             failures.append(ValidationFailure(code="sft_source_split_missing", message=f"{agent} source {source} is not represented in both train and validation", path=f"fine_tuning.{agent}"))
@@ -1393,6 +1615,28 @@ def _validate_fleet_orchestration_eval_coverage(
         == "fleet_orchestration_event_graph_eval"
     ]
     actual_scenario_set = {scenario for scenario in actual_scenarios if scenario}
+    constraints = (
+        ds.dataset_card.get("constraints")
+        if isinstance(ds.dataset_card, dict)
+        and isinstance(ds.dataset_card.get("constraints"), dict)
+        else {}
+    )
+    required = constraints.get("fleetOrchestrationEvaluationRequired")
+    if type(required) is not bool:
+        failures.append(
+            ValidationFailure(
+                code="fleet_orchestration_eval_requirement_missing",
+                message=(
+                    "Fleet dataset card must declare whether orchestration "
+                    "evaluation artifacts were provided"
+                ),
+                path=(
+                    "fine_tuning.fleet.dataset_card.constraints."
+                    "fleetOrchestrationEvaluationRequired"
+                ),
+            )
+        )
+        return
     if (
         actual_scenario_set != expected_scenarios
         or len(actual_scenarios) != len(expected_scenarios)

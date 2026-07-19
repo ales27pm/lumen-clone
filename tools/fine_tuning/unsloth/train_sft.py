@@ -9,6 +9,7 @@ import platform
 import random
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -28,7 +29,11 @@ except ImportError:
     )
 
 try:
-    from .adapter_artifact import write_adapter_artifact_manifest
+    from .adapter_artifact import (
+        portable_adapter_model_card,
+        write_adapter_artifact_manifest,
+        write_portable_adapter_model_card,
+    )
     from .training_lineage import (
         build_resolved_training_environment,
         build_resolved_training_environment_snapshot,
@@ -36,6 +41,8 @@ try:
         installed_controlled_package_versions,
         repository_training_code_bundle,
         validate_runtime_source_audit,
+        verify_private_base_model_conversion_snapshot,
+        verify_private_base_model_tokenizer_snapshot,
         verify_resolved_training_environment,
         verify_resolved_training_environment_cache,
         verify_training_code_manifest,
@@ -43,7 +50,11 @@ try:
         ZERO_GPU_ALLOWED_SIZES,
     )
 except ImportError:
-    from adapter_artifact import write_adapter_artifact_manifest
+    from adapter_artifact import (
+        portable_adapter_model_card,
+        write_adapter_artifact_manifest,
+        write_portable_adapter_model_card,
+    )
     from training_lineage import (
         build_resolved_training_environment,
         build_resolved_training_environment_snapshot,
@@ -51,6 +62,8 @@ except ImportError:
         installed_controlled_package_versions,
         repository_training_code_bundle,
         validate_runtime_source_audit,
+        verify_private_base_model_conversion_snapshot,
+        verify_private_base_model_tokenizer_snapshot,
         verify_resolved_training_environment,
         verify_resolved_training_environment_cache,
         verify_training_code_manifest,
@@ -62,13 +75,21 @@ except ImportError:
 REQUIRED_CONFIG_KEYS = {
     "agent",
     "base_model_name",
+    "baseModelID",
     "baseModelRevision",
     "baseModelIndexDigest",
     "baseModelIndexReferencedShardNames",
     "baseModelIndexShardBindingSHA256",
     "baseModelArtifactDigest",
     "baseModelWeightShards",
+    "baseModelGenerationConfigFile",
     "baseModelTokenizerDigest",
+    "baseModelTokenizerFiles",
+    "baseModelTokenizerClosureSHA256",
+    "baseModelTokenizerSnapshotPath",
+    "baseModelTokenizerSnapshotVerification",
+    "baseModelRuntimeSnapshotPath",
+    "baseModelRuntimeSnapshotVerification",
     "chatTemplateContract",
     "trainingEnvironmentLock",
     "trainingContainerImageDigest",
@@ -108,6 +129,7 @@ REQUIRED_CONFIG_KEYS = {
     "dataset_dir",
     "variant",
     "variantManifestSHA256",
+    "publicCorpusLossShareContract",
     "seed",
 }
 AGENTS = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
@@ -133,8 +155,22 @@ SFT_CHECKPOINT_REQUIRED_FILES = frozenset(
         "training_args.bin",
     }
 )
-SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA = "lumen.sft_token_length_preflight/1.1.0"
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.1.0"
+SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA = "lumen.sft_token_length_preflight/1.3.0"
+SFT_TOKENIZATION_TRANSCRIPT_SCHEMA = "lumen.sft-tokenization-transcript/1.0.0"
+RUNTIME_MODEL_BINDING_SCHEMA = "lumen.runtime-model-binding/1.3.0"
+RUNTIME_TOKENIZER_BINDING_SCHEMA = "lumen.runtime-tokenizer-binding/1.1.0"
+ADAPTER_BASE_TOKENIZER_FILES = ("tokenizer.json", "tokenizer_config.json")
+ADAPTER_DERIVED_TOKENIZER_FILES = frozenset(
+    {
+        "added_tokens.json",
+        "chat_template.jinja",
+        "generation_config.json",
+        "merges.txt",
+        "special_tokens_map.json",
+        "vocab.json",
+    }
+)
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.2.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA = "lumen.fleet-loss-share-evidence/1.1.0"
 FLEET_SOURCE_ROLE_SCHEMA = "lumen.fleet-source-role/1.0.0"
 FLEET_LOSS_SHARE_BASIS_POINT_DENOMINATOR = 10_000
@@ -174,6 +210,24 @@ FLEET_LOSS_SHARE_FIELD_NAMES = {
         "perSourceFamilyNumeratorTokenCounts": (
             "supplementalStaticChosenTargetTokenCountsBySourceFamily"
         ),
+    },
+}
+PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA = (
+    "lumen.public-corpus-loss-share/1.0.0"
+)
+PUBLIC_CORPUS_LOSS_SHARE_EVIDENCE_SCHEMA = (
+    "lumen.public-corpus-loss-share-evidence/1.0.0"
+)
+PUBLIC_CORPUS_LOSS_SHARE_BASIS_POINT_DENOMINATOR = 10_000
+PUBLIC_CORPUS_DPO_TOKENIZATION_POLICY = dict(FLEET_DPO_TOKENIZATION_POLICY)
+PUBLIC_CORPUS_LOSS_SHARE_FIELD_NAMES = {
+    "sft": {
+        "denominatorTokenCount": "assistantTargetTokenCount",
+        "publicNumeratorTokenCount": "publicAssistantTargetTokenCount",
+    },
+    "dpo": {
+        "denominatorTokenCount": "chosenTargetTokenCount",
+        "publicNumeratorTokenCount": "publicChosenTargetTokenCount",
     },
 }
 TRAINING_COMPLETION_EVIDENCE_SCHEMA = "lumen.training_completion/1.1.0"
@@ -246,6 +300,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train per-agent SFT adapters with Unsloth.")
     parser.add_argument("--config", required=True, help="Path to agent Unsloth JSON config.")
     parser.add_argument(
+        "--runtime-binding-smoke",
+        action="store_true",
+        help=(
+            "Load the pinned private base model once and verify its model, "
+            "generation-config, and tokenizer bindings without creating PEFT "
+            "state or starting a trainer."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -273,6 +336,15 @@ def _resolve_training_precision(cfg: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _controlled_torch_dtype(cfg: Mapping[str, Any]) -> Any:
+    """Return the exact Torch dtype declared by the prepared precision contract."""
+
+    import torch  # type: ignore
+
+    precision = _resolve_training_precision(cfg)
+    return torch.bfloat16 if precision["bf16"] else torch.float16
+
+
 def _checkpoint_scaler_state_contract(
     precision_value: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -294,6 +366,8 @@ def load_config(path: Path) -> dict[str, Any]:
     missing = [key for key in sorted(REQUIRED_CONFIG_KEYS) if key not in cfg]
     if missing:
         raise ValueError(f"Config is missing required keys: {', '.join(missing)}")
+    if cfg["baseModelID"] != cfg["base_model_name"]:
+        raise ValueError("baseModelID must exactly match base_model_name")
     _resolve_training_precision(cfg)
     verify_chat_template_contract(cfg["chatTemplateContract"])
     validate_artifact_path_config(cfg)
@@ -621,6 +695,7 @@ def _preflight_sft_token_lengths(
     minimum_sequence_margin_tokens: int = SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS,
     agent: str | None = None,
     fleet_loss_share_contract: Any = None,
+    public_corpus_loss_share_contract: Any = None,
     fleet_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if type(max_sequence_length) is not int or max_sequence_length <= 0:
@@ -640,10 +715,25 @@ def _preflight_sft_token_lengths(
         )
     elif fleet_loss_share_contract is not None:
         raise RuntimeError("Fleet loss-share contract is forbidden for non-Fleet SFT")
+    if agent is not None:
+        _validated_public_corpus_loss_share_contract(
+            public_corpus_loss_share_contract,
+            lane="sft",
+            config=fleet_config,
+        )
+    elif public_corpus_loss_share_contract is not None:
+        raise RuntimeError(
+            "Public-corpus loss-share contract requires a controlled agent"
+        )
     aggregate_total: list[int] = []
     aggregate_assistant: list[int] = []
     split_summaries: dict[str, dict[str, Any]] = {}
+    transcript_rows: list[dict[str, Any]] = []
     fleet_target_rows: dict[
+        str,
+        list[tuple[Mapping[str, Any], int]],
+    ] = {}
+    public_corpus_target_rows: dict[
         str,
         list[tuple[Mapping[str, Any], int]],
     ] = {}
@@ -661,6 +751,9 @@ def _preflight_sft_token_lengths(
         total_lengths: list[int] = []
         assistant_lengths: list[int] = []
         split_fleet_target_rows: list[tuple[Mapping[str, Any], int]] = []
+        split_public_corpus_target_rows: list[
+            tuple[Mapping[str, Any], int]
+        ] = []
         for row_index, record in enumerate(records):
             messages = normalize_chat_messages(
                 record,
@@ -678,6 +771,21 @@ def _preflight_sft_token_lengths(
             assistant_tokens = sum(
                 1 for label in tokenized["labels"] if label != -100
             )
+            row_transcript = {
+                "schemaVersion": SFT_TOKENIZATION_TRANSCRIPT_SCHEMA,
+                "split": split,
+                "rowIndex": row_index,
+                "inputIDs": tokenized["input_ids"],
+                "attentionMask": tokenized["attention_mask"],
+                "labels": tokenized["labels"],
+            }
+            transcript_rows.append(
+                {
+                    "split": split,
+                    "rowIndex": row_index,
+                    "rowSHA256": _canonical_sha256(row_transcript),
+                }
+            )
             if total_tokens > max_sequence_length:
                 raise RuntimeError(
                     "SFT token-length preflight rejected "
@@ -691,8 +799,14 @@ def _preflight_sft_token_lengths(
             aggregate_assistant.append(assistant_tokens)
             if agent == "fleet":
                 split_fleet_target_rows.append((record, assistant_tokens))
+            if agent is not None:
+                split_public_corpus_target_rows.append(
+                    (record, assistant_tokens)
+                )
         if agent == "fleet":
             fleet_target_rows[split] = split_fleet_target_rows
+        if agent is not None:
+            public_corpus_target_rows[split] = split_public_corpus_target_rows
         if records:
             split_summaries[split] = {
                 "records": len(records),
@@ -728,6 +842,12 @@ def _preflight_sft_token_lengths(
         "smallestSequenceMarginTokens": smallest_margin,
         "truncationRequired": False,
         "splits": split_summaries,
+        "tokenizationTranscriptSHA256": _canonical_sha256(
+            {
+                "schemaVersion": SFT_TOKENIZATION_TRANSCRIPT_SCHEMA,
+                "rows": transcript_rows,
+            }
+        ),
     }
     if agent == "fleet":
         report["fleetLossShareEvidence"] = _build_fleet_loss_share_evidence(
@@ -735,6 +855,15 @@ def _preflight_sft_token_lengths(
             lane="sft",
             split_target_rows=fleet_target_rows,
             config=fleet_config,
+        )
+    if agent is not None:
+        report["publicCorpusLossShareEvidence"] = (
+            _build_public_corpus_loss_share_evidence(
+                contract_value=public_corpus_loss_share_contract,
+                lane="sft",
+                split_target_rows=public_corpus_target_rows,
+                config=fleet_config,
+            )
         )
     return report
 
@@ -831,6 +960,378 @@ def _require_exact_mapping_keys(
     if not isinstance(value, Mapping) or set(value) != expected:
         raise RuntimeError(f"{label} has an invalid schema")
     return value
+
+
+def _validated_public_corpus_loss_share_contract(
+    value: Any,
+    *,
+    lane: str,
+    config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate the all-agent exact public-target loss-share contract."""
+
+    if lane not in PUBLIC_CORPUS_LOSS_SHARE_FIELD_NAMES:
+        raise RuntimeError(f"Unsupported public-corpus loss-share lane: {lane}")
+    contract = _require_exact_mapping_keys(
+        value,
+        {
+            "schemaVersion",
+            "enforcementRequired",
+            "enforcementPhase",
+            "requiredLanes",
+            "authoritativeCapEncoding",
+            "basisPointDenominator",
+            "capBasisPoints",
+            "dpoTokenizationPolicy",
+            "exactTokenEvidenceContract",
+            "failurePolicy",
+            "rowMetadataContract",
+            "sourceSelectionProxy",
+            "tokenizer",
+            "tokenAccounting",
+        },
+        label="Public-corpus loss-share contract",
+    )
+    if (
+        contract.get("schemaVersion")
+        != PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA
+        or contract.get("enforcementRequired") is not True
+        or contract.get("enforcementPhase")
+        != "post_tokenizer_load_pre_optimizer"
+        or contract.get("requiredLanes") != ["sft", "dpo"]
+        or contract.get("authoritativeCapEncoding") != "integer_basis_points"
+        or contract.get("basisPointDenominator")
+        != PUBLIC_CORPUS_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+        or contract.get("failurePolicy") != "abort_before_optimizer"
+    ):
+        raise RuntimeError("Public-corpus loss-share contract controls drifted")
+
+    caps = _require_exact_mapping_keys(
+        contract.get("capBasisPoints"),
+        {"requested", "hard"},
+        label="Public-corpus loss-share caps",
+    )
+    requested_cap = caps.get("requested")
+    hard_cap = caps.get("hard")
+    if (
+        type(requested_cap) is not int
+        or type(hard_cap) is not int
+        or not 0 <= requested_cap <= hard_cap
+        or hard_cap != 3_500
+    ):
+        raise RuntimeError("Public-corpus loss-share caps drifted")
+
+    row_contract = _require_exact_mapping_keys(
+        contract.get("rowMetadataContract"),
+        {
+            "publicSourceFamilyPrefix",
+            "publicCorpusField",
+            "classificationRule",
+            "mismatch",
+        },
+        label="Public-corpus row-metadata contract",
+    )
+    if row_contract != {
+        "publicSourceFamilyPrefix": "public_adapter_corpus_",
+        "publicCorpusField": "publicCorpus",
+        "classificationRule": "prefix_and_nonempty_lineage_required",
+        "mismatch": "hard_fail",
+    }:
+        raise RuntimeError("Public-corpus row-metadata contract drifted")
+
+    source_selection_proxy = _require_exact_mapping_keys(
+        contract.get("sourceSelectionProxy"),
+        {"status", "maximumPublicShareBasisPoints", "contract"},
+        label="Public-corpus source-selection proxy",
+    )
+    proxy_cap = source_selection_proxy.get("maximumPublicShareBasisPoints")
+    source_proxy_contract = _require_exact_mapping_keys(
+        source_selection_proxy.get("contract"),
+        {
+            "schemaVersion",
+            "status",
+            "strategy",
+            "maxCharsPerToken",
+            "exactPinnedTokenizerAuthoritative",
+            "authoritativeEnforcementPhase",
+        },
+        label="Public-corpus source-token proxy contract",
+    )
+    if (
+        source_selection_proxy.get("status")
+        != "safety_budget_not_exact_token_count"
+        or type(proxy_cap) is not int
+        or proxy_cap != min(requested_cap, 3_000)
+        or source_proxy_contract.get("schemaVersion")
+        != "lumen.source-token-proxy/1.0.0"
+        or source_proxy_contract.get("status")
+        != "source_side_selection_proxy_not_exact_token_count"
+        or source_proxy_contract.get("strategy")
+        != "max_whitespace_terms_utf8_byte_ceiling"
+        or type(source_proxy_contract.get("maxCharsPerToken")) is not int
+        or source_proxy_contract["maxCharsPerToken"] <= 0
+        or source_proxy_contract.get("exactPinnedTokenizerAuthoritative") is not True
+        or source_proxy_contract.get("authoritativeEnforcementPhase")
+        != "post_tokenizer_load_pre_optimizer"
+    ):
+        raise RuntimeError("Public-corpus source-selection proxy drifted")
+
+    dpo_policy = _require_exact_mapping_keys(
+        contract.get("dpoTokenizationPolicy"),
+        set(PUBLIC_CORPUS_DPO_TOKENIZATION_POLICY),
+        label="Public-corpus DPO tokenization policy",
+    )
+    if dict(dpo_policy) != PUBLIC_CORPUS_DPO_TOKENIZATION_POLICY:
+        raise RuntimeError("Public-corpus DPO tokenization policy drifted")
+    accounting = _require_exact_mapping_keys(
+        contract.get("tokenAccounting"),
+        {"sft", "dpo"},
+        label="Public-corpus token-accounting contract",
+    )
+    if accounting != {
+        "sft": "assistant_mask_non_ignored_token_count",
+        "dpo": (
+            "rendered_chosen_completion_tokens_add_special_tokens_false_"
+            "plus_one_trl_0_24_0_appended_eos"
+        ),
+    }:
+        raise RuntimeError("Public-corpus token-accounting contract drifted")
+
+    tokenizer_binding = _require_exact_mapping_keys(
+        contract.get("tokenizer"),
+        {
+            "baseModelID",
+            "baseModelRevision",
+            "tokenizerSHA256",
+            "tokenizerClosureSHA256",
+        },
+        label="Public-corpus tokenizer binding",
+    )
+    if (
+        not isinstance(tokenizer_binding.get("baseModelID"), str)
+        or not tokenizer_binding["baseModelID"]
+        or re.fullmatch(
+            r"[0-9a-f]{40}", str(tokenizer_binding.get("baseModelRevision") or "")
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(tokenizer_binding.get("tokenizerSHA256") or "")
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(tokenizer_binding.get("tokenizerClosureSHA256") or ""),
+        )
+        is None
+    ):
+        raise RuntimeError("Public-corpus tokenizer binding is malformed")
+    if config is not None and (
+        tokenizer_binding.get("baseModelID") != config.get("base_model_name")
+        or tokenizer_binding.get("baseModelRevision")
+        != config.get("baseModelRevision")
+        or tokenizer_binding.get("tokenizerSHA256")
+        != config.get("baseModelTokenizerDigest")
+        or tokenizer_binding.get("tokenizerClosureSHA256")
+        != config.get("baseModelTokenizerClosureSHA256")
+    ):
+        raise RuntimeError(
+            "Public-corpus tokenizer binding drifted from the training config"
+        )
+
+    exact = _require_exact_mapping_keys(
+        contract.get("exactTokenEvidenceContract"),
+        {
+            "required",
+            "schemaVersion",
+            "statusAtGeneration",
+            "tokenizer",
+            "comparisonRule",
+            "lanes",
+        },
+        label="Public-corpus exact-token evidence contract",
+    )
+    if (
+        exact.get("required") is not True
+        or exact.get("schemaVersion")
+        != PUBLIC_CORPUS_LOSS_SHARE_EVIDENCE_SCHEMA
+        or exact.get("statusAtGeneration")
+        != "pending_exact_tokenizer_preflight"
+        or exact.get("tokenizer") != "pinned_qwen_tokenizer"
+        or exact.get("comparisonRule")
+        != (
+            "numeratorTokenCount*basisPointDenominator<="
+            "denominatorTokenCount*capBasisPoints"
+        )
+    ):
+        raise RuntimeError("Public-corpus exact-token evidence contract drifted")
+    lanes = _require_exact_mapping_keys(
+        exact.get("lanes"),
+        {"sft", "dpo"},
+        label="Public-corpus exact-token evidence lanes",
+    )
+    for expected_lane, expected_fields in (
+        PUBLIC_CORPUS_LOSS_SHARE_FIELD_NAMES.items()
+    ):
+        fields = _require_exact_mapping_keys(
+            lanes.get(expected_lane),
+            set(expected_fields),
+            label=f"Public-corpus {expected_lane} exact-token fields",
+        )
+        if dict(fields) != expected_fields:
+            raise RuntimeError(
+                f"Public-corpus {expected_lane} exact-token fields drifted"
+            )
+    return dict(contract)
+
+
+def _public_corpus_row_classification(
+    record: Mapping[str, Any],
+    *,
+    contract: Mapping[str, Any],
+) -> tuple[str, bool]:
+    metadata = record.get("metadata")
+    if not isinstance(metadata, Mapping):
+        raise RuntimeError("Public-corpus loss-share rows require object metadata")
+    source_family = metadata.get("sourceFamily")
+    if (
+        not isinstance(source_family, str)
+        or not source_family
+        or source_family.strip() != source_family
+    ):
+        raise RuntimeError(
+            "Public-corpus loss-share rows require canonical metadata.sourceFamily"
+        )
+    row_contract = contract["rowMetadataContract"]
+    has_public_prefix = source_family.startswith(
+        row_contract["publicSourceFamilyPrefix"]
+    )
+    lineage = metadata.get(row_contract["publicCorpusField"])
+    has_public_lineage = isinstance(lineage, Mapping) and bool(lineage)
+    if has_public_prefix != has_public_lineage:
+        raise RuntimeError(
+            "Public-corpus row metadata prefix and lineage classification disagree"
+        )
+    return source_family, has_public_prefix
+
+
+def _public_corpus_cap_passes(
+    *,
+    numerator: int,
+    denominator: int,
+    cap_basis_points: int,
+) -> bool:
+    return (
+        type(numerator) is int
+        and numerator >= 0
+        and type(denominator) is int
+        and denominator > 0
+        and type(cap_basis_points) is int
+        and 0
+        <= cap_basis_points
+        <= PUBLIC_CORPUS_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+        and numerator * PUBLIC_CORPUS_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+        <= denominator * cap_basis_points
+    )
+
+
+def _build_public_corpus_loss_share_evidence(
+    *,
+    contract_value: Any,
+    lane: str,
+    split_target_rows: Mapping[
+        str,
+        list[tuple[Mapping[str, Any], int]],
+    ],
+    config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    contract = _validated_public_corpus_loss_share_contract(
+        contract_value,
+        lane=lane,
+        config=config,
+    )
+    if set(split_target_rows) != {"train", "validation"}:
+        raise RuntimeError(
+            "Public-corpus exact-token enforcement requires train and validation splits"
+        )
+    fields = PUBLIC_CORPUS_LOSS_SHARE_FIELD_NAMES[lane]
+    split_evidence: dict[str, Any] = {}
+    for split in ("train", "validation"):
+        rows = split_target_rows[split]
+        if not isinstance(rows, list) or not rows:
+            raise RuntimeError(
+                "Public-corpus exact-token enforcement requires a non-empty "
+                f"{split} split"
+            )
+        denominator = 0
+        public = 0
+        row_evidence: list[dict[str, Any]] = []
+        for row_index, row_value in enumerate(rows):
+            if (
+                not isinstance(row_value, tuple)
+                or len(row_value) != 2
+                or not isinstance(row_value[0], Mapping)
+            ):
+                raise RuntimeError("Public-corpus exact-token row evidence is malformed")
+            record, target_tokens = row_value
+            if type(target_tokens) is not int or target_tokens <= 0:
+                raise RuntimeError(
+                    "Public-corpus exact-token rows require positive target counts"
+                )
+            source_family, is_public = _public_corpus_row_classification(
+                record,
+                contract=contract,
+            )
+            denominator += target_tokens
+            if is_public:
+                public += target_tokens
+            row_evidence.append(
+                {
+                    "rowIndex": row_index,
+                    "sourceRowSHA256": _canonical_sha256(record),
+                    "sourceFamily": source_family,
+                    "isPublicCorpus": is_public,
+                    "targetTokenCount": target_tokens,
+                }
+            )
+        enforce = split == "train"
+        for label, cap in contract["capBasisPoints"].items():
+            if enforce and not _public_corpus_cap_passes(
+                numerator=public,
+                denominator=denominator,
+                cap_basis_points=cap,
+            ):
+                raise RuntimeError(
+                    f"Public-corpus {lane} {split} {label} exact-token cap failed: "
+                    f"{public}*10000 > {denominator}*{cap}"
+                )
+        row_hashes = [item["sourceRowSHA256"] for item in row_evidence]
+        split_evidence[split] = {
+            "records": len(rows),
+            "capEnforcementStatus": (
+                "optimizer_enforced"
+                if enforce
+                else "observed_non_optimizer_split"
+            ),
+            "sourceRowsSHA256": _canonical_sha256(row_hashes),
+            "rowTokenEvidence": row_evidence,
+            fields["denominatorTokenCount"]: denominator,
+            fields["publicNumeratorTokenCount"]: public,
+        }
+    return {
+        "schemaVersion": PUBLIC_CORPUS_LOSS_SHARE_EVIDENCE_SCHEMA,
+        "status": "passed",
+        "lane": lane,
+        "enforcementScope": "optimizer_train_with_validation_observation",
+        "basisPointDenominator": contract["basisPointDenominator"],
+        "capBasisPoints": contract["capBasisPoints"],
+        "tokenizer": contract["tokenizer"],
+        "tokenAccounting": contract["tokenAccounting"][lane],
+        "dpoTokenizationPolicy": (
+            contract["dpoTokenizationPolicy"] if lane == "dpo" else None
+        ),
+        "contractSHA256": _canonical_sha256(contract),
+        "splits": split_evidence,
+    }
 
 
 def _validated_fleet_loss_share_contract(
@@ -932,6 +1433,7 @@ def _validated_fleet_loss_share_contract(
         contract.get("sourceSelectionProxy"),
         {
             "status",
+            "maximumPublicBehavioralShareBasisPoints",
             "maximumSupplementalStaticShareBasisPoints",
             "contract",
         },
@@ -952,6 +1454,10 @@ def _validated_fleet_loss_share_contract(
     if (
         source_selection_proxy.get("status")
         != "safety_budget_not_exact_token_count"
+        or source_selection_proxy.get(
+            "maximumPublicBehavioralShareBasisPoints"
+        )
+        != 3_000
         or source_selection_proxy.get("maximumSupplementalStaticShareBasisPoints")
         != 1_500
         or source_proxy_contract.get("schemaVersion")
@@ -992,7 +1498,12 @@ def _validated_fleet_loss_share_contract(
 
     tokenizer_binding = _require_exact_mapping_keys(
         contract.get("tokenizer"),
-        {"baseModelID", "baseModelRevision", "tokenizerSHA256"},
+        {
+            "baseModelID",
+            "baseModelRevision",
+            "tokenizerSHA256",
+            "tokenizerClosureSHA256",
+        },
         label="Fleet tokenizer binding",
     )
     if (
@@ -1005,6 +1516,11 @@ def _validated_fleet_loss_share_contract(
         is None
         or re.fullmatch(r"[0-9a-f]{64}", str(tokenizer_binding.get("tokenizerSHA256")))
         is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(tokenizer_binding.get("tokenizerClosureSHA256")),
+        )
+        is None
     ):
         raise RuntimeError("Fleet tokenizer binding is malformed")
     if config is not None and (
@@ -1013,6 +1529,8 @@ def _validated_fleet_loss_share_contract(
         != config.get("baseModelRevision")
         or tokenizer_binding.get("tokenizerSHA256")
         != config.get("baseModelTokenizerDigest")
+        or tokenizer_binding.get("tokenizerClosureSHA256")
+        != config.get("baseModelTokenizerClosureSHA256")
     ):
         raise RuntimeError("Fleet tokenizer binding drifted from the training config")
 
@@ -1511,6 +2029,13 @@ def _validate_run_resume_config(
         "baseModelArtifactDigest": cfg.get("baseModelArtifactDigest"),
         "baseModelWeightShards": cfg.get("baseModelWeightShards"),
         "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerFiles": cfg.get("baseModelTokenizerFiles"),
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "baseModelGenerationConfigFile": cfg.get(
+            "baseModelGenerationConfigFile"
+        ),
         "seed": cfg.get("seed"),
         "trainingEnvironmentLockSHA256": variant_attestation.get(
             "trainingEnvironmentLockSHA256"
@@ -1892,6 +2417,9 @@ def _bind_sft_token_length_preflight(
         "baseModelID": cfg.get("base_model_name"),
         "baseModelRevision": cfg.get("baseModelRevision"),
         "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
         "chatTemplateContract": cfg.get("chatTemplateContract"),
     }
     evidence = {
@@ -1924,10 +2452,61 @@ def _bind_sft_token_length_preflight(
     return evidence
 
 
+def _verify_prepared_global_tokenizer_preflight(
+    cfg: Mapping[str, Any],
+    *,
+    cfg_path: Path,
+    phase: str,
+    bound_preflight: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Compare the actual Unsloth tokenizer with the prepared all-agent audit.
+
+    Callers invoke this only after their authoritative phase evidence is bound
+    and before constructing a PEFT adapter, policy adapter, or trainer.
+    """
+
+    agent = cfg.get("agent")
+    if not isinstance(agent, str) or agent not in AGENTS:
+        raise RuntimeError("Prepared tokenizer preflight requires a valid agent")
+    resolved_config = cfg_path.resolve()
+    run_root = resolved_config.parent.parent
+    expected_config = (run_root / "configs" / f"{agent}.json").resolve()
+    if (
+        resolved_config != expected_config
+        or resolved_config.parent != (run_root / "configs").resolve()
+    ):
+        raise RuntimeError(
+            "Prepared tokenizer preflight config path drifted from the run root"
+        )
+    try:
+        from .ubuntu_pipeline import _verified_global_tokenizer_preflight
+    except ImportError:
+        from ubuntu_pipeline import _verified_global_tokenizer_preflight
+
+    audit = _verified_global_tokenizer_preflight(
+        run_root=run_root,
+        agent=agent,
+        config=cfg,
+        phase=phase,
+        bound_preflight=bound_preflight,
+    )
+    closure = audit.get("tokenizerClosure")
+    if (
+        not isinstance(closure, Mapping)
+        or closure.get("schemaVersion")
+        != "lumen.global-tokenizer-snapshot/1.1.0"
+    ):
+        raise RuntimeError(
+            "Production training rejects injected global-tokenizer test evidence"
+        )
+    return audit
+
+
 def _sft_checkpoint_directory_manifest(
     checkpoint: Path,
     *,
     expected_base_model: str,
+    expected_base_revision: str,
     precision: Mapping[str, Any],
 ) -> dict[str, Any]:
     if checkpoint.is_symlink():
@@ -2000,6 +2579,7 @@ def _sft_checkpoint_directory_manifest(
     if (
         not isinstance(adapter_config, Mapping)
         or adapter_config.get("base_model_name_or_path") != expected_base_model
+        or adapter_config.get("revision") != expected_base_revision
     ):
         raise RuntimeError("SFT checkpoint base-model lineage drifted")
     payload = {
@@ -2015,6 +2595,7 @@ def _bound_sft_checkpoint_entries(
     record: Mapping[str, Any],
     *,
     expected_base_model: str,
+    expected_base_revision: str,
 ) -> tuple[list[tuple[int, Path]], set[str], list[Path]]:
     root = Path(str(record.get("checkpointRoot") or "")).resolve()
     entries = record.get("checkpoints")
@@ -2066,6 +2647,7 @@ def _bound_sft_checkpoint_entries(
             manifest = _sft_checkpoint_directory_manifest(
                 checkpoint,
                 expected_base_model=expected_base_model,
+                expected_base_revision=expected_base_revision,
                 precision=record["precision"],
             )
         except _IncompleteSFTCheckpoint:
@@ -2123,6 +2705,7 @@ def _bind_and_validate_sft_checkpoint_lineage(
     validated, declared_names, stale_partials = _bound_sft_checkpoint_entries(
         record,
         expected_base_model=str(cfg.get("base_model_name") or ""),
+        expected_base_revision=str(cfg.get("baseModelRevision") or ""),
     )
     root = Path(str(record["checkpointRoot"])).resolve()
     unbound = _unbound_sft_checkpoint_directories(
@@ -2176,6 +2759,7 @@ def _record_sft_checkpoint(record_path: Path, checkpoint: Path) -> None:
         raise RuntimeError("SFT checkpoint config drifted during training")
     config = json.loads(config_path.read_text(encoding="utf-8"))
     expected_base_model = str(config.get("base_model_name") or "")
+    expected_base_revision = str(config.get("baseModelRevision") or "")
     precision = _resolve_training_precision(config)
     updated = dict(record)
     updated["checkpoints"] = [
@@ -2184,6 +2768,7 @@ def _record_sft_checkpoint(record_path: Path, checkpoint: Path) -> None:
             "checkpointSHA256": _sft_checkpoint_directory_manifest(
                 candidate,
                 expected_base_model=expected_base_model,
+                expected_base_revision=expected_base_revision,
                 precision=precision,
             )["checkpointSHA256"],
         }
@@ -2443,6 +3028,17 @@ def _training_environment(
     lock = cfg.get("trainingEnvironmentLock")
     if not isinstance(lock, dict):
         raise RuntimeError("trainingEnvironmentLock must be an object")
+    if (
+        lock.get("schemaVersion")
+        != "lumen.adapter-training-environment-lock/1.1.0"
+        or lock.get("baseTokenizerSHA256")
+        != cfg.get("baseModelTokenizerDigest")
+        or lock.get("baseTokenizerClosureSHA256")
+        != cfg.get("baseModelTokenizerClosureSHA256")
+    ):
+        raise RuntimeError(
+            "trainingEnvironmentLock tokenizer lineage drifted from the config"
+        )
     container_digest = _require_sha256(
         cfg.get("trainingContainerImageDigest"),
         name="trainingContainerImageDigest",
@@ -2818,71 +3414,1448 @@ def _training_runtime_lineage(
     }
 
 
+def _git_blob_sha1(payload: bytes) -> str:
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return hashlib.sha1(
+        header + payload,
+        usedforsecurity=False,
+    ).hexdigest()
+
+
+def _validated_base_model_tokenizer_closure(
+    cfg: Mapping[str, Any],
+) -> dict[str, Any]:
+    try:
+        from lumen_manifest_crawler.dataset.adapter_evaluation import (
+            DEFAULT_BASE_MODEL_ID,
+            DEFAULT_BASE_MODEL_REVISION,
+            DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256,
+            DEFAULT_BASE_MODEL_TOKENIZER_FILES,
+            canonical_base_model_tokenizer_closure,
+        )
+    except ImportError:
+        from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.adapter_evaluation import (
+            DEFAULT_BASE_MODEL_ID,
+            DEFAULT_BASE_MODEL_REVISION,
+            DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256,
+            DEFAULT_BASE_MODEL_TOKENIZER_FILES,
+            canonical_base_model_tokenizer_closure,
+        )
+
+    base_model_id = cfg.get("baseModelID")
+    base_model_name = cfg.get("base_model_name")
+    if (
+        not isinstance(base_model_id, str)
+        or not base_model_id
+        or base_model_id != base_model_name
+    ):
+        raise RuntimeError(
+            "baseModelID must exactly match base_model_name"
+        )
+    files = cfg.get("baseModelTokenizerFiles")
+    if not isinstance(files, list):
+        raise RuntimeError("Base-model tokenizer file closure is missing")
+    try:
+        closure = canonical_base_model_tokenizer_closure(
+            base_model_id=base_model_id,
+            base_model_revision=cfg.get("baseModelRevision"),
+            files=files,
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise RuntimeError("Base-model tokenizer file closure is invalid") from exc
+    declared = _require_sha256(
+        cfg.get("baseModelTokenizerClosureSHA256"),
+        name="baseModelTokenizerClosureSHA256",
+    )
+    tokenizer_json = next(
+        item for item in closure["files"] if item["path"] == "tokenizer.json"
+    )
+    if (
+        _canonical_sha256(closure) != declared
+        or tokenizer_json["sha256"]
+        != _require_sha256(
+            cfg.get("baseModelTokenizerDigest"),
+            name="baseModelTokenizerDigest",
+        )
+    ):
+        raise RuntimeError("Base-model tokenizer closure digest drifted")
+    if (
+        closure["baseModelID"] == DEFAULT_BASE_MODEL_ID
+        and closure["baseModelRevision"] == DEFAULT_BASE_MODEL_REVISION
+        and (
+            closure["files"] != DEFAULT_BASE_MODEL_TOKENIZER_FILES
+            or declared != DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+        )
+    ):
+        raise RuntimeError(
+            "Pinned Qwen tokenizer closure drifted from the trusted registry"
+        )
+    return {
+        **closure,
+        "baseModelTokenizerClosureSHA256": declared,
+    }
+
+
+def _verified_private_runtime_model_snapshot(
+    cfg: Mapping[str, Any],
+) -> tuple[Path, dict[str, Any]]:
+    """Re-verify the self-contained private base view used by model runtime."""
+
+    raw_path = cfg.get("baseModelRuntimeSnapshotPath")
+    declared = cfg.get("baseModelRuntimeSnapshotVerification")
+    if not isinstance(raw_path, str) or not raw_path or not isinstance(declared, Mapping):
+        raise RuntimeError(
+            "Training config lacks the private base-model runtime snapshot binding"
+        )
+    try:
+        snapshot_path = Path(raw_path).resolve(strict=True)
+        observed = verify_private_base_model_conversion_snapshot(
+            snapshot_path,
+            base_model_id=str(cfg.get("baseModelID") or ""),
+            base_model_name=str(cfg.get("base_model_name") or ""),
+            base_model_revision=str(cfg.get("baseModelRevision") or ""),
+            tokenizer_files=cfg.get("baseModelTokenizerFiles"),
+            tokenizer_digest=str(cfg.get("baseModelTokenizerDigest") or ""),
+            tokenizer_closure_sha256=str(
+                cfg.get("baseModelTokenizerClosureSHA256") or ""
+            ),
+            generation_config_file=cfg.get("baseModelGenerationConfigFile"),
+            model_index_digest=str(cfg.get("baseModelIndexDigest") or ""),
+            index_referenced_shard_names=cfg.get(
+                "baseModelIndexReferencedShardNames"
+            ),
+            index_shard_binding_sha256=str(
+                cfg.get("baseModelIndexShardBindingSHA256") or ""
+            ),
+            model_artifact_digest=str(cfg.get("baseModelArtifactDigest") or ""),
+            weight_shards=cfg.get("baseModelWeightShards"),
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Private base-model runtime snapshot verification failed"
+        ) from exc
+    if (
+        observed != dict(declared)
+        or observed.get("snapshotPath") != str(snapshot_path)
+        or Path(str(observed.get("snapshotPath") or "")).resolve(strict=True)
+        != snapshot_path
+    ):
+        raise RuntimeError(
+            "Private base-model runtime snapshot verification drifted from the config"
+        )
+    return snapshot_path, observed
+
+
 def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
     revision = str(cfg.get("baseModelRevision") or "")
     if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
         raise RuntimeError("baseModelRevision must be a full lowercase Hugging Face commit SHA")
-    expected = {
-        "model.safetensors.index.json": _require_sha256(
-            cfg.get("baseModelIndexDigest"), name="baseModelIndexDigest"
-        ),
-        "tokenizer.json": _require_sha256(
-            cfg.get("baseModelTokenizerDigest"), name="baseModelTokenizerDigest"
-        ),
-    }
-    from huggingface_hub import hf_hub_download  # type: ignore
+    _validated_base_model_tokenizer_closure(cfg)
+    _verified_private_runtime_model_snapshot(cfg)
 
-    downloaded: dict[str, Path] = {}
-    for filename, digest in expected.items():
-        path = Path(hf_hub_download(repo_id=cfg["base_model_name"], filename=filename, revision=revision))
-        downloaded[filename] = path
-        if _hash_file(path) != digest:
-            raise RuntimeError(f"Pinned base-model artifact digest mismatch: {filename}")
 
-    shard_contract = _base_model_weight_shard_contract(cfg.get("baseModelWeightShards"))
-    if _canonical_sha256(shard_contract) != _require_sha256(
-        cfg.get("baseModelArtifactDigest"), name="baseModelArtifactDigest"
-    ):
-        raise RuntimeError("baseModelArtifactDigest does not match baseModelWeightShards")
-    try:
-        index = json.loads(downloaded["model.safetensors.index.json"].read_text(encoding="utf-8"))
-        weight_map = index["weight_map"]
-        if not isinstance(weight_map, dict) or any(
-            not isinstance(filename, str) for filename in weight_map.values()
-        ):
-            raise TypeError
-        referenced_shards = sorted(set(weight_map.values()))
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Pinned base-model index has an invalid weight_map") from exc
-    expected_shards = [item["filename"] for item in shard_contract["shards"]]
-    if referenced_shards != expected_shards:
-        raise RuntimeError("Pinned base-model index shard set does not match baseModelWeightShards")
-    declared_referenced_shards = cfg.get("baseModelIndexReferencedShardNames")
-    if declared_referenced_shards != referenced_shards:
+def _verified_private_runtime_tokenizer_snapshot(
+    cfg: Mapping[str, Any],
+) -> tuple[Path, dict[str, Any]]:
+    """Re-verify the exact private tokenizer closure consumed by runtime code."""
+
+    raw_path = cfg.get("baseModelTokenizerSnapshotPath")
+    declared = cfg.get("baseModelTokenizerSnapshotVerification")
+    if not isinstance(raw_path, str) or not raw_path or not isinstance(declared, Mapping):
         raise RuntimeError(
-            "Pinned base-model index shard set does not match baseModelIndexReferencedShardNames"
+            "Training config lacks the private base-model tokenizer snapshot binding"
         )
-    index_shard_binding = {
-        "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
-        "indexDigest": expected["model.safetensors.index.json"],
-        "referencedShardNames": referenced_shards,
-        "shardContractDigest": cfg["baseModelArtifactDigest"],
-    }
-    if _canonical_sha256(index_shard_binding) != _require_sha256(
-        cfg.get("baseModelIndexShardBindingSHA256"),
-        name="baseModelIndexShardBindingSHA256",
+    try:
+        snapshot_path = Path(raw_path).resolve(strict=True)
+        observed = verify_private_base_model_tokenizer_snapshot(
+            snapshot_path,
+            base_model_id=str(cfg.get("baseModelID") or ""),
+            base_model_name=str(cfg.get("base_model_name") or ""),
+            base_model_revision=str(cfg.get("baseModelRevision") or ""),
+            tokenizer_files=cfg.get("baseModelTokenizerFiles"),
+            tokenizer_digest=str(cfg.get("baseModelTokenizerDigest") or ""),
+            tokenizer_closure_sha256=str(
+                cfg.get("baseModelTokenizerClosureSHA256") or ""
+            ),
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Private base-model tokenizer snapshot verification failed"
+        ) from exc
+    if (
+        observed != dict(declared)
+        or observed.get("snapshotPath") != str(snapshot_path)
+        or Path(str(observed.get("snapshotPath") or "")).resolve(strict=True)
+        != snapshot_path
     ):
-        raise RuntimeError("baseModelIndexShardBindingSHA256 does not bind the verified index and shards")
-    for item in shard_contract["shards"]:
-        path = Path(
-            hf_hub_download(
-                repo_id=cfg["base_model_name"],
-                filename=item["filename"],
-                revision=revision,
-            )
+        raise RuntimeError(
+            "Private base-model tokenizer snapshot verification drifted from the config"
         )
-        if path.stat().st_size != item["size"] or _hash_file(path) != item["sha256"]:
-            raise RuntimeError(f"Pinned base-model weight shard digest mismatch: {item['filename']}")
+    return snapshot_path, observed
+
+
+def _load_verified_runtime_tokenizer_source(
+    cfg: Mapping[str, Any],
+) -> tuple[Any, Path, dict[str, Any]]:
+    """Load a reference fast tokenizer from the self-contained runtime base view.
+
+    Unsloth must already be imported before this function is called because importing
+    ``AutoTokenizer`` imports Transformers.
+    """
+
+    snapshot_path, before = _verified_private_runtime_model_snapshot(cfg)
+    from transformers import AutoTokenizer  # type: ignore
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(snapshot_path),
+        local_files_only=True,
+        trust_remote_code=False,
+        use_fast=True,
+    )
+    _, after = _verified_private_runtime_model_snapshot(cfg)
+    if before != after:
+        raise RuntimeError(
+            "Private base-model runtime snapshot changed while loading the tokenizer"
+        )
+    if getattr(tokenizer, "is_fast", None) is not True:
+        raise RuntimeError("Runtime requires the pinned fast tokenizer implementation")
+    return tokenizer, snapshot_path, before
+
+
+def _tokenizer_backend_contract(tokenizer: Any) -> dict[str, Any]:
+    """Describe tokenization behavior without mutable runtime-only length settings."""
+
+    if getattr(tokenizer, "is_fast", None) is not True:
+        raise RuntimeError("Runtime tokenizer must be a fast tokenizer")
+    backend = getattr(tokenizer, "backend_tokenizer", None)
+    backend_to_str = getattr(backend, "to_str", None)
+    get_vocab = getattr(tokenizer, "get_vocab", None)
+    get_added_vocab = getattr(tokenizer, "get_added_vocab", None)
+    if not callable(backend_to_str) or not callable(get_vocab) or not callable(get_added_vocab):
+        raise RuntimeError("Runtime tokenizer does not expose its fast-tokenizer state")
+    backend_json = backend_to_str()
+    vocab = get_vocab()
+    added_vocab = get_added_vocab()
+    if (
+        not isinstance(backend_json, str)
+        or not backend_json
+        or not isinstance(vocab, Mapping)
+        or not isinstance(added_vocab, Mapping)
+        or any(not isinstance(key, str) or type(value) is not int for key, value in vocab.items())
+        or any(
+            not isinstance(key, str) or type(value) is not int
+            for key, value in added_vocab.items()
+        )
+    ):
+        raise RuntimeError("Runtime tokenizer exposes non-canonical backend state")
+    try:
+        parsed_backend = json.loads(backend_json)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Runtime tokenizer backend serialization is invalid") from exc
+
+    probe_texts = (
+        "",
+        "Lumen routes a precise tool request.",
+        'JSON {"selectedToolID":"files.read","requiresApproval":true}',
+        "Unicode café 東京 🔐 and whitespace\n\tboundary",
+        "<|im_start|>assistant\n/no_think<|im_end|>",
+    )
+    text_probes: list[dict[str, Any]] = []
+    for text in probe_texts:
+        for add_special_tokens in (False, True):
+            encoded = tokenizer(text, add_special_tokens=add_special_tokens)
+            input_ids = _flatten_tokenizer_output(encoded.get("input_ids"))
+            if any(type(token_id) is not int or token_id < 0 for token_id in input_ids):
+                raise RuntimeError("Runtime tokenizer probe returned invalid token IDs")
+            text_probes.append(
+                {
+                    "textSHA256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    "addSpecialTokens": add_special_tokens,
+                    "inputIDs": input_ids,
+                }
+            )
+
+    messages = [
+        {"role": "system", "content": "Follow the exact Lumen contract."},
+        {"role": "user", "content": "Read report.json and summarize it."},
+    ]
+    chat_probes: list[dict[str, Any]] = []
+    for add_generation_prompt in (False, True):
+        rendered = apply_non_thinking_chat_template(
+            tokenizer,
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
+        tokenized = apply_non_thinking_chat_template(
+            tokenizer,
+            messages,
+            tokenize=True,
+            add_generation_prompt=add_generation_prompt,
+        )
+        if not isinstance(rendered, str):
+            raise RuntimeError("Runtime tokenizer chat probe did not render text")
+        input_ids = _flatten_tokenizer_output(tokenized)
+        chat_probes.append(
+            {
+                "addGenerationPrompt": add_generation_prompt,
+                "renderedSHA256": hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
+                "inputIDs": input_ids,
+            }
+        )
+
+    chat_template = getattr(tokenizer, "chat_template", None)
+    if not isinstance(chat_template, str) or not chat_template:
+        raise RuntimeError("Runtime tokenizer lacks the controlled chat template")
+    special_token_fields = (
+        "bos_token_id",
+        "eos_token_id",
+        "pad_token_id",
+        "unk_token_id",
+        "mask_token_id",
+    )
+    payload = {
+        "schemaVersion": "lumen.tokenizer-backend-contract/1.0.0",
+        "backendSHA256": _canonical_sha256(parsed_backend),
+        "vocabularySHA256": _canonical_sha256(dict(vocab)),
+        "addedVocabularySHA256": _canonical_sha256(dict(added_vocab)),
+        "specialTokenIDs": {
+            field: getattr(tokenizer, field, None) for field in special_token_fields
+        },
+        "allSpecialTokenIDs": list(getattr(tokenizer, "all_special_ids", []) or []),
+        "allSpecialTokens": list(getattr(tokenizer, "all_special_tokens", []) or []),
+        "chatTemplateSHA256": hashlib.sha256(
+            chat_template.encode("utf-8")
+        ).hexdigest(),
+        "textProbes": text_probes,
+        "chatProbes": chat_probes,
+    }
+    return {**payload, "contractSHA256": _canonical_sha256(payload)}
+
+
+def _verify_runtime_tokenizer_binding(
+    cfg: Mapping[str, Any],
+    *,
+    expected_tokenizer: Any,
+    runtime_tokenizer: Any,
+    snapshot_path: Path,
+    snapshot_verification: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prove Unsloth used the verified bytes before any PEFT state is created."""
+
+    actual_name = getattr(runtime_tokenizer, "name_or_path", None)
+    try:
+        actual_path = Path(str(actual_name or "")).resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError(
+            "Unsloth runtime tokenizer is not bound to the private snapshot path"
+        ) from exc
+    if actual_path != snapshot_path:
+        raise RuntimeError(
+            "Unsloth runtime tokenizer ignored the private snapshot path"
+        )
+    expected_contract = _tokenizer_backend_contract(expected_tokenizer)
+    runtime_contract = _tokenizer_backend_contract(runtime_tokenizer)
+    if runtime_contract != expected_contract:
+        raise RuntimeError(
+            "Unsloth runtime tokenizer behavior drifted from the verified snapshot"
+        )
+    configured_max_length = cfg.get("max_seq_length")
+    expected_runtime_max_length = _expected_unsloth_runtime_model_max_length(
+        cfg,
+        snapshot_path=snapshot_path,
+    )
+    runtime_max_length = getattr(runtime_tokenizer, "model_max_length", None)
+    if (
+        type(configured_max_length) is not int
+        or configured_max_length <= 0
+        or type(runtime_max_length) is not int
+        or runtime_max_length != expected_runtime_max_length
+        or getattr(runtime_tokenizer, "padding_side", None) != "left"
+        or getattr(runtime_tokenizer, "truncation_side", None)
+        != getattr(expected_tokenizer, "truncation_side", None)
+    ):
+        raise RuntimeError(
+            "Unsloth runtime tokenizer applied an unapproved runtime transformation"
+        )
+    _, after = _verified_private_runtime_model_snapshot(cfg)
+    if dict(snapshot_verification) != after:
+        raise RuntimeError(
+            "Private base-model runtime snapshot changed during Unsloth loading"
+        )
+    unsigned = {
+        "schemaVersion": RUNTIME_TOKENIZER_BINDING_SCHEMA,
+        "baseModelID": cfg.get("baseModelID"),
+        "baseModelRevision": cfg.get("baseModelRevision"),
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "runtimeSnapshotVerificationSHA256": after.get(
+            "snapshotVerificationSHA256"
+        ),
+        "runtimeSnapshotPath": str(snapshot_path),
+        "backendContractSHA256": runtime_contract["contractSHA256"],
+        "allowedRuntimeTransformations": {
+            "modelMaxLength": expected_runtime_max_length,
+            "paddingSide": "left",
+            "truncationSide": getattr(runtime_tokenizer, "truncation_side", None),
+        },
+    }
+    return {**unsigned, "runtimeTokenizerBindingSHA256": _canonical_sha256(unsigned)}
+
+
+def _expected_unsloth_runtime_model_max_length(
+    cfg: Mapping[str, Any],
+    *,
+    snapshot_path: Path,
+) -> int:
+    """Reconstruct the pinned Unsloth tokenizer length from attested bytes.
+
+    The controlled Unsloth revision passes
+    ``max(requested length, config.max_position_embeddings)`` to the tokenizer
+    loader.  Qwen3's bound config advertises 40,960 positions while Lumen trains
+    with 4,096-token examples, so treating the requested length as the expected
+    tokenizer property would reject the genuine pinned runtime before training.
+    """
+
+    configured_max_length = cfg.get("max_seq_length")
+    if type(configured_max_length) is not int or configured_max_length <= 0:
+        raise RuntimeError("Configured maximum sequence length is invalid")
+    return max(
+        configured_max_length,
+        _bound_base_model_max_position_embeddings(
+            cfg,
+            snapshot_path=snapshot_path,
+        ),
+    )
+
+
+def _bound_base_model_max_position_embeddings(
+    cfg: Mapping[str, Any],
+    *,
+    snapshot_path: Path,
+) -> int:
+    """Read the original model context directly from the bound config bytes."""
+
+    tokenizer_files = cfg.get("baseModelTokenizerFiles")
+    if not isinstance(tokenizer_files, list):
+        raise RuntimeError("Base-model tokenizer closure is missing config.json")
+    config_records = [
+        item
+        for item in tokenizer_files
+        if isinstance(item, Mapping) and item.get("path") == "config.json"
+    ]
+    if len(config_records) != 1:
+        raise RuntimeError("Base-model tokenizer closure must bind one config.json")
+    config_record = config_records[0]
+    size_bytes = config_record.get("sizeBytes")
+    config_sha256 = config_record.get("sha256")
+    if (
+        type(size_bytes) is not int
+        or size_bytes <= 0
+        or not isinstance(config_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", config_sha256) is None
+    ):
+        raise RuntimeError("Base-model config.json binding is invalid")
+    payload = _read_verified_snapshot_file(
+        snapshot_path / "config.json",
+        expected_size=size_bytes,
+        expected_sha256=config_sha256,
+    )
+    try:
+        model_config = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Bound base-model config.json is invalid") from exc
+    max_position_embeddings = (
+        model_config.get("max_position_embeddings")
+        if isinstance(model_config, Mapping)
+        else None
+    )
+    if (
+        type(max_position_embeddings) is not int
+        or max_position_embeddings <= 0
+    ):
+        raise RuntimeError(
+            "Bound base-model config lacks a valid max_position_embeddings"
+        )
+    return max_position_embeddings
+
+
+def _runtime_4bit_materialization_evidence(
+    runtime_model: Any,
+    cfg: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prove every Qwen target projection is materialized as CUDA BnB NF4."""
+
+    if cfg.get("load_in_4bit") is not True:
+        raise RuntimeError("The controlled runtime requires load_in_4bit=true")
+    precision = _resolve_training_precision(cfg)
+    expected_compute_dtype = precision["dtype"]
+    configured_max_seq_length = cfg.get("max_seq_length")
+    runtime_max_seq_length = getattr(runtime_model, "max_seq_length", None)
+    if (
+        type(configured_max_seq_length) is not int
+        or configured_max_seq_length <= 0
+        or type(runtime_max_seq_length) is not int
+        or runtime_max_seq_length != configured_max_seq_length
+    ):
+        raise RuntimeError(
+            "Unsloth runtime model max_seq_length drifted from the prepared config"
+        )
+    if (
+        getattr(runtime_model, "is_loaded_in_4bit", None) is not True
+        or getattr(runtime_model, "is_quantized", None) is not True
+        or getattr(runtime_model, "quantization_method", None) != "bitsandbytes"
+    ):
+        raise RuntimeError("Unsloth runtime model was not materialized with 4-bit BitsAndBytes")
+
+    model_config = getattr(runtime_model, "config", None)
+    quantization_payload = getattr(model_config, "quantization_config", None)
+    if type(quantization_payload) is not dict:
+        raise RuntimeError("Runtime model lacks its plain BitsAndBytes config contract")
+    quantizer = getattr(runtime_model, "hf_quantizer", None)
+    quantizer_config = getattr(quantizer, "quantization_config", None)
+    quantizer_config_to_dict = getattr(quantizer_config, "to_dict", None)
+    quantizer_class = type(quantizer).__module__ + "." + type(quantizer).__name__
+    quantizer_config_class = (
+        type(quantizer_config).__module__ + "." + type(quantizer_config).__name__
+    )
+    if (
+        quantizer_class
+        != "transformers.quantizers.quantizer_bnb_4bit.Bnb4BitHfQuantizer"
+        or quantizer_config_class
+        != "transformers.utils.quantization_config.BitsAndBytesConfig"
+        or not callable(quantizer_config_to_dict)
+    ):
+        raise RuntimeError("Runtime model lacks its active BitsAndBytes quantizer")
+    active_quantization_payload = quantizer_config_to_dict()
+    if not isinstance(active_quantization_payload, Mapping):
+        raise RuntimeError("Active BitsAndBytes configuration is not serializable")
+
+    def dtype_name(value: Any) -> str:
+        return str(value or "").removeprefix("torch.")
+
+    quant_method = active_quantization_payload.get("quant_method")
+    quant_method = getattr(quant_method, "value", quant_method)
+    expected_outer_config = {
+        "load_in_4bit": True,
+        "load_in_8bit": False,
+        "quant_method": "bitsandbytes",
+        "bnb_4bit_quant_type": "nf4",
+        "bnb_4bit_use_double_quant": True,
+        "bnb_4bit_compute_dtype": expected_compute_dtype,
+        "llm_int8_enable_fp32_cpu_offload": False,
+        "llm_int8_has_fp16_weight": False,
+        "llm_int8_threshold": 6.0,
+        "llm_int8_skip_modules": None,
+    }
+    expected_active_config = {
+        **expected_outer_config,
+        "llm_int8_skip_modules": [
+            "lm_head",
+            "multi_modal_projector",
+            "merger",
+            "modality_projection",
+            "router",
+            "mlp.gate",
+            "block_sparse_moe.gate",
+            "mamba",
+            "audio_tower",
+            "vision_tower",
+            "vision_embedder",
+            "embed_vision",
+            "embed_audio",
+            "score",
+            "classifier",
+            "qa_outputs",
+        ],
+    }
+    observed_config = {
+        **{
+            field: quantization_payload.get(field)
+            for field in expected_outer_config
+        },
+        "quant_method": getattr(
+            quantization_payload.get("quant_method"),
+            "value",
+            quantization_payload.get("quant_method"),
+        ),
+        "bnb_4bit_compute_dtype": dtype_name(
+            quantization_payload.get("bnb_4bit_compute_dtype")
+        ),
+    }
+    active_config = {
+        **{
+            field: active_quantization_payload.get(field)
+            for field in expected_active_config
+        },
+        "quant_method": quant_method,
+        "bnb_4bit_compute_dtype": dtype_name(
+            active_quantization_payload.get("bnb_4bit_compute_dtype")
+        ),
+    }
+    if (
+        observed_config != expected_outer_config
+        or active_config != expected_active_config
+    ):
+        raise RuntimeError(
+            "Runtime BitsAndBytes configuration drifted from NF4 double-quant QLoRA"
+        )
+
+    config_to_dict = getattr(model_config, "to_dict", None)
+    config_payload = config_to_dict() if callable(config_to_dict) else None
+    layer_count = (
+        config_payload.get("num_hidden_layers")
+        if isinstance(config_payload, Mapping)
+        else None
+    )
+    if (
+        type(layer_count) is not int
+        or layer_count <= 0
+        or config_payload.get("model_type") != "qwen3"
+        or config_payload.get("attention_bias") is not False
+        or type(config_payload.get("tie_word_embeddings")) is not bool
+    ):
+        raise RuntimeError("Runtime model config lacks a valid Qwen layer count")
+    expected_names = {
+        *(
+            f"model.layers.{layer}.self_attn.{projection}"
+            for layer in range(layer_count)
+            for projection in ("q_proj", "k_proj", "v_proj", "o_proj")
+        ),
+        *(
+            f"model.layers.{layer}.mlp.{projection}"
+            for layer in range(layer_count)
+            for projection in ("gate_proj", "up_proj", "down_proj")
+        ),
+    }
+    named_modules = getattr(runtime_model, "named_modules", None)
+    if not callable(named_modules):
+        raise RuntimeError("Runtime model does not expose its quantized modules")
+    observed_modules: dict[str, Any] = {}
+    all_linear4bit_names: set[str] = set()
+    module_records: list[dict[str, Any]] = []
+    for module_name, module in named_modules():
+        module_lineage = {
+            f"{candidate.__module__}.{candidate.__name__}"
+            for candidate in type(module).__mro__
+        }
+        if "bitsandbytes.nn.modules.Linear4bit" not in module_lineage:
+            continue
+        all_linear4bit_names.add(str(module_name))
+        if module_name not in expected_names:
+            continue
+        if module_name in observed_modules:
+            raise RuntimeError("Runtime model contains duplicate target modules")
+        weight = getattr(module, "weight", None)
+        parameter_lineage = {
+            f"{candidate.__module__}.{candidate.__name__}"
+            for candidate in type(weight).__mro__
+        } if weight is not None else set()
+        quant_state = getattr(weight, "quant_state", None)
+        nested_quant_state = getattr(quant_state, "state2", None)
+        device_type = getattr(getattr(weight, "device", None), "type", None)
+        record = {
+            "moduleName": str(module_name),
+            "moduleClass": type(module).__module__ + "." + type(module).__name__,
+            "parameterClass": type(weight).__module__ + "." + type(weight).__name__,
+            "deviceType": device_type,
+            "storageDType": dtype_name(getattr(weight, "dtype", None)),
+            "computeDType": dtype_name(getattr(module, "compute_dtype", None)),
+            "quantType": getattr(weight, "quant_type", None),
+            "doubleQuantized": getattr(weight, "compress_statistics", None),
+            "bnbQuantized": getattr(weight, "bnb_quantized", None),
+            "requiresGrad": getattr(weight, "requires_grad", None),
+            "quantStatePresent": quant_state is not None,
+            "quantStateClass": (
+                type(quant_state).__module__ + "." + type(quant_state).__name__
+            ),
+            "quantStateQuantType": getattr(quant_state, "quant_type", None),
+            "quantStateNested": getattr(quant_state, "nested", None),
+            "quantStateBlocksize": getattr(quant_state, "blocksize", None),
+            "quantStateDType": dtype_name(getattr(quant_state, "dtype", None)),
+            "quantStateNestedBlocksize": getattr(
+                nested_quant_state,
+                "blocksize",
+                None,
+            ),
+        }
+        if (
+            "bitsandbytes.nn.modules.Params4bit" not in parameter_lineage
+            or record
+            != {
+                **record,
+                "deviceType": "cuda",
+                "storageDType": "uint8",
+                "computeDType": expected_compute_dtype,
+                "quantType": "nf4",
+                "doubleQuantized": True,
+                "bnbQuantized": True,
+                "requiresGrad": False,
+                "quantStatePresent": True,
+                "quantStateClass": "bitsandbytes.functional.QuantState",
+                "quantStateQuantType": "nf4",
+                "quantStateNested": True,
+                "quantStateBlocksize": 64,
+                "quantStateDType": expected_compute_dtype,
+                "quantStateNestedBlocksize": 256,
+            }
+        ):
+            raise RuntimeError(
+                "Runtime Linear4bit target is not a materialized CUDA NF4 parameter"
+            )
+        observed_modules[str(module_name)] = module
+        module_records.append(record)
+    if set(observed_modules) != expected_names or all_linear4bit_names != expected_names:
+        raise RuntimeError(
+            "Runtime model does not contain the exact fully quantized Qwen projection set"
+        )
+    module_records.sort(key=lambda item: item["moduleName"])
+    ordered_names = sorted(expected_names)
+    vocab_size = config_payload.get("vocab_size")
+    if type(vocab_size) is not int or vocab_size <= 4:
+        raise RuntimeError("Runtime model config lacks a valid vocabulary size")
+    representative_weight = getattr(
+        observed_modules[ordered_names[0]],
+        "weight",
+        None,
+    )
+    expected_parameter_names = {
+        "model.embed_tokens.weight",
+        "model.norm.weight",
+        *(
+            f"model.layers.{layer}.{name}"
+            for layer in range(layer_count)
+            for name in (
+                "self_attn.q_proj.weight",
+                "self_attn.k_proj.weight",
+                "self_attn.v_proj.weight",
+                "self_attn.o_proj.weight",
+                "self_attn.q_norm.weight",
+                "self_attn.k_norm.weight",
+                "mlp.gate_proj.weight",
+                "mlp.up_proj.weight",
+                "mlp.down_proj.weight",
+                "input_layernorm.weight",
+                "post_attention_layernorm.weight",
+            )
+        ),
+    }
+    if config_payload.get("tie_word_embeddings") is False:
+        expected_parameter_names.add("lm_head.weight")
+    named_parameters = getattr(runtime_model, "named_parameters", None)
+    if not callable(named_parameters):
+        raise RuntimeError("Runtime model does not expose parameter placement")
+    observed_parameter_names: set[str] = set()
+    for parameter_name, parameter in named_parameters():
+        if (
+            not isinstance(parameter_name, str)
+            or not parameter_name
+            or parameter_name in observed_parameter_names
+            or getattr(getattr(parameter, "device", None), "type", None) != "cuda"
+        ):
+            raise RuntimeError(
+                "Runtime model contains duplicate or non-CUDA parameter placement"
+            )
+        observed_parameter_names.add(parameter_name)
+    if observed_parameter_names != expected_parameter_names:
+        raise RuntimeError(
+            "Runtime model parameter inventory drifted from the bound Qwen config"
+        )
+    ordered_parameter_names = sorted(expected_parameter_names)
+    placement_unsigned = {
+        "schemaVersion": "lumen.runtime-parameter-placement/1.0.0",
+        "status": "passed",
+        "totalParameterCount": len(ordered_parameter_names),
+        "cudaParameterCount": len(ordered_parameter_names),
+        "deviceTypeCounts": {"cuda": len(ordered_parameter_names)},
+        "parameterNamesSHA256": _canonical_sha256(ordered_parameter_names),
+        "allParametersOnCUDA": True,
+    }
+    parameter_placement = {
+        **placement_unsigned,
+        "runtimeParameterPlacementSHA256": _canonical_sha256(
+            placement_unsigned
+        ),
+    }
+    forward_probe = _runtime_cuda_forward_probe(
+        runtime_model,
+        compute_dtype=expected_compute_dtype,
+        device=getattr(representative_weight, "device", None),
+        vocab_size=vocab_size,
+    )
+    return {
+        "requestedMaxSequenceLength": configured_max_seq_length,
+        "runtimeMaxSequenceLength": runtime_max_seq_length,
+        "requestedComputeDType": expected_compute_dtype,
+        "runtimeIsLoadedIn4Bit": True,
+        "runtimeIsQuantized": True,
+        "runtimeQuantizationMethod": "bitsandbytes",
+        "quantizerClass": quantizer_class,
+        "activeQuantizationConfigClass": quantizer_config_class,
+        "outerQuantizationConfig": expected_outer_config,
+        "activeQuantizationConfig": expected_active_config,
+        "expectedTargetModuleCount": len(expected_names),
+        "materializedTargetModuleCount": len(observed_modules),
+        "targetModuleNamesSHA256": _canonical_sha256(ordered_names),
+        "materializedTargetModulesSHA256": _canonical_sha256(module_records),
+        "representativeMaterializedTarget": module_records[0],
+        "parameterPlacement": parameter_placement,
+        "forwardKernelProbe": forward_probe,
+    }
+
+
+def _runtime_cuda_forward_probe(
+    runtime_model: Any,
+    *,
+    compute_dtype: str,
+    device: Any,
+    vocab_size: int,
+) -> dict[str, Any]:
+    """Execute one bounded forward to prove patched Qwen and BnB CUDA kernels."""
+
+    import torch  # type: ignore
+
+    fixed_token_ids = (1, 2, 3, 4)
+    fixed_attention_mask = (1, 1, 1, 1)
+    input_contract = {
+        "inputIDs": [list(fixed_token_ids)],
+        "attentionMask": [list(fixed_attention_mask)],
+        "useCache": False,
+    }
+    if (
+        getattr(device, "type", None) != "cuda"
+        or type(vocab_size) is not int
+        or vocab_size <= max(fixed_token_ids)
+    ):
+        raise RuntimeError("Runtime forward probe lacks a valid CUDA model contract")
+    eval_model = getattr(runtime_model, "eval", None)
+    train_model = getattr(runtime_model, "train", None)
+    was_training = getattr(runtime_model, "training", None)
+    if (
+        not callable(runtime_model)
+        or not callable(eval_model)
+        or not callable(train_model)
+        or was_training is not False
+    ):
+        raise RuntimeError("Runtime model cannot execute a controlled forward probe")
+
+    input_ids = torch.tensor(
+        [fixed_token_ids],
+        dtype=torch.long,
+        device=device,
+    )
+    attention_mask = torch.tensor(
+        [fixed_attention_mask],
+        dtype=torch.long,
+        device=device,
+    )
+    eval_model()
+    try:
+        with torch.inference_mode():
+            outputs = runtime_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                use_cache=False,
+                return_dict=True,
+            )
+    except Exception as exc:
+        raise RuntimeError(
+            "Runtime Qwen/BitsAndBytes CUDA forward probe failed"
+        ) from exc
+    finally:
+        if was_training:
+            train_model()
+
+    logits = getattr(outputs, "logits", None)
+    logits_shape = tuple(getattr(logits, "shape", ()))
+    logits_device_type = getattr(getattr(logits, "device", None), "type", None)
+    logits_dtype = str(getattr(logits, "dtype", "")).removeprefix("torch.")
+    try:
+        all_finite = bool(torch.isfinite(logits).all().item())
+    except Exception as exc:
+        raise RuntimeError(
+            "Runtime forward probe did not return inspectable logits"
+        ) from exc
+    if (
+        logits_shape != (1, len(fixed_token_ids), vocab_size)
+        or logits_device_type != "cuda"
+        or logits_dtype != compute_dtype
+        or getattr(logits, "requires_grad", None) is not False
+        or not all_finite
+    ):
+        raise RuntimeError(
+            "Runtime forward probe logits violate the controlled CUDA contract"
+        )
+    unsigned = {
+        "schemaVersion": "lumen.runtime-forward-kernel-probe/1.0.0",
+        "status": "passed",
+        "fixedInputSHA256": _canonical_sha256(input_contract),
+        "batchSize": 1,
+        "tokenCount": len(fixed_token_ids),
+        "logitsShape": list(logits_shape),
+        "logitsDType": logits_dtype,
+        "logitsDeviceType": logits_device_type,
+        "allFinite": True,
+        "requiresGrad": False,
+        "useCache": False,
+    }
+    return {
+        **unsigned,
+        "runtimeForwardKernelProbeSHA256": _canonical_sha256(unsigned),
+    }
+
+
+def _verify_runtime_model_binding(
+    cfg: Mapping[str, Any],
+    *,
+    runtime_model: Any,
+    snapshot_path: Path,
+    snapshot_verification: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prove the model and controlled generation defaults use the private view."""
+
+    model_config = getattr(runtime_model, "config", None)
+    config_to_dict = getattr(model_config, "to_dict", None)
+    actual_name = getattr(model_config, "_name_or_path", None)
+    try:
+        actual_path = Path(str(actual_name or "")).resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError(
+            "Unsloth runtime model config is not bound to the private snapshot"
+        ) from exc
+    if actual_path != snapshot_path or not callable(config_to_dict):
+        raise RuntimeError("Unsloth runtime model ignored the private snapshot path")
+    quantization_evidence = _runtime_4bit_materialization_evidence(
+        runtime_model,
+        cfg,
+    )
+
+    # generation_config.json is a separately bound regular file in the private
+    # view. Load it independently and require the model's effective defaults to
+    # match, so no implicit cache or model-config fallback can change generation.
+    from transformers import GenerationConfig  # type: ignore
+
+    expected_generation_config = GenerationConfig.from_pretrained(
+        str(snapshot_path),
+        local_files_only=True,
+    )
+    runtime_generation_config = getattr(runtime_model, "generation_config", None)
+    expected_generation_to_dict = getattr(expected_generation_config, "to_dict", None)
+    runtime_generation_to_dict = getattr(runtime_generation_config, "to_dict", None)
+    if not callable(expected_generation_to_dict) or not callable(
+        runtime_generation_to_dict
+    ):
+        raise RuntimeError(
+            "Runtime generation configuration is not bound to the verified file"
+        )
+    model_config_payload = config_to_dict()
+    expected_generation_config_payload = expected_generation_to_dict()
+    generation_config_payload = runtime_generation_to_dict()
+    if not isinstance(model_config_payload, Mapping) or not isinstance(
+        generation_config_payload, Mapping
+    ) or not isinstance(expected_generation_config_payload, Mapping):
+        raise RuntimeError("Runtime model configuration is not serializable")
+    bound_base_max_position_embeddings = (
+        _bound_base_model_max_position_embeddings(
+            cfg,
+            snapshot_path=snapshot_path,
+        )
+    )
+    configured_max_length = cfg.get("max_seq_length")
+    if type(configured_max_length) is not int or configured_max_length <= 0:
+        raise RuntimeError("Configured maximum sequence length is invalid")
+    expected_runtime_model_max_position_embeddings = max(
+        configured_max_length,
+        bound_base_max_position_embeddings,
+    )
+    runtime_model_max_position_embeddings = model_config_payload.get(
+        "max_position_embeddings"
+    )
+    if (
+        type(runtime_model_max_position_embeddings) is not int
+        or runtime_model_max_position_embeddings
+        != expected_runtime_model_max_position_embeddings
+    ):
+        raise RuntimeError(
+            "Runtime model maximum context drifted from the pinned Unsloth load"
+        )
+    expected_runtime_max_length = runtime_model_max_position_embeddings
+    approved_generation_config_payload = dict(expected_generation_config_payload)
+    source_max_length = approved_generation_config_payload.get("max_length")
+    approved_generation_config_payload["max_length"] = expected_runtime_max_length
+    if dict(generation_config_payload) != approved_generation_config_payload:
+        raise RuntimeError(
+            "Runtime generation configuration contains an unapproved transformation"
+        )
+
+    _, after = _verified_private_runtime_model_snapshot(cfg)
+    if dict(snapshot_verification) != after:
+        raise RuntimeError(
+            "Private base-model runtime snapshot changed during model loading"
+        )
+    unsigned = {
+        "schemaVersion": RUNTIME_MODEL_BINDING_SCHEMA,
+        "baseModelID": cfg.get("baseModelID"),
+        "baseModelRevision": cfg.get("baseModelRevision"),
+        "baseModelIndexDigest": cfg.get("baseModelIndexDigest"),
+        "baseModelIndexShardBindingSHA256": cfg.get(
+            "baseModelIndexShardBindingSHA256"
+        ),
+        "baseModelArtifactDigest": cfg.get("baseModelArtifactDigest"),
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "baseModelGenerationConfigFile": cfg.get(
+            "baseModelGenerationConfigFile"
+        ),
+        "runtimeSnapshotVerificationSHA256": after.get(
+            "snapshotVerificationSHA256"
+        ),
+        "runtimeSnapshotPath": str(snapshot_path),
+        "modelConfigSHA256": _canonical_sha256(dict(model_config_payload)),
+        "modelConfigVerificationStatus": (
+            "attested_runtime_observation_not_independently_reconstructed"
+        ),
+        "sourceGenerationConfigSHA256": _canonical_sha256(
+            dict(expected_generation_config_payload)
+        ),
+        "generationConfigSHA256": _canonical_sha256(
+            dict(generation_config_payload)
+        ),
+        "generationConfigSource": "verified_private_generation_config_file",
+        "allowedGenerationConfigTransformations": {
+            "maxLength": {
+                "source": "verified_runtime_model.config.max_position_embeddings",
+                "sourceValue": expected_runtime_max_length,
+                "originalValue": source_max_length,
+                "runtimeValue": generation_config_payload.get("max_length"),
+            }
+        },
+        "runtimeLoadMaterialization": quantization_evidence,
+        "localFilesOnly": True,
+    }
+    return {**unsigned, "runtimeModelBindingSHA256": _canonical_sha256(unsigned)}
+
+
+def _normalize_peft_base_model_identity(
+    model: Any,
+    cfg: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Prevent private runtime paths or floating revisions in saved adapters."""
+
+    base_model_id = cfg.get("baseModelID")
+    revision = cfg.get("baseModelRevision")
+    peft_configs = getattr(model, "peft_config", None)
+    get_base_model = getattr(model, "get_base_model", None)
+    peft_base_model = getattr(model, "base_model", None)
+    if (
+        not isinstance(base_model_id, str)
+        or not base_model_id
+        or base_model_id != cfg.get("base_model_name")
+        or not isinstance(revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", revision) is None
+        or not isinstance(peft_configs, Mapping)
+        or not peft_configs
+        or not callable(get_base_model)
+        or peft_base_model is None
+    ):
+        raise RuntimeError("PEFT adapter base-model identity is unavailable")
+    try:
+        portable_adapter_model_card(base_model_id, revision)
+    except ValueError as exc:
+        raise RuntimeError(
+            "PEFT adapter base-model identity is not canonical and immutable"
+        ) from exc
+    runtime_base_model = get_base_model()
+    runtime_base_config = getattr(runtime_base_model, "config", None)
+    if runtime_base_config is None:
+        raise RuntimeError("PEFT runtime base-model config is unavailable")
+    try:
+        # PEFT 0.19.1 independently reads these two sources while creating
+        # README.md: model.config.to_dict()["_name_or_path"] and
+        # model.base_model.name_or_path. Normalize both before Trainer can
+        # write any checkpoint, not just before the final adapter save.
+        setattr(runtime_base_config, "_name_or_path", base_model_id)
+        setattr(runtime_base_config, "name_or_path", base_model_id)
+        setattr(runtime_base_model, "name_or_path", base_model_id)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "PEFT model-card base-model identity normalization failed"
+        ) from exc
+    adapter_names: list[str] = []
+    for adapter_name, peft_config in peft_configs.items():
+        if not isinstance(adapter_name, str) or not adapter_name:
+            raise RuntimeError("PEFT adapter name is invalid")
+        setattr(peft_config, "base_model_name_or_path", base_model_id)
+        setattr(peft_config, "revision", revision)
+        if (
+            getattr(peft_config, "base_model_name_or_path", None) != base_model_id
+            or getattr(peft_config, "revision", None) != revision
+        ):
+            raise RuntimeError("PEFT adapter base-model identity normalization failed")
+        adapter_names.append(adapter_name)
+    model_card_config = getattr(model, "config", None)
+    to_dict = getattr(model_card_config, "to_dict", None)
+    if not callable(to_dict):
+        raise RuntimeError("PEFT model-card config identity is unavailable")
+    model_card_config_payload = to_dict()
+    if (
+        not isinstance(model_card_config_payload, Mapping)
+        or model_card_config_payload.get("_name_or_path") != base_model_id
+        or getattr(peft_base_model, "name_or_path", None) != base_model_id
+        or getattr(runtime_base_model, "name_or_path", None) != base_model_id
+    ):
+        raise RuntimeError(
+            "PEFT model-card base-model identity normalization failed"
+        )
+    unsigned = {
+        "schemaVersion": "lumen.peft-base-model-identity/1.0.0",
+        "baseModelID": base_model_id,
+        "baseModelRevision": revision,
+        "adapterNames": sorted(adapter_names),
+        "privateRuntimePathPersisted": False,
+    }
+    return {**unsigned, "peftBaseModelIdentitySHA256": _canonical_sha256(unsigned)}
+
+
+def _save_portable_peft_adapter(
+    model: Any,
+    output_dir: Path,
+    cfg: Mapping[str, Any],
+    *,
+    selected_adapters: list[str] | None = None,
+    expected_adapter_names: list[str] | None = None,
+) -> dict[str, Any]:
+    """Save one normalized PEFT artifact and replace its generated model card."""
+
+    identity = _normalize_peft_base_model_identity(model, cfg)
+    if (
+        expected_adapter_names is not None
+        and identity["adapterNames"] != sorted(expected_adapter_names)
+    ):
+        raise RuntimeError(
+            "Final PEFT artifact contains an unexpected adapter set"
+        )
+    save_kwargs: dict[str, Any] = {"safe_serialization": True}
+    if selected_adapters is not None:
+        if (
+            not selected_adapters
+            or len(selected_adapters) != len(set(selected_adapters))
+            or any(
+                adapter_name not in identity["adapterNames"]
+                for adapter_name in selected_adapters
+            )
+        ):
+            raise RuntimeError("Selected PEFT adapter set is invalid")
+        save_kwargs["selected_adapters"] = selected_adapters
+    model.save_pretrained(str(output_dir), **save_kwargs)
+    write_portable_adapter_model_card(
+        output_dir,
+        base_model_id=identity["baseModelID"],
+        base_model_revision=identity["baseModelRevision"],
+    )
+    return identity
+
+
+def _runtime_tokenizer_evidence(
+    cfg: Mapping[str, Any],
+    *,
+    snapshot_path: Path,
+    snapshot_verification: Mapping[str, Any],
+    runtime_model_binding: Mapping[str, Any],
+    runtime_binding: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the exact, independently reconstructable runtime-tokenizer evidence."""
+
+    try:
+        configured_runtime_path = Path(
+            str(cfg.get("baseModelRuntimeSnapshotPath") or "")
+        ).resolve(strict=True)
+        tokenizer_snapshot_path, tokenizer_snapshot_verification = (
+            _verified_private_runtime_tokenizer_snapshot(cfg)
+        )
+    except OSError as exc:
+        raise RuntimeError(
+            "Runtime-tokenizer evidence lacks its verified private snapshot"
+        ) from exc
+    verification = dict(snapshot_verification)
+    model_binding = dict(runtime_model_binding)
+    binding = dict(runtime_binding)
+    unsigned_model_binding = dict(model_binding)
+    model_binding_sha256 = unsigned_model_binding.pop(
+        "runtimeModelBindingSHA256", None
+    )
+    unsigned_binding = dict(binding)
+    binding_sha256 = unsigned_binding.pop("runtimeTokenizerBindingSHA256", None)
+    if (
+        configured_runtime_path != snapshot_path
+        or verification
+        != dict(cfg.get("baseModelRuntimeSnapshotVerification") or {})
+        or model_binding.get("schemaVersion") != RUNTIME_MODEL_BINDING_SCHEMA
+        or not isinstance(model_binding_sha256, str)
+        or model_binding_sha256 != _canonical_sha256(unsigned_model_binding)
+        or model_binding.get("baseModelID") != cfg.get("baseModelID")
+        or model_binding.get("baseModelRevision") != cfg.get("baseModelRevision")
+        or model_binding.get("runtimeSnapshotVerificationSHA256")
+        != verification.get("snapshotVerificationSHA256")
+        or model_binding.get("runtimeSnapshotPath") != str(snapshot_path)
+        or binding.get("schemaVersion") != RUNTIME_TOKENIZER_BINDING_SCHEMA
+        or not isinstance(binding_sha256, str)
+        or binding_sha256 != _canonical_sha256(unsigned_binding)
+        or binding.get("baseModelID") != cfg.get("baseModelID")
+        or binding.get("baseModelRevision") != cfg.get("baseModelRevision")
+        or binding.get("baseModelTokenizerClosureSHA256")
+        != cfg.get("baseModelTokenizerClosureSHA256")
+        or binding.get("runtimeSnapshotVerificationSHA256")
+        != verification.get("snapshotVerificationSHA256")
+        or binding.get("runtimeSnapshotPath") != str(snapshot_path)
+    ):
+        raise RuntimeError("Runtime-tokenizer evidence is not self-consistent")
+    return {
+        "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerFiles": cfg.get("baseModelTokenizerFiles"),
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "baseModelGenerationConfigFile": cfg.get(
+            "baseModelGenerationConfigFile"
+        ),
+        "baseModelTokenizerSnapshotPath": str(tokenizer_snapshot_path),
+        "baseModelTokenizerSnapshotVerification": tokenizer_snapshot_verification,
+        "baseModelRuntimeSnapshotPath": str(snapshot_path),
+        "baseModelRuntimeSnapshotVerification": verification,
+        "runtimeModelBinding": model_binding,
+        "runtimeTokenizerBinding": binding,
+    }
+
+
+def _load_verified_unsloth_runtime(
+    cfg: Mapping[str, Any],
+    *,
+    fast_language_model: Any,
+) -> tuple[Any, Any, Path, dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Load and verify the exact base runtime shared by training and smoke checks."""
+
+    (
+        expected_runtime_tokenizer,
+        runtime_snapshot_path,
+        runtime_snapshot_verification,
+    ) = _load_verified_runtime_tokenizer_source(cfg)
+    model, tokenizer = fast_language_model.from_pretrained(
+        model_name=str(runtime_snapshot_path),
+        revision=cfg["baseModelRevision"],
+        tokenizer_name=str(runtime_snapshot_path),
+        max_seq_length=int(cfg["max_seq_length"]),
+        dtype=_controlled_torch_dtype(cfg),
+        load_in_4bit=bool(cfg["load_in_4bit"]),
+        local_files_only=True,
+        trust_remote_code=False,
+        use_exact_model_name=True,
+    )
+    runtime_model_binding = _verify_runtime_model_binding(
+        cfg,
+        runtime_model=model,
+        snapshot_path=runtime_snapshot_path,
+        snapshot_verification=runtime_snapshot_verification,
+    )
+    runtime_tokenizer_binding = _verify_runtime_tokenizer_binding(
+        cfg,
+        expected_tokenizer=expected_runtime_tokenizer,
+        runtime_tokenizer=tokenizer,
+        snapshot_path=runtime_snapshot_path,
+        snapshot_verification=runtime_snapshot_verification,
+    )
+    verify_chat_template_contract(cfg["chatTemplateContract"], tokenizer=tokenizer)
+    return (
+        model,
+        tokenizer,
+        runtime_snapshot_path,
+        runtime_snapshot_verification,
+        runtime_model_binding,
+        runtime_tokenizer_binding,
+    )
+
+
+def _run_runtime_binding_smoke(
+    cfg: Mapping[str, Any],
+    *,
+    fast_language_model: Any,
+) -> dict[str, Any]:
+    """Exercise the real pinned Unsloth loader without PEFT or trainer setup."""
+
+    (
+        model,
+        tokenizer,
+        snapshot_path,
+        snapshot_verification,
+        runtime_model_binding,
+        runtime_tokenizer_binding,
+    ) = _load_verified_unsloth_runtime(
+        cfg,
+        fast_language_model=fast_language_model,
+    )
+    evidence = _runtime_tokenizer_evidence(
+        cfg,
+        snapshot_path=snapshot_path,
+        snapshot_verification=snapshot_verification,
+        runtime_model_binding=runtime_model_binding,
+        runtime_binding=runtime_tokenizer_binding,
+    )
+    # Keep the smoke artifact independent of object reprs and GPU addresses.
+    del model, tokenizer
+    unsigned = {
+        "schemaVersion": "lumen.runtime-binding-smoke/1.0.0",
+        **evidence,
+    }
+    return {
+        **unsigned,
+        "runtimeBindingSmokeSHA256": _canonical_sha256(unsigned),
+    }
+
+
+def _read_verified_snapshot_file(
+    source: Path,
+    *,
+    expected_size: int,
+    expected_sha256: str,
+) -> bytes:
+    def signature(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_mode,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise RuntimeError("Adapter tokenizer publication requires O_NOFOLLOW")
+    descriptor = os.open(
+        source,
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow,
+    )
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise RuntimeError("Adapter tokenizer source is not a regular file")
+        chunks: list[bytes] = []
+        offset = 0
+        while True:
+            chunk = os.pread(descriptor, 1 << 20, offset)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            offset += len(chunk)
+        payload = b"".join(chunks)
+        after = os.fstat(descriptor)
+        rebound = source.stat(follow_symlinks=False)
+        if (
+            signature(before) != signature(after)
+            or signature(before) != signature(rebound)
+        ):
+            raise RuntimeError("Adapter tokenizer source changed during copying")
+    finally:
+        os.close(descriptor)
+    if (
+        len(payload) != expected_size
+        or hashlib.sha256(payload).hexdigest() != expected_sha256
+    ):
+        raise RuntimeError("Adapter tokenizer source drifted from the base closure")
+    return payload
+
+
+def _write_regular_file_atomic(path: Path, payload: bytes) -> None:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise RuntimeError("Adapter tokenizer destination is unsafe")
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600, follow_symlinks=False)
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
+def _publish_exact_base_tokenizer_subset(
+    cfg: Mapping[str, Any],
+    *,
+    adapter_output_dir: Path,
+    snapshot_path: Path,
+    snapshot_verification: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Publish only exact base tokenizer bytes, never Unsloth's mutable derivative."""
+
+    unexpected = sorted(
+        filename
+        for filename in ADAPTER_DERIVED_TOKENIZER_FILES
+        if (adapter_output_dir / filename).exists()
+        or (adapter_output_dir / filename).is_symlink()
+    )
+    if unexpected:
+        raise RuntimeError(
+            "Adapter output contains unapproved derived tokenizer files: "
+            + ", ".join(unexpected)
+        )
+    expected_by_path = {
+        str(item["path"]): item
+        for item in cfg.get("baseModelTokenizerFiles", [])
+        if isinstance(item, Mapping)
+    }
+    published: list[dict[str, Any]] = []
+    for filename in ADAPTER_BASE_TOKENIZER_FILES:
+        expected = expected_by_path.get(filename)
+        if not isinstance(expected, Mapping):
+            raise RuntimeError(
+                f"Base tokenizer closure lacks adapter publication file {filename}"
+            )
+        payload = _read_verified_snapshot_file(
+            snapshot_path / filename,
+            expected_size=int(expected["sizeBytes"]),
+            expected_sha256=str(expected["sha256"]),
+        )
+        destination = adapter_output_dir / filename
+        _write_regular_file_atomic(destination, payload)
+        if destination.read_bytes() != payload:
+            raise RuntimeError("Adapter tokenizer publication changed after writing")
+        published.append(
+            {
+                "path": filename,
+                "sizeBytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    _, after = _verified_private_runtime_model_snapshot(cfg)
+    if after != dict(snapshot_verification):
+        raise RuntimeError(
+            "Private base-model runtime snapshot changed during adapter publication"
+        )
+    unsigned = {
+        "schemaVersion": "lumen.adapter-base-tokenizer-binding/1.0.0",
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "runtimeSnapshotVerificationSHA256": after.get(
+            "snapshotVerificationSHA256"
+        ),
+        "files": published,
+        "transformation": "exact_byte_subset_no_derived_tokenizer",
+    }
+    return {**unsigned, "adapterTokenizerBindingSHA256": _canonical_sha256(unsigned)}
 
 
 def _base_model_weight_shard_contract(value: Any) -> dict[str, Any]:
@@ -3044,6 +5017,29 @@ def main() -> None:
 
     seed, seed_source = _resolve_controlled_seed(cfg, cli_seed=args.seed)
 
+    if args.runtime_binding_smoke:
+        training_runtime_lineage = _training_runtime_lineage(cfg)
+        _training_environment(
+            cfg,
+            runtime_lineage=training_runtime_lineage,
+        )
+        _verify_base_model_lineage(cfg)
+        _require_unsloth_before_transformers()
+        try:
+            from unsloth import FastLanguageModel
+        except ImportError as exc:
+            raise RuntimeError(
+                "Runtime-binding smoke requires the pinned Unsloth environment"
+            ) from exc
+        _seed_everything(seed)
+        smoke = _run_runtime_binding_smoke(
+            cfg,
+            fast_language_model=FastLanguageModel,
+        )
+        sys.stdout.write(json.dumps(smoke, sort_keys=True, separators=(",", ":")))
+        sys.stdout.write("\n")
+        return
+
     dataset_dir = Path(cfg["dataset_dir"]).resolve()
     train_path = dataset_dir / "train_sft.jsonl"
     val_path = dataset_dir / "val_sft.jsonl"
@@ -3103,14 +5099,17 @@ def main() -> None:
     # Unsloth must patch Transformers before the shared seed helper imports it.
     _seed_everything(seed)
 
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=cfg["base_model_name"],
-        revision=cfg["baseModelRevision"],
-        max_seq_length=int(cfg["max_seq_length"]),
-        load_in_4bit=bool(cfg["load_in_4bit"]),
-        use_exact_model_name=True,
+    (
+        model,
+        tokenizer,
+        runtime_tokenizer_snapshot_path,
+        runtime_tokenizer_snapshot_verification,
+        runtime_model_binding,
+        runtime_tokenizer_binding,
+    ) = _load_verified_unsloth_runtime(
+        cfg,
+        fast_language_model=FastLanguageModel,
     )
-    verify_chat_template_contract(cfg["chatTemplateContract"], tokenizer=tokenizer)
 
     train_records = _limit_records(load_jsonl(train_path), cfg.get("max_train_records"))
     val_records = _limit_records(load_jsonl(val_path), cfg.get("max_val_records"))
@@ -3128,6 +5127,9 @@ def main() -> None:
         ),
         agent=cfg.get("agent"),
         fleet_loss_share_contract=cfg.get("fleetLossShareContract"),
+        public_corpus_loss_share_contract=cfg.get(
+            "publicCorpusLossShareContract"
+        ),
         fleet_config=cfg,
     )
     token_length_preflight_evidence = (
@@ -3139,6 +5141,13 @@ def main() -> None:
         if ubuntu_sft_checkpoint_lineage
         else token_length_preflight
     )
+    if ubuntu_sft_checkpoint_lineage:
+        _verify_prepared_global_tokenizer_preflight(
+            cfg,
+            cfg_path=cfg_path,
+            phase="sft",
+            bound_preflight=token_length_preflight_evidence,
+        )
     model = FastLanguageModel.get_peft_model(
         model,
         r=int(cfg["lora_r"]),
@@ -3152,6 +5161,7 @@ def main() -> None:
         use_gradient_checkpointing="unsloth" if cfg.get("gradient_checkpointing", True) else False,
         random_state=seed,
     )
+    peft_base_model_identity = _normalize_peft_base_model_identity(model, cfg)
 
     output_dir, adapter_output_dir = validate_sft_artifact_paths(cfg)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -3244,11 +5254,23 @@ def main() -> None:
         train_record_count=len(train_rows),
         expected_precision=precision,
     )
-    trainer.model.save_pretrained(str(adapter_output_dir), safe_serialization=True)
-    tokenizer.save_pretrained(str(adapter_output_dir), legacy_format=False)
+    peft_base_model_identity = _save_portable_peft_adapter(
+        trainer.model,
+        adapter_output_dir,
+        cfg,
+        expected_adapter_names=["default"],
+    )
+    adapter_tokenizer_binding = _publish_exact_base_tokenizer_subset(
+        cfg,
+        adapter_output_dir=adapter_output_dir,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+    )
     adapter_artifact_manifest = write_adapter_artifact_manifest(
         adapter_output_dir,
         training_phase="sft",
+        expected_base_model=cfg["baseModelID"],
+        expected_base_revision=cfg["baseModelRevision"],
     )
     finalized_variant_manifest = _finalize_variant_manifest(
         cfg,
@@ -3260,9 +5282,10 @@ def main() -> None:
 
     repo_root = Path(__file__).resolve().parents[3]
     manifest = {
-        "schema": "lumen.train_sft.manifest/1.0.0",
+        "schema": "lumen.train_sft.manifest/1.2.0",
         "agent": cfg["agent"],
         "base_model_name": cfg["base_model_name"],
+        "baseModelID": cfg["baseModelID"],
         "baseModelRevision": cfg["baseModelRevision"],
         "baseModelIndexDigest": cfg["baseModelIndexDigest"],
         "baseModelIndexReferencedShardNames": cfg[
@@ -3274,6 +5297,23 @@ def main() -> None:
         "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
         "baseModelWeightShards": cfg["baseModelWeightShards"],
         "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": cfg["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": cfg[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelGenerationConfigFile": cfg["baseModelGenerationConfigFile"],
+        "baseModelTokenizerSnapshotVerification": (
+            cfg["baseModelTokenizerSnapshotVerification"]
+        ),
+        "baseModelTokenizerSnapshotPath": cfg["baseModelTokenizerSnapshotPath"],
+        "baseModelRuntimeSnapshotPath": str(runtime_tokenizer_snapshot_path),
+        "baseModelRuntimeSnapshotVerification": (
+            runtime_tokenizer_snapshot_verification
+        ),
+        "runtimeModelBinding": runtime_model_binding,
+        "runtimeTokenizerBinding": runtime_tokenizer_binding,
+        "peftBaseModelIdentity": peft_base_model_identity,
+        "adapterTokenizerBinding": adapter_tokenizer_binding,
         "trainingEnvironment": training_environment,
         "trainingEnvironmentSHA256": training_environment["trainingEnvironmentSHA256"],
         **training_runtime_lineage,

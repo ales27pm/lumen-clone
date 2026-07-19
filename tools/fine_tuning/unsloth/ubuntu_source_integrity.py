@@ -48,6 +48,7 @@ REQUIRED_ORCHESTRATION_PATHS = frozenset(
         "tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128.dockerignore",
         "tools/fine_tuning/unsloth/evaluate_adapter.py",
         "tools/fine_tuning/unsloth/export_gguf.py",
+        "tools/fine_tuning/unsloth/runtime_binding_smoke_gate.py",
         "tools/fine_tuning/unsloth/train_dpo.py",
         "tools/fine_tuning/unsloth/train_sft.py",
         "tools/fine_tuning/unsloth/training_lineage.py",

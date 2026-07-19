@@ -75,6 +75,7 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "agent": "cortex",
         "preference_trainer": "dpo",
         "base_model_name": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": "a" * 40,
         "variantManifestSHA256": "b" * 64,
         "dataset_dir": str(dataset_dir),
         "output_dir": str(run_root / "training/cortex"),
@@ -114,7 +115,10 @@ def _complete_checkpoint(
     checkpoint.mkdir(parents=True)
     _write_json(
         checkpoint / "adapter_config.json",
-        {"base_model_name_or_path": "Qwen/Qwen3-1.7B"},
+        {
+            "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+            "revision": "a" * 40,
+        },
     )
     _write_json(checkpoint / "trainer_state.json", {"global_step": step})
     for filename in (
@@ -134,9 +138,32 @@ def _complete_checkpoint(
             checkpoint
             / train_dpo.REFERENCE_ADAPTER_NAME
             / "adapter_config.json",
-            {"base_model_name_or_path": "Qwen/Qwen3-1.7B"},
+            {
+                "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+                "revision": "a" * 40,
+            },
         )
     return checkpoint
+
+
+@pytest.mark.parametrize("revision", (None, "main", "f" * 40))
+def test_preference_checkpoint_rejects_floating_or_wrong_base_revision(
+    tmp_path: Path,
+    revision: str | None,
+) -> None:
+    config, config_path, lineage_path = _fixture(tmp_path)
+    _bind_fresh(config, config_path)
+    checkpoint = _complete_checkpoint(
+        Path(str(config["output_dir"])) / "dpo",
+        5,
+    )
+    adapter_config_path = checkpoint / "adapter_config.json"
+    adapter_config = json.loads(adapter_config_path.read_text(encoding="utf-8"))
+    adapter_config["revision"] = revision
+    _write_json(adapter_config_path, adapter_config)
+
+    with pytest.raises(RuntimeError, match="base-model lineage drifted"):
+        train_dpo._record_preference_checkpoint(lineage_path, checkpoint)
 
 
 def _bind_fresh(

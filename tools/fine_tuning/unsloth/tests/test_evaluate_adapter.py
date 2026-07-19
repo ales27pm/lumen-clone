@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -314,6 +315,45 @@ def _candidate_row(
     return row
 
 
+def _checkpoint_contract_fixture(records: list[dict]) -> dict:
+    bindings = [
+        {
+            "caseIndex": index,
+            "evalID": record["evalID"],
+            "evaluationRecordSHA256": evaluate_adapter._canonical_sha256(
+                adapter_evaluation.upgrade_evaluation_record(record)
+            ),
+        }
+        for index, record in enumerate(records, start=1)
+    ]
+    unsigned = {
+        "schemaVersion": (
+            evaluate_adapter.EVALUATION_CHECKPOINT_CONTRACT_SCHEMA_VERSION
+        ),
+        "selectedRecordCount": len(records),
+        "selectedRecordOrderSHA256": evaluate_adapter._canonical_sha256(bindings),
+        "selectedRecordsSHA256": evaluate_adapter._canonical_sha256(
+            [adapter_evaluation.upgrade_evaluation_record(record) for record in records]
+        ),
+        "fixtureBinding": "exact",
+    }
+    return {
+        **unsigned,
+        "evaluationCheckpointContractSHA256": (
+            evaluate_adapter._canonical_sha256(unsigned)
+        ),
+    }
+
+
+def _rehash_checkpoint(checkpoint: dict) -> dict:
+    unsigned = dict(checkpoint)
+    unsigned.pop(evaluate_adapter.EVALUATION_CHECKPOINT_HASH_FIELD, None)
+    checkpoint[evaluate_adapter.EVALUATION_CHECKPOINT_HASH_FIELD] = (
+        evaluate_adapter._canonical_sha256(unsigned)
+    )
+    return checkpoint
+
+
 def test_load_evaluation_records_upgrades_and_hashes_frozen_suite(
     tmp_path: Path,
 ) -> None:
@@ -389,13 +429,30 @@ def test_load_evaluation_config_preserves_validated_strict_object(
     config = {
         "agent": "executor",
         "base_model_name": "local-base-model",
+        "baseModelID": "local-base-model",
         "baseModelRevision": "a" * 40,
         "baseModelIndexDigest": "b" * 64,
         "baseModelIndexReferencedShardNames": ["model.safetensors"],
         "baseModelIndexShardBindingSHA256": "c" * 64,
         "baseModelArtifactDigest": "d" * 64,
-        "baseModelWeightShards": ["model.safetensors"],
+            "baseModelWeightShards": ["model.safetensors"],
+            "baseModelGenerationConfigFile": {
+                "path": "generation_config.json",
+                "sizeBytes": 1,
+                "sha256": "1" * 64,
+                "huggingFaceBlobID": "2" * 40,
+            },
         "baseModelTokenizerDigest": "e" * 64,
+        "baseModelTokenizerFiles": [],
+        "baseModelTokenizerClosureSHA256": "f" * 64,
+        "baseModelTokenizerSnapshotPath": str(tmp_path / "tokenizer_snapshot"),
+            "baseModelTokenizerSnapshotVerification": {
+                "snapshotPath": str(tmp_path / "tokenizer_snapshot"),
+            },
+            "baseModelRuntimeSnapshotPath": str(tmp_path / "runtime_snapshot"),
+            "baseModelRuntimeSnapshotVerification": {
+                "snapshotPath": str(tmp_path / "runtime_snapshot"),
+            },
         "max_seq_length": 2048,
         "output_dir": str(tmp_path / "executor_adapter_output"),
         "merge_adapters_by_default": False,
@@ -414,13 +471,30 @@ def test_evaluation_config_validation_and_hash_share_one_snapshot(
     config = {
         "agent": "executor",
         "base_model_name": "local-base-model",
+        "baseModelID": "local-base-model",
         "baseModelRevision": "a" * 40,
         "baseModelIndexDigest": "b" * 64,
         "baseModelIndexReferencedShardNames": ["model.safetensors"],
         "baseModelIndexShardBindingSHA256": "c" * 64,
         "baseModelArtifactDigest": "d" * 64,
-        "baseModelWeightShards": ["model.safetensors"],
+            "baseModelWeightShards": ["model.safetensors"],
+            "baseModelGenerationConfigFile": {
+                "path": "generation_config.json",
+                "sizeBytes": 1,
+                "sha256": "1" * 64,
+                "huggingFaceBlobID": "2" * 40,
+            },
         "baseModelTokenizerDigest": "e" * 64,
+        "baseModelTokenizerFiles": [],
+        "baseModelTokenizerClosureSHA256": "f" * 64,
+        "baseModelTokenizerSnapshotPath": str(tmp_path / "tokenizer_snapshot"),
+            "baseModelTokenizerSnapshotVerification": {
+                "snapshotPath": str(tmp_path / "tokenizer_snapshot"),
+            },
+            "baseModelRuntimeSnapshotPath": str(tmp_path / "runtime_snapshot"),
+            "baseModelRuntimeSnapshotVerification": {
+                "snapshotPath": str(tmp_path / "runtime_snapshot"),
+            },
         "max_seq_length": 2048,
         "output_dir": str(tmp_path / "executor_adapter_output"),
         "merge_adapters_by_default": False,
@@ -2220,6 +2294,679 @@ def test_evaluate_records_self_hashes_outputs_and_round_trips(
         for attempt in row["generationAttempts"]:
             attempt_expected = attempt.pop("generationAttemptSHA256")
             assert attempt_expected == evaluate_adapter._canonical_sha256(attempt)
+
+
+def test_evaluate_records_commits_each_case_before_next_generation() -> None:
+    committed: list[str] = []
+
+    class CommitAwareTokenizer(_FakeTokenizer):
+        def decode(self, tokens, **kwargs):
+            assert len(committed) == len(self.template_kwargs) - 1
+            return super().decode(tokens, **kwargs)
+
+    tokenizer = CommitAwareTokenizer(
+        ['{"status":"one"}', '{"status":"two"}']
+    )
+    evaluate_adapter.evaluate_records(
+        [_record("eval-one"), _record("eval-two")],
+        agent="executor",
+        model=_FakeModel(),
+        tokenizer=tokenizer,
+        max_seq_length=64,
+        max_new_tokens=8,
+        evaluation_module=adapter_evaluation,
+        torch_module=SimpleNamespace(inference_mode=nullcontext),
+        on_case_completed=lambda row: committed.append(str(row["evalID"])),
+    )
+
+    assert committed == ["eval-one", "eval-two"]
+
+
+def test_evaluation_checkpoint_round_trips_exact_prefix_and_complete_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = tmp_path / "evaluation"
+    output_dir.mkdir(mode=0o700)
+    checkpoint_path = output_dir / evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME
+    records = [_record("eval-one"), _record("eval-two")]
+    contract = _checkpoint_contract_fixture(records)
+    runtime_evidence = {"fixture": "runtime"}
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_verified_checkpoint_runtime_evidence",
+        lambda value, **_kwargs: dict(value),
+    )
+    first_record = adapter_evaluation.upgrade_evaluation_record(records[0])
+    first = evaluate_adapter._checkpoint_entry(
+        case_index=1,
+        record=first_record,
+        candidate=_candidate_row(['{"status":"one"}'], eval_id="eval-one"),
+    )
+    checkpoint = evaluate_adapter._write_evaluation_checkpoint(
+        checkpoint_path,
+        contract=contract,
+        runtime_evidence=runtime_evidence,
+        entries=(first,),
+    )
+
+    assert checkpoint["status"] == "in_progress"
+    assert checkpoint_path.stat().st_mode & 0o777 == 0o600
+    recovered = evaluate_adapter._verify_evaluation_checkpoint(
+        checkpoint_path,
+        expected_contract=contract,
+        selected_records=records,
+        agent="executor",
+        cfg={},
+        evaluation_module=adapter_evaluation,
+        tool_contracts=None,
+    )
+    assert list(recovered["outputs"]) == ["eval-one"]
+    assert recovered["outputRows"][0]["generationAttempts"][0]["rawOutput"] == (
+        '{"status":"one"}'
+    )
+
+    second_record = adapter_evaluation.upgrade_evaluation_record(records[1])
+    second = evaluate_adapter._checkpoint_entry(
+        case_index=2,
+        record=second_record,
+        candidate=_candidate_row(['{"status":"two"}'], eval_id="eval-two"),
+    )
+    checkpoint = evaluate_adapter._write_evaluation_checkpoint(
+        checkpoint_path,
+        contract=contract,
+        runtime_evidence=runtime_evidence,
+        entries=(first, second),
+    )
+    assert checkpoint["status"] == "ready_for_finalization"
+    recovered = evaluate_adapter._verify_evaluation_checkpoint(
+        checkpoint_path,
+        expected_contract=contract,
+        selected_records=records,
+        agent="executor",
+        cfg={},
+        evaluation_module=adapter_evaluation,
+        tool_contracts=None,
+    )
+    assert list(recovered["outputs"]) == ["eval-one", "eval-two"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("self_hash", "contract", "non_prefix", "duplicate", "rehashed_candidate"),
+)
+def test_evaluation_checkpoint_rejects_tamper_mismatch_and_non_prefix_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    output_dir = tmp_path / mutation
+    output_dir.mkdir(mode=0o700)
+    checkpoint_path = output_dir / evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME
+    records = [_record("eval-one"), _record("eval-two")]
+    contract = _checkpoint_contract_fixture(records)
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_verified_checkpoint_runtime_evidence",
+        lambda value, **_kwargs: dict(value),
+    )
+    first_record = adapter_evaluation.upgrade_evaluation_record(records[0])
+    second_record = adapter_evaluation.upgrade_evaluation_record(records[1])
+    first = evaluate_adapter._checkpoint_entry(
+        case_index=1,
+        record=first_record,
+        candidate=_candidate_row(['{"status":"one"}'], eval_id="eval-one"),
+    )
+    entries = [first]
+    expected_contract = contract
+    if mutation == "non_prefix":
+        entries = [
+            evaluate_adapter._checkpoint_entry(
+                case_index=1,
+                record=second_record,
+                candidate=_candidate_row(
+                    ['{"status":"two"}'],
+                    eval_id="eval-two",
+                ),
+            )
+        ]
+    elif mutation == "duplicate":
+        entries.append(
+            evaluate_adapter._checkpoint_entry(
+                case_index=2,
+                record=first_record,
+                candidate=_candidate_row(
+                    ['{"status":"one"}'],
+                    eval_id="eval-one",
+                ),
+            )
+        )
+    elif mutation == "rehashed_candidate":
+        tampered = json.loads(json.dumps(first))
+        candidate = tampered["candidateRecord"]
+        attempt = candidate["generationAttempts"][0]
+        attempt["rawOutput"] = '{"status":"tampered"}'
+        attempt_unsigned = dict(attempt)
+        attempt_unsigned.pop("generationAttemptSHA256")
+        attempt["generationAttemptSHA256"] = evaluate_adapter._canonical_sha256(
+            attempt_unsigned
+        )
+        candidate_unsigned = dict(candidate)
+        candidate_unsigned.pop("candidateRecordSHA256")
+        candidate["candidateRecordSHA256"] = evaluate_adapter._canonical_sha256(
+            candidate_unsigned
+        )
+        tampered["candidateRecordSHA256"] = candidate[
+            "candidateRecordSHA256"
+        ]
+        entry_unsigned = dict(tampered)
+        entry_unsigned.pop("evaluationCheckpointEntrySHA256")
+        tampered["evaluationCheckpointEntrySHA256"] = (
+            evaluate_adapter._canonical_sha256(entry_unsigned)
+        )
+        entries = [tampered]
+    evaluate_adapter._write_evaluation_checkpoint(
+        checkpoint_path,
+        contract=contract,
+        runtime_evidence={"fixture": "runtime"},
+        entries=entries,
+    )
+    if mutation == "self_hash":
+        checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        checkpoint["status"] = "tampered"
+        checkpoint_path.write_text(json.dumps(checkpoint) + "\n", encoding="utf-8")
+    elif mutation == "contract":
+        expected_contract = {**contract, "fixtureBinding": "different"}
+
+    with pytest.raises(ValueError, match="checkpoint|prefix|schema|generation|candidate"):
+        evaluate_adapter._verify_evaluation_checkpoint(
+            checkpoint_path,
+            expected_contract=expected_contract,
+            selected_records=records,
+            agent="executor",
+            cfg={},
+            evaluation_module=adapter_evaluation,
+            tool_contracts=None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("published_count", "orphan_target"),
+    (
+        (0, None),
+        (1, None),
+        (2, None),
+        (3, None),
+        (0, "candidate_outputs.jsonl"),
+        (1, "evaluation_report.json"),
+        (2, "evaluation_run_manifest.json"),
+    ),
+    ids=(
+        "before-publication",
+        "after-candidate",
+        "after-report",
+        "after-run-manifest-before-cleanup",
+        "during-candidate-publication",
+        "during-report-publication",
+        "during-run-manifest-publication",
+    ),
+)
+def test_complete_evaluation_checkpoint_finalizes_without_model_reload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    published_count: int,
+    orphan_target: str | None,
+) -> None:
+    output_dir = tmp_path / "evaluation"
+    output_dir.mkdir(mode=0o700)
+    checkpoint_path = output_dir / evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME
+    records = [_record("eval-one")]
+    contract = _checkpoint_contract_fixture(records)
+    runtime_evidence = {"fixture": "runtime"}
+    row = _candidate_row(['{"status":"ready"}'])
+    entry = evaluate_adapter._checkpoint_entry(
+        case_index=1,
+        record=adapter_evaluation.upgrade_evaluation_record(records[0]),
+        candidate=row,
+    )
+    evaluate_adapter._write_evaluation_checkpoint(
+        checkpoint_path,
+        contract=contract,
+        runtime_evidence=runtime_evidence,
+        entries=(entry,),
+    )
+    publication_order = (
+        "candidate_outputs.jsonl",
+        "evaluation_report.json",
+        "evaluation_run_manifest.json",
+    )
+    for name in publication_order[:published_count]:
+        partial = output_dir / name
+        partial.write_text("interrupted publication\n", encoding="utf-8")
+        partial.chmod(0o600)
+    if orphan_target is not None:
+        orphan = output_dir / f".{orphan_target}.abcdefgh.tmp"
+        orphan.write_text("untrusted interrupted bytes\n", encoding="utf-8")
+        orphan.chmod(0o600)
+    cfg = {
+        "agent": "executor",
+        "adapter_output_dir": str(tmp_path / "adapter"),
+        "output_dir": str(tmp_path / "training"),
+        "dataset_dir": str(tmp_path / "dataset"),
+        "variant": "optimized",
+        "max_seq_length": 64,
+        "seed": 7,
+        "chatTemplateContract": {"fixture": True},
+        "behaviorManifestFileSHA256": "c" * 64,
+    }
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_load_evaluation_config_snapshot",
+        lambda _path: (dict(cfg), "1" * 64),
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "verify_chat_template_contract",
+        lambda *_args, **_kwargs: "2" * 64,
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "load_evaluation_records",
+        lambda *_args, **_kwargs: (records, "3" * 64),
+    )
+    monkeypatch.setattr(evaluate_adapter, "_file_sha256", lambda _path: "4" * 64)
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_verified_evaluation_execution_plan",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_load_behavior_contract_snapshot",
+        lambda _path: ({}, set(), "5" * 64, "c" * 64),
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "validate_scoring_contracts",
+        lambda *_args, **_kwargs: None,
+    )
+    finalized = {
+        "artifact": {"adapterSHA256": "6" * 64},
+        "variantManifestSHA256": "7" * 64,
+    }
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "load_finalized_manifest",
+        lambda *_args, **_kwargs: finalized,
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_verified_release_bake_lineage",
+        lambda _cfg: {"adapterSHA256": "6" * 64},
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_evaluation_checkpoint_contract",
+        lambda **_kwargs: contract,
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_verified_checkpoint_runtime_evidence",
+        lambda value, **_kwargs: dict(value),
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "load_inference_model",
+        lambda *_args, **_kwargs: pytest.fail(
+            "a complete checkpoint must not reload the model"
+        ),
+    )
+    report = {
+        "reportSHA256": "8" * 64,
+        "candidateOutputsSHA256": "9" * 64,
+        "weightedScore": 1.0,
+        "criticalFailureCount": 0,
+        "evidenceComplete": True,
+        "caseCount": 1,
+        "passedCaseCount": 1,
+    }
+    monkeypatch.setattr(
+        adapter_evaluation,
+        "score_evaluation_suite",
+        lambda *_args, **_kwargs: report,
+    )
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_evaluation_report_scope_valid",
+        lambda *_args, **_kwargs: True,
+    )
+    args = SimpleNamespace(
+        config=str(tmp_path / "config.json"),
+        adapter_dir=None,
+        finalized_variant_manifest=None,
+        eval_jsonl=None,
+        behavior_manifest=str(tmp_path / "behavior.json"),
+        output_dir=str(output_dir),
+        max_examples=None,
+        max_new_tokens=8,
+        overwrite=False,
+        verify_checkpoint_only=False,
+    )
+
+    assert evaluate_adapter.run(args) == 0
+    assert not checkpoint_path.exists()
+    assert {entry.name for entry in output_dir.iterdir()} == {
+        "candidate_outputs.jsonl",
+        "evaluation_report.json",
+        "evaluation_run_manifest.json",
+    }
+
+
+def test_verified_incomplete_checkpoint_discards_checkpoint_write_orphan(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = tmp_path / "evaluation"
+    output_dir.mkdir(mode=0o700)
+    checkpoint_path = output_dir / evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME
+    records = [_record("eval-one"), _record("eval-two")]
+    contract = _checkpoint_contract_fixture(records)
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_verified_checkpoint_runtime_evidence",
+        lambda value, **_kwargs: dict(value),
+    )
+    entry = evaluate_adapter._checkpoint_entry(
+        case_index=1,
+        record=adapter_evaluation.upgrade_evaluation_record(records[0]),
+        candidate=_candidate_row(['{"status":"one"}'], eval_id="eval-one"),
+    )
+    evaluate_adapter._write_evaluation_checkpoint(
+        checkpoint_path,
+        contract=contract,
+        runtime_evidence={"fixture": "runtime"},
+        entries=(entry,),
+    )
+    checkpoint_bytes = checkpoint_path.read_bytes()
+    orphan = output_dir / ".evaluation_checkpoint.json.abcdefgh.tmp"
+    orphan.write_bytes(b"untrusted interrupted checkpoint bytes\n")
+    orphan.chmod(0o600)
+
+    recovered = evaluate_adapter._recover_evaluation_checkpoint_directory(
+        output_dir,
+        expected_contract=contract,
+        selected_records=records,
+        agent="executor",
+        cfg={},
+        evaluation_module=adapter_evaluation,
+        tool_contracts=None,
+    )
+
+    assert len(recovered["entries"]) == 1
+    assert not orphan.exists()
+    assert checkpoint_path.read_bytes() == checkpoint_bytes
+
+
+def test_private_evaluation_directory_creation_durably_syncs_every_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_root = tmp_path / "run"
+    run_root.mkdir(mode=0o700)
+    output_dir = run_root / "evaluation" / "cortex"
+    observed_syncs: list[Path] = []
+    original_fsync = evaluate_adapter._fsync_directory_path
+
+    def record_fsync(path: Path) -> None:
+        observed_syncs.append(path)
+        original_fsync(path)
+
+    monkeypatch.setattr(
+        evaluate_adapter,
+        "_fsync_directory_path",
+        record_fsync,
+    )
+
+    evaluate_adapter._require_private_evaluation_directory(
+        output_dir,
+        create=True,
+    )
+
+    assert observed_syncs == [
+        run_root / "evaluation",
+        run_root,
+        output_dir,
+        run_root / "evaluation",
+    ]
+    assert stat.S_IMODE((run_root / "evaluation").stat().st_mode) == 0o700
+    assert stat.S_IMODE(output_dir.stat().st_mode) == 0o700
+
+
+@pytest.mark.parametrize("unsafe_kind", ("symlink", "wrong_mode", "wrong_owner"))
+def test_atomic_write_orphan_cleanup_rejects_unsafe_matching_entries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unsafe_kind: str,
+) -> None:
+    output_dir = tmp_path / "evaluation"
+    output_dir.mkdir(mode=0o700)
+    orphan = output_dir / ".candidate_outputs.jsonl.abcdefgh.tmp"
+    outside = tmp_path / "outside"
+    outside.write_text("keep\n", encoding="utf-8")
+    outside.chmod(0o600)
+    if unsafe_kind == "symlink":
+        orphan.symlink_to(outside)
+    else:
+        orphan.write_text("untrusted\n", encoding="utf-8")
+        orphan.chmod(0o644 if unsafe_kind == "wrong_mode" else 0o600)
+    if unsafe_kind == "wrong_owner":
+        monkeypatch.setattr(
+            evaluate_adapter,
+            "_require_private_evaluation_directory",
+            lambda *_args, **_kwargs: None,
+        )
+        monkeypatch.setattr(
+            evaluate_adapter.os,
+            "geteuid",
+            lambda: orphan.stat(follow_symlinks=False).st_uid + 1,
+        )
+
+    with pytest.raises(ValueError, match="atomic-write orphan"):
+        evaluate_adapter._remove_verified_atomic_write_orphans(output_dir)
+
+    assert orphan.exists() or orphan.is_symlink()
+    assert outside.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_atomic_write_orphan_cleanup_leaves_unrelated_extra_to_fail_closed(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "evaluation"
+    output_dir.mkdir(mode=0o700)
+    checkpoint = output_dir / evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME
+    checkpoint.write_text("{}\n", encoding="utf-8")
+    checkpoint.chmod(0o600)
+    unrelated = output_dir / ".candidate_outputs.jsonl.not_writer_temp.tmp"
+    unrelated.write_text("untrusted\n", encoding="utf-8")
+    unrelated.chmod(0o600)
+
+    assert evaluate_adapter._remove_verified_atomic_write_orphans(output_dir) == ()
+    assert unrelated.exists()
+    with pytest.raises(ValueError, match="unrecognized"):
+        evaluate_adapter._require_recoverable_checkpoint_directory(
+            output_dir,
+            completed_case_count=0,
+            selected_case_count=1,
+        )
+
+
+def test_atomic_write_orphan_without_checkpoint_is_unrecognized(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "evaluation"
+    output_dir.mkdir(mode=0o700)
+    orphan = output_dir / ".evaluation_checkpoint.json.abcdefgh.tmp"
+    orphan.write_text("untrusted\n", encoding="utf-8")
+    orphan.chmod(0o600)
+
+    with pytest.raises(ValueError, match="unrecognized"):
+        evaluate_adapter._verified_evaluation_directory_entries(
+            output_dir,
+            allowed_names={
+                evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME,
+                *evaluate_adapter.EVALUATION_FINAL_FILENAMES,
+            },
+            required_names=set(),
+        )
+
+    assert orphan.exists()
+
+
+def test_invalid_checkpoint_does_not_authorize_atomic_temp_cleanup(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "evaluation"
+    output_dir.mkdir(mode=0o700)
+    checkpoint = output_dir / evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME
+    checkpoint.write_text("{}\n", encoding="utf-8")
+    checkpoint.chmod(0o600)
+    orphan = output_dir / ".evaluation_report.json.abcdefgh.tmp"
+    orphan.write_text("untrusted\n", encoding="utf-8")
+    orphan.chmod(0o600)
+
+    with pytest.raises(ValueError, match="checkpoint"):
+        evaluate_adapter._recover_evaluation_checkpoint_directory(
+            output_dir,
+            expected_contract={},
+            selected_records=[],
+            agent="executor",
+            cfg={},
+            evaluation_module=adapter_evaluation,
+            tool_contracts=None,
+        )
+
+    assert orphan.exists()
+
+
+def test_recoverable_checkpoint_directory_accepts_only_complete_partial_finals(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "evaluation"
+    output_dir.mkdir(mode=0o700)
+    checkpoint = output_dir / evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME
+    checkpoint.write_text("{}\n", encoding="utf-8")
+    checkpoint.chmod(0o600)
+    evaluate_adapter._require_recoverable_checkpoint_directory(
+        output_dir,
+        completed_case_count=0,
+        selected_case_count=1,
+    )
+
+    extra = output_dir / "candidate_outputs.jsonl"
+    extra.write_text("{}\n", encoding="utf-8")
+    extra.chmod(0o600)
+    with pytest.raises(ValueError, match="complete checkpoint"):
+        evaluate_adapter._require_recoverable_checkpoint_directory(
+            output_dir,
+            completed_case_count=0,
+            selected_case_count=1,
+        )
+    evaluate_adapter._require_recoverable_checkpoint_directory(
+        output_dir,
+        completed_case_count=1,
+        selected_case_count=1,
+    )
+
+    unknown = output_dir / "unknown.tmp"
+    unknown.write_text("x", encoding="utf-8")
+    unknown.chmod(0o600)
+    with pytest.raises(ValueError, match="unrecognized"):
+        evaluate_adapter._require_recoverable_checkpoint_directory(
+            output_dir,
+            completed_case_count=1,
+            selected_case_count=1,
+        )
+
+
+def test_evaluation_checkpoint_contract_binds_all_resume_inputs(
+    tmp_path: Path,
+) -> None:
+    evaluator_path = tmp_path / "evaluate_adapter.py"
+    evaluator_path.write_text("trusted evaluator\n", encoding="utf-8")
+    output_dir = tmp_path / "evaluation"
+    records = [_record("eval-one"), _record("eval-two")]
+    generation = {
+        "doSample": False,
+        "maxNewTokens": 8,
+        "seed": 7,
+    }
+    plan = ubuntu_pipeline.execution_plan(
+        evaluation_scope="full",
+        evaluation_max_examples=None,
+        gguf_requested=False,
+    )
+    base = {
+        "agent": "executor",
+        "variant": "optimized",
+        "config_path": tmp_path / "config.json",
+        "config_file_sha256": "1" * 64,
+        "evaluator_path": evaluator_path,
+        "adapter_dir": tmp_path / "adapter",
+        "adapter_sha256": "2" * 64,
+        "finalized_path": tmp_path / "finalized.json",
+        "finalized_sha256": "3" * 64,
+        "evaluation_path": tmp_path / "eval.jsonl",
+        "evaluation_file_sha256": "4" * 64,
+        "evaluation_sha256": "5" * 64,
+        "behavior_manifest_path": tmp_path / "behavior.json",
+        "behavior_manifest_file_sha256": "6" * 64,
+        "behavior_manifest_sha256": "7" * 64,
+        "output_dir": output_dir,
+        "evaluation_plan": plan,
+        "max_examples": None,
+        "frozen_case_count": len(records),
+        "selected_records": records,
+        "evaluation_module": adapter_evaluation,
+        "generation": generation,
+    }
+    contract = evaluate_adapter._evaluation_checkpoint_contract(**base)
+    unsigned = dict(contract)
+    declared = unsigned.pop("evaluationCheckpointContractSHA256")
+    assert declared == evaluate_adapter._canonical_sha256(unsigned)
+
+    mutations = (
+        {"config_file_sha256": "a" * 64},
+        {"adapter_sha256": "b" * 64},
+        {"evaluation_file_sha256": "c" * 64},
+        {"evaluation_sha256": "d" * 64},
+        {"behavior_manifest_file_sha256": "e" * 64},
+        {"behavior_manifest_sha256": "f" * 64},
+        {"selected_records": list(reversed(records))},
+        {"generation": {**generation, "maxNewTokens": 9}},
+        {
+            "evaluation_plan": ubuntu_pipeline.execution_plan(
+                evaluation_scope="smoke",
+                evaluation_max_examples=1,
+                gguf_requested=False,
+            ),
+            "max_examples": 1,
+        },
+    )
+    for mutation in mutations:
+        changed = evaluate_adapter._evaluation_checkpoint_contract(
+            **{**base, **mutation}
+        )
+        assert (
+            changed["evaluationCheckpointContractSHA256"]
+            != contract["evaluationCheckpointContractSHA256"]
+        )
+
+    evaluator_path.write_text("mutated evaluator\n", encoding="utf-8")
+    changed = evaluate_adapter._evaluation_checkpoint_contract(**base)
+    assert (
+        changed["evaluationCheckpointContractSHA256"]
+        != contract["evaluationCheckpointContractSHA256"]
+    )
 
 
 def test_strict_json_retry_is_bounded_raw_and_evidenced() -> None:

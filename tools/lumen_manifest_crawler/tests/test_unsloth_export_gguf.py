@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -23,9 +24,25 @@ def _load_export_module() -> ModuleType:
 
 
 def _write_config(tmp_path: Path, *, agent: str = "cortex", merge_by_default: bool = False) -> Path:
+    tokenizer_files = [
+        {
+            "path": filename,
+            "sizeBytes": 1,
+            "sha256": "e" * 64,
+            "huggingFaceBlobID": "1" * 40,
+        }
+        for filename in (
+            "config.json",
+            "merges.txt",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "vocab.json",
+        )
+    ]
     config = {
         "agent": agent,
         "base_model_name": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
+        "baseModelID": "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit",
         "baseModelRevision": "a" * 40,
         "baseModelIndexDigest": "b" * 64,
         "baseModelIndexReferencedShardNames": ["model.safetensors"],
@@ -34,7 +51,22 @@ def _write_config(tmp_path: Path, *, agent: str = "cortex", merge_by_default: bo
         "baseModelWeightShards": [
             {"filename": "model.safetensors", "size": 1, "sha256": "d" * 64}
         ],
+        "baseModelGenerationConfigFile": {
+            "path": "generation_config.json",
+            "sizeBytes": 1,
+            "sha256": "9" * 64,
+            "huggingFaceBlobID": "8" * 40,
+        },
         "baseModelTokenizerDigest": "e" * 64,
+        "baseModelTokenizerFiles": tokenizer_files,
+        "baseModelTokenizerSnapshotPath": str(tmp_path / "tokenizer_snapshot"),
+        "baseModelTokenizerSnapshotVerification": {
+            "snapshotPath": str(tmp_path / "tokenizer_snapshot"),
+        },
+        "baseModelRuntimeSnapshotPath": str(tmp_path / "runtime_snapshot"),
+        "baseModelRuntimeSnapshotVerification": {
+            "snapshotPath": str(tmp_path / "runtime_snapshot"),
+        },
         "max_seq_length": 4096,
         "load_in_4bit": True,
         "output_dir": f"{tmp_path}/models/lora/{agent}",
@@ -44,6 +76,18 @@ def _write_config(tmp_path: Path, *, agent: str = "cortex", merge_by_default: bo
         "release_bake_enabled_by_default": False,
         "gguf_output_dir": f"{tmp_path}/models/gguf_release_bake/{agent}_merged_gguf",
     }
+    config["baseModelTokenizerClosureSHA256"] = hashlib.sha256(
+        json.dumps(
+            {
+                "schemaVersion": "lumen.base-model-tokenizer-closure/1.0.0",
+                "baseModelID": config["baseModelID"],
+                "baseModelRevision": config["baseModelRevision"],
+                "files": tokenizer_files,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     path = tmp_path / f"{agent}.json"
     path.write_text(json.dumps(config), encoding="utf-8")
     return path
@@ -80,6 +124,20 @@ def test_load_config_rejects_legacy_config_without_base_lineage(tmp_path: Path) 
     config_path.write_text(json.dumps(config), encoding="utf-8")
 
     with pytest.raises(ValueError, match="baseModelIndexDigest"):
+        export_gguf.load_config(config_path)
+
+
+def test_load_config_rejects_split_base_model_identity(tmp_path: Path) -> None:
+    export_gguf = _load_export_module()
+    config_path = _write_config(tmp_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["baseModelID"] = "example/different-model"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="baseModelID must exactly match base_model_name",
+    ):
         export_gguf.load_config(config_path)
 
 
@@ -162,6 +220,35 @@ def test_skip_existing_requires_matching_current_lineage(
         return lineage
 
     monkeypatch.setattr(export_gguf, "_verified_release_bake_lineage", verify_lineage)
+    runtime_path = Path(cfg["baseModelRuntimeSnapshotPath"])
+    runtime_path.mkdir()
+    runtime_verification = cfg["baseModelRuntimeSnapshotVerification"]
+    runtime_evidence = {
+        "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": cfg["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": cfg[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelGenerationConfigFile": cfg["baseModelGenerationConfigFile"],
+        "baseModelTokenizerSnapshotPath": cfg["baseModelTokenizerSnapshotPath"],
+        "baseModelTokenizerSnapshotVerification": cfg[
+            "baseModelTokenizerSnapshotVerification"
+        ],
+        "baseModelRuntimeSnapshotPath": str(runtime_path),
+        "baseModelRuntimeSnapshotVerification": runtime_verification,
+        "runtimeModelBinding": {"binding": "model"},
+        "runtimeTokenizerBinding": {"binding": "tokenizer"},
+    }
+    monkeypatch.setattr(
+        export_gguf,
+        "_verified_private_runtime_model_snapshot",
+        lambda _cfg: (runtime_path, runtime_verification),
+    )
+    monkeypatch.setattr(
+        export_gguf,
+        "_runtime_tokenizer_evidence",
+        lambda _cfg, **_kwargs: runtime_evidence,
+    )
     report = {
         "agent": "cortex",
         "mode": "optional_release_bake",
@@ -173,6 +260,7 @@ def test_skip_existing_requires_matching_current_lineage(
         "size_bytes": target.stat().st_size,
         "sha256": export_gguf.sha256sum(target),
         "base_model_name": cfg["base_model_name"],
+        **runtime_evidence,
         **lineage,
     }
     (output_dir / "gguf_release_bake_report.json").write_text(
@@ -218,7 +306,9 @@ def test_release_bake_loads_pinned_base_before_verified_adapter() -> None:
         repo_root / "tools" / "fine_tuning" / "unsloth" / "export_gguf.py"
     ).read_text(encoding="utf-8")
 
-    assert 'model_name=cfg["base_model_name"]' in source
+    assert "model_name=str(runtime_tokenizer_snapshot_path)" in source
+    assert "tokenizer_name=str(runtime_tokenizer_snapshot_path)" in source
+    assert "local_files_only=True" in source
     assert 'revision=cfg["baseModelRevision"]' in source
     assert "PeftModel.from_pretrained(model, str(adapter_dir), is_trainable=False)" in source
 

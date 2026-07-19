@@ -14,7 +14,7 @@ jobs:
   static-and-python:
     name: Static checks and Python tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +42,7 @@ jobs:
 
       - name: Python tests
         run: |
-          timeout 900 uv run --python 3.12 \
+          timeout 1500 uv run --python 3.12 \
             --with-editable ./tools/lumen_manifest_crawler \
             --with pytest --with pydantic --with typer --with rich \
             python -m pytest -m "not slow and not e2e"

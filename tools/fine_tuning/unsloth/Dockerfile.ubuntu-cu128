@@ -174,7 +174,7 @@ from pathlib import Path
 
 import lumen_manifest_crawler
 from lumen_manifest_crawler.dataset import chat_template_contract
-from tools.fine_tuning.unsloth import ubuntu_pipeline
+from tools.fine_tuning.unsloth import runtime_binding_smoke_gate, ubuntu_pipeline
 
 source_root = Path("/opt/lumen/source").resolve()
 assert Path(lumen_manifest_crawler.__file__).resolve() == (
@@ -184,6 +184,7 @@ assert Path(chat_template_contract.__file__).resolve().is_relative_to(
     source_root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
 )
 assert Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)
+assert Path(runtime_binding_smoke_gate.__file__).resolve().is_relative_to(source_root)
 PY
 
 RUN python -I - <<'PY'
@@ -194,7 +195,7 @@ source_root = Path("/opt/lumen/source").resolve()
 sys.path.insert(0, str(source_root))
 import lumen_manifest_crawler
 from lumen_manifest_crawler.dataset import chat_template_contract
-from tools.fine_tuning.unsloth import ubuntu_pipeline
+from tools.fine_tuning.unsloth import runtime_binding_smoke_gate, ubuntu_pipeline
 
 assert Path(lumen_manifest_crawler.__file__).resolve() == (
     source_root / "lumen_manifest_crawler/__init__.py"
@@ -203,6 +204,7 @@ assert Path(chat_template_contract.__file__).resolve().is_relative_to(
     source_root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
 )
 assert Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)
+assert Path(runtime_binding_smoke_gate.__file__).resolve().is_relative_to(source_root)
 PY
 
 RUN python -I \

@@ -314,13 +314,17 @@ sys.modules.update({{"gradio": gradio, "spaces": spaces, "huggingface_hub": hub}
 assert Path("adapter_artifact.py").exists() is False
 assert Path({repository_root!r}) not in [Path(value or ".").resolve() for value in sys.path]
 import app
-from lumen_training.adapter_artifact import write_adapter_artifact_manifest
+from lumen_training.adapter_artifact import (
+    write_adapter_artifact_manifest,
+    write_portable_adapter_model_card,
+)
 
 adapter_dir = Path("synthetic_adapter")
 adapter_dir.mkdir()
 (adapter_dir / "adapter_config.json").write_text(json.dumps({{
     "peft_type": "LORA",
     "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+    "revision": "2" * 40,
     "target_modules": ["q_proj"],
 }}), encoding="utf-8")
 header = json.dumps({{
@@ -336,6 +340,11 @@ header += b" " * (-len(header) % 8)
 )
 (adapter_dir / "tokenizer.json").write_text("{{}}", encoding="utf-8")
 (adapter_dir / "tokenizer_config.json").write_text("{{}}", encoding="utf-8")
+write_portable_adapter_model_card(
+    adapter_dir,
+    base_model_id="Qwen/Qwen3-1.7B",
+    base_model_revision="2" * 40,
+)
 artifact = write_adapter_artifact_manifest(adapter_dir, training_phase="sft")
 
 runtime = {{

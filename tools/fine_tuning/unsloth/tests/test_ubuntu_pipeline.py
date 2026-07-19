@@ -70,6 +70,301 @@ def _source_integrity_fixture() -> dict:
     return ubuntu_pipeline.source_integrity_fields(record)
 
 
+def _base_model_tokenizer_lineage_fixture() -> dict[str, Any]:
+    return {
+        "baseModelID": adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        "baseModelRevision": adapter_evaluation.DEFAULT_BASE_MODEL_REVISION,
+        "baseModelTokenizerFiles": [
+            dict(item)
+            for item in adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_FILES
+        ],
+        "baseModelTokenizerDigest": (
+            adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_DIGEST
+        ),
+        "baseModelTokenizerClosureSHA256": (
+            adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+        ),
+    }
+
+
+def _runtime_snapshot_lineage_fixture() -> dict[str, Any]:
+    tokenizer_snapshot_path = "/tmp/lumen-test-tokenizer-snapshot"
+    runtime_snapshot_path = "/tmp/lumen-test-runtime-snapshot"
+    return {
+        "baseModelTokenizerSnapshotPath": tokenizer_snapshot_path,
+        "baseModelTokenizerSnapshotVerification": {
+            "schemaVersion": "test.private-tokenizer-snapshot/1.0.0",
+            "snapshotPath": tokenizer_snapshot_path,
+            "snapshotVerificationSHA256": "a" * 64,
+        },
+        "baseModelGenerationConfigFile": {
+            "path": "generation_config.json",
+            "sizeBytes": 1,
+            "sha256": "b" * 64,
+            "huggingFaceBlobID": "c" * 40,
+        },
+        "baseModelRuntimeSnapshotPath": runtime_snapshot_path,
+        "baseModelRuntimeSnapshotVerification": {
+            "schemaVersion": "test.private-runtime-snapshot/1.0.0",
+            "snapshotPath": runtime_snapshot_path,
+            "snapshotVerificationSHA256": "d" * 64,
+        },
+    }
+
+
+def _summary_base_model_lineage_fixture() -> dict[str, Any]:
+    return {
+        **_base_model_tokenizer_lineage_fixture(),
+        **_runtime_snapshot_lineage_fixture(),
+        "runManifestSHA256": "e" * 64,
+    }
+
+
+def _publication_base_model_lineage_fixture() -> dict[str, Any]:
+    lineage = _summary_base_model_lineage_fixture()
+    lineage.pop("baseModelTokenizerFiles")
+    return lineage
+
+
+def _phase_runtime_evidence_fixture(
+    digest_character: str = "a",
+) -> dict[str, str]:
+    assert digest_character in "0123456789abcdef"
+    evidence = {
+        field: digest_character * 64
+        for field in ubuntu_pipeline.PHASE_RUNTIME_EVIDENCE_FIELDS
+    }
+    evidence.update(
+        {
+            "runtimeModelBindingSHA256": "a" * 64,
+            "runtimeTokenizerBindingSHA256": "a" * 64,
+            "baseModelTokenizerSnapshotVerificationSHA256": "a" * 64,
+            "baseModelRuntimeSnapshotVerificationSHA256": "a" * 64,
+        }
+    )
+    return evidence
+
+
+def _write_phase_report_fixture(
+    run_root: Path,
+    agent: str,
+    *,
+    preference: bool,
+    digest_character: str,
+) -> dict[str, str]:
+    path = (
+        run_root / "training" / agent / "dpo" / "dpo_report.json"
+        if preference
+        else run_root / "training" / agent / "training_report.json"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ubuntu_pipeline.write_object(
+        path,
+        {"fixture": "preference" if preference else "sft"},
+    )
+    return {
+        **_phase_runtime_evidence_fixture(digest_character),
+        "report": str(path),
+        "trainingReportFileSHA256": ubuntu_pipeline.file_sha256(path),
+    }
+
+
+def _write_runtime_binding_smoke_summary_fixture(
+    run_root: Path,
+    agents: tuple[str, ...] = ("cortex",),
+) -> dict[str, Any]:
+    report_path = run_root / "training" / "runtime_binding_smoke.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    gate_digest = "c" * 64
+    ubuntu_pipeline.write_object(
+        report_path,
+        {
+            "schemaVersion": "lumen.runtime-binding-smoke-gate/1.0.0",
+            "status": "passed",
+            "runtimeBindingSmokeGateSHA256": gate_digest,
+        },
+    )
+    return {
+        "runtimeBindingSmokeReport": str(report_path),
+        "runtimeBindingSmokeReportFileSHA256": ubuntu_pipeline.file_sha256(
+            report_path
+        ),
+        "runtimeBindingSmokeGateSHA256": gate_digest,
+        "runtimeBindingSmokeContractEvidence": [
+            {
+                "runtimeLoadContractSHA256": "d" * 64,
+                "agents": list(agents),
+                "representativeAgent": agents[0],
+                "runtimeBindingSmokeSHA256": "e" * 64,
+                "runtimeModelBindingSHA256": "a" * 64,
+                "runtimeTokenizerBindingSHA256": "a" * 64,
+            }
+        ],
+        "runtimeBindingSmokeBindingsByAgent": {
+            agent: {
+                "runtimeModelBindingSHA256": "a" * 64,
+                "runtimeTokenizerBindingSHA256": "a" * 64,
+            }
+            for agent in agents
+        },
+    }
+
+
+def _mock_private_base_model_snapshot_preparation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep prepare-run tests tiny while preserving exact path propagation."""
+
+    from tools.fine_tuning.unsloth import training_lineage
+
+    original_validate_variant = ubuntu_pipeline.validate_variant
+    original_verify_manifest = ubuntu_pipeline._verify_manifest_integrity
+    cache_snapshot = tmp_path / "tiny-hf-cache-snapshot"
+    cache_snapshot.mkdir()
+
+    def validate_variant_with_current_tokenizer_contract(
+        *args: Any,
+        **kwargs: Any,
+    ) -> tuple[dict[str, Any], dict[str, Any], Path]:
+        config, manifest, variant_root = original_validate_variant(*args, **kwargs)
+        current = _base_model_tokenizer_lineage_fixture()
+        return (
+            {**config, **current},
+            {
+                **manifest,
+                "baseModelTokenizerFiles": current["baseModelTokenizerFiles"],
+                "baseModelTokenizerClosureSHA256": current[
+                    "baseModelTokenizerClosureSHA256"
+                ],
+            },
+            variant_root,
+        )
+
+    def verify_manifest_with_current_tokenizer_contract(path: Path) -> dict[str, Any]:
+        manifest = original_verify_manifest(path)
+        if (
+            path.name == "variant_manifest.json"
+            and "generated/fine_tuning" in path.as_posix()
+        ):
+            current = _base_model_tokenizer_lineage_fixture()
+            return {
+                **manifest,
+                "baseModelTokenizerFiles": current["baseModelTokenizerFiles"],
+                "baseModelTokenizerClosureSHA256": current[
+                    "baseModelTokenizerClosureSHA256"
+                ],
+            }
+        return manifest
+
+    def create_tokenizer_snapshot(*, snapshot_dir: Path, config: Mapping[str, Any]) -> None:
+        del config
+        snapshot_dir.mkdir(mode=0o700)
+
+    def tokenizer_verification(
+        snapshot_dir: Path,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        payload = {
+            "schemaVersion": "test.private-tokenizer-snapshot/1.0.0",
+            "baseModelID": kwargs["base_model_id"],
+            "baseModelRevision": kwargs["base_model_revision"],
+            "baseModelTokenizerDigest": kwargs["tokenizer_digest"],
+            "baseModelTokenizerFiles": kwargs["tokenizer_files"],
+            "baseModelTokenizerClosureSHA256": kwargs[
+                "tokenizer_closure_sha256"
+            ],
+            "snapshotPath": str(snapshot_dir.resolve()),
+        }
+        return {
+            **payload,
+            "snapshotVerificationSHA256": ubuntu_pipeline.canonical_sha256(
+                payload
+            ),
+        }
+
+    def runtime_verification(
+        snapshot_dir: Path,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        payload = {
+            "schemaVersion": "test.private-runtime-snapshot/1.0.0",
+            "baseModelID": kwargs["base_model_id"],
+            "baseModelRevision": kwargs["base_model_revision"],
+            "baseModelIndexDigest": kwargs["model_index_digest"],
+            "baseModelIndexReferencedShardNames": kwargs[
+                "index_referenced_shard_names"
+            ],
+            "baseModelIndexShardBindingSHA256": kwargs[
+                "index_shard_binding_sha256"
+            ],
+            "baseModelArtifactDigest": kwargs["model_artifact_digest"],
+            "baseModelWeightShards": kwargs["weight_shards"],
+            "baseModelGenerationConfigFile": kwargs[
+                "generation_config_file"
+            ],
+            "baseModelTokenizerDigest": kwargs["tokenizer_digest"],
+            "baseModelTokenizerFiles": kwargs["tokenizer_files"],
+            "baseModelTokenizerClosureSHA256": kwargs[
+                "tokenizer_closure_sha256"
+            ],
+            "snapshotPath": str(snapshot_dir.resolve()),
+        }
+        return {
+            **payload,
+            "snapshotVerificationSHA256": ubuntu_pipeline.canonical_sha256(
+                payload
+            ),
+        }
+
+    def create_runtime_snapshot(
+        *,
+        destination: Path,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        destination.mkdir(mode=0o700)
+        return runtime_verification(destination, **kwargs)
+
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_create_global_tokenizer_snapshot",
+        create_tokenizer_snapshot,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "validate_variant",
+        validate_variant_with_current_tokenizer_contract,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verify_manifest_integrity",
+        verify_manifest_with_current_tokenizer_contract,
+    )
+    monkeypatch.setattr(
+        training_lineage,
+        "verify_private_base_model_tokenizer_snapshot",
+        tokenizer_verification,
+    )
+    monkeypatch.setattr(
+        training_lineage,
+        "verify_private_base_model_conversion_snapshot",
+        runtime_verification,
+    )
+    monkeypatch.setattr(
+        training_lineage,
+        "create_private_base_model_runtime_snapshot",
+        create_runtime_snapshot,
+    )
+    monkeypatch.setattr(
+        training_lineage,
+        "private_base_model_runtime_snapshot_required_bytes",
+        lambda **_kwargs: 1,
+    )
+    huggingface_hub = ModuleType("huggingface_hub")
+    huggingface_hub.snapshot_download = lambda **_kwargs: str(cache_snapshot)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", huggingface_hub)
+
+
 def _gguf_bytes(
     *,
     version: int = 3,
@@ -593,6 +888,7 @@ def _write_evaluation_evidence(
         "variant": variant,
         "sourceVariantManifestSHA256": source_variant_sha256,
         "frozenEvaluationSHA256": evaluation_sha256,
+        **_base_model_tokenizer_lineage_fixture(),
         "trainingEnvironmentSHA256": "7" * 64,
         "resolvedTrainingEnvironment": {"schemaVersion": "test"},
         "resolvedTrainingEnvironmentSHA256": "8" * 64,
@@ -617,8 +913,9 @@ def _write_evaluation_evidence(
         "agent": agent,
         "variant": variant,
         "variantManifestSHA256": source_variant_sha256,
-        "base_model_name": "Qwen/Qwen3-1.7B",
-        "baseModelRevision": "1" * 40,
+        "base_model_name": adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        **_base_model_tokenizer_lineage_fixture(),
+        **_runtime_snapshot_lineage_fixture(),
         "baseModelIndexDigest": "2" * 64,
         "baseModelIndexReferencedShardNames": ["model.safetensors"],
         "baseModelIndexShardBindingSHA256": "3" * 64,
@@ -626,7 +923,6 @@ def _write_evaluation_evidence(
         "baseModelWeightShards": [
             {"filename": "model.safetensors", "sha256": "5" * 64, "size": 1}
         ],
-        "baseModelTokenizerDigest": "6" * 64,
         "chatTemplateContract": chat_template_contract(),
         "max_seq_length": 64,
         "max_prompt_length": 32,
@@ -726,6 +1022,14 @@ def _write_evaluation_evidence(
         "configPath": str(config_path.resolve()),
         "configSHA256": ubuntu_pipeline.file_sha256(config_path),
         "chatTemplateContract": config["chatTemplateContract"],
+        "baseModelTokenizerDigest": config["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": config["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": config[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        **_runtime_snapshot_lineage_fixture(),
+        "runtimeModelBinding": {"fixture": "runtime-model"},
+        "runtimeTokenizerBinding": {"fixture": "runtime-tokenizer"},
         "adapterDirectory": str(adapter_dir.resolve()),
         "adapterSHA256": "b" * 64,
         "finalizedVariantManifestPath": str(finalized_path.resolve()),
@@ -775,12 +1079,33 @@ def _write_evaluation_evidence(
     prepared_config_sha256 = ubuntu_pipeline.file_sha256(base_config_path)
     monkeypatch.setattr(
         ubuntu_pipeline,
+        "_verified_private_tokenizer_snapshot_binding",
+        lambda cfg: dict(cfg["baseModelTokenizerSnapshotVerification"]),
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_private_base_model_runtime_snapshot_binding",
+        lambda cfg: dict(cfg["baseModelRuntimeSnapshotVerification"]),
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_model_binding",
+        lambda value, **_kwargs: dict(value),
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_tokenizer_binding",
+        lambda value, **_kwargs: dict(value),
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
         "_verified_run_manifest",
         lambda *_args: {
             "variant": variant,
             "behaviorManifest": str(behavior_path.resolve()),
             "behaviorManifestFileSHA256": prepared_behavior_sha256,
             "executionPlan": evaluation_plan,
+            **_summary_base_model_lineage_fixture(),
             **source_fields,
             "agents": [
                 {
@@ -846,11 +1171,16 @@ def _write_completed_summary_evidence(
 ) -> Path:
     agent = "cortex"
     variant = "internal_plus_public_optimized"
-    sft = {"phase": "sft", "adapterSHA256": "a" * 64}
+    sft = {
+        "phase": "sft",
+        "adapterSHA256": "a" * 64,
+        **_phase_runtime_evidence_fixture("1"),
+    }
     final_phase = {
         "phase": "dpo",
         "adapterSHA256": "b" * 64,
         "parentSFTAdapterSHA256": "a" * 64,
+        **_phase_runtime_evidence_fixture("2"),
         "finalizedVariantManifestSHA256": "f" * 64,
     }
     if evaluation_scope == "full":
@@ -858,6 +1188,10 @@ def _write_completed_summary_evidence(
         evaluation = {
             "status": "quality_gate_passed",
             "qualityGatePassed": True,
+            "runtimeModelBinding": {"runtimeModelBindingSHA256": "a" * 64},
+            "runtimeTokenizerBinding": {
+                "runtimeTokenizerBindingSHA256": "a" * 64
+            },
         }
         status = "complete"
         evaluation_status = "quality_gate_passed"
@@ -868,7 +1202,14 @@ def _write_completed_summary_evidence(
             evaluation_scope="smoke",
             evaluation_max_examples=1,
         )
-        evaluation = {"status": "smoke_complete", "qualityGatePassed": False}
+        evaluation = {
+            "status": "smoke_complete",
+            "qualityGatePassed": False,
+            "runtimeModelBinding": {"runtimeModelBindingSHA256": "a" * 64},
+            "runtimeTokenizerBinding": {
+                "runtimeTokenizerBindingSHA256": "a" * 64
+            },
+        }
         status = "smoke_complete"
         evaluation_status = "smoke_complete"
         qualification = "diagnostic_only"
@@ -888,6 +1229,7 @@ def _write_completed_summary_evidence(
         "ubuntuSourceIntegritySHA256": "3" * 64,
         "ubuntuSourceIntegrity": {"testFixture": True},
     }
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(run_root)
     gguf = (
         run_root
         / "models"
@@ -922,10 +1264,16 @@ def _write_completed_summary_evidence(
             "variant": variant,
             "executionPlan": plan,
             "agents": [{"agent": agent}],
+            **_summary_base_model_lineage_fixture(),
             **source_fields,
         },
     )
     monkeypatch.setattr(ubuntu_pipeline, "verify_sft", lambda *_args: sft)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
+    )
     monkeypatch.setattr(
         ubuntu_pipeline,
         "verify_preference",
@@ -951,6 +1299,8 @@ def _write_completed_summary_evidence(
             "adapterGGUFTensorEquivalenceStatus": (
                 ubuntu_pipeline.GGUF_TENSOR_EQUIVALENCE_STATUS
             ),
+            "adapterGGUFRuntimeModelBindingSHA256": "a" * 64,
+            "adapterGGUFRuntimeTokenizerBindingSHA256": "a" * 64,
         }
     )
     def verify_fixture_gguf(_run_root: Path, path: Path) -> dict:
@@ -974,6 +1324,7 @@ def _write_completed_summary_evidence(
     summary = {
         "schema": ubuntu_pipeline.SUMMARY_SCHEMA_VERSION,
         "status": status,
+        "trainingScope": "sft_preference",
         "evaluationStatus": evaluation_status,
         "evaluationScope": evaluation_scope,
         "ggufStatus": "verified",
@@ -987,6 +1338,8 @@ def _write_completed_summary_evidence(
         "variant": variant,
         "runRoot": str(run_root),
         "preferenceTraining": True,
+        **smoke_evidence,
+        **_summary_base_model_lineage_fixture(),
         **source_fields,
         "agents": {
             agent: {
@@ -1087,7 +1440,10 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
     assert "sys.path.insert(0, str(source_root))" in dockerfile
     assert "import lumen_manifest_crawler" in dockerfile
     assert "from lumen_manifest_crawler.dataset import chat_template_contract" in dockerfile
-    assert "from tools.fine_tuning.unsloth import ubuntu_pipeline" in dockerfile
+    assert (
+        "from tools.fine_tuning.unsloth import "
+        "runtime_binding_smoke_gate, ubuntu_pipeline"
+    ) in dockerfile
     assert "Path(lumen_manifest_crawler.__file__).resolve()" in dockerfile
     assert "Path(chat_template_contract.__file__).resolve().is_relative_to(" in dockerfile
     assert "Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)" in dockerfile
@@ -2177,7 +2533,7 @@ def test_controlled_unsloth_loads_disable_model_name_redirects(
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "from_pretrained"
         and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "FastLanguageModel"
+        and node.func.value.id in {"FastLanguageModel", "fast_language_model"}
     ]
 
     assert calls, f"{filename} must load its controlled base model with Unsloth"
@@ -2685,6 +3041,7 @@ def test_prepare_binds_the_same_resolved_environment_into_config_and_attestation
         "_training_environment",
         lambda *_args, **_kwargs: environment,
     )
+    _mock_private_base_model_snapshot_preparation(tmp_path, monkeypatch)
 
     run_root = tmp_path / "prepared"
     ubuntu_pipeline.prepare_run(
@@ -2792,6 +3149,138 @@ def test_prepared_snapshot_copy_normalizes_read_only_image_modes(
             directory.chmod(0o700)
 
 
+def test_run_manifest_reverifies_shared_private_snapshots_once_per_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tools.fine_tuning.unsloth import train_sft, training_lineage
+
+    runtime_lineage = {
+        "resolvedTrainingEnvironment": {"schemaVersion": "test"},
+        "resolvedTrainingEnvironmentSHA256": "a" * 64,
+        "resolvedTrainingEnvironmentScanAudit": {"distributionCount": 1},
+        "spaceConfigurationSHA256": None,
+        "zeroGPUSize": None,
+        "zeroGPUDurationSeconds": None,
+        "observedAccelerator": {"backend": "cuda", "deviceCount": 1},
+    }
+    environment = {
+        "trainingEnvironmentSHA256": "e" * 64,
+        "observedAccelerator": runtime_lineage["observedAccelerator"],
+    }
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_runtime_lineage",
+        lambda **_kwargs: (runtime_lineage, environment),
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "current_source_integrity",
+        lambda *_args, **_kwargs: _source_integrity_fixture()[
+            "ubuntuSourceIntegrity"
+        ],
+    )
+    monkeypatch.setattr(
+        train_sft,
+        "_training_environment",
+        lambda *_args, **_kwargs: environment,
+    )
+    _mock_private_base_model_snapshot_preparation(tmp_path, monkeypatch)
+    run_root = tmp_path / "prepared-shared-snapshot"
+    ubuntu_pipeline.prepare_run(
+        root=REPO_ROOT,
+        dataset_source=REPO_ROOT / "generated" / "fine_tuning",
+        run_root=run_root,
+        agents=("cortex", "executor"),
+        variant=OPTIMIZED_VARIANT,
+        seed=42,
+        base_model_override="",
+        container_digest=FAKE_IMAGE_DIGEST,
+        evaluation_scope="smoke",
+        evaluation_max_examples=7,
+        gguf_requested=False,
+    )
+    config = ubuntu_pipeline.read_object(run_root / "configs" / "cortex.json")
+    calls = {"tokenizer": 0, "runtime": 0}
+
+    def verify_tokenizer(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        calls["tokenizer"] += 1
+        return dict(config["baseModelTokenizerSnapshotVerification"])
+
+    def verify_runtime(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        calls["runtime"] += 1
+        return dict(config["baseModelRuntimeSnapshotVerification"])
+
+    monkeypatch.setattr(
+        training_lineage,
+        "verify_private_base_model_tokenizer_snapshot",
+        verify_tokenizer,
+    )
+    monkeypatch.setattr(
+        training_lineage,
+        "verify_private_base_model_conversion_snapshot",
+        verify_runtime,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_validated_global_tokenizer_resume_state",
+        lambda **_kwargs: {},
+    )
+
+    ubuntu_pipeline._verified_run_manifest(run_root)
+
+    assert calls == {"tokenizer": 1, "runtime": 1}
+
+    calls.update(tokenizer=0, runtime=0)
+    ubuntu_pipeline.validate_prepared_runtime(
+        root=REPO_ROOT,
+        run_root=run_root,
+        agents=("cortex", "executor"),
+        variant=OPTIMIZED_VARIANT,
+        container_digest=FAKE_IMAGE_DIGEST,
+        evaluation_scope="smoke",
+        evaluation_max_examples=7,
+        gguf_requested=False,
+        observe_runtime=False,
+    )
+
+    assert calls == {"tokenizer": 1, "runtime": 1}
+
+    executor_config_path = run_root / "configs" / "executor.json"
+    executor_config = ubuntu_pipeline.read_object(executor_config_path)
+    executor_config["baseModelArtifactDigest"] = "f" * 64
+    ubuntu_pipeline.write_object(executor_config_path, executor_config)
+    run_manifest = ubuntu_pipeline.read_object(
+        run_root / "aio_run_manifest.json"
+    )
+    executor_entry = next(
+        item for item in run_manifest["agents"] if item["agent"] == "executor"
+    )
+    executor_entry["configSHA256"] = ubuntu_pipeline.file_sha256(
+        executor_config_path
+    )
+    run_manifest.pop("runManifestSHA256")
+    run_manifest["runManifestSHA256"] = ubuntu_pipeline.canonical_sha256(
+        run_manifest
+    )
+    ubuntu_pipeline.write_object(
+        run_root / "aio_run_manifest.json",
+        run_manifest,
+    )
+    calls.update(tokenizer=0, runtime=0)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "base-model runtime snapshot contract drifted.*"
+            "baseModelArtifactDigest"
+        ),
+    ):
+        ubuntu_pipeline._verified_run_manifest(run_root)
+
+    assert calls == {"tokenizer": 1, "runtime": 1}
+
+
 def test_partial_prepared_snapshot_remains_removable_after_source_rejection(
     tmp_path: Path,
 ) -> None:
@@ -2857,6 +3346,7 @@ def test_incomplete_preparation_recovery_never_deletes_training_progress(
         "_training_environment",
         lambda *_args, **_kwargs: environment,
     )
+    _mock_private_base_model_snapshot_preparation(tmp_path, monkeypatch)
     # Simulate a kill after the manifest commit but before the durable owner
     # unlink, then a later loss of the manifest after training had begun.
     monkeypatch.setattr(
@@ -3015,10 +3505,19 @@ def test_summary_rejects_failed_full_evaluation(
         ),
     )
     evaluation_run = ubuntu_pipeline.read_object(run_path)
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
+    )
     monkeypatch.setattr(
         ubuntu_pipeline,
         "verify_sft",
-        lambda *_args: {"adapterSHA256": "a" * 64},
+        lambda *_args: {
+            "adapterSHA256": "a" * 64,
+            **_phase_runtime_evidence_fixture("1"),
+        },
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
@@ -3030,6 +3529,7 @@ def test_summary_rejects_failed_full_evaluation(
             ],
             "parentSFTAdapterSHA256": "9" * 64,
             "phase": "dpo",
+            **_phase_runtime_evidence_fixture("2"),
             "tokenLengthPreflightSHA256": "e" * 64,
             "tokenLengthStatistics": {
                 "promptTokens": {"min": 1, "p50": 1, "p95": 1, "max": 1}
@@ -3067,24 +3567,43 @@ def test_full_quality_summary_without_gguf_is_complete_and_upload_qualified(
         "{}\n",
         encoding="utf-8",
     )
-    sft = {"phase": "sft", "adapterSHA256": "a" * 64}
+    sft = {
+        "phase": "sft",
+        "adapterSHA256": "a" * 64,
+        **_phase_runtime_evidence_fixture("1"),
+    }
     final_phase = {
         "phase": "dpo",
         "adapterSHA256": "b" * 64,
         "parentSFTAdapterSHA256": "a" * 64,
+        **_phase_runtime_evidence_fixture("2"),
     }
-    evaluation = {"status": "quality_gate_passed", "qualityGatePassed": True}
+    evaluation = {
+        "status": "quality_gate_passed",
+        "qualityGatePassed": True,
+        "runtimeModelBinding": {"runtimeModelBindingSHA256": "a" * 64},
+        "runtimeTokenizerBinding": {
+            "runtimeTokenizerBindingSHA256": "a" * 64
+        },
+    }
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
     monkeypatch.setattr(
         ubuntu_pipeline,
         "_verified_run_manifest",
         lambda *_args: {
-            "variant": OPTIMIZED_VARIANT,
-            "executionPlan": plan,
-            "agents": [{"agent": agent}],
+                "variant": OPTIMIZED_VARIANT,
+                "executionPlan": plan,
+                "agents": [{"agent": agent}],
+                **_summary_base_model_lineage_fixture(),
             **source_fields,
         },
     )
     monkeypatch.setattr(ubuntu_pipeline, "verify_sft", lambda *_args: sft)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
+    )
     monkeypatch.setattr(
         ubuntu_pipeline,
         "verify_preference",
@@ -3119,6 +3638,362 @@ def test_full_quality_summary_without_gguf_is_complete_and_upload_qualified(
         summary,
         allow_diagnostic_upload=False,
     )["remoteNamespace"] == "runs"
+
+
+def test_sft_only_summary_is_distinct_reverifiable_and_diagnostic_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = "cortex"
+    plan = _test_execution_plan(evaluation_scope="none", gguf_requested=False)
+    source_fields = _source_integrity_fixture()
+    sft = {
+        "phase": "sft",
+        "adapterSHA256": "a" * 64,
+        **_phase_runtime_evidence_fixture("1"),
+    }
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_run_manifest",
+        lambda *_args: {
+            "variant": OPTIMIZED_VARIANT,
+            "executionPlan": plan,
+            "agents": [{"agent": agent}],
+            **_summary_base_model_lineage_fixture(),
+            **source_fields,
+        },
+    )
+    monkeypatch.setattr(ubuntu_pipeline, "verify_sft", lambda *_args: sft)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
+    )
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("SFT-only verification crossed a later-phase boundary")
+
+    monkeypatch.setattr(ubuntu_pipeline, "verify_preference", forbidden)
+    monkeypatch.setattr(ubuntu_pipeline, "_verify_evaluation_outputs", forbidden)
+    monkeypatch.setattr(ubuntu_pipeline, "_verify_gguf_inventory", forbidden)
+
+    summary = ubuntu_pipeline.write_summary(
+        run_root=tmp_path,
+        agents=(agent,),
+        variant=OPTIMIZED_VARIANT,
+        preference=False,
+        require_gguf=False,
+        require_evaluation=False,
+    )
+
+    assert summary["status"] == "sft_only_diagnostic_complete"
+    assert summary["trainingScope"] == "sft_only"
+    assert summary["preferenceTraining"] is False
+    assert summary["evaluationStatus"] == "not_run"
+    assert summary["ggufStatus"] == "not_applicable_sft_only"
+    assert summary["qualification"] == "diagnostic_only"
+    assert summary["promotionEligible"] is False
+    assert summary["agents"] == {agent: {"sft": sft, "finalPhase": sft}}
+    assert ubuntu_pipeline._verified_completed_summary(
+        tmp_path,
+        (agent,),
+    ) == summary
+    with pytest.raises(RuntimeError, match="--allow-diagnostic-upload"):
+        ubuntu_pipeline._upload_publication_contract(
+            summary,
+            allow_diagnostic_upload=False,
+        )
+    publication = ubuntu_pipeline._upload_publication_contract(
+        summary,
+        allow_diagnostic_upload=True,
+    )
+    assert publication["remoteNamespace"] == "diagnostic-sft-runs"
+    assert publication["phaseRuntimeEvidenceByAgent"] == {
+        agent: {"sft": _phase_runtime_evidence_fixture("1")}
+    }
+
+
+@pytest.mark.parametrize(
+    "plan",
+    (
+        _test_execution_plan(evaluation_scope="full", gguf_requested=False),
+        _test_execution_plan(evaluation_scope="none", gguf_requested=True),
+    ),
+)
+def test_sft_only_summary_rejects_later_phase_execution_plans(plan: dict) -> None:
+    with pytest.raises(RuntimeError, match="SFT-only diagnostic summaries"):
+        ubuntu_pipeline._derived_summary_state(
+            plan=plan,
+            evaluation_statuses=(),
+            agent_count=1,
+            gguf_count=0,
+            preference_training=False,
+        )
+
+
+@pytest.mark.parametrize("field", ubuntu_pipeline.PHASE_RUNTIME_EVIDENCE_FIELDS)
+def test_compact_phase_runtime_evidence_rejects_each_mutated_digest(
+    field: str,
+) -> None:
+    evidence = _phase_runtime_evidence_fixture("1")
+    evidence[field] = "not-a-digest"
+
+    with pytest.raises(RuntimeError, match="lacks exact digests"):
+        ubuntu_pipeline._compact_phase_runtime_evidence(evidence)
+
+
+@pytest.mark.parametrize(
+    ("model_field", "tokenizer_field"),
+    (
+        ("runtimeModelBindingSHA256", "runtimeTokenizerBindingSHA256"),
+        (
+            "adapterGGUFRuntimeModelBindingSHA256",
+            "adapterGGUFRuntimeTokenizerBindingSHA256",
+        ),
+    ),
+)
+@pytest.mark.parametrize("mutated", ("model", "tokenizer"))
+def test_runtime_evidence_must_match_pretraining_smoke_bindings(
+    tmp_path: Path,
+    model_field: str,
+    tokenizer_field: str,
+    mutated: str,
+) -> None:
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
+    source = {
+        model_field: "a" * 64,
+        tokenizer_field: "a" * 64,
+    }
+    source[model_field if mutated == "model" else tokenizer_field] = "0" * 64
+
+    with pytest.raises(RuntimeError, match="pre-training smoke gate"):
+        ubuntu_pipeline._require_runtime_bindings_match_smoke(
+            agent="cortex",
+            source=source,
+            smoke_evidence=smoke_evidence,
+            label="test evidence",
+            model_field=model_field,
+            tokenizer_field=tokenizer_field,
+        )
+
+
+def test_phase_runtime_evidence_returns_only_reconstructed_exact_hashes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tokenizer_verification = {"snapshotVerificationSHA256": "1" * 64}
+    runtime_verification = {"snapshotVerificationSHA256": "2" * 64}
+    config = {
+        "baseModelTokenizerDigest": "3" * 64,
+        "baseModelTokenizerFiles": [],
+        "baseModelTokenizerClosureSHA256": "4" * 64,
+        "baseModelGenerationConfigFile": {"path": "generation_config.json"},
+        "baseModelTokenizerSnapshotPath": "/private/tokenizer",
+        "baseModelRuntimeSnapshotPath": "/private/runtime",
+    }
+    report = {
+        **config,
+        "baseModelTokenizerSnapshotVerification": tokenizer_verification,
+        "baseModelRuntimeSnapshotVerification": runtime_verification,
+        "runtimeModelBinding": {"runtimeModelBindingSHA256": "5" * 64},
+        "runtimeTokenizerBinding": {"runtimeTokenizerBindingSHA256": "6" * 64},
+        "peftBaseModelIdentity": {"peftBaseModelIdentitySHA256": "7" * 64},
+        "adapterTokenizerBinding": {"adapterTokenizerBindingSHA256": "8" * 64},
+    }
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_private_tokenizer_snapshot_binding",
+        lambda *_args: tokenizer_verification,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_private_base_model_runtime_snapshot_binding",
+        lambda *_args: runtime_verification,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_model_binding",
+        lambda value, **_kwargs: value,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_tokenizer_binding",
+        lambda value, **_kwargs: value,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_peft_base_model_evidence",
+        lambda value, **_kwargs: value,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_adapter_tokenizer_evidence",
+        lambda value, **_kwargs: value,
+    )
+
+    assert ubuntu_pipeline._verify_phase_runtime_evidence(
+        config=config,
+        report=report,
+        adapter_dir=tmp_path,
+    ) == {
+        "runtimeModelBindingSHA256": "5" * 64,
+        "runtimeTokenizerBindingSHA256": "6" * 64,
+        "peftBaseModelIdentitySHA256": "7" * 64,
+        "adapterTokenizerBindingSHA256": "8" * 64,
+        "baseModelTokenizerSnapshotVerificationSHA256": "1" * 64,
+        "baseModelRuntimeSnapshotVerificationSHA256": "2" * 64,
+    }
+
+
+def test_runtime_model_binding_reconstructs_nested_materialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_snapshot = tmp_path / "runtime-snapshot"
+    runtime_snapshot.mkdir()
+    runtime_model_config = {
+        "model_type": "qwen3",
+        "num_hidden_layers": 28,
+        "vocab_size": 151_936,
+        "attention_bias": False,
+        "tie_word_embeddings": True,
+        "max_position_embeddings": 4096,
+    }
+    (runtime_snapshot / "config.json").write_text(
+        json.dumps(runtime_model_config),
+        encoding="utf-8",
+    )
+    snapshot_verification = {"snapshotVerificationSHA256": "9" * 64}
+    config = {
+        "baseModelID": "Qwen/Qwen3-0.6B",
+        "baseModelRevision": "1" * 40,
+        "baseModelIndexDigest": "2" * 64,
+        "baseModelIndexShardBindingSHA256": "3" * 64,
+        "baseModelArtifactDigest": "4" * 64,
+        "baseModelTokenizerClosureSHA256": "5" * 64,
+        "baseModelGenerationConfigFile": {
+            "path": "generation_config.json",
+            "sha256": "6" * 64,
+        },
+        "baseModelRuntimeSnapshotPath": str(runtime_snapshot),
+        "max_seq_length": 2048,
+        "bf16": True,
+        "fp16": False,
+    }
+    source_generation = {"max_length": 20, "do_sample": False}
+
+    from tools.fine_tuning.unsloth import train_sft
+
+    class FakeGenerationConfig:
+        @classmethod
+        def from_pretrained(
+            cls,
+            _path: str,
+            *,
+            local_files_only: bool,
+        ) -> SimpleNamespace:
+            assert local_files_only is True
+            return SimpleNamespace(to_dict=lambda: dict(source_generation))
+
+    transformers = ModuleType("transformers")
+    transformers.GenerationConfig = FakeGenerationConfig  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_private_base_model_runtime_snapshot_binding",
+        lambda _config: snapshot_verification,
+    )
+    calls: list[tuple[dict[str, Any], Mapping[str, Any], Mapping[str, Any]]] = []
+
+    from tools.fine_tuning.unsloth import runtime_binding_smoke_gate
+
+    def verify_materialization(
+        value: Mapping[str, Any],
+        observed_config: Mapping[str, Any],
+        bound_config_payload: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if value != {"controlled": True}:
+            raise RuntimeError("nested materialization drifted")
+        assert bound_config_payload is not None
+        calls.append((dict(value), observed_config, bound_config_payload))
+        return dict(value)
+
+    monkeypatch.setattr(
+        runtime_binding_smoke_gate,
+        "verify_runtime_load_materialization_evidence",
+        verify_materialization,
+    )
+    runtime_generation = {**source_generation, "max_length": 4096}
+    unsigned = {
+        "schemaVersion": train_sft.RUNTIME_MODEL_BINDING_SCHEMA,
+        "baseModelID": config["baseModelID"],
+        "baseModelRevision": config["baseModelRevision"],
+        "baseModelIndexDigest": config["baseModelIndexDigest"],
+        "baseModelIndexShardBindingSHA256": config[
+            "baseModelIndexShardBindingSHA256"
+        ],
+        "baseModelArtifactDigest": config["baseModelArtifactDigest"],
+        "baseModelTokenizerClosureSHA256": config[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelGenerationConfigFile": config["baseModelGenerationConfigFile"],
+        "runtimeSnapshotVerificationSHA256": snapshot_verification[
+            "snapshotVerificationSHA256"
+        ],
+        "runtimeSnapshotPath": str(runtime_snapshot),
+        "modelConfigSHA256": "7" * 64,
+        "modelConfigVerificationStatus": (
+            "attested_runtime_observation_not_independently_reconstructed"
+        ),
+        "sourceGenerationConfigSHA256": ubuntu_pipeline.canonical_sha256(
+            source_generation
+        ),
+        "generationConfigSHA256": ubuntu_pipeline.canonical_sha256(
+            runtime_generation
+        ),
+        "generationConfigSource": "verified_private_generation_config_file",
+        "allowedGenerationConfigTransformations": {
+            "maxLength": {
+                "source": (
+                    "verified_runtime_model.config.max_position_embeddings"
+                ),
+                "sourceValue": 4096,
+                "originalValue": 20,
+                "runtimeValue": 4096,
+            }
+        },
+        "runtimeLoadMaterialization": {"controlled": True},
+        "localFilesOnly": True,
+    }
+    binding = {
+        **unsigned,
+        "runtimeModelBindingSHA256": ubuntu_pipeline.canonical_sha256(unsigned),
+    }
+
+    assert ubuntu_pipeline._verified_runtime_model_binding(
+        binding,
+        config=config,
+        snapshot_verification=snapshot_verification,
+    ) == binding
+    assert calls == [({"controlled": True}, config, runtime_model_config)]
+
+    mutated_unsigned = {
+        **unsigned,
+        "runtimeLoadMaterialization": {"controlled": False},
+    }
+    mutated = {
+        **mutated_unsigned,
+        "runtimeModelBindingSHA256": ubuntu_pipeline.canonical_sha256(
+            mutated_unsigned
+        ),
+    }
+    with pytest.raises(RuntimeError, match="nested materialization drifted"):
+        ubuntu_pipeline._verified_runtime_model_binding(
+            mutated,
+            config=config,
+            snapshot_verification=snapshot_verification,
+        )
 
 
 @pytest.mark.parametrize(
@@ -3275,10 +4150,12 @@ def test_summary_state_matrix_keeps_evaluation_and_gguf_independent(
     ),
 )
 def test_diagnostic_publication_requires_override_and_separate_namespace(
+    tmp_path: Path,
     evaluation_status: str,
     evaluation_scope: str,
     status: str,
 ) -> None:
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
     plan = _test_execution_plan(
         evaluation_scope=evaluation_scope,
         evaluation_max_examples=1 if evaluation_scope == "smoke" else None,
@@ -3293,7 +4170,17 @@ def test_diagnostic_publication_requires_override_and_separate_namespace(
         "ggufTensorEquivalenceStatus": "not_applicable",
         "qualification": "diagnostic_only",
         "promotionEligible": False,
+        "preferenceTraining": True,
+        "trainingScope": "sft_preference",
+        **smoke_evidence,
         "executionPlanSHA256": plan["executionPlanSHA256"],
+        **_summary_base_model_lineage_fixture(),
+        "agents": {
+            "cortex": {
+                "sft": _phase_runtime_evidence_fixture("1"),
+                "finalPhase": _phase_runtime_evidence_fixture("2"),
+            }
+        },
     }
     with pytest.raises(RuntimeError, match="--allow-diagnostic-upload"):
         ubuntu_pipeline._upload_publication_contract(
@@ -3310,12 +4197,22 @@ def test_diagnostic_publication_requires_override_and_separate_namespace(
         "qualification": "diagnostic_only",
         "promotionEligible": False,
         "diagnosticUploadOverrideApplied": True,
+        "preferenceTraining": True,
+        "trainingScope": "sft_preference",
+        "phaseRuntimeEvidenceByAgent": {
+            "cortex": {
+                "sft": _phase_runtime_evidence_fixture("1"),
+                "preference": _phase_runtime_evidence_fixture("2"),
+            }
+        },
+        **smoke_evidence,
         "evaluationStatus": evaluation_status,
         "evaluationScope": evaluation_scope,
         "ggufStatus": "skipped_by_operator",
         "ggufConversionStatus": "skipped_by_operator",
         "ggufTensorEquivalenceStatus": "not_applicable",
         "executionPlanSHA256": plan["executionPlanSHA256"],
+        **_publication_base_model_lineage_fixture(),
     }
 
 
@@ -3490,6 +4387,131 @@ def test_evaluation_summary_verifier_rejects_controlled_evidence_drift(
             "cortex",
             final_phase=final_phase,
         )
+
+
+def test_evaluation_verifier_rejects_leftover_checkpoint_after_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_path = _write_evaluation_evidence(tmp_path, monkeypatch=monkeypatch)
+    final_phase = _evaluation_final_phase(ubuntu_pipeline.read_object(run_path))
+    checkpoint = run_path.parent / evaluate_adapter.EVALUATION_CHECKPOINT_FILENAME
+    checkpoint.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="exactly the verified evidence trio"):
+        ubuntu_pipeline._verify_evaluation_outputs(
+            tmp_path,
+            "cortex",
+            final_phase=final_phase,
+        )
+
+
+@pytest.mark.parametrize(
+    (
+        "terminal_status",
+        "failed_completion",
+        "retry_from_completion",
+        "full_count",
+        "generated_count",
+    ),
+    (
+        (
+            "quality_gate_failed",
+            json.dumps(
+                {
+                    "selectedToolID": None,
+                    "intent": "unknown",
+                    "reasoningSummary": (
+                        "No manifest row applies to intent unknown."
+                    ),
+                    "status": "no_tool_route",
+                    "requiresApproval": False,
+                    "nextModel": "mouth",
+                },
+                separators=(",", ":"),
+            ),
+            None,
+            1,
+            None,
+        ),
+        ("format_failed", "second-invalid-json", "first-invalid-json", 1, None),
+        (
+            "smoke_failed",
+            json.dumps(
+                {
+                    "selectedToolID": None,
+                    "intent": "unknown",
+                    "reasoningSummary": (
+                        "No manifest row applies to intent unknown."
+                    ),
+                    "status": "no_tool_route",
+                    "requiresApproval": False,
+                    "nextModel": "mouth",
+                },
+                separators=(",", ":"),
+            ),
+            None,
+            2,
+            1,
+        ),
+    ),
+)
+def test_completed_quality_failure_is_verified_and_classified_without_promotion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    terminal_status: str,
+    failed_completion: str,
+    retry_from_completion: str | None,
+    full_count: int,
+    generated_count: int | None,
+) -> None:
+    run_path = _write_evaluation_evidence(
+        tmp_path,
+        monkeypatch=monkeypatch,
+        completion=failed_completion,
+        retry_from_completion=retry_from_completion,
+        status=terminal_status,
+        quality_gate_passed=False,
+        full_case_count=full_count,
+        generated_case_count=generated_count,
+    )
+    final_phase = _evaluation_final_phase(
+        ubuntu_pipeline.read_object(run_path)
+    )
+
+    with pytest.raises(RuntimeError, match="did not pass"):
+        ubuntu_pipeline._verify_evaluation_outputs(
+            tmp_path,
+            "cortex",
+            final_phase=final_phase,
+        )
+
+    verified = ubuntu_pipeline._verify_evaluation_outputs(
+        tmp_path,
+        "cortex",
+        final_phase=final_phase,
+        require_passing_status=False,
+    )
+    assert verified["status"] == terminal_status
+    assert verified["qualityGatePassed"] is False
+
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_preference",
+        lambda _run_root, _agent: final_phase,
+    )
+    classification = ubuntu_pipeline.classify_completed_evaluation(
+        tmp_path,
+        "cortex",
+    )
+    assert classification == {
+        "agent": "cortex",
+        "state": "completed_quality_failure",
+        "status": terminal_status,
+        "qualityGatePassed": False,
+        "evaluationRunManifest": str(run_path),
+        "evaluationRunManifestSHA256": verified["runManifestSHA256"],
+    }
 
 
 def test_evaluation_verifier_binds_image_source_attestation(
@@ -3970,6 +4992,10 @@ def test_evaluation_verifier_rejects_managed_ancestor_symlink(
     (
         "variant",
         "sft",
+        "sft_runtime_model_hash",
+        "preference_training_report_hash",
+        "training_scope",
+        "runtime_smoke_report_hash",
         "missing_gguf",
         "gguf_path",
         "evaluation_report_path",
@@ -3996,6 +5022,14 @@ def test_completed_summary_rejects_rehashed_canonical_evidence_drift(
         summary["variant"] = "internal_only"
     elif mutation == "sft":
         item["sft"] = {"phase": "sft", "adapterSHA256": "0" * 64}
+    elif mutation == "sft_runtime_model_hash":
+        item["sft"]["runtimeModelBindingSHA256"] = "0" * 64
+    elif mutation == "preference_training_report_hash":
+        item["finalPhase"]["trainingReportFileSHA256"] = "0" * 64
+    elif mutation == "training_scope":
+        summary["trainingScope"] = "sft_only"
+    elif mutation == "runtime_smoke_report_hash":
+        summary["runtimeBindingSmokeReportFileSHA256"] = "0" * 64
     elif mutation == "missing_gguf":
         Path(item["adapterGGUF"]).unlink()
         item["adapterGGUFExists"] = False
@@ -4221,6 +5255,7 @@ def test_required_gguf_summary_fails_without_pinned_reader(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
     gguf = tmp_path / "models" / "lora_qwen3_gguf" / "lumen-cortex-lora.gguf"
     gguf.parent.mkdir(parents=True)
     gguf.write_bytes(_gguf_bytes())
@@ -4242,8 +5277,14 @@ def test_required_gguf_summary_fails_without_pinned_reader(
                 gguf_requested=True,
             ),
             "agents": [{"agent": "cortex"}],
+            **_summary_base_model_lineage_fixture(),
             **_source_integrity_fixture(),
         },
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
@@ -4255,12 +5296,12 @@ def test_required_gguf_summary_fails_without_pinned_reader(
     monkeypatch.setattr(
         ubuntu_pipeline,
         "verify_sft",
-        lambda *_args: {"phase": "sft"},
+        lambda *_args: {"phase": "sft", **_phase_runtime_evidence_fixture("1")},
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
         "verify_preference",
-        lambda *_args: {"phase": "dpo"},
+        lambda *_args: {"phase": "dpo", **_phase_runtime_evidence_fixture("2")},
     )
 
     with pytest.raises(RuntimeError, match="pinned llama.cpp checkout"):
@@ -4816,6 +5857,7 @@ def _prepare_minimal_upload_case(
     source_fields = _source_integrity_fixture()
     source_record = source_fields["ubuntuSourceIntegrity"]
     training_environment = {"trainingEnvironmentSHA256": "e" * 64}
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
     runtime_manifest_path = (
         tmp_path / "generated/fine_tuning/adapter_runtime_manifest.json"
     )
@@ -4829,6 +5871,7 @@ def _prepare_minimal_upload_case(
         ),
         "trainingEnvironment": training_environment,
         "agents": [{"agent": agent}],
+        **_summary_base_model_lineage_fixture(),
         **source_fields,
     }
     ubuntu_pipeline.write_object(
@@ -4865,9 +5908,26 @@ def _prepare_minimal_upload_case(
         finalized,
         {**finalized_payload, "variantManifestSHA256": finalized_sha},
     )
+    sft_record = {
+        "phase": "sft",
+        "adapterSHA256": "9" * 64,
+        **_write_phase_report_fixture(
+            tmp_path,
+            agent,
+            preference=False,
+            digest_character="1",
+        ),
+    }
     preference_record = {
+        "phase": "dpo",
         "adapterSHA256": adapter_sha,
         "finalizedVariantManifestSHA256": finalized_sha,
+        **_write_phase_report_fixture(
+            tmp_path,
+            agent,
+            preference=True,
+            digest_character="2",
+        ),
     }
     summary = {
         "status": "complete_without_gguf",
@@ -4878,11 +5938,16 @@ def _prepare_minimal_upload_case(
         "ggufTensorEquivalenceStatus": "not_applicable",
         "qualification": "quality_gate_passed",
         "promotionEligible": True,
+        "preferenceTraining": True,
+        "trainingScope": "sft_preference",
+        **smoke_evidence,
         "executionPlanSHA256": _test_execution_plan(
             gguf_requested=False
         )["executionPlanSHA256"],
+        **_summary_base_model_lineage_fixture(),
         "agents": {
             agent: {
+                "sft": sft_record,
                 "finalPhase": preference_record,
                 "evaluation": None,
                 "adapterGGUFExists": False,
@@ -4903,8 +5968,18 @@ def _prepare_minimal_upload_case(
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
         "current_source_integrity",
         lambda *_args: source_record,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_sft",
+        lambda *_args: sft_record,
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
@@ -5033,6 +6108,7 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     source_fields = _source_integrity_fixture()
     source_record = source_fields["ubuntuSourceIntegrity"]
     training_environment = {"trainingEnvironmentSHA256": "e" * 64}
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
     runtime_manifest_path = (
         tmp_path / "generated/fine_tuning/adapter_runtime_manifest.json"
     )
@@ -5049,6 +6125,7 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
         ),
         "trainingEnvironment": training_environment,
         "agents": [{"agent": agent}],
+        **_summary_base_model_lineage_fixture(),
         **source_fields,
     }
     ubuntu_pipeline.write_object(
@@ -5085,9 +6162,26 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
         finalized,
         {**finalized_payload, "variantManifestSHA256": finalized_sha},
     )
+    sft_record = {
+        "phase": "sft",
+        "adapterSHA256": "9" * 64,
+        **_write_phase_report_fixture(
+            tmp_path,
+            agent,
+            preference=False,
+            digest_character="1",
+        ),
+    }
     preference_record = {
+        "phase": "dpo",
         "adapterSHA256": adapter_sha,
         "finalizedVariantManifestSHA256": finalized_sha,
+        **_write_phase_report_fixture(
+            tmp_path,
+            agent,
+            preference=True,
+            digest_character="2",
+        ),
     }
     summary = {
         "status": "complete_without_gguf",
@@ -5098,11 +6192,16 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
             "ggufTensorEquivalenceStatus": "not_applicable",
         "qualification": "quality_gate_passed",
         "promotionEligible": True,
+        "preferenceTraining": True,
+        "trainingScope": "sft_preference",
+        **smoke_evidence,
         "executionPlanSHA256": _test_execution_plan(
             gguf_requested=False
         )["executionPlanSHA256"],
+        **_summary_base_model_lineage_fixture(),
         "agents": {
             agent: {
+                "sft": sft_record,
                 "finalPhase": preference_record,
                 "evaluation": None,
                 "adapterGGUFExists": False,
@@ -5126,8 +6225,18 @@ def test_upload_receipt_binds_verified_image_source_and_separate_write_path(
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
         "current_source_integrity",
         lambda *_args: source_record,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_sft",
+        lambda *_args: sft_record,
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
@@ -5368,6 +6477,172 @@ def test_upload_cli_is_private_unless_public_is_explicit(
     assert ubuntu_pipeline.parse_args().allow_diagnostic_upload is True
 
 
+def test_sft_only_upload_uses_only_sft_paths_and_requires_override(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = "cortex"
+    run_id = "sft-only-run"
+    repo_id = "owner/lumen-adapters"
+    source_fields = _source_integrity_fixture()
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
+    runtime_manifest = (
+        tmp_path / "generated" / "fine_tuning" / "adapter_runtime_manifest.json"
+    )
+    runtime_manifest.parent.mkdir(parents=True)
+    ubuntu_pipeline.write_object(runtime_manifest, {"adapterRepoID": repo_id})
+    training_environment: dict[str, Any] = {}
+    ubuntu_pipeline.write_object(
+        tmp_path / "training_environment.json",
+        training_environment,
+    )
+    adapter_dir = tmp_path / "models" / "lora_qwen3_bootstrap" / agent
+    adapter_dir.mkdir(parents=True)
+    adapter_file = adapter_dir / "adapter_model.safetensors"
+    adapter_file.write_bytes(b"sft-only-adapter")
+    adapter_payload = {
+        "schemaVersion": "lumen.peft-lora-adapter-artifact/1.0.0",
+        "artifactType": "peft_lora_directory",
+        "trainingPhase": "sft",
+        "parentSFTAdapterSHA256": None,
+        "files": [
+            {
+                "path": adapter_file.name,
+                "sizeBytes": adapter_file.stat().st_size,
+                "sha256": ubuntu_pipeline.file_sha256(adapter_file),
+            }
+        ],
+    }
+    adapter_sha = ubuntu_pipeline.canonical_sha256(adapter_payload)
+    ubuntu_pipeline.write_object(
+        adapter_dir / "adapter_artifact_manifest.json",
+        {**adapter_payload, "adapterSHA256": adapter_sha},
+    )
+    finalized = tmp_path / "training" / agent / "finalized_variant_manifest.json"
+    finalized.parent.mkdir(parents=True)
+    finalized_payload = {"agent": agent, "trainingPhase": "sft"}
+    finalized_sha = ubuntu_pipeline.canonical_sha256(finalized_payload)
+    ubuntu_pipeline.write_object(
+        finalized,
+        {**finalized_payload, "variantManifestSHA256": finalized_sha},
+    )
+    sft_record = {
+        "phase": "sft",
+        "adapterSHA256": adapter_sha,
+        "finalizedVariantManifestSHA256": finalized_sha,
+        **_write_phase_report_fixture(
+            tmp_path,
+            agent,
+            preference=False,
+            digest_character="1",
+        ),
+    }
+    plan = _test_execution_plan(evaluation_scope="none", gguf_requested=False)
+    summary = {
+        "status": "sft_only_diagnostic_complete",
+        "trainingScope": "sft_only",
+        "preferenceTraining": False,
+        "evaluationStatus": "not_run",
+        "evaluationScope": "none",
+        "ggufStatus": "not_applicable_sft_only",
+        "ggufConversionStatus": "not_applicable",
+        "ggufTensorEquivalenceStatus": "not_applicable",
+        "qualification": "diagnostic_only",
+        "promotionEligible": False,
+        **smoke_evidence,
+        "executionPlanSHA256": plan["executionPlanSHA256"],
+        **_summary_base_model_lineage_fixture(),
+        "agents": {agent: {"sft": sft_record, "finalPhase": sft_record}},
+    }
+    run_manifest = {
+        "runID": run_id,
+        "agents": [{"agent": agent}],
+        "adapterRepoID": repo_id,
+        "adapterRuntimeManifestFileSHA256": ubuntu_pipeline.file_sha256(
+            runtime_manifest
+        ),
+        "trainingEnvironment": training_environment,
+        **_summary_base_model_lineage_fixture(),
+        **source_fields,
+    }
+    ubuntu_pipeline.write_object(tmp_path / "aio_run_manifest.json", run_manifest)
+    ubuntu_pipeline.write_object(tmp_path / "aio_summary.json", summary)
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_run_manifest",
+        lambda *_args: run_manifest,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_completed_summary",
+        lambda *_args: summary,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "current_source_integrity",
+        lambda *_args: source_fields["ubuntuSourceIntegrity"],
+    )
+    monkeypatch.setattr(ubuntu_pipeline, "verify_sft", lambda *_args: sft_record)
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("SFT-only upload attempted preference verification")
+
+    monkeypatch.setattr(ubuntu_pipeline, "verify_preference", forbidden)
+    state = _install_fake_transactional_upload_hub(tmp_path, monkeypatch)
+    token = tmp_path / "token"
+    token.write_text("hf_test_token\n", encoding="utf-8")
+    receipt_dir = tmp_path / "receipts"
+    receipt_dir.mkdir(mode=0o700)
+    receipt_path = receipt_dir / "upload.json"
+
+    with pytest.raises(RuntimeError, match="--allow-diagnostic-upload"):
+        ubuntu_pipeline.upload_run(
+            run_root=tmp_path,
+            agents=(agent,),
+            run_id=run_id,
+            private=True,
+            include_gguf=False,
+            token_file=token,
+            receipt_path=receipt_path,
+        )
+    receipt = ubuntu_pipeline.upload_run(
+        run_root=tmp_path,
+        agents=(agent,),
+        run_id=run_id,
+        private=True,
+        include_gguf=False,
+        token_file=token,
+        allow_diagnostic_upload=True,
+        receipt_path=receipt_path,
+    )
+
+    assert state["create_calls"] == 1
+    assert receipt["remoteNamespace"] == "diagnostic-sft-runs"
+    assert receipt["trainingScope"] == "sft_only"
+    assert receipt["preferenceTraining"] is False
+    assert receipt["phaseRuntimeEvidenceByAgent"] == {
+        agent: {"sft": ubuntu_pipeline._compact_phase_runtime_evidence(sft_record)}
+    }
+    assert any(
+        path.endswith(f"/adapters/{agent}/adapter_model.safetensors")
+        for path in receipt["uploadedPaths"]
+    )
+    assert any(
+        path.endswith(f"/manifests/{agent}/sft_training_report.json")
+        for path in receipt["uploadedPaths"]
+    )
+    assert not any(
+        segment in path
+        for path in receipt["uploadedPaths"]
+        for segment in ("/preference_", "/evaluation/", "/gguf/")
+    )
+
+
 def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -5376,6 +6651,7 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
     run_id = "diagnostic-run"
     repo_id = "lumen-owner/lumen-adapters"
     source_fields = _source_integrity_fixture()
+    smoke_evidence = _write_runtime_binding_smoke_summary_fixture(tmp_path)
     source_record = source_fields["ubuntuSourceIntegrity"]
     runtime_manifest = (
         tmp_path / "generated" / "fine_tuning" / "adapter_runtime_manifest.json"
@@ -5415,9 +6691,26 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
         finalized,
         {**finalized_payload, "variantManifestSHA256": finalized_sha},
     )
+    sft_record = {
+        "phase": "sft",
+        "adapterSHA256": "9" * 64,
+        **_write_phase_report_fixture(
+            tmp_path,
+            agent,
+            preference=False,
+            digest_character="1",
+        ),
+    }
     preference_record = {
+        "phase": "dpo",
         "adapterSHA256": adapter_sha,
         "finalizedVariantManifestSHA256": finalized_sha,
+        **_write_phase_report_fixture(
+            tmp_path,
+            agent,
+            preference=True,
+            digest_character="2",
+        ),
     }
     token_file = tmp_path / "token"
     token_file.write_text("hf_test_token\n", encoding="utf-8")
@@ -5431,13 +6724,18 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
             "ggufTensorEquivalenceStatus": "not_applicable",
         "qualification": "diagnostic_only",
         "promotionEligible": False,
+        "preferenceTraining": True,
+        "trainingScope": "sft_preference",
+        **smoke_evidence,
         "executionPlanSHA256": _test_execution_plan(
             evaluation_scope="smoke",
             evaluation_max_examples=1,
             gguf_requested=False,
         )["executionPlanSHA256"],
+        **_summary_base_model_lineage_fixture(),
         "agents": {
             agent: {
+                "sft": sft_record,
                 "finalPhase": preference_record,
                 "evaluation": None,
                 "adapterGGUFExists": False,
@@ -5452,6 +6750,7 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
             runtime_manifest
         ),
         "trainingEnvironment": {},
+        **_summary_base_model_lineage_fixture(),
         **source_fields,
     }
     ubuntu_pipeline.write_object(tmp_path / "aio_run_manifest.json", run_manifest)
@@ -5465,6 +6764,16 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
         ubuntu_pipeline,
         "_verified_completed_summary",
         lambda *_args: summary,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_runtime_binding_smoke_summary_evidence",
+        lambda *_args: smoke_evidence,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "verify_sft",
+        lambda *_args: sft_record,
     )
     monkeypatch.setattr(
         ubuntu_pipeline,
@@ -5558,13 +6867,13 @@ def test_diagnostic_upload_receipt_binds_override_prefix_and_artifact_scope(
     assert ubuntu_pipeline.read_object(tmp_path / "upload_receipts.json") == receipt
 
 
-def test_trainers_save_only_the_unified_fast_tokenizer_format() -> None:
+def test_trainers_publish_only_exact_base_tokenizer_bytes() -> None:
     for filename in ("train_sft.py", "train_dpo.py"):
         source = (
             REPO_ROOT / "tools" / "fine_tuning" / "unsloth" / filename
         ).read_text(encoding="utf-8")
-        assert "tokenizer.save_pretrained" in source
-        assert "legacy_format=False" in source
+        assert "tokenizer.save_pretrained" not in source
+        assert "_publish_exact_base_tokenizer_subset(" in source
 
 
 def test_controlled_trainers_evaluate_each_epoch_and_checkpoint_preference_steps() -> None:
