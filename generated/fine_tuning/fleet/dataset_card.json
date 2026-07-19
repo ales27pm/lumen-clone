@@ -1,7 +1,7 @@
 {
   "agent": "fleet",
   "availableSFTRecords": 337,
-  "candidateSFTRecords": 6527,
+  "candidateSFTRecords": 6528,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": {
@@ -438,7 +438,7 @@
       "samplingInputRecordCount": 980,
       "samplingInputStratumCount": 40,
       "schemaVersion": "lumen.fleet-validation-sampling/1.0.0",
-      "selectedCohortSHA256": "0339999888d38f9567f9e81cd51a59a43f7de4022cc3bb74c76bd741d467db8b",
+      "selectedCohortSHA256": "57da5ab3756f30d1b5f7420db5e18e09a657bc6c5c83a3df693cce6c4a38845b",
       "selectedRecordCount": 128,
       "selectedStratumCount": 40,
       "selectionStrategy": "least_represented_stratum_then_salted_stable_hash_v1",
@@ -545,18 +545,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "bb656869057863be66f5046395751e27c8cb661b24ee0aa5edbf8b1eae2ba631"
+      "reportSHA256": "6c60c3abb34c47f383ec41e04f939d72c9e114a7f0593a42f7740da5a2ef2898"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "b45238ac4d1b1ee5d909b8de6e087fd74f2bbbb857a904d65e6b13fea22435ad",
+    "frozenEvaluationSHA256": "3aaafaaa22b86e4e6867c48ef5ffef74acd81296db756c986bef534e66db7ab7",
     "recordCount": 15,
     "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "c1e49d4a22cfc4b91d8429e9fb4956996302779cc0f3f5a4b014ed7228fc242d",
-      "optimizedTrainingCorpusSHA256": "53141af9b2134807bcfb97d0195871be971251b48a9c10313a7273fb842e88c7",
+      "baselineTrainingCorpusSHA256": "ff7f3445e268013a1b3bde660077839a0bcd20123aade4de6e8d19669a1296a1",
+      "optimizedTrainingCorpusSHA256": "80051554a2ed51a27ed8e7b94bfce5edf7e5ae4677aeb67f2e92232502484c6c",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -585,7 +585,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "caf9cb1f2fa0c474d07666a01c208d02f2ca52690cc7c047cec62f9423a67552",
+    "experimentManifestSHA256": "fd10fb89f4d0f26cd4599335ce730a3edbeb9421ce6c13a1f1f0e989d871699c",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -615,7 +615,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "faca89ac8422025a0471d7f761b354f5035df707",
+  "manifestCommit": "0415c1ec86a22f3d9e0e4cad95159d2ba553cacc",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 102,
@@ -887,9 +887,9 @@
     "self_model_sft": 4
   },
   "sourceIntegrity": {
-    "baseCommit": "faca89ac8422025a0471d7f761b354f5035df707",
+    "baseCommit": "0415c1ec86a22f3d9e0e4cad95159d2ba553cacc",
     "dirtyState": false,
-    "workingTreeDigest": "9af64914597dedd5418d2cf9dae54b3d2864e5767811ecc8fb3b2f76fc264429"
+    "workingTreeDigest": "2b65582352a6a5fe98c8029ddff86e842941b7953588ba0ff93ed14fd6d56931"
   },
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning.",
   "taskTypeCounts": {
@@ -930,5 +930,5 @@
     "ultra_specific_fleet_slot_directory",
     "ultra_specific_tool_boundary_awareness"
   ],
-  "worktreeFingerprint": "9af64914597dedd5418d2cf9dae54b3d2864e5767811ecc8fb3b2f76fc264429"
+  "worktreeFingerprint": "2b65582352a6a5fe98c8029ddff86e842941b7953588ba0ff93ed14fd6d56931"
 }
