@@ -1,7 +1,7 @@
 {
   "agent": "fleet",
-  "availableSFTRecords": 520,
-  "candidateSFTRecords": 6903,
+  "availableSFTRecords": 627,
+  "candidateSFTRecords": 6959,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": {
@@ -480,7 +480,7 @@
     "fleetValidationLossSharePolicy": "observed_not_enforced",
     "fleetValidationSamplingPolicy": {
       "allSamplingInputStrataPreserved": true,
-      "candidateBeforePublicSelectionRecordCount": 1016,
+      "candidateBeforePublicSelectionRecordCount": 1018,
       "candidateStratumCount": 43,
       "deterministic": true,
       "explicitValidationAssignmentCount": 35,
@@ -490,11 +490,11 @@
       "optimizerLossShareCapsApplied": false,
       "publicCorpusSelectionAppliedBeforeSampling": true,
       "rejectedByPublicSelectionCount": 0,
-      "rejectedByValidationSamplingCount": 888,
-      "samplingInputRecordCount": 1016,
+      "rejectedByValidationSamplingCount": 890,
+      "samplingInputRecordCount": 1018,
       "samplingInputStratumCount": 43,
       "schemaVersion": "lumen.fleet-validation-sampling/1.0.0",
-      "selectedCohortSHA256": "e7097ff8817b3517513b23e342eca1e523fc8a51134a1bd865fbbef9d4d66bcb",
+      "selectedCohortSHA256": "a4fd45a62064895e3c1fd0e60256c097091ebbb4b8e7a5cd30350b1284d38af0",
       "selectedRecordCount": 128,
       "selectedStratumCount": 43,
       "selectionStrategy": "least_represented_stratum_then_salted_stable_hash_v1",
@@ -601,18 +601,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "11e9e4c1800c92a03dbabf758ff2831bfa0356adb2522af1a249df22d5a83719"
+      "reportSHA256": "38dad9380ab2592cbf8bb906296648ecfb6b04cf8b26da0cd8420af6aac73a9b"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "b6eb461b44395e2fc48c4bcd20d2101f226f5709afed8d9d7aa0ca68c0553e58",
+    "frozenEvaluationSHA256": "ff37b9f0580579cbbca81131a4346d0510d7b3443ae9f7cfb8bd31f0d352d00b",
     "recordCount": 15,
     "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "3ea875186889c4a651a5c9c33bbf2e172a519f0502c7c2bfeea4bb2f633bbbb2",
-      "optimizedTrainingCorpusSHA256": "b318e9e8c3093f788e2f058dcb0e3f20a13bfa671a10cff0a52f649e8ef5dfef",
+      "baselineTrainingCorpusSHA256": "1d43256a98a09ba4be882ab060900c6f3451d0d4a0df906ae627a11b96222090",
+      "optimizedTrainingCorpusSHA256": "59e146a123fb8a42b2caa6f96e86ab276881c567eebc3ac66567cff4cf8abdb2",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -641,7 +641,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "08fced4dcd1acba1cdca2a7c8b876d3b20753ca301602ac343056f8fa8d6116e",
+    "experimentManifestSHA256": "f4d74ded4404a4ab9a7e420f8efdca026a455cac6626af9d37a9f914e9a83be7",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -689,10 +689,10 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "b2d0ad2a8d6ae42c60cf497262083d86a1ffa82c",
+  "manifestCommit": "d6db3669175a069cf56e4043fc80eef416f10806",
   "preferenceTraining": {
     "includedInCheckpoint": false,
-    "recordCount": 137,
+    "recordCount": 208,
     "requiredPhase": "post_sft_preference_training",
     "status": "generated_not_trained"
   },
@@ -723,13 +723,13 @@
     "maxSFTTokenProxyShare": 0.3,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 75,
+      "train_sft": 130,
       "val_dpo": 0,
       "val_sft": 58
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 353,
+      "train_sft": 298,
       "val_dpo": 0,
       "val_sft": 0
     },
@@ -772,9 +772,9 @@
         "minimum": 0.760588
       },
       "selected": {
-        "count": 133,
+        "count": 188,
         "maximum": 0.775887,
-        "mean": 0.76455,
+        "mean": 0.764386,
         "minimum": 0.760588
       }
     },
@@ -856,12 +856,12 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "AmazonScience/massive": 133
+      "AmazonScience/massive": 188
     },
     "sourceSplitCounts": {
       "AmazonScience/massive": {
         "train_dpo": 0,
-        "train_sft": 75,
+        "train_sft": 130,
         "val_dpo": 0,
         "val_sft": 58
       }
@@ -872,8 +872,8 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.061113,
-        "total": 0.077468
+        "target": 0.085679,
+        "total": 0.106852
       },
       "val_dpo": {
         "target": 0.0,
@@ -881,13 +881,13 @@
       },
       "val_sft": {
         "target": 0.074319,
-        "total": 0.156975
+        "total": 0.156953
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 230758,
-    "assistantTargetTokenProxyCount": 57876,
+    "assistantTargetCharCount": 264089,
+    "assistantTargetTokenProxyCount": 66255,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -895,22 +895,22 @@
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
     "cortexPublicBalanceDroppedRecordCount": 0,
-    "fleetDPOChosenTargetCharCount": 75282,
-    "fleetDPOChosenTargetTokenProxyCount": 18864,
+    "fleetDPOChosenTargetCharCount": 125894,
+    "fleetDPOChosenTargetTokenProxyCount": 31547,
     "fleetSourceRoleDPORecordCounts": {
-      "behavioral_primary": 125,
+      "behavioral_primary": 196,
       "public_behavioral": 0,
       "supplemental_static": 12
     },
     "fleetSourceRoleSFTRecordCounts": {
-      "behavioral_primary": 317,
-      "public_behavioral": 133,
-      "supplemental_static": 70
+      "behavioral_primary": 362,
+      "public_behavioral": 188,
+      "supplemental_static": 77
     },
     "fleetSupplementalDPOChosenTargetCharCount": 2076,
-    "fleetSupplementalDPOChosenTargetCharShare": 0.027576313062883558,
+    "fleetSupplementalDPOChosenTargetCharShare": 0.016490063068931006,
     "fleetSupplementalDPOChosenTargetTokenProxyCount": 524,
-    "fleetSupplementalDPOChosenTargetTokenProxyShare": 0.027777777777777776,
+    "fleetSupplementalDPOChosenTargetTokenProxyShare": 0.016610137255523506,
     "sequenceBudgetDroppedRecordCount": 12,
     "sourceTokenProxyContract": {
       "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
@@ -920,20 +920,20 @@
       "status": "source_side_selection_proxy_not_exact_token_count",
       "strategy": "max_whitespace_terms_utf8_byte_ceiling"
     },
-    "supplementalAssistantTargetCharCount": 67621,
-    "supplementalAssistantTargetCharShare": 0.2930385945449345,
-    "supplementalAssistantTargetTokenProxyCount": 16928,
-    "supplementalAssistantTargetTokenProxyShare": 0.2924873868270095,
+    "supplementalAssistantTargetCharCount": 72713,
+    "supplementalAssistantTargetCharShare": 0.27533520896364483,
+    "supplementalAssistantTargetTokenProxyCount": 18204,
+    "supplementalAssistantTargetTokenProxyShare": 0.27475662214172514,
     "supplementalBalanceDroppedRecordCount": 0,
-    "supplementalSFTRecordCount": 70,
+    "supplementalSFTRecordCount": 77,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
-    "ultraSpecificRecordCount": 272,
+    "ultraSpecificRecordCount": 308,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
     "eval": 15,
-    "train_dpo": 113,
-    "train_sft": 392,
+    "train_dpo": 184,
+    "train_sft": 499,
     "val_dpo": 24,
     "val_sft": 128
   },
@@ -950,38 +950,38 @@
     "self_model_sft"
   ],
   "sourceFamilyCounts": {
-    "adapter_ultra_specific": 272,
-    "codebase_home_chunk_sft": 13,
-    "codebase_home_sft": 14,
-    "cross_model_training": 28,
-    "fleet_orchestration_native": 45,
+    "adapter_ultra_specific": 308,
+    "codebase_home_chunk_sft": 20,
+    "codebase_home_sft": 19,
+    "cross_model_training": 23,
+    "fleet_orchestration_native": 54,
     "manifest_grounding_cards": 4,
-    "public_adapter_corpus_massive_en_us_1_1": 133,
+    "public_adapter_corpus_massive_en_us_1_1": 188,
     "self_model_cards": 7,
     "self_model_sft": 4
   },
   "sourceIntegrity": {
-    "baseCommit": "b2d0ad2a8d6ae42c60cf497262083d86a1ffa82c",
+    "baseCommit": "d6db3669175a069cf56e4043fc80eef416f10806",
     "dirtyState": false,
-    "workingTreeDigest": "55da98b23ed758f07ad15e996a6e51d03d4e245869b6a6106e0e2521c1af334e"
+    "workingTreeDigest": "25abafada7d2f927d8bb53b9e22e016b7ce24ac3142db5bb3020935f9327ccbe"
   },
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning.",
   "taskTypeCounts": {
-    "codebase_home_grounding": 13,
+    "codebase_home_grounding": 18,
     "codebase_home_overview": 1,
-    "codebase_source_chunk_grounding": 13,
-    "fleet_contract_delegation": 36,
+    "codebase_source_chunk_grounding": 20,
+    "fleet_contract_delegation": 72,
     "fleet_contract_known_slots": 24,
     "fleet_contract_tool_boundary": 24,
     "fleet_contract_tool_ownership": 156,
-    "fleet_delegation": 9,
-    "fleet_orchestration_event_graph": 45,
-    "fleet_peer_knowledge": 7,
-    "fleet_peer_source_knowledge": 7,
-    "fleet_self_knowledge": 2,
+    "fleet_delegation": 7,
+    "fleet_orchestration_event_graph": 54,
+    "fleet_peer_knowledge": 6,
+    "fleet_peer_source_knowledge": 6,
+    "fleet_self_knowledge": 1,
     "fleet_whole_system_identity": 1,
     "manifest_grounding_cards": 4,
-    "public_capability_delegation": 133,
+    "public_capability_delegation": 188,
     "self_model_card_grounding": 7,
     "self_model_grounded_answer": 4,
     "source_code_self_knowledge": 2,
@@ -1014,5 +1014,5 @@
     "ultra_specific_fleet_slot_directory",
     "ultra_specific_tool_boundary_awareness"
   ],
-  "worktreeFingerprint": "55da98b23ed758f07ad15e996a6e51d03d4e245869b6a6106e0e2521c1af334e"
+  "worktreeFingerprint": "25abafada7d2f927d8bb53b9e22e016b7ce24ac3142db5bb3020935f9327ccbe"
 }
