@@ -1,11 +1,15 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 63,
+  "availableSFTRecords": 61,
   "candidateSFTRecords": 561,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": null,
+    "fleetLossShareEnforcementScope": null,
+    "fleetOrchestrationEvaluationRequired": null,
     "fleetSourceRoleRegistry": null,
+    "fleetValidationLossSharePolicy": null,
+    "fleetValidationSamplingPolicy": null,
     "manifestOnlyTools": true,
     "maxCortexPublicSFTRecordsPerTool": null,
     "maxCortexSupplementalAssistantCharShare": null,
@@ -15,7 +19,76 @@
     "maxFleetSupplementalDPOChosenCharShare": null,
     "maxFleetSupplementalDPOChosenTokenProxySelectionShare": null,
     "maxFleetSupplementalDPOChosenTokenShare": null,
-    "maxPublicCorpusSFTTokenProxyShare": 0.35,
+    "maxPublicCorpusSFTTokenProxyShare": 0.3,
+    "publicCorpusLossShareContract": {
+      "authoritativeCapEncoding": "integer_basis_points",
+      "basisPointDenominator": 10000,
+      "capBasisPoints": {
+        "hard": 3500,
+        "requested": 3500
+      },
+      "dpoTokenizationPolicy": {
+        "appendedEOSTokensPerCompletion": 1,
+        "completionSuffix": "append_tokenizer_eos_token_id",
+        "completionTokenization": "add_special_tokens_false",
+        "trainerImplementation": "trl.DPOTrainer.tokenize_row",
+        "trlVersion": "0.24.0"
+      },
+      "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+      "enforcementRequired": true,
+      "exactTokenEvidenceContract": {
+        "comparisonRule": "numeratorTokenCount*basisPointDenominator<=denominatorTokenCount*capBasisPoints",
+        "lanes": {
+          "dpo": {
+            "denominatorTokenCount": "chosenTargetTokenCount",
+            "publicNumeratorTokenCount": "publicChosenTargetTokenCount"
+          },
+          "sft": {
+            "denominatorTokenCount": "assistantTargetTokenCount",
+            "publicNumeratorTokenCount": "publicAssistantTargetTokenCount"
+          }
+        },
+        "required": true,
+        "schemaVersion": "lumen.public-corpus-loss-share-evidence/1.0.0",
+        "statusAtGeneration": "pending_exact_tokenizer_preflight",
+        "tokenizer": "pinned_qwen_tokenizer"
+      },
+      "failurePolicy": "abort_before_optimizer",
+      "requiredLanes": [
+        "sft",
+        "dpo"
+      ],
+      "rowMetadataContract": {
+        "classificationRule": "prefix_and_nonempty_lineage_required",
+        "mismatch": "hard_fail",
+        "publicCorpusField": "publicCorpus",
+        "publicSourceFamilyPrefix": "public_adapter_corpus_"
+      },
+      "schemaVersion": "lumen.public-corpus-loss-share/1.0.0",
+      "sourceSelectionProxy": {
+        "contract": {
+          "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+          "exactPinnedTokenizerAuthoritative": true,
+          "maxCharsPerToken": 4,
+          "schemaVersion": "lumen.source-token-proxy/1.0.0",
+          "status": "source_side_selection_proxy_not_exact_token_count",
+          "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+        },
+        "maximumPublicShareBasisPoints": 3000,
+        "status": "safety_budget_not_exact_token_count"
+      },
+      "tokenAccounting": {
+        "dpo": "rendered_chosen_completion_tokens_add_special_tokens_false_plus_one_trl_0_24_0_appended_eos",
+        "sft": "assistant_mask_non_ignored_token_count"
+      },
+      "tokenizer": {
+        "baseModelID": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+        "tokenizerClosureSHA256": "ef6d799ce1ba7094fc40f8d5bf011d6ff3c549598ed1b06dbe46207ae9c1d13b",
+        "tokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+      }
+    },
+    "requestedMaxPublicCorpusAssistantTargetTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
@@ -25,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "2a79c0cf7c7ab0dac643f89448b6bc59bc2ee07717da75bea3076f0b13724729"
+      "reportSHA256": "743473e67e9a5458d4a5e6e7bd33fe910bd81d510cff1996fb45c178eedbef10"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -35,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "e029b72bc666fead04e2ed828054f73158e756613ee7fab1acaccd1abf10b0ac",
-      "optimizedTrainingCorpusSHA256": "4a553d8eaaaee0feada71bebbdc9e890e29cd6e48bbec7150bedaa41e9297fcd",
+      "baselineTrainingCorpusSHA256": "e641cf21146eb44bf920b59f1b4737eff01436b0ecc79ddbe636e6de93b83efa",
+      "optimizedTrainingCorpusSHA256": "360d1f5946aa452fd670c6bd8084c7eefb409a5090c325200e962592b30b3646",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -52,6 +125,8 @@
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
+      "baseModelTokenizerFiles",
+      "baseModelTokenizerClosureSHA256",
       "trainingEnvironmentLockSHA256",
       "trainingCodeSHA256",
       "trainingCodeSHA256ByPhase",
@@ -63,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "dbae4f1c91da293124b9229e5ce6efa66c5bbe014a994ac62861fd1cc7d83614",
+    "experimentManifestSHA256": "3b209e0d408a4ffc5812916d0d3f6da0a5ebf671d007f76804841452e1ffad20",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -85,7 +160,7 @@
       "runtimePointerPolicy": "unchanged_until_promoted",
       "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
       "runtimeSourceRevisionIsAuditOnly": true,
-      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+      "schemaVersion": "lumen.adapter-promotion/1.1.0"
     },
     "requiredVariants": [
       "internal_only",
@@ -93,7 +168,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "394257510890f67af00c0840f5dd97dddb1ac53d",
+  "manifestCommit": "d17fc15c3eddee50eab8a636a556b8dfb01165bc",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 39,
@@ -142,26 +217,41 @@
       "Apache-2.0",
       "MIT"
     ],
-    "maxDPOTokenProxyShare": 0.35,
-    "maxSFTTokenProxyShare": 0.35,
+    "maxDPOTokenProxyShare": 0.3,
+    "maxSFTTokenProxyShare": 0.3,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 11,
+      "train_sft": 9,
       "val_dpo": 0,
       "val_sft": 1
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 416,
+      "train_sft": 418,
       "val_dpo": 0,
       "val_sft": 77
     },
+    "rejectedByValidationSampling": {
+      "train_dpo": 0,
+      "train_sft": 0,
+      "val_dpo": 0,
+      "val_sft": 0
+    },
+    "requestedMaxDPOChosenTargetTokenShare": 0.35,
+    "requestedMaxSFTAssistantTargetTokenShare": 0.35,
     "selectionContract": {
-      "maxTokenProxyShare": 0.35,
+      "laneTargetTokenProxyModes": {
+        "train_dpo": "dpo_chosen",
+        "train_sft": "all_assistant",
+        "val_dpo": "dpo_chosen",
+        "val_sft": "all_assistant"
+      },
+      "maxTokenProxyShare": 0.3,
       "policyVersions": [
         "2026-07-12.3"
       ],
-      "sha256": "601495d0961ed2518f7832b192f78c7fee35210f969609b709b899c6d37edd46",
+      "requestedExactPublicAssistantTargetShare": 0.35,
+      "sha256": "39666d0f65e6a5335afd9886a1fdc0270532dff39ab51bf8c1417d97557b61ca",
       "sourceTokenProxyContract": {
         "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
         "exactPinnedTokenizerAuthoritative": true,
@@ -180,9 +270,9 @@
         "minimum": 0.78375
       },
       "selected": {
-        "count": 12,
+        "count": 10,
         "maximum": 0.942625,
-        "mean": 0.849602,
+        "mean": 0.844472,
         "minimum": 0.78375
       }
     },
@@ -265,8 +355,8 @@
     },
     "sourceCounts": {
       "Team-ACE/ToolACE": 4,
-      "grammarly/coedit": 4,
-      "json-schema-org/JSON-Schema-Test-Suite": 4
+      "grammarly/coedit": 3,
+      "json-schema-org/JSON-Schema-Test-Suite": 3
     },
     "sourceSplitCounts": {
       "Team-ACE/ToolACE": {
@@ -277,13 +367,13 @@
       },
       "grammarly/coedit": {
         "train_dpo": 0,
-        "train_sft": 4,
+        "train_sft": 3,
         "val_dpo": 0,
         "val_sft": 0
       },
       "json-schema-org/JSON-Schema-Test-Suite": {
         "train_dpo": 0,
-        "train_sft": 4,
+        "train_sft": 3,
         "val_dpo": 0,
         "val_sft": 0
       }
@@ -294,8 +384,8 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.33866,
-        "total": 0.271629
+        "target": 0.289197,
+        "total": 0.233085
       },
       "val_dpo": {
         "target": 0.0,
@@ -308,8 +398,8 @@
     }
   },
   "quality": {
-    "assistantTargetCharCount": 8524,
-    "assistantTargetTokenProxyCount": 2156,
+    "assistantTargetCharCount": 7988,
+    "assistantTargetTokenProxyCount": 2021,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -347,7 +437,7 @@
   "recordCounts": {
     "eval": 6,
     "train_dpo": 32,
-    "train_sft": 53,
+    "train_sft": 51,
     "val_dpo": 7,
     "val_sft": 10
   },
@@ -361,15 +451,15 @@
   ],
   "sourceFamilyCounts": {
     "adapter_ultra_specific": 46,
-    "public_adapter_corpus_coedit_train": 4,
-    "public_adapter_corpus_json_schema_test_suite_draft_2020_12": 4,
+    "public_adapter_corpus_coedit_train": 3,
+    "public_adapter_corpus_json_schema_test_suite_draft_2020_12": 3,
     "public_adapter_corpus_toolace_train": 4,
     "rem_reflection": 5
   },
   "sourceIntegrity": {
-    "baseCommit": "394257510890f67af00c0840f5dd97dddb1ac53d",
+    "baseCommit": "d17fc15c3eddee50eab8a636a556b8dfb01165bc",
     "dirtyState": false,
-    "workingTreeDigest": "aca88fed6ad0f542b5f4e881be371af802a5afb76f5cffaa93f65048bc17c399"
+    "workingTreeDigest": "790d052374174a0863a7c0aa7bb8c2fa4528f347aa2f54876a5a034414a0b880"
   },
   "systemPrompt": "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
   "taskTypeCounts": {
@@ -379,8 +469,8 @@
     "critical_contract_memory_ttl_classification": 6,
     "critical_contract_ultra_specific_no_thinking_root_cause": 6,
     "critical_contract_ultra_specific_training_evidence_root_cause": 6,
-    "public_schema_failure_diagnosis": 4,
-    "public_text_repair": 4,
+    "public_schema_failure_diagnosis": 3,
+    "public_text_repair": 3,
     "public_tool_boundary_repair": 4,
     "reflection_and_memory_policy": 5,
     "ultra_specific_argument_extraction_repair": 1,
@@ -410,5 +500,5 @@
     "ultra_specific_runtime_repair",
     "ultra_specific_training_evidence_repair"
   ],
-  "worktreeFingerprint": "aca88fed6ad0f542b5f4e881be371af802a5afb76f5cffaa93f65048bc17c399"
+  "worktreeFingerprint": "790d052374174a0863a7c0aa7bb8c2fa4528f347aa2f54876a5a034414a0b880"
 }
