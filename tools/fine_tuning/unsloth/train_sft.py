@@ -40,6 +40,8 @@ try:
         canonical_controlled_package_version,
         installed_controlled_package_versions,
         repository_training_code_bundle,
+        RUN_RESUME_LINEAGE_SCHEMA,
+        TRAINING_VARIANT_ATTESTATION_SCHEMA,
         validate_runtime_source_audit,
         verify_private_base_model_conversion_snapshot,
         verify_private_base_model_tokenizer_snapshot,
@@ -61,6 +63,8 @@ except ImportError:
         canonical_controlled_package_version,
         installed_controlled_package_versions,
         repository_training_code_bundle,
+        RUN_RESUME_LINEAGE_SCHEMA,
+        TRAINING_VARIANT_ATTESTATION_SCHEMA,
         validate_runtime_source_audit,
         verify_private_base_model_conversion_snapshot,
         verify_private_base_model_tokenizer_snapshot,
@@ -136,7 +140,72 @@ AGENTS = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
 FINETUNE_MARKERS = {"sft", "dpo", "orpo", "lora", "merged", "adapter", "finetune", "finetuned", "training"}
 CHECKPOINT_LINEAGE_SCHEMA = "lumen.zerogpu.checkpoint_lineage/1.0.0"
 CHECKPOINT_DIRECTORY_SCHEMA = "lumen.zerogpu.checkpoint_directory/1.0.0"
-RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.0.0"
+RUN_RESUME_LINEAGE_FIELDS = frozenset(
+    {
+        "schema",
+        "runID",
+        "datasetRepository",
+        "datasetRevision",
+        "datasetPath",
+        "localDatasetSnapshot",
+        "selectedAgents",
+        "experimentVariant",
+        "seed",
+        "assistantOnlyLoss",
+        "trainingCodeSHA256",
+        "trainingDependencyLockSHA256",
+        "requirementsSHA256",
+        "resolvedTrainingEnvironment",
+        "resolvedTrainingEnvironmentSHA256",
+        "zeroGPUSize",
+        "zeroGPUDurationSeconds",
+        "observedAccelerator",
+        "spaceConfigurationSHA256",
+        "runtimeSourceKind",
+        "runtimeSourceRevision",
+        "expectedRuntimeSourceRevision",
+        "observedRepositoryRevision",
+        "observedRuntimeRevision",
+        "runtimeSourceBindingStatus",
+        "runtimeSourceBindingMethod",
+        "agents",
+        "runResumeLineageSHA256",
+    }
+)
+RUN_RESUME_AGENT_LINEAGE_FIELDS = frozenset(
+    {
+        "agent",
+        "sourceVariantManifestSHA256",
+        "laneHashes",
+        "datasetFileSHA256",
+        "trainingCorpusSHA256",
+        "controlledTrainingConfigSHA256",
+        "trainingConfigInvariantSHA256",
+        "baseModelID",
+        "baseModelRevision",
+        "baseModelIndexDigest",
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexShardBindingSHA256",
+        "baseModelArtifactDigest",
+        "baseModelWeightShards",
+        "baseModelTokenizerDigest",
+        "baseModelTokenizerFiles",
+        "baseModelTokenizerClosureSHA256",
+        "baseModelTokenizerSnapshotPath",
+        "baseModelGenerationConfigFile",
+        "baseModelRuntimeSnapshotPath",
+        "seed",
+        "trainingEnvironmentLockSHA256",
+        "configPath",
+        "checkpointLineagePath",
+        "checkpointRoot",
+        "outputDirectory",
+        "adapterOutputDirectory",
+    }
+)
+RUN_RESUME_DATASET_FILES = frozenset(
+    {"train_sft.jsonl", "val_sft.jsonl", "train_dpo.jsonl", "val_dpo.jsonl"}
+)
 SFT_CHECKPOINT_LINEAGE_SCHEMA = "lumen.sft_checkpoint_lineage/1.2.0"
 SFT_CHECKPOINT_DIRECTORY_SCHEMA = "lumen.sft_checkpoint_directory/1.1.0"
 SFT_CHECKPOINT_SAVE_STEPS = 10
@@ -2119,6 +2188,8 @@ def _agent_resume_lineage(cfg: Mapping[str, Any]) -> tuple[dict[str, Any], dict[
     run_lineage = cfg.get("runResumeLineage")
     if not isinstance(run_lineage, dict) or run_lineage.get("schema") != RUN_RESUME_LINEAGE_SCHEMA:
         raise RuntimeError("runResumeLineage must be a canonical run-resume lineage object")
+    if set(run_lineage) != RUN_RESUME_LINEAGE_FIELDS:
+        raise RuntimeError("runResumeLineage fields do not match its schema")
     expected_digest = cfg.get("runResumeLineageSHA256")
     unsigned = dict(run_lineage)
     embedded_digest = unsigned.pop("runResumeLineageSHA256", None)
@@ -2132,6 +2203,20 @@ def _agent_resume_lineage(cfg: Mapping[str, Any]) -> tuple[dict[str, Any], dict[
     agents = run_lineage.get("agents")
     if not isinstance(agents, list):
         raise RuntimeError("runResumeLineage.agents must be a list")
+    if any(
+        not isinstance(item, dict)
+        or set(item) != RUN_RESUME_AGENT_LINEAGE_FIELDS
+        for item in agents
+    ):
+        raise RuntimeError("runResumeLineage agent fields do not match its schema")
+    agent_names = [item["agent"] for item in agents]
+    if (
+        any(not isinstance(name, str) or name not in AGENTS for name in agent_names)
+        or len(agent_names) != len(set(agent_names))
+        or run_lineage.get("selectedAgents") != agent_names
+        or cfg.get("agent") not in agent_names
+    ):
+        raise RuntimeError("runResumeLineage selected-agent contract is invalid")
     matches = [item for item in agents if isinstance(item, dict) and item.get("agent") == cfg.get("agent")]
     if len(matches) != 1:
         raise RuntimeError("runResumeLineage must contain exactly one entry for this agent")
@@ -2147,6 +2232,13 @@ def _validate_run_resume_config(
     run_lineage, agent_lineage = _agent_resume_lineage(cfg)
     checkpoint_path = Path(str(cfg.get("checkpointLineagePath") or "")).resolve()
     expected_static = {
+        "runID": cfg_path.resolve().parent.parent.name,
+        "datasetRepository": cfg.get("datasetRepository"),
+        "datasetRevision": cfg.get("datasetRevision"),
+        "datasetPath": cfg.get("datasetPath"),
+        "localDatasetSnapshot": str(
+            Path(str(cfg["dataset_dir"])).resolve().parents[2]
+        ),
         "experimentVariant": cfg.get("variant"),
         "seed": cfg.get("seed"),
         "trainingCodeSHA256": cfg.get("trainingCodeSHA256"),
@@ -2174,8 +2266,23 @@ def _validate_run_resume_config(
     if any(run_lineage.get(key) != value for key, value in expected_static.items()):
         raise RuntimeError("Training config drifted from the run-resume lineage")
     variant_attestation = cfg.get("variantAttestation")
-    if not isinstance(variant_attestation, dict):
+    if (
+        not isinstance(variant_attestation, dict)
+        or variant_attestation.get("schema")
+        != TRAINING_VARIANT_ATTESTATION_SCHEMA
+    ):
         raise RuntimeError("Training config is missing its variant attestation")
+    for field in (
+        "effectiveTrainingConfigSHA256",
+        "trainingConfigInvariantSHA256",
+    ):
+        if re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(variant_attestation.get(field) or ""),
+        ) is None:
+            raise RuntimeError(
+                f"Training config variant attestation lacks a valid {field}"
+            )
     expected_agent = {
         "sourceVariantManifestSHA256": cfg.get("variantManifestSHA256"),
         "laneHashes": variant_attestation.get("laneHashes"),
@@ -2183,9 +2290,15 @@ def _validate_run_resume_config(
         "controlledTrainingConfigSHA256": variant_attestation.get(
             "effectiveTrainingConfigSHA256"
         ),
+        "trainingConfigInvariantSHA256": variant_attestation.get(
+            "trainingConfigInvariantSHA256"
+        ),
         "baseModelID": cfg.get("baseModelID", cfg.get("base_model_name")),
         "baseModelRevision": cfg.get("baseModelRevision"),
         "baseModelIndexDigest": cfg.get("baseModelIndexDigest"),
+        "baseModelIndexReferencedShardNames": cfg.get(
+            "baseModelIndexReferencedShardNames"
+        ),
         "baseModelIndexShardBindingSHA256": cfg.get(
             "baseModelIndexShardBindingSHA256"
         ),
@@ -2196,8 +2309,14 @@ def _validate_run_resume_config(
         "baseModelTokenizerClosureSHA256": cfg.get(
             "baseModelTokenizerClosureSHA256"
         ),
+        "baseModelTokenizerSnapshotPath": str(
+            Path(str(cfg["baseModelTokenizerSnapshotPath"])).resolve()
+        ),
         "baseModelGenerationConfigFile": cfg.get(
             "baseModelGenerationConfigFile"
+        ),
+        "baseModelRuntimeSnapshotPath": str(
+            Path(str(cfg["baseModelRuntimeSnapshotPath"])).resolve()
         ),
         "seed": cfg.get("seed"),
         "trainingEnvironmentLockSHA256": variant_attestation.get(
@@ -2213,7 +2332,14 @@ def _validate_run_resume_config(
         raise RuntimeError("Agent training config drifted from the run-resume lineage")
     dataset_dir = Path(str(cfg["dataset_dir"])).resolve()
     expected_dataset_files = agent_lineage.get("datasetFileSHA256")
-    if not isinstance(expected_dataset_files, dict):
+    if (
+        not isinstance(expected_dataset_files, dict)
+        or set(expected_dataset_files) != RUN_RESUME_DATASET_FILES
+        or any(
+            re.fullmatch(r"[0-9a-f]{64}", str(value or "")) is None
+            for value in expected_dataset_files.values()
+        )
+    ):
         raise RuntimeError("Run-resume lineage is missing dataset file hashes")
     actual_dataset_files = {
         filename: _hash_file(dataset_dir / filename)
@@ -3714,6 +3840,7 @@ def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
     if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
         raise RuntimeError("baseModelRevision must be a full lowercase Hugging Face commit SHA")
     _validated_base_model_tokenizer_closure(cfg)
+    _verified_private_runtime_tokenizer_snapshot(cfg)
     _verified_private_runtime_model_snapshot(cfg)
 
 

@@ -10,6 +10,11 @@ from typing import Any
 
 import pytest
 
+from lumen_manifest_crawler.dataset.optimization_policy import (
+    expected_optimization_step_policy,
+)
+from tools.fine_tuning.unsloth import train_sft
+
 
 class _DummyComponent:
     def __init__(self, *_args: Any, **_kwargs: Any) -> None:
@@ -409,9 +414,15 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
     variant_root = agent_root / "experiments" / "internal_plus_public_optimized"
     variant_root.mkdir(parents=True, exist_ok=True)
     lanes = {
-        "train_sft": [{"messages": [{"role": "assistant", "content": "ok"}]}],
+        "train_sft": [
+            {"messages": [{"role": "assistant", "content": f"ok-{index}"}]}
+            for index in range(96)
+        ],
         "val_sft": [{"messages": [{"role": "assistant", "content": "valid"}]}],
-        "train_dpo": [{"prompt": "x", "chosen": "y", "rejected": "z"}],
+        "train_dpo": [
+            {"prompt": f"x-{index}", "chosen": "y", "rejected": "z"}
+            for index in range(16)
+        ],
         "val_dpo": [],
     }
     for lane, records in lanes.items():
@@ -475,6 +486,11 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
             "files": tokenizer_files,
         }
     )
+    base_policy = expected_optimization_step_policy(
+        agent="executor",
+        sft_train_record_count=128,
+        dpo_train_record_count=32,
+    )
     config = {
         "agent": "executor",
         "baseModelID": "Qwen/Qwen3-1.7B",
@@ -504,12 +520,19 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "lora_dropout": 0,
         "learning_rate": 0.0002,
         "seed": 42,
-        "batch_size": 1,
-        "gradient_accumulation_steps": 1,
-        "num_train_epochs": 1,
+        "batch_size": 2,
+        "gradient_accumulation_steps": 8,
+        "num_train_epochs": base_policy["sft"]["selectedEpochs"],
+        "dpo_num_train_epochs": base_policy["dpo"]["selectedEpochs"],
+        "optimizationStepPolicy": base_policy,
         "warmup_steps": 0,
         "merge_adapters_by_default": False,
         "release_bake_enabled_by_default": False,
+        "trainingCodeManifest": {"phase": "sft"},
+        "trainingCodeSHA256": "1" * 64,
+        "trainingDependencyLock": {"schema": "lock"},
+        "trainingDependencyLockSHA256": "2" * 64,
+        "requirementsSHA256": "3" * 64,
     }
     config["baseModelIndexShardBindingSHA256"] = module._canonical_sha256(
         {
@@ -532,7 +555,21 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
     }
     config["trainingEnvironmentLock"] = environment_lock
     (agent_root / "unsloth_config.json").write_text(json.dumps(config), encoding="utf-8")
+    variant_policy = expected_optimization_step_policy(
+        agent="executor",
+        sft_train_record_count=len(lanes["train_sft"]),
+        dpo_train_record_count=len(lanes["train_dpo"]),
+    )
+    controlled_config = dict(config)
+    controlled_config["optimizationStepPolicy"] = variant_policy
+    controlled_config["num_train_epochs"] = variant_policy["sft"][
+        "selectedEpochs"
+    ]
+    controlled_config["dpo_num_train_epochs"] = variant_policy["dpo"][
+        "selectedEpochs"
+    ]
     manifest = {
+        "schemaVersion": module.EXPERIMENT_VARIANT_SCHEMA_VERSION,
         "agent": "executor",
         "variant": "internal_plus_public_optimized",
         "baseModelID": "Qwen/Qwen3-1.7B",
@@ -551,15 +588,23 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "trainingEnvironmentLockSHA256": module._canonical_sha256(environment_lock),
         "trainingEnvironmentSHA256": None,
         "seed": 42,
-        "controlledTrainingConfig": config,
-        "trainingConfigSHA256": module._canonical_sha256(config),
+        "controlledTrainingConfig": controlled_config,
+        "trainingConfigSHA256": module._canonical_sha256(controlled_config),
+        "trainingConfigInvariantSHA256": module._canonical_sha256(
+            module._normalized_invariant_training_config(
+                controlled_config,
+                agent="executor",
+                sft_train_record_count=len(lanes["train_sft"]),
+                dpo_train_record_count=len(lanes["train_dpo"]),
+            )
+        ),
         "trainingCorpusSHA256": module._canonical_sha256(
             [*lanes["train_sft"], *lanes["val_sft"], *lanes["train_dpo"], *lanes["val_dpo"]]
         ),
         "datasets": {
-            "trainSFT": {"count": 1, "sha256": module._canonical_sha256(lanes["train_sft"])},
+            "trainSFT": {"count": len(lanes["train_sft"]), "sha256": module._canonical_sha256(lanes["train_sft"])},
             "validationSFT": {"count": 1, "sha256": module._canonical_sha256(lanes["val_sft"])},
-            "trainDPO": {"count": 1, "sha256": module._canonical_sha256(lanes["train_dpo"])},
+            "trainDPO": {"count": len(lanes["train_dpo"]), "sha256": module._canonical_sha256(lanes["train_dpo"])},
             "validationDPO": {"count": 0, "sha256": module._canonical_sha256(lanes["val_dpo"])},
         },
     }
@@ -628,7 +673,22 @@ def test_prepare_configs_selects_and_attests_optimized_variant(
     config = json.loads(Path(prepared[0]["config"]).read_text(encoding="utf-8"))
     assert config["dataset_dir"] == str(variant_root)
     assert config["variantManifestSHA256"] == manifest["variantManifestSHA256"]
+    assert config["variantAttestation"]["schema"] == (
+        module.TRAINING_VARIANT_ATTESTATION_SCHEMA
+    )
     assert config["variantAttestation"]["trainingCorpusSHA256"] == manifest["trainingCorpusSHA256"]
+    assert config["num_train_epochs"] == manifest["controlledTrainingConfig"][
+        "num_train_epochs"
+    ]
+    assert config["optimizationStepPolicy"] == manifest[
+        "controlledTrainingConfig"
+    ]["optimizationStepPolicy"]
+    assert config["variantAttestation"]["effectiveTrainingConfigSHA256"] == manifest[
+        "trainingConfigSHA256"
+    ]
+    assert config["variantAttestation"]["trainingConfigInvariantSHA256"] == manifest[
+        "trainingConfigInvariantSHA256"
+    ]
     assert config["trainingContainerImageDigest"] == "sha256:" + "c" * 64
     assert config["trainingContainerImageDigestSource"] == "operator_declared"
     assert config["trainingRuntimeImageBindingStatus"] == "manual_validation_required"
@@ -658,8 +718,9 @@ def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_app(tmp_path, monkeypatch)
-    source_root = tmp_path / "datasets"
-    source_root.mkdir()
+    run_root = tmp_path / "run"
+    source_root = run_root / "generated/fine_tuning"
+    source_root.mkdir(parents=True)
     _write_variant_fixture(module, source_root)
     config_path = source_root / "executor" / "unsloth_config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -692,9 +753,8 @@ def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
         "runtimeSourceBindingStatus": "operator_declared_unverified",
         "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
     }
-    run_root = tmp_path / "run"
     lineage = module._build_run_resume_lineage(
-        run_id="run-internal_plus_public_optimized",
+        run_id="run",
         run_root=run_root,
         source_root=source_root,
         dataset_repo="user/dataset",
@@ -718,6 +778,18 @@ def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
     )
 
     resolved = json.loads(Path(prepared[0]["config"]).read_text(encoding="utf-8"))
+    verified_lineage, verified_agent = train_sft._agent_resume_lineage(
+        resolved
+    )
+    assert verified_lineage == lineage
+    assert verified_agent["trainingConfigInvariantSHA256"] == resolved[
+        "variantAttestation"
+    ]["trainingConfigInvariantSHA256"]
+    train_sft._validate_run_resume_config(
+        resolved,
+        cfg_path=Path(prepared[0]["config"]).resolve(),
+        assistant_only_loss=True,
+    )
     assert resolved["runtimeSourceKind"] == "huggingface_space"
     assert resolved["runtimeSourceRevision"] == "4" * 40
     assert resolved["expectedRuntimeSourceRevision"] == "4" * 40
@@ -787,6 +859,9 @@ def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
         "observedAccelerator": item.get("observedAccelerator"),
         "trainingCorpusSHA256": attestation["trainingCorpusSHA256"],
         "trainingConfigSHA256": attestation["effectiveTrainingConfigSHA256"],
+        "trainingConfigInvariantSHA256": attestation[
+            "trainingConfigInvariantSHA256"
+        ],
         "datasets": {
             name: {"sha256": digest}
             for name, digest in attestation["laneHashes"].items()
@@ -920,7 +995,7 @@ def test_variant_dataset_rejects_tampered_lane_and_control_drift(
         json.dumps({"messages": [{"role": "assistant", "content": "tampered"}]}) + "\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="dataset hash mismatch"):
+    with pytest.raises(ValueError, match="dataset (?:count|hash) mismatch"):
         module._variant_dataset(
             source_root / "executor",
             agent="executor",
@@ -932,7 +1007,7 @@ def test_variant_dataset_rejects_tampered_lane_and_control_drift(
     drifted_config = json.loads(config_path.read_text(encoding="utf-8"))
     drifted_config["max_train_records"] = 1
     config_path.write_text(json.dumps(drifted_config), encoding="utf-8")
-    with pytest.raises(ValueError, match="not bound"):
+    with pytest.raises(ValueError, match="optimization-step policy is invalid"):
         module._prepare_configs(
             source_root=source_root,
             run_root=tmp_path / "run",
@@ -951,6 +1026,163 @@ def test_variant_dataset_rejects_tampered_lane_and_control_drift(
             seed=7,
             variant="internal_plus_public_optimized",
         )
+
+
+def test_variant_config_rejects_rehashed_policy_and_nonvariant_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    source_root = tmp_path / "datasets"
+    source_root.mkdir()
+    variant_root, _ = _write_variant_fixture(module, source_root)
+    manifest_path = variant_root / "variant_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("variantManifestSHA256")
+    controlled = manifest["controlledTrainingConfig"]
+    controlled["optimizationStepPolicy"]["sft"][
+        "minimumEffectiveSteps"
+    ] += 1
+    manifest["trainingConfigSHA256"] = module._canonical_sha256(controlled)
+    manifest["variantManifestSHA256"] = module._canonical_sha256(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="optimization policy is invalid"):
+        module._variant_dataset(
+            source_root / "executor",
+            agent="executor",
+            variant="internal_plus_public_optimized",
+        )
+
+    variant_root, _ = _write_variant_fixture(module, source_root)
+    manifest_path = variant_root / "variant_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("variantManifestSHA256")
+    controlled = manifest["controlledTrainingConfig"]
+    controlled["learning_rate"] = 0.9
+    manifest["trainingConfigSHA256"] = module._canonical_sha256(controlled)
+    manifest["trainingConfigInvariantSHA256"] = module._canonical_sha256(
+        module._normalized_invariant_training_config(
+            controlled,
+            agent="executor",
+            sft_train_record_count=manifest["datasets"]["trainSFT"]["count"],
+            dpo_train_record_count=manifest["datasets"]["trainDPO"]["count"],
+        )
+    )
+    manifest["variantManifestSHA256"] = module._canonical_sha256(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="optimization-step policy is invalid"):
+        module._prepare_configs(
+            source_root=source_root,
+            run_root=tmp_path / "run",
+            agents=["executor"],
+            base_model_override="",
+            seed=42,
+            variant="internal_plus_public_optimized",
+        )
+
+
+def test_variant_dataset_rejects_rehashed_wrong_schema(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    source_root = tmp_path / "datasets"
+    source_root.mkdir()
+    variant_root, _ = _write_variant_fixture(module, source_root)
+    manifest_path = variant_root / "variant_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("variantManifestSHA256")
+    manifest["schemaVersion"] = "lumen.adapter-experiment-variant/1.2.0"
+    manifest["variantManifestSHA256"] = module._canonical_sha256(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="schema is unsupported"):
+        module._variant_dataset(
+            source_root / "executor",
+            agent="executor",
+            variant="internal_plus_public_optimized",
+        )
+
+
+@pytest.mark.parametrize(
+    ("stored_seed", "requested_seed"),
+    [(True, 1), (42.0, 42)],
+)
+def test_prepare_configs_rejects_non_integer_seed_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stored_seed: object,
+    requested_seed: int,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    source_root = tmp_path / "datasets"
+    source_root.mkdir()
+    variant_root, _ = _write_variant_fixture(module, source_root)
+    config_path = source_root / "executor" / "unsloth_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["seed"] = stored_seed
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    manifest_path = variant_root / "variant_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("variantManifestSHA256")
+    manifest["seed"] = stored_seed
+    controlled = manifest["controlledTrainingConfig"]
+    controlled["seed"] = stored_seed
+    manifest["trainingConfigSHA256"] = module._canonical_sha256(controlled)
+    manifest["trainingConfigInvariantSHA256"] = module._canonical_sha256(
+        module._normalized_invariant_training_config(
+            controlled,
+            agent="executor",
+            sft_train_record_count=manifest["datasets"]["trainSFT"]["count"],
+            dpo_train_record_count=manifest["datasets"]["trainDPO"]["count"],
+        )
+    )
+    manifest["variantManifestSHA256"] = module._canonical_sha256(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="seed contract is invalid"):
+        module._prepare_configs(
+            source_root=source_root,
+            run_root=tmp_path / "run",
+            agents=["executor"],
+            base_model_override="",
+            seed=requested_seed,
+            variant="internal_plus_public_optimized",
+        )
+
+
+@pytest.mark.parametrize("controlled_seed", [True, 1.0])
+def test_training_attestation_rejects_python_numeric_equality(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    controlled_seed: object,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    controlled = {"seed": controlled_seed}
+    manifest = {
+        "datasets": {},
+        "controlledTrainingConfig": controlled,
+        "trainingConfigSHA256": module._canonical_sha256(controlled),
+    }
+
+    with pytest.raises(ValueError, match="drifted from the controlled variant"):
+        module._training_attestation({"seed": 1}, manifest)
+
+
+def test_training_attestation_rejects_declared_exact_hash_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    controlled = {"seed": 42}
+    manifest = {
+        "datasets": {},
+        "controlledTrainingConfig": controlled,
+        "trainingConfigSHA256": "0" * 64,
+    }
+
+    with pytest.raises(ValueError, match="drifted from the controlled variant"):
+        module._training_attestation(dict(controlled), manifest)
 
 
 def _authorized_request(token: str) -> SimpleNamespace:

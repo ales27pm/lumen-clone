@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -12,6 +13,24 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
+
+try:
+    from lumen_manifest_crawler.dataset.optimization_policy import (
+        EXPERIMENT_VARIANT_SCHEMA_VERSION,
+        NON_TRAINING_CONFIG_FIELDS,
+        effective_variant_training_config,
+        invariant_training_config,
+    )
+except ImportError:  # Direct execution uses the repository checkout.
+    _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+    if str(_REPOSITORY_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPOSITORY_ROOT))
+    from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.optimization_policy import (
+        EXPERIMENT_VARIANT_SCHEMA_VERSION,
+        NON_TRAINING_CONFIG_FIELDS,
+        effective_variant_training_config,
+        invariant_training_config,
+    )
 
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
@@ -32,6 +51,9 @@ OPTIONAL_TRAINING_VARIABLE_KEYS = (
     "LUMEN_ZERO_GPU_MAX_VAL_RECORDS",
     "LUMEN_ZERO_GPU_MAX_SEQ_LENGTH",
     "LUMEN_ZERO_GPU_NUM_TRAIN_EPOCHS",
+)
+_DATASET_BUILD_NONCONTROLLED_CONFIG_FIELDS = set(
+    NON_TRAINING_CONFIG_FIELDS
 )
 
 
@@ -77,6 +99,32 @@ def read_json(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"Expected JSON object: {path}")
     return payload
+
+
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if not isinstance(value, dict):
+            raise ValueError(f"Expected JSON object at {path}:{line_number}")
+        records.append(value)
+    return records
 
 
 def validate_admin_token(value: str | None) -> str:
@@ -153,6 +201,68 @@ def require_dataset_source(
             required = variant_dir / filename
             if not required.is_file():
                 raise FileNotFoundError(f"Missing required experiment variant file: {required}")
+        config = read_json(agent_dir / "unsloth_config.json")
+        manifest_path = variant_dir / "variant_manifest.json"
+        manifest = read_json(manifest_path)
+        unsigned = dict(manifest)
+        declared_manifest_sha256 = unsigned.pop("variantManifestSHA256", None)
+        if (
+            manifest.get("schemaVersion") != EXPERIMENT_VARIANT_SCHEMA_VERSION
+            or manifest.get("agent") != agent
+            or manifest.get("variant") != experiment_variant
+            or declared_manifest_sha256 != _canonical_sha256(unsigned)
+        ):
+            raise ValueError(f"Invalid experiment variant manifest: {manifest_path}")
+        lanes = {
+            name: _read_jsonl(variant_dir / filename)
+            for name, filename in (
+                ("trainSFT", "train_sft.jsonl"),
+                ("validationSFT", "val_sft.jsonl"),
+                ("trainDPO", "train_dpo.jsonl"),
+                ("validationDPO", "val_dpo.jsonl"),
+            )
+        }
+        datasets = manifest.get("datasets")
+        if not isinstance(datasets, dict) or any(
+            not isinstance(datasets.get(name), dict)
+            or datasets[name].get("count") != len(records)
+            or datasets[name].get("sha256") != _canonical_sha256(records)
+            for name, records in lanes.items()
+        ):
+            raise ValueError(f"Variant dataset lineage drifted: {manifest_path}")
+        controlled = manifest.get("controlledTrainingConfig")
+        if (
+            not isinstance(controlled, dict)
+            or manifest.get("trainingConfigSHA256")
+            != _canonical_sha256(controlled)
+        ):
+            raise ValueError(f"Variant training config drifted: {manifest_path}")
+        if (
+            type(manifest.get("seed")) is not int
+            or type(controlled.get("seed")) is not int
+            or manifest.get("seed") != controlled.get("seed")
+        ):
+            raise ValueError(f"Variant seed contract drifted: {manifest_path}")
+        effective_variant_training_config(
+            agent=agent,
+            base_config=config,
+            controlled_config=controlled,
+            noncontrolled_fields=_DATASET_BUILD_NONCONTROLLED_CONFIG_FIELDS,
+            sft_train_record_count=len(lanes["trainSFT"]),
+            dpo_train_record_count=len(lanes["trainDPO"]),
+        )
+        invariant = invariant_training_config(
+            controlled,
+            agent=agent,
+            sft_train_record_count=len(lanes["trainSFT"]),
+            dpo_train_record_count=len(lanes["trainDPO"]),
+        )
+        if manifest.get("trainingConfigInvariantSHA256") != _canonical_sha256(
+            invariant
+        ):
+            raise ValueError(
+                f"Variant invariant training config drifted: {manifest_path}"
+            )
 
 
 def reset_dir(path: Path) -> None:

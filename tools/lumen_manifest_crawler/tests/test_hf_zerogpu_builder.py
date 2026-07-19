@@ -11,6 +11,11 @@ from typing import Any
 
 import pytest
 
+from lumen_manifest_crawler.dataset.optimization_policy import (
+    expected_optimization_step_policy,
+    invariant_training_config,
+)
+
 from tools.hf_zerogpu import build_lumen_zerogpu_space as builder
 from tools.hf_zerogpu.build_lumen_zerogpu_space import (
     SpaceBuild,
@@ -33,9 +38,12 @@ def _write_agent_fixture(root: Path, agent: str) -> None:
         json.dumps({"messages": [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}]}) + "\n",
         encoding="utf-8",
     )
-    (agent_dir / "unsloth_config.json").write_text(
-        json.dumps(
-            {
+    base_policy = expected_optimization_step_policy(
+        agent=agent,
+        sft_train_record_count=128,
+        dpo_train_record_count=32,
+    )
+    config = {
                 "agent": agent,
                 "base_model_name": "Qwen/Qwen3-1.7B",
                 "max_seq_length": 128,
@@ -44,26 +52,112 @@ def _write_agent_fixture(root: Path, agent: str) -> None:
                 "lora_alpha": 16,
                 "lora_dropout": 0,
                 "learning_rate": 0.0002,
-                "batch_size": 1,
-                "gradient_accumulation_steps": 1,
-                "num_train_epochs": 1,
+                "seed": 42,
+                "batch_size": 2,
+                "gradient_accumulation_steps": 8,
+                "num_train_epochs": base_policy["sft"]["selectedEpochs"],
+                "dpo_num_train_epochs": base_policy["dpo"]["selectedEpochs"],
+                "optimizationStepPolicy": base_policy,
                 "warmup_steps": 0,
+                "trainingCodeManifest": {"phase": "sft"},
+                "trainingCodeSHA256": "1" * 64,
+                "trainingDependencyLock": {"schema": "lock"},
+                "trainingDependencyLockSHA256": "2" * 64,
+                "requirementsSHA256": "3" * 64,
                 "output_dir": f"models/lora_qwen3_bootstrap/{agent}",
                 "dataset_dir": f"generated/fine_tuning/{agent}",
             }
-        ),
+    (agent_dir / "unsloth_config.json").write_text(
+        json.dumps(config),
         encoding="utf-8",
     )
     variant_dir = agent_dir / "experiments" / "internal_plus_public_optimized"
     variant_dir.mkdir(parents=True)
-    for filename in ("train_sft.jsonl", "val_sft.jsonl"):
+    lanes = {
+        "trainSFT": [
+            {
+                "messages": [
+                    {"role": "user", "content": f"x-{index}"},
+                    {"role": "assistant", "content": "y"},
+                ]
+            }
+            for index in range(96)
+        ],
+        "validationSFT": [
+            {
+                "messages": [
+                    {"role": "user", "content": "vx"},
+                    {"role": "assistant", "content": "vy"},
+                ]
+            }
+        ],
+        "trainDPO": [
+            {"prompt": f"p-{index}", "chosen": "c", "rejected": "r"}
+            for index in range(16)
+        ],
+        "validationDPO": [],
+    }
+    for name, filename in (
+        ("trainSFT", "train_sft.jsonl"),
+        ("validationSFT", "val_sft.jsonl"),
+        ("trainDPO", "train_dpo.jsonl"),
+        ("validationDPO", "val_dpo.jsonl"),
+    ):
         (variant_dir / filename).write_text(
-            json.dumps({"messages": [{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}]}) + "\n",
+            "".join(json.dumps(record) + "\n" for record in lanes[name]),
             encoding="utf-8",
         )
-    for filename in ("train_dpo.jsonl", "val_dpo.jsonl"):
-        (variant_dir / filename).write_text("", encoding="utf-8")
-    (variant_dir / "variant_manifest.json").write_text("{}\n", encoding="utf-8")
+    variant_policy = expected_optimization_step_policy(
+        agent=agent,
+        sft_train_record_count=len(lanes["trainSFT"]),
+        dpo_train_record_count=len(lanes["trainDPO"]),
+    )
+    controlled = {
+        key: value
+        for key, value in config.items()
+        if key not in builder._DATASET_BUILD_NONCONTROLLED_CONFIG_FIELDS
+    }
+    controlled["optimizationStepPolicy"] = variant_policy
+    controlled["num_train_epochs"] = variant_policy["sft"]["selectedEpochs"]
+    controlled["dpo_num_train_epochs"] = variant_policy["dpo"][
+        "selectedEpochs"
+    ]
+    manifest = {
+        "schemaVersion": builder.EXPERIMENT_VARIANT_SCHEMA_VERSION,
+        "agent": agent,
+        "variant": "internal_plus_public_optimized",
+        "seed": 42,
+        "controlledTrainingConfig": controlled,
+        "trainingConfigSHA256": builder._canonical_sha256(controlled),
+        "trainingConfigInvariantSHA256": builder._canonical_sha256(
+            invariant_training_config(
+                controlled,
+                agent=agent,
+                sft_train_record_count=len(lanes["trainSFT"]),
+                dpo_train_record_count=len(lanes["trainDPO"]),
+            )
+        ),
+        "trainingCorpusSHA256": builder._canonical_sha256(
+            [
+                *lanes["trainSFT"],
+                *lanes["validationSFT"],
+                *lanes["trainDPO"],
+                *lanes["validationDPO"],
+            ]
+        ),
+        "datasets": {
+            name: {
+                "count": len(records),
+                "sha256": builder._canonical_sha256(records),
+            }
+            for name, records in lanes.items()
+        },
+    }
+    manifest["variantManifestSHA256"] = builder._canonical_sha256(manifest)
+    (variant_dir / "variant_manifest.json").write_text(
+        json.dumps(manifest) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _build_space_fixture(tmp_path: Path) -> SpaceBuild:
@@ -99,6 +193,27 @@ def _build_space_fixture(tmp_path: Path) -> SpaceBuild:
     )
 
 
+def test_builder_direct_script_entrypoint_imports_shared_policy(
+    tmp_path: Path,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[3]
+    script = repository_root / "tools/hf_zerogpu/build_lumen_zerogpu_space.py"
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        cwd=tmp_path,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_parse_agents_rejects_unknown_agent() -> None:
     with pytest.raises(ValueError):
         parse_agents("executor,unknown")
@@ -119,6 +234,114 @@ def test_require_dataset_source_requires_selected_variant_files(tmp_path: Path) 
     (dataset / "executor" / "experiments" / "internal_plus_public_optimized" / "variant_manifest.json").unlink()
     with pytest.raises(FileNotFoundError):
         require_dataset_source(dataset, ["executor"], "internal_plus_public_optimized")
+
+
+def test_require_dataset_source_rejects_rehashed_optimizer_policy_drift(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "fine_tuning"
+    dataset.mkdir()
+    (dataset / "adapter_runtime_manifest.json").write_text(
+        "{}\n",
+        encoding="utf-8",
+    )
+    _write_agent_fixture(dataset, "executor")
+    manifest_path = (
+        dataset
+        / "executor"
+        / "experiments"
+        / "internal_plus_public_optimized"
+        / "variant_manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("variantManifestSHA256")
+    controlled = manifest["controlledTrainingConfig"]
+    controlled["optimizationStepPolicy"]["sft"][
+        "minimumEffectiveSteps"
+    ] += 1
+    manifest["trainingConfigSHA256"] = builder._canonical_sha256(controlled)
+    manifest["variantManifestSHA256"] = builder._canonical_sha256(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Optimization-step policy"):
+        require_dataset_source(
+            dataset,
+            ["executor"],
+            "internal_plus_public_optimized",
+        )
+
+
+def test_require_dataset_source_rejects_rehashed_wrong_variant_schema(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "fine_tuning"
+    dataset.mkdir()
+    (dataset / "adapter_runtime_manifest.json").write_text("{}\n", encoding="utf-8")
+    _write_agent_fixture(dataset, "executor")
+    manifest_path = (
+        dataset
+        / "executor"
+        / "experiments"
+        / "internal_plus_public_optimized"
+        / "variant_manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("variantManifestSHA256")
+    manifest["schemaVersion"] = "lumen.adapter-experiment-variant/1.2.0"
+    manifest["variantManifestSHA256"] = builder._canonical_sha256(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Invalid experiment variant manifest"):
+        require_dataset_source(
+            dataset,
+            ["executor"],
+            "internal_plus_public_optimized",
+        )
+
+
+@pytest.mark.parametrize("stored_seed", [True, 42.0])
+def test_require_dataset_source_rejects_non_integer_seed_contract(
+    tmp_path: Path,
+    stored_seed: object,
+) -> None:
+    dataset = tmp_path / "fine_tuning"
+    dataset.mkdir()
+    (dataset / "adapter_runtime_manifest.json").write_text("{}\n", encoding="utf-8")
+    _write_agent_fixture(dataset, "executor")
+    config_path = dataset / "executor" / "unsloth_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["seed"] = stored_seed
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    manifest_path = (
+        dataset
+        / "executor"
+        / "experiments"
+        / "internal_plus_public_optimized"
+        / "variant_manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("variantManifestSHA256")
+    manifest["seed"] = stored_seed
+    controlled = manifest["controlledTrainingConfig"]
+    controlled["seed"] = stored_seed
+    manifest["trainingConfigSHA256"] = builder._canonical_sha256(controlled)
+    manifest["trainingConfigInvariantSHA256"] = builder._canonical_sha256(
+        invariant_training_config(
+            controlled,
+            agent="executor",
+            sft_train_record_count=manifest["datasets"]["trainSFT"]["count"],
+            dpo_train_record_count=manifest["datasets"]["trainDPO"]["count"],
+        )
+    )
+    manifest["variantManifestSHA256"] = builder._canonical_sha256(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="seed contract drifted"):
+        require_dataset_source(
+            dataset,
+            ["executor"],
+            "internal_plus_public_optimized",
+        )
 
 
 def test_long_lived_space_stream_disconnect_is_terminal() -> None:
@@ -388,6 +611,7 @@ item = {{
         "trainingEnvironmentSHA256": training_environment_sha,
         "trainingCorpusSHA256": "b" * 64,
         "effectiveTrainingConfigSHA256": "c" * 64,
+        "trainingConfigInvariantSHA256": "d" * 64,
         "laneHashes": lane_hashes,
     }},
     "adapter_dir": str(adapter_dir),
@@ -414,6 +638,7 @@ finalized = {{
     "spaceConfigurationSHA256": item["spaceConfigurationSHA256"],
     "trainingCorpusSHA256": item["variantAttestation"]["trainingCorpusSHA256"],
     "trainingConfigSHA256": item["variantAttestation"]["effectiveTrainingConfigSHA256"],
+    "trainingConfigInvariantSHA256": item["variantAttestation"]["trainingConfigInvariantSHA256"],
     "datasets": {{name: {{"sha256": digest}} for name, digest in lane_hashes.items()}},
     "artifact": {{
         "status": "trained",

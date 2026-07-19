@@ -30,6 +30,7 @@ try:
     from .adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
     from .training_lineage import (
         build_resolved_training_environment,
+        TRAINING_VARIANT_ATTESTATION_SCHEMA,
         verify_resolved_training_environment,
     )
     from .train_sft import (
@@ -62,6 +63,7 @@ except ImportError:
     from adapter_artifact import verify_adapter_artifact, write_adapter_artifact_manifest
     from training_lineage import (
         build_resolved_training_environment,
+        TRAINING_VARIANT_ATTESTATION_SCHEMA,
         verify_resolved_training_environment,
     )
     from train_sft import (
@@ -2523,7 +2525,13 @@ def _expected_sft_parent_lineage(cfg: Mapping[str, Any]) -> dict[str, Any]:
     if configured_lock_sha256 is not None and configured_lock_sha256 != environment_lock_sha256:
         raise RuntimeError("Preference config training-environment lock digest is invalid")
     attestation = cfg.get("variantAttestation")
-    if isinstance(attestation, Mapping) and (
+    if (
+        not isinstance(attestation, Mapping)
+        or attestation.get("schema")
+        != TRAINING_VARIANT_ATTESTATION_SCHEMA
+    ):
+        raise RuntimeError("Preference config is missing its variant attestation")
+    if (
         attestation.get("trainingEnvironmentLockSHA256")
         != environment_lock_sha256
     ):
@@ -2551,6 +2559,12 @@ def _expected_sft_parent_lineage(cfg: Mapping[str, Any]) -> dict[str, Any]:
         "baseModelTokenizerFiles": cfg.get("baseModelTokenizerFiles"),
         "baseModelTokenizerClosureSHA256": cfg.get(
             "baseModelTokenizerClosureSHA256"
+        ),
+        "trainingConfigSHA256": attestation.get(
+            "effectiveTrainingConfigSHA256"
+        ),
+        "trainingConfigInvariantSHA256": attestation.get(
+            "trainingConfigInvariantSHA256"
         ),
         "trainingEnvironmentLockSHA256": environment_lock_sha256,
         "trainingDependencyLockSHA256": cfg.get(
