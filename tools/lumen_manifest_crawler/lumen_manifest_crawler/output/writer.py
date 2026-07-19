@@ -49,6 +49,113 @@ CANONICAL_DATASET_ALIASES = {
     **RERANKER_DATASET_ALIASES,
 }
 
+CROSS_MODEL_ARTIFACT_FILENAMES = (
+    "cross_model_training.jsonl",
+    "cross_model_training_index.csv",
+    "dpo_train_cross.jsonl",
+    "dpo_val_cross.jsonl",
+    "orchestration_evals.jsonl",
+    "train_sft_cross.jsonl",
+    "val_sft_cross.jsonl",
+)
+
+
+def cross_model_artifact_directories_match(
+    primary: Path,
+    mirror: Path,
+    *,
+    manifest_path: Path | None = None,
+) -> bool:
+    expected = set(CROSS_MODEL_ARTIFACT_FILENAMES)
+    for directory in (primary, mirror):
+        if not directory.is_dir():
+            return False
+        entries = list(directory.iterdir())
+        if {entry.name for entry in entries} != expected:
+            return False
+        if any(entry.is_symlink() or not entry.is_file() for entry in entries):
+            return False
+    if not all(
+        (primary / filename).read_bytes()
+        == (mirror / filename).read_bytes()
+        for filename in CROSS_MODEL_ARTIFACT_FILENAMES
+    ):
+        return False
+    return (
+        manifest_path is None
+        or cross_model_artifact_directory_matches_manifest(
+            primary,
+            manifest_path,
+        )
+    )
+
+
+def cross_model_artifact_directory_matches_manifest(
+    directory: Path,
+    manifest_path: Path,
+) -> bool:
+    expected_files = set(CROSS_MODEL_ARTIFACT_FILENAMES)
+    if not directory.is_dir() or not manifest_path.is_file():
+        return False
+    entries = list(directory.iterdir())
+    if {entry.name for entry in entries} != expected_files:
+        return False
+    if any(entry.is_symlink() or not entry.is_file() for entry in entries):
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    source_integrity = manifest.get("sourceIntegrity")
+    if not isinstance(source_integrity, dict):
+        return False
+    expected_integrity = {
+        key: source_integrity.get(key)
+        for key in ("baseCommit", "workingTreeDigest", "dirtyState")
+    }
+    if (
+        not isinstance(expected_integrity["baseCommit"], str)
+        or not isinstance(expected_integrity["workingTreeDigest"], str)
+        or not isinstance(expected_integrity["dirtyState"], bool)
+    ):
+        return False
+
+    orchestration_rows = 0
+    for filename in CROSS_MODEL_ARTIFACT_FILENAMES:
+        if not filename.endswith(".jsonl"):
+            continue
+        path = directory / filename
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+            rows = [json.loads(line) for line in lines if line.strip()]
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not rows or len(rows) != len(lines):
+            return False
+        for row in rows:
+            if not isinstance(row, dict):
+                return False
+            metadata = row.get("metadata")
+            if filename == "orchestration_evals.jsonl":
+                orchestration_rows += 1
+                if not isinstance(metadata, dict):
+                    return False
+            if not isinstance(metadata, dict):
+                continue
+            manifest_commit = metadata.get("manifestCommit")
+            row_integrity = metadata.get("sourceIntegrity")
+            has_lineage = manifest_commit is not None or row_integrity is not None
+            if not has_lineage:
+                if filename == "orchestration_evals.jsonl":
+                    return False
+                continue
+            if (
+                manifest_commit != expected_integrity["baseCommit"]
+                or row_integrity != expected_integrity
+            ):
+                return False
+    return orchestration_rows > 0
+
 
 def write_outputs(
     output_dir: Path,
@@ -129,7 +236,21 @@ def _write_fleet_artifacts(output_dir: Path, artifacts: FleetArtifacts, cross_mo
         encoding="utf-8",
     )
     (output_dir / "AgentBehaviorManifest.md").write_text(artifacts.markdown, encoding="utf-8")
-    target_dir = cross_model_train_dir or (output_dir / "cross_model_training")
+    default_target_dir = output_dir / "cross_model_training"
+    target_dirs = [default_target_dir]
+    if (
+        cross_model_train_dir is not None
+        and cross_model_train_dir.resolve() != default_target_dir.resolve()
+    ):
+        target_dirs.append(cross_model_train_dir)
+    for target_dir in target_dirs:
+        _write_cross_model_training_artifacts(target_dir, artifacts)
+
+
+def _write_cross_model_training_artifacts(
+    target_dir: Path,
+    artifacts: FleetArtifacts,
+) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(target_dir / "cross_model_training.jsonl", artifacts.cross_model_training)
     _write_jsonl(target_dir / "orchestration_evals.jsonl", artifacts.orchestration_evals)

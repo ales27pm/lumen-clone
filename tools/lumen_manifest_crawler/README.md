@@ -330,7 +330,7 @@ generated/agent_manifest/
     └── cross_model_training_index.csv
 ```
 
-To write cross-model training elsewhere:
+To write a byte-identical cross-model training mirror elsewhere:
 
 ```bash
 python -m lumen_manifest_crawler generate \
@@ -339,6 +339,11 @@ python -m lumen_manifest_crawler generate \
   --generate-system-prompts \
   --cross-model-train-dir generated/cross_model_training
 ```
+
+The canonical nested copy under
+`generated/agent_manifest/cross_model_training` is always refreshed as well.
+Keeping both tracked locations synchronized prevents the iOS resource fallback
+from bundling stale lineage when only the agent-manifest tree is available.
 
 To export only the Markdown manifest plus normal outputs:
 
