@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from lumen_manifest_crawler.dataset.fine_tuning import (
     AGENTS,
     FineTuningDatasetConfig,
     _build_experiment_variants,
     _cap_public_corpus_token_share,
     _experiment_public_group_limit,
+    _normalize_training_source_metadata,
+    _public_corpus_card,
     _public_validation_group_keys,
     _record_token_counts,
     _route_record_agents,
@@ -69,8 +73,120 @@ def _all_dpo(dataset: Any) -> list[dict[str, Any]]:
     return dataset.train_dpo + dataset.val_dpo
 
 
+def test_training_source_normalization_fails_closed_on_public_lineage_mismatch() -> None:
+    internal = {
+        "prompt": [{"role": "user", "content": "Choose the grounded reply."}],
+        "chosen": {"role": "assistant", "content": "Grounded."},
+        "rejected": {"role": "assistant", "content": "Invented."},
+        "metadata": {
+            "agent": "mouth",
+            "preferenceType": "grounded_reply",
+        },
+    }
+    normalized = _normalize_training_source_metadata(
+        [internal],
+        agent="mouth",
+        lane="dpo",
+    )
+    assert normalized[0]["metadata"] == {
+        "agent": "mouth",
+        "preferenceType": "grounded_reply",
+        "sourceFamily": "adapter_ultra_specific",
+        "taskType": "grounded_reply",
+    }
+
+    native = {
+        **internal,
+        "metadata": {
+            "agent": "fleet",
+            "preferenceType": "native_event_graph",
+            "sourceFamily": "fleet_orchestration_native",
+            "taskType": "fleet_orchestration_event_graph_preference",
+        },
+    }
+    normalized_native = _normalize_training_source_metadata(
+        [native],
+        agent="fleet",
+        lane="dpo",
+    )
+    assert normalized_native[0]["metadata"] == native["metadata"]
+
+    for mutation, message in (
+        ({"agent": "rem"}, "mismatched metadata.agent"),
+        ({"sourceFamily": " adapter_ultra_specific"}, "not canonical"),
+        ({"sourceFamily": ""}, "must be a non-empty string"),
+        ({"taskType": "grounded_reply "}, "not canonical"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            _normalize_training_source_metadata(
+                [
+                    {
+                        **internal,
+                        "metadata": {**internal["metadata"], **mutation},
+                    }
+                ],
+                agent="mouth",
+                lane="dpo",
+            )
+
+    public_lineage = _provenance(
+        target="mouth",
+        group="classification",
+        row="classification",
+    )
+    with pytest.raises(ValueError, match="public source classification mismatch"):
+        _normalize_training_source_metadata(
+            [
+                {
+                    **internal,
+                    "metadata": {
+                        **internal["metadata"],
+                        "sourceFamily": "mouth_responses",
+                        "publicCorpus": public_lineage,
+                    },
+                }
+            ],
+            agent="mouth",
+            lane="dpo",
+        )
+    with pytest.raises(ValueError, match="public source classification mismatch"):
+        _normalize_training_source_metadata(
+            [
+                {
+                    **internal,
+                    "metadata": {
+                        **internal["metadata"],
+                        "sourceFamily": "public_adapter_corpus_dialogue",
+                    },
+                }
+            ],
+            agent="mouth",
+            lane="dpo",
+        )
+
+
 def test_public_records_route_only_to_explicit_target_and_preserve_provenance() -> None:
     manifest = AgentBehaviorManifest(sourceIntegrity=SourceIntegrity(commit="test-commit"))
+    internal_mouth_records = [
+        {
+            "sourceFamily": "mouth_responses",
+            "taskType": "response_finalization",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Finalize internal response {index}.",
+                },
+                {
+                    "role": "assistant",
+                    "content": " ".join(
+                        f"internal_grounded_{index}_{word}"
+                        for word in range(100)
+                    ),
+                },
+            ],
+        }
+        for index in range(20)
+    ]
     mouth_records = [
         _sft_record(target="mouth", group=group, row=f"{group}-{index}")
         for group in ("conversation-a", "conversation-b")
@@ -95,12 +211,13 @@ def test_public_records_route_only_to_explicit_target_and_preserve_provenance() 
     compiled = compile_agent_fine_tuning_datasets(
         manifest,
         {
+            "mouth_responses": internal_mouth_records,
             "public_adapter_corpus_mouth": mouth_records + [rejected_record],
             "public_adapter_corpus_preferences": [dpo_record],
         },
         config=FineTuningDatasetConfig(
             validation_ratio=0.5,
-            max_public_corpus_token_share=None,
+            max_public_corpus_token_share=0.35,
             include_unsloth_config=False,
         ),
     )
@@ -129,6 +246,22 @@ def test_public_records_route_only_to_explicit_target_and_preserve_provenance() 
     assert not any(item["sourcePath"] == "train/invalid.json" for item in all_public)
 
     mouth_card = compiled["mouth"].dataset_card["publicCorpus"]
+    mouth_constraints = compiled["mouth"].dataset_card["constraints"]
+    assert mouth_constraints[
+        "requestedMaxPublicCorpusAssistantTargetTokenShare"
+    ] == 0.35
+    assert mouth_constraints["maxPublicCorpusSFTTokenProxyShare"] == 0.30
+    assert mouth_constraints["publicCorpusLossShareContract"][
+        "capBasisPoints"
+    ] == {"requested": 3_500, "hard": 3_500}
+    assert mouth_card["requestedMaxSFTAssistantTargetTokenShare"] == 0.35
+    assert mouth_card["requestedMaxDPOChosenTargetTokenShare"] == 0.35
+    assert mouth_card["maxSFTTokenProxyShare"] == 0.30
+    assert mouth_card["maxDPOTokenProxyShare"] == 0.30
+    assert mouth_card["selectionContract"][
+        "requestedExactPublicAssistantTargetShare"
+    ] == 0.35
+    assert mouth_card["selectionContract"]["maxTokenProxyShare"] == 0.30
     assert mouth_card["recordCounts"] == {
         "train_sft": 2,
         "val_sft": 2,
@@ -607,6 +740,140 @@ def test_public_corpus_total_and_target_token_shares_are_capped_per_lane() -> No
         assert public_card["tokenProxyShares"][lane]["target"] <= cap
 
 
+def test_fleet_dpo_public_card_binds_and_uses_chosen_target_proxy() -> None:
+    def completion(label: str, words: int) -> str:
+        return " ".join(f"{label}_{index}" for index in range(words))
+
+    internal_sft = {
+        "messages": [
+            {"role": "user", "content": "Use the native Fleet contract."},
+            {"role": "assistant", "content": completion("internal_sft", 20)},
+        ],
+        "metadata": {"agent": "fleet"},
+    }
+    public_sft = {
+        "messages": [
+            {"role": "user", "content": "Use the public Fleet contract."},
+            {"role": "assistant", "content": completion("public_sft", 5)},
+        ],
+        "metadata": {
+            "agent": "fleet",
+            "publicCorpus": _provenance(
+                target="fleet",
+                group="fleet-public-sft",
+                row="fleet-public-sft",
+            ),
+        },
+    }
+    internal_dpo = {
+        "prompt": [
+            {
+                "role": "user",
+                "content": completion("internal_prompt", 1_000),
+            }
+        ],
+        "chosen": {
+            "role": "assistant",
+            "content": completion("internal_chosen", 100),
+        },
+        "rejected": {
+            "role": "assistant",
+            "content": completion("internal_rejected", 1),
+        },
+        "metadata": {"agent": "fleet"},
+    }
+    public_dpo = {
+        "prompt": [{"role": "user", "content": "Choose public Fleet behavior."}],
+        "chosen": {
+            "role": "assistant",
+            "content": completion("public_chosen", 1),
+        },
+        "rejected": {
+            "role": "assistant",
+            "content": completion("public_rejected", 100),
+        },
+        "metadata": {
+            "agent": "fleet",
+            "publicCorpus": _provenance(
+                target="fleet",
+                group="fleet-public-dpo",
+                row="fleet-public-dpo",
+            ),
+        },
+    }
+    common = {
+        "train_sft": [internal_sft, public_sft],
+        "val_sft": [],
+        "train_dpo": [internal_dpo, public_dpo],
+        "val_dpo": [],
+        "available_train_sft": [internal_sft, public_sft],
+        "available_val_sft": [],
+        "available_train_dpo": [internal_dpo, public_dpo],
+        "available_val_dpo": [],
+        "public_cap_selected_val_sft": [],
+        "requested_exact_token_share": 0.35,
+        "source_proxy_selection_share": 0.30,
+        "max_chars_per_token": 4,
+        "public_snapshot": None,
+    }
+
+    fleet_card = _public_corpus_card(
+        **common,
+        dpo_target_mode="dpo_chosen",
+    )
+    all_assistant_card = _public_corpus_card(
+        **common,
+        dpo_target_mode="all_assistant",
+    )
+
+    public_chosen = _record_token_counts(
+        public_dpo,
+        target_mode="dpo_chosen",
+    )[1]
+    all_chosen = sum(
+        _record_token_counts(record, target_mode="dpo_chosen")[1]
+        for record in (internal_dpo, public_dpo)
+    )
+    assert fleet_card["tokenProxyShares"]["train_dpo"]["target"] == round(
+        public_chosen / all_chosen,
+        6,
+    )
+    assert fleet_card["tokenProxyShares"]["train_dpo"]["total"] <= 0.35
+    assert fleet_card["tokenProxyShares"]["train_dpo"]["target"] <= 0.30
+    assert (
+        all_assistant_card["tokenProxyShares"]["train_dpo"]["target"]
+        > 0.35
+    )
+    assert fleet_card["tokenProxyShares"]["train_dpo"]["target"] != (
+        all_assistant_card["tokenProxyShares"]["train_dpo"]["target"]
+    )
+    assert fleet_card["tokenProxyShares"]["train_dpo"]["total"] == (
+        all_assistant_card["tokenProxyShares"]["train_dpo"]["total"]
+    )
+    assert fleet_card["tokenProxyShares"]["train_sft"] == (
+        all_assistant_card["tokenProxyShares"]["train_sft"]
+    )
+    assert fleet_card["selectionContract"][
+        "laneTargetTokenProxyModes"
+    ] == {
+        "train_sft": "all_assistant",
+        "val_sft": "all_assistant",
+        "train_dpo": "dpo_chosen",
+        "val_dpo": "dpo_chosen",
+    }
+    assert all_assistant_card["selectionContract"][
+        "laneTargetTokenProxyModes"
+    ] == {
+        "train_sft": "all_assistant",
+        "val_sft": "all_assistant",
+        "train_dpo": "all_assistant",
+        "val_dpo": "all_assistant",
+    }
+    assert fleet_card["selectionContract"]["sha256"] != (
+        all_assistant_card["selectionContract"]["sha256"]
+    )
+
+
 def test_source_token_proxy_counts_minified_json_without_claiming_exact_tokens() -> None:
     minified_json = (
         '{"action":{"tool":"calendar.create","args":{"title":"Quarterly '
@@ -752,6 +1019,88 @@ def test_public_token_cap_prefers_higher_selection_score_within_stratum() -> Non
     assert selected_public[0]["metadata"]["publicCorpus"]["selectionScore"]["overall"] == 0.9
 
 
+def test_default_exact_public_cap_uses_deterministic_30_percent_proxy_safety_budget() -> None:
+    internal = [{
+        "messages": [
+            {"role": "user", "content": "Internal grounding."},
+            {
+                "role": "assistant",
+                "content": " ".join(f"internal_{index}" for index in range(100)),
+            },
+        ],
+        "metadata": {"agent": "mouth"},
+    }]
+    public: list[dict[str, Any]] = []
+    for group_index in range(10):
+        for row_index in range(2):
+            provenance = _provenance(
+                target="mouth",
+                group=f"safety-group-{group_index}",
+                row=f"safety-{group_index}-{row_index}",
+            )
+            provenance["stratum"] = f"stratum-{group_index % 2}"
+            provenance["selectionScore"] = {"overall": float(group_index)}
+            public.append({
+                "messages": [
+                    {"role": "user", "content": "Public grounding."},
+                    {
+                        "role": "assistant",
+                        "content": " ".join(
+                            f"public_{group_index}_{row_index}_{word}"
+                            for word in range(4)
+                        ),
+                    },
+                ],
+                "metadata": {"agent": "mouth", "publicCorpus": provenance},
+            })
+
+    config = FineTuningDatasetConfig(max_public_corpus_token_share=0.35)
+    variants, _ = _build_experiment_variants(
+        agent="mouth",
+        available_train_sft=[*internal, *public],
+        available_val_sft=[],
+        available_train_dpo=[],
+        available_val_dpo=[],
+        evaluation_records=[],
+        training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
+        dataset_config=config,
+    )
+    repeated, _ = _build_experiment_variants(
+        agent="mouth",
+        available_train_sft=list(reversed([*internal, *public])),
+        available_val_sft=[],
+        available_train_dpo=[],
+        available_val_dpo=[],
+        evaluation_records=[],
+        training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
+        dataset_config=config,
+    )
+
+    optimized = variants["internal_plus_public_optimized"]
+    selected = optimized["train_sft"]
+    selected_public = [
+        record
+        for record in selected
+        if isinstance((record.get("metadata") or {}).get("publicCorpus"), dict)
+    ]
+    total_target = sum(_record_token_counts(record)[1] for record in selected)
+    public_target = sum(
+        _record_token_counts(record)[1] for record in selected_public
+    )
+    selected_group_counts: dict[str, int] = {}
+    for record in selected_public:
+        group = record["metadata"]["publicCorpus"]["sourceGroupID"]
+        selected_group_counts[group] = selected_group_counts.get(group, 0) + 1
+
+    assert selected_public
+    assert public_target / total_target <= 0.30
+    assert all(count == 2 for count in selected_group_counts.values())
+    assert selected == repeated["internal_plus_public_optimized"]["train_sft"]
+    policy = optimized["variant_manifest"]["publicSelectionPolicy"]
+    assert policy["requestedExactPublicAssistantTargetShare"] == 0.35
+    assert policy["maxPublicCorpusTokenProxyShare"] == 0.30
+
+
 def test_experiment_variants_separate_internal_baseline_and_quality_optimized_corpora() -> None:
     internal = [{
         "messages": [
@@ -802,7 +1151,9 @@ def test_experiment_variants_separate_internal_baseline_and_quality_optimized_co
         available_val_dpo=[],
         evaluation_records=[],
         training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
-        max_public_share=0.10,
+        dataset_config=FineTuningDatasetConfig(
+            max_public_corpus_token_share=0.10,
+        ),
     )
 
     internal_only = variants["internal_only"]
@@ -823,8 +1174,10 @@ def test_experiment_variants_separate_internal_baseline_and_quality_optimized_co
     ]
 
 
-def test_experiment_selection_policies_produce_distinct_corpora_for_all_adapters() -> None:
-    for agent in AGENTS:
+def test_experiment_selection_policies_produce_distinct_corpora_for_non_fleet_adapters() -> None:
+    # Fleet variants additionally require the complete native orchestration
+    # curriculum and are exercised by the compiled-dataset contract suite.
+    for agent in (candidate for candidate in AGENTS if candidate != "fleet"):
         internal = [{
             "messages": [
                 {"role": "user", "content": " ".join([f"{agent}-internal-user"] * 100)},
@@ -876,7 +1229,9 @@ def test_experiment_selection_policies_produce_distinct_corpora_for_all_adapters
             available_val_dpo=[],
             evaluation_records=[],
             training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
-            max_public_share=0.80,
+            dataset_config=FineTuningDatasetConfig(
+                max_public_corpus_token_share=0.80,
+            ),
         )
         baseline_manifest = variants["internal_plus_public_baseline"]["variant_manifest"]
         optimized_manifest = variants["internal_plus_public_optimized"]["variant_manifest"]
@@ -924,7 +1279,9 @@ def test_identical_public_variant_corpora_are_marked_not_applicable_for_promotio
         available_val_dpo=[],
         evaluation_records=[],
         training_config={"base_model_name": "Qwen/Qwen3-1.7B", "seed": 42},
-        max_public_share=0.80,
+        dataset_config=FineTuningDatasetConfig(
+            max_public_corpus_token_share=0.80,
+        ),
     )
 
     baseline_manifest = variants["internal_plus_public_baseline"]["variant_manifest"]

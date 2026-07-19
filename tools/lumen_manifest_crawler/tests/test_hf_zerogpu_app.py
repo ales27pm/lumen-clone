@@ -147,6 +147,17 @@ def _load_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    generation_payload = b'{"do_sample":false}\n'
+    generation_digest = __import__("hashlib").sha256(
+        generation_payload
+    ).hexdigest()
+    module.DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE = {
+        "path": "generation_config.json",
+        "sizeBytes": len(generation_payload),
+        "sha256": generation_digest,
+        "huggingFaceBlobID": generation_digest,
+    }
+    module.TEST_GENERATION_CONFIG_PAYLOAD = generation_payload
     module.TEST_RESOLVED_TRAINING_ENVIRONMENT = resolved_environment
     module.TEST_RESOLVED_TRAINING_ENVIRONMENT_SCAN = resolved_scan
     return module
@@ -405,31 +416,87 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
     }
     for lane, records in lanes.items():
         _write_jsonl(variant_root / f"{lane}.jsonl", records)
+    shard_payloads = {
+        "model-00001-of-00002.safetensors": b"first-shard",
+        "model-00002-of-00002.safetensors": b"second-shard",
+    }
     weight_shards = [
         {
             "filename": "model-00001-of-00002.safetensors",
-            "size": 3_441_185_608,
-            "sha256": "169ad53ec313c3a34b06c0809216e4fc072cce444a5d4ff2b59690d064130ed5",
+            "size": len(shard_payloads["model-00001-of-00002.safetensors"]),
+            "sha256": __import__("hashlib").sha256(
+                shard_payloads["model-00001-of-00002.safetensors"]
+            ).hexdigest(),
         },
         {
             "filename": "model-00002-of-00002.safetensors",
-            "size": 622_329_984,
-            "sha256": "912becff8d60672aa8628ef08c05898d9adf17c2ad4ae3caf99b065622fdeff9",
+            "size": len(shard_payloads["model-00002-of-00002.safetensors"]),
+            "sha256": __import__("hashlib").sha256(
+                shard_payloads["model-00002-of-00002.safetensors"]
+            ).hexdigest(),
         },
     ]
+    index_payload = json.dumps(
+        {
+            "weight_map": {
+                "a": "model-00001-of-00002.safetensors",
+                "b": "model-00002-of-00002.safetensors",
+            }
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    tokenizer_payloads = {
+        "config.json": b'{"model_type":"qwen3"}\n',
+        "merges.txt": b"a b\n",
+        "tokenizer.json": b'{"version":"1.0"}\n',
+        "tokenizer_config.json": b'{"chat_template":"test"}\n',
+        "vocab.json": b'{"a":0}\n',
+    }
+    tokenizer_files = [
+        {
+            "path": filename,
+            "sizeBytes": len(payload),
+            "sha256": __import__("hashlib").sha256(payload).hexdigest(),
+            "huggingFaceBlobID": __import__("hashlib").sha256(payload).hexdigest(),
+        }
+        for filename, payload in tokenizer_payloads.items()
+    ]
+    tokenizer_files.sort(key=lambda item: item["path"])
+    tokenizer_digest = next(
+        item["sha256"]
+        for item in tokenizer_files
+        if item["path"] == "tokenizer.json"
+    )
+    tokenizer_closure_sha256 = module._canonical_sha256(
+        {
+            "schemaVersion": "lumen.base-model-tokenizer-closure/1.0.0",
+            "baseModelID": "Qwen/Qwen3-1.7B",
+            "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+            "files": tokenizer_files,
+        }
+    )
     config = {
         "agent": "executor",
         "baseModelID": "Qwen/Qwen3-1.7B",
         "base_model_name": "Qwen/Qwen3-1.7B",
         "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
-        "baseModelIndexDigest": "0d660e94b165eb912669a5249dff44b83188c4777a07ddb9611fb78d91b0578d",
+        "baseModelIndexDigest": __import__("hashlib").sha256(
+            index_payload
+        ).hexdigest(),
         "baseModelIndexReferencedShardNames": [
             "model-00001-of-00002.safetensors",
             "model-00002-of-00002.safetensors",
         ],
-        "baseModelArtifactDigest": "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218",
+        "baseModelArtifactDigest": module._canonical_sha256(
+            {
+                "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
+                "shards": weight_shards,
+            }
+        ),
         "baseModelWeightShards": weight_shards,
-        "baseModelTokenizerDigest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "baseModelTokenizerDigest": tokenizer_digest,
+        "baseModelTokenizerFiles": tokenizer_files,
+        "baseModelTokenizerClosureSHA256": tokenizer_closure_sha256,
         "max_seq_length": 128,
         "load_in_4bit": True,
         "lora_r": 8,
@@ -453,13 +520,14 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         }
     )
     environment_lock = {
-        "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
+        "schemaVersion": "lumen.adapter-training-environment-lock/1.1.0",
         "pythonVersion": "3.10",
         "cudaVersion": "12.8",
         "packageVersions": {"torch": "2.9.1"},
         "unslothRevision": "935474c20aabc2aadb1da17338959c7c6f9bdafe",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
-        "baseTokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "baseTokenizerSHA256": tokenizer_digest,
+        "baseTokenizerClosureSHA256": tokenizer_closure_sha256,
         "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
     }
     config["trainingEnvironmentLock"] = environment_lock
@@ -475,6 +543,10 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         "baseModelArtifactDigest": config["baseModelArtifactDigest"],
         "baseModelWeightShards": config["baseModelWeightShards"],
         "baseModelTokenizerDigest": config["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": config["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": config[
+            "baseModelTokenizerClosureSHA256"
+        ],
         "trainingEnvironmentLock": environment_lock,
         "trainingEnvironmentLockSHA256": module._canonical_sha256(environment_lock),
         "trainingEnvironmentSHA256": None,
@@ -502,6 +574,36 @@ def _write_variant_fixture(module: Any, root: Path) -> tuple[Path, dict[str, Any
         ),
         encoding="utf-8",
     )
+    run_root = (
+        root.parent.parent
+        if root.name == "fine_tuning" and root.parent.name == "generated"
+        else root.parent / "run"
+    )
+    private_snapshot = run_root / module.PRIVATE_TOKENIZER_SNAPSHOT_DIRNAME
+    private_snapshot.mkdir(mode=0o700, parents=True, exist_ok=True)
+    private_snapshot.chmod(0o700)
+    for filename, payload in tokenizer_payloads.items():
+        target = private_snapshot / filename
+        if target.exists():
+            target.chmod(0o600)
+        target.write_bytes(payload)
+        target.chmod(0o400)
+    runtime_snapshot = (
+        run_root / module.PRIVATE_BASE_MODEL_RUNTIME_SNAPSHOT_DIRNAME
+    )
+    runtime_snapshot.mkdir(mode=0o700, parents=True, exist_ok=True)
+    runtime_snapshot.chmod(0o700)
+    for filename, payload in {
+        **tokenizer_payloads,
+        "generation_config.json": module.TEST_GENERATION_CONFIG_PAYLOAD,
+        "model.safetensors.index.json": index_payload,
+        **shard_payloads,
+    }.items():
+        target = runtime_snapshot / filename
+        if target.exists():
+            target.chmod(0o600)
+        target.write_bytes(payload)
+        target.chmod(0o400)
     return variant_root, manifest
 
 
@@ -674,6 +776,10 @@ def test_trained_adapter_rejects_tampered_or_substituted_finalized_manifest(
         "baseModelArtifactDigest": item["baseModelArtifactDigest"],
         "baseModelWeightShards": item["baseModelWeightShards"],
         "baseModelTokenizerDigest": item["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": item["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": item[
+            "baseModelTokenizerClosureSHA256"
+        ],
         "trainingEnvironmentSHA256": item["trainingEnvironmentSHA256"],
         "trainingEnvironment": training_environment,
         "zeroGPUSize": item.get("zeroGPUSize"),

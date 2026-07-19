@@ -67,7 +67,7 @@ Options:
   --token-file FILE    Mount an HF token only into the isolated upload container
   --overwrite          Replace pre-existing per-variant run directories
   --resume             Resume an existing run by skipping verified training phases
-  --prepare-only       Validate and prepare run inputs without training
+  --prepare-only       Validate inputs and exact tokenizer gates without model training
   --no-evaluate        Skip frozen post-training inference and scoring
   --eval-smoke N       Evaluate a deterministic semantic cohort of N frozen cases per agent
   --no-gguf            Skip adapter GGUF conversion

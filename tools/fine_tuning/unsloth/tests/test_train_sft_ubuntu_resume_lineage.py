@@ -48,6 +48,7 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
     config: dict[str, object] = {
         "agent": "executor",
         "base_model_name": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": "a" * 40,
         "variantManifestSHA256": "a" * 64,
         "dataset_dir": str(dataset_dir),
         "output_dir": str(run_root / "training/executor"),
@@ -80,7 +81,10 @@ def _complete_checkpoint(
     checkpoint.mkdir(parents=True)
     _write_json(
         checkpoint / "adapter_config.json",
-        {"base_model_name_or_path": "Qwen/Qwen3-1.7B"},
+        {
+            "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+            "revision": "a" * 40,
+        },
     )
     _write_json(checkpoint / "trainer_state.json", {"global_step": step})
     for filename in (
@@ -96,6 +100,28 @@ def _complete_checkpoint(
             f"scaler.pt:{step}".encode()
         )
     return checkpoint
+
+
+@pytest.mark.parametrize("revision", (None, "main", "f" * 40))
+def test_sft_checkpoint_rejects_floating_or_wrong_base_revision(
+    tmp_path: Path,
+    revision: str | None,
+) -> None:
+    config, config_path, lineage_path = _fixture(tmp_path)
+    train_sft._bind_and_validate_sft_checkpoint_lineage(
+        config,
+        cfg_path=config_path,
+        assistant_only_loss=True,
+        require_checkpoint=False,
+    )
+    checkpoint = _complete_checkpoint(Path(str(config["output_dir"])), 10)
+    adapter_config_path = checkpoint / "adapter_config.json"
+    adapter_config = json.loads(adapter_config_path.read_text(encoding="utf-8"))
+    adapter_config["revision"] = revision
+    _write_json(adapter_config_path, adapter_config)
+
+    with pytest.raises(RuntimeError, match="base-model lineage drifted"):
+        train_sft._record_sft_checkpoint(lineage_path, checkpoint)
 
 
 def test_sft_checkpoint_policy_is_periodic_and_retains_recovery_fallback() -> None:

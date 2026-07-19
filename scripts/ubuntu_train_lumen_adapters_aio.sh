@@ -375,11 +375,6 @@ else
   validate_prepared_run
 fi
 
-if [[ "$PREPARE_ONLY" == "1" ]]; then
-  log "prepared run manifest: $RUN_ROOT/aio_run_manifest.json"
-  exit 0
-fi
-
 log "running one tokenizer-only preflight across all requested agents"
 (
   cd "$ROOT"
@@ -388,6 +383,25 @@ log "running one tokenizer-only preflight across all requested agents"
     --run-root "$RUN_ROOT" \
     --agents "$AGENTS_CSV"
 )
+
+if [[ "$PREPARE_ONLY" == "1" ]]; then
+  log "prepared run manifest: $RUN_ROOT/aio_run_manifest.json"
+  log "global tokenizer preflight audit: $RUN_ROOT/training/global_tokenizer_preflight.json"
+  exit 0
+fi
+
+# Exercise the exact private model/tokenizer view through the real pinned
+# Unsloth loader before fetching converter code or creating PEFT/trainer state.
+# The helper groups agents only when every runtime-load input is identical and
+# durably writes (or re-verifies on resume) one self-hashed gate report.
+log "running the real Unsloth runtime-binding smoke gate"
+(
+  cd "$ROOT"
+  "$TRAIN_PY" -m tools.fine_tuning.unsloth.runtime_binding_smoke_gate \
+    --run-root "$RUN_ROOT" \
+    --agents "$AGENTS_CSV"
+)
+log "runtime-binding smoke audit: $RUN_ROOT/training/runtime_binding_smoke.json"
 
 CONVERTER_REPO=""
 CONVERTER_STAGING=""
@@ -715,8 +729,31 @@ evaluate_agent() {
   fi
   if [[ "$RESUME" == "1" ]] && \
     [[ -e "$RUN_ROOT/evaluation/$agent" || -L "$RUN_ROOT/evaluation/$agent" ]]; then
-    log "replacing invalid or partial evaluation outputs: $agent"
-    clean_agent_evaluation "$agent"
+    local classification_log="$RUN_ROOT/logs/classify_evaluation_$agent.log"
+    local checkpoint_log="$RUN_ROOT/logs/verify_evaluation_checkpoint_$agent.log"
+    printf '[lumen-aio] completed evaluation classification: %s agent=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$agent" \
+      >> "$classification_log"
+    if (
+      cd "$ROOT"
+      "$TRAIN_PY" -m tools.fine_tuning.unsloth.ubuntu_pipeline \
+        classify-completed-evaluation \
+        --run-root "$RUN_ROOT" --agent "$agent"
+    ) >> "$classification_log" 2>&1; then
+      die "preserving verified terminal evaluation evidence that did not establish a passing qualification: $agent (see $classification_log)"
+    fi
+    printf '[lumen-aio] interrupted evaluation checkpoint verification: %s agent=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$agent" \
+      >> "$checkpoint_log"
+    if (
+      cd "$ROOT"
+      "$TRAIN_PY" -m tools.fine_tuning.unsloth.evaluate_adapter \
+        "${eval_args[@]}" --verify-checkpoint-only
+    ) >> "$checkpoint_log" 2>&1; then
+      log "preserving verified interrupted evaluation checkpoint: $agent"
+    else
+      die "evaluation state is invalid or could not be classified safely; preserving it instead of deleting progress: $agent (see $classification_log and $checkpoint_log)"
+    fi
   fi
   log "running frozen evaluation: $agent"
   printf '[lumen-aio] evaluation attempt started: %s agent=%s resume=%s\n' \
@@ -729,12 +766,67 @@ evaluate_agent() {
   verify_evaluation "$agent"
 }
 
+verified_base_model_snapshot_for_gguf() {
+  local config_path="$1"
+  local verification_path="$2"
+  local mode="$3"
+  "$TRAIN_PY" - "$config_path" "$verification_path" "$mode" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+from tools.fine_tuning.unsloth.training_lineage import (
+    verify_private_base_model_conversion_snapshot,
+)
+
+cfg = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+verification_path = Path(sys.argv[2])
+mode = sys.argv[3]
+if mode not in {"prepare", "verify"}:
+    raise SystemExit("Unsupported private GGUF snapshot mode")
+runtime_snapshot = Path(cfg["baseModelRuntimeSnapshotPath"])
+verification = verify_private_base_model_conversion_snapshot(
+    runtime_snapshot,
+    base_model_id=cfg["baseModelID"],
+    base_model_name=cfg["base_model_name"],
+    base_model_revision=cfg["baseModelRevision"],
+    tokenizer_files=cfg["baseModelTokenizerFiles"],
+    tokenizer_digest=cfg["baseModelTokenizerDigest"],
+    tokenizer_closure_sha256=cfg["baseModelTokenizerClosureSHA256"],
+    generation_config_file=cfg["baseModelGenerationConfigFile"],
+    model_index_digest=cfg["baseModelIndexDigest"],
+    index_referenced_shard_names=cfg["baseModelIndexReferencedShardNames"],
+    index_shard_binding_sha256=cfg["baseModelIndexShardBindingSHA256"],
+    model_artifact_digest=cfg["baseModelArtifactDigest"],
+    weight_shards=cfg["baseModelWeightShards"],
+)
+if verification != cfg["baseModelRuntimeSnapshotVerification"]:
+    raise SystemExit("Prepared private base-model runtime verification drifted")
+if mode == "prepare":
+    temporary = verification_path.with_name(f".{verification_path.name}.tmp")
+    temporary.write_text(
+        json.dumps(verification, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    temporary.chmod(0o600)
+    os.replace(temporary, verification_path)
+else:
+    before = json.loads(verification_path.read_text(encoding="utf-8"))
+    if before != verification:
+        raise SystemExit("Private base-model snapshot changed during GGUF conversion")
+print(verification["snapshotPath"])
+PY
+}
+
 convert_agent_gguf() {
   local agent="$1"
   local outfile="$RUN_ROOT/models/lora_qwen3_gguf/lumen-$agent-lora.gguf"
   local staged_dir="$GGUF_STAGING_ROOT/$agent"
   local staged_outfile="$staged_dir/lumen-$agent-lora.gguf"
+  local conversion_verification="$staged_dir/base_model_conversion_snapshot_verification.json"
   local base_model
+  local verified_base_model_after
   local adapter_dir
   if [[ "$RESUME" == "1" ]] && (
     cd "$ROOT"
@@ -759,44 +851,6 @@ convert_agent_gguf() {
   elif [[ -e "$staged_dir" || -L "$staged_dir" ]]; then
     clean_agent_gguf_staging "$agent"
   fi
-  base_model="$("$TRAIN_PY" - "$RUN_ROOT/configs/$agent.json" <<'PY'
-import hashlib
-import json
-import os
-import sys
-from huggingface_hub import snapshot_download
-
-cfg = json.loads(open(sys.argv[1], encoding="utf-8").read())
-snapshot = snapshot_download(repo_id=cfg["base_model_name"], revision=cfg["baseModelRevision"])
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-for filename, expected in (
-    ("model.safetensors.index.json", cfg["baseModelIndexDigest"]),
-    ("tokenizer.json", cfg["baseModelTokenizerDigest"]),
-):
-    if sha256(f"{snapshot}/{filename}") != expected:
-        raise SystemExit(f"Pinned base-model artifact mismatch: {filename}")
-shards = sorted(cfg["baseModelWeightShards"], key=lambda item: item["filename"])
-contract = {"schemaVersion": "lumen.base-model-weight-shards/1.0.0", "shards": shards}
-if hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest() != cfg["baseModelArtifactDigest"]:
-    raise SystemExit("Base-model shard contract mismatch")
-index = json.load(open(f"{snapshot}/model.safetensors.index.json", encoding="utf-8"))
-referenced = sorted(set(index.get("weight_map", {}).values()))
-if referenced != [item["filename"] for item in shards] or referenced != cfg["baseModelIndexReferencedShardNames"]:
-    raise SystemExit("Base-model index shard set mismatch")
-for item in shards:
-    path = f"{snapshot}/{item['filename']}"
-    if os.path.getsize(path) != item["size"] or sha256(path) != item["sha256"]:
-        raise SystemExit(f"Pinned base-model shard mismatch: {item['filename']}")
-print(snapshot)
-PY
-)"
   if [[ "$RUN_PREFERENCE" == "1" ]]; then
     adapter_dir="$RUN_ROOT/models/lora_qwen3_dpo/$agent"
   else
@@ -812,6 +866,12 @@ PY
   [[ ! -e "$staged_dir" && ! -L "$staged_dir" ]] \
     || die "GGUF per-agent staging unexpectedly exists: $staged_dir"
   mkdir -m 700 "$staged_dir"
+  base_model="$(
+    verified_base_model_snapshot_for_gguf \
+      "$RUN_ROOT/configs/$agent.json" \
+      "$conversion_verification" \
+      prepare
+  )"
   log "converting finalized adapter to staged GGUF: $agent"
   printf '[lumen-aio] GGUF conversion attempt started: %s agent=%s resume=%s\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$agent" "$RESUME" \
@@ -820,6 +880,14 @@ PY
     --outfile "$staged_outfile" \
     --base "$base_model" \
     2>&1 | tee -a "$RUN_ROOT/logs/convert_$agent.log"
+  verified_base_model_after="$(
+    verified_base_model_snapshot_for_gguf \
+      "$RUN_ROOT/configs/$agent.json" \
+      "$conversion_verification" \
+      verify
+  )"
+  [[ "$verified_base_model_after" == "$base_model" ]] \
+    || die "base-model snapshot changed during GGUF conversion: $agent"
   (
     cd "$ROOT"
     "$TRAIN_PY" -m tools.fine_tuning.unsloth.ubuntu_pipeline \

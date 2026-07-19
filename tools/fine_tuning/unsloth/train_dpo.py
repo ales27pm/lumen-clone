@@ -36,14 +36,25 @@ try:
         CHECKPOINT_SCALER_FILENAME,
         CHECKPOINT_SCALER_STATE_SCHEMA,
         _build_fleet_loss_share_evidence,
+        _build_public_corpus_loss_share_evidence,
         _checkpoint_scaler_state_contract,
+        _controlled_torch_dtype,
         _resolve_training_precision,
         _resolve_controlled_seed,
+        _load_verified_runtime_tokenizer_source,
+        _normalize_peft_base_model_identity,
+        _publish_exact_base_tokenizer_subset,
         _require_unsloth_before_transformers,
+        _save_portable_peft_adapter,
         _seed_everything,
         _training_environment,
         _training_runtime_lineage,
+        _verify_prepared_global_tokenizer_preflight,
+        _verify_base_model_lineage as _verify_sft_base_model_lineage,
+        _verify_runtime_model_binding,
+        _verify_runtime_tokenizer_binding,
         _validated_fleet_loss_share_contract,
+        _validated_public_corpus_loss_share_contract,
         _verified_training_completion_evidence,
         _write_json_atomic,
     )
@@ -57,14 +68,25 @@ except ImportError:
         CHECKPOINT_SCALER_FILENAME,
         CHECKPOINT_SCALER_STATE_SCHEMA,
         _build_fleet_loss_share_evidence,
+        _build_public_corpus_loss_share_evidence,
         _checkpoint_scaler_state_contract,
+        _controlled_torch_dtype,
         _resolve_training_precision,
         _resolve_controlled_seed,
+        _load_verified_runtime_tokenizer_source,
+        _normalize_peft_base_model_identity,
+        _publish_exact_base_tokenizer_subset,
         _require_unsloth_before_transformers,
+        _save_portable_peft_adapter,
         _seed_everything,
         _training_environment,
         _training_runtime_lineage,
+        _verify_prepared_global_tokenizer_preflight,
+        _verify_base_model_lineage as _verify_sft_base_model_lineage,
+        _verify_runtime_model_binding,
+        _verify_runtime_tokenizer_binding,
         _validated_fleet_loss_share_contract,
+        _validated_public_corpus_loss_share_contract,
         _verified_training_completion_evidence,
         _write_json_atomic,
     )
@@ -73,13 +95,21 @@ except ImportError:
 REQUIRED_CONFIG_KEYS = {
     "agent",
     "base_model_name",
+    "baseModelID",
     "baseModelRevision",
     "baseModelIndexDigest",
     "baseModelIndexReferencedShardNames",
     "baseModelIndexShardBindingSHA256",
     "baseModelArtifactDigest",
     "baseModelWeightShards",
+    "baseModelGenerationConfigFile",
     "baseModelTokenizerDigest",
+    "baseModelTokenizerFiles",
+    "baseModelTokenizerClosureSHA256",
+    "baseModelTokenizerSnapshotPath",
+    "baseModelTokenizerSnapshotVerification",
+    "baseModelRuntimeSnapshotPath",
+    "baseModelRuntimeSnapshotVerification",
     "chatTemplateContract",
     "trainingEnvironmentLock",
     "trainingContainerImageDigest",
@@ -129,6 +159,7 @@ REQUIRED_CONFIG_KEYS = {
     "dataset_dir",
     "variant",
     "variantManifestSHA256",
+    "publicCorpusLossShareContract",
     "seed",
 }
 AGENTS = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
@@ -155,7 +186,10 @@ PREFERENCE_CHECKPOINT_REQUIRED_FILES = frozenset(
     }
 )
 PREFERENCE_TOKEN_LENGTH_PREFLIGHT_SCHEMA = (
-    "lumen.preference_token_length_preflight/1.2.0"
+    "lumen.preference_token_length_preflight/1.4.0"
+)
+PREFERENCE_TOKENIZATION_TRANSCRIPT_SCHEMA = (
+    "lumen.preference-tokenization-transcript/1.0.0"
 )
 PREFERENCE_MINIMUM_PROMPT_MARGIN_TOKENS = 64
 PREFERENCE_MINIMUM_SEQUENCE_MARGIN_TOKENS = 128
@@ -452,70 +486,7 @@ def _require_sha256(value: Any, *, name: str) -> str:
 
 
 def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
-    revision = str(cfg.get("baseModelRevision") or "")
-    if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
-        raise RuntimeError("baseModelRevision must be a full lowercase Hugging Face commit SHA")
-    expected = {
-        "model.safetensors.index.json": _require_sha256(
-            cfg.get("baseModelIndexDigest"), name="baseModelIndexDigest"
-        ),
-        "tokenizer.json": _require_sha256(
-            cfg.get("baseModelTokenizerDigest"), name="baseModelTokenizerDigest"
-        ),
-    }
-    from huggingface_hub import hf_hub_download  # type: ignore
-
-    downloaded: dict[str, Path] = {}
-    for filename, digest in expected.items():
-        path = Path(hf_hub_download(repo_id=cfg["base_model_name"], filename=filename, revision=revision))
-        downloaded[filename] = path
-        if _hash_file(path) != digest:
-            raise RuntimeError(f"Pinned base-model artifact digest mismatch: {filename}")
-
-    shard_contract = _base_model_weight_shard_contract(cfg.get("baseModelWeightShards"))
-    if _canonical_sha256(shard_contract) != _require_sha256(
-        cfg.get("baseModelArtifactDigest"), name="baseModelArtifactDigest"
-    ):
-        raise RuntimeError("baseModelArtifactDigest does not match baseModelWeightShards")
-    try:
-        index = json.loads(downloaded["model.safetensors.index.json"].read_text(encoding="utf-8"))
-        weight_map = index["weight_map"]
-        if not isinstance(weight_map, dict) or any(
-            not isinstance(filename, str) for filename in weight_map.values()
-        ):
-            raise TypeError
-        referenced_shards = sorted(set(weight_map.values()))
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Pinned base-model index has an invalid weight_map") from exc
-    expected_shards = [item["filename"] for item in shard_contract["shards"]]
-    if referenced_shards != expected_shards:
-        raise RuntimeError("Pinned base-model index shard set does not match baseModelWeightShards")
-    declared_referenced_shards = cfg.get("baseModelIndexReferencedShardNames")
-    if declared_referenced_shards != referenced_shards:
-        raise RuntimeError(
-            "Pinned base-model index shard set does not match baseModelIndexReferencedShardNames"
-        )
-    index_shard_binding = {
-        "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
-        "indexDigest": expected["model.safetensors.index.json"],
-        "referencedShardNames": referenced_shards,
-        "shardContractDigest": cfg["baseModelArtifactDigest"],
-    }
-    if _canonical_sha256(index_shard_binding) != _require_sha256(
-        cfg.get("baseModelIndexShardBindingSHA256"),
-        name="baseModelIndexShardBindingSHA256",
-    ):
-        raise RuntimeError("baseModelIndexShardBindingSHA256 does not bind the verified index and shards")
-    for item in shard_contract["shards"]:
-        path = Path(
-            hf_hub_download(
-                repo_id=cfg["base_model_name"],
-                filename=item["filename"],
-                revision=revision,
-            )
-        )
-        if path.stat().st_size != item["size"] or _hash_file(path) != item["sha256"]:
-            raise RuntimeError(f"Pinned base-model weight shard digest mismatch: {item['filename']}")
+    _verify_sft_base_model_lineage(cfg)
 
 
 def _canonical_sha256(value: Any) -> str:
@@ -783,6 +754,7 @@ def _preference_checkpoint_directory_manifest(
     checkpoint: Path,
     *,
     expected_base_model: str,
+    expected_base_revision: str,
     precision: Mapping[str, Any],
 ) -> dict[str, Any]:
     if checkpoint.is_symlink():
@@ -868,6 +840,7 @@ def _preference_checkpoint_directory_manifest(
     if (
         not isinstance(adapter_config, Mapping)
         or adapter_config.get("base_model_name_or_path") != expected_base_model
+        or adapter_config.get("revision") != expected_base_revision
     ):
         raise RuntimeError("Preference checkpoint base-model lineage drifted")
     payload = {
@@ -886,6 +859,7 @@ def _bound_preference_checkpoint_entries(
     record: Mapping[str, Any],
     *,
     expected_base_model: str,
+    expected_base_revision: str,
 ) -> tuple[list[tuple[int, Path]], set[str], list[Path]]:
     root = Path(str(record.get("checkpointRoot") or "")).resolve()
     entries = record.get("checkpoints")
@@ -938,6 +912,7 @@ def _bound_preference_checkpoint_entries(
             manifest = _preference_checkpoint_directory_manifest(
                 checkpoint,
                 expected_base_model=expected_base_model,
+                expected_base_revision=expected_base_revision,
                 precision=record["precision"],
             )
         except _IncompletePreferenceCheckpoint:
@@ -1030,6 +1005,7 @@ def _bind_and_validate_preference_checkpoint_lineage(
         _bound_preference_checkpoint_entries(
             record,
             expected_base_model=str(cfg.get("base_model_name") or ""),
+            expected_base_revision=str(cfg.get("baseModelRevision") or ""),
         )
     )
     root = Path(str(record["checkpointRoot"])).resolve()
@@ -1091,6 +1067,7 @@ def _record_preference_checkpoint(
         raise RuntimeError("Preference checkpoint config drifted during training")
     config = json.loads(config_path.read_text(encoding="utf-8"))
     expected_base_model = str(config.get("base_model_name") or "")
+    expected_base_revision = str(config.get("baseModelRevision") or "")
     precision = _resolve_training_precision(config)
     entries = [
         {
@@ -1098,6 +1075,7 @@ def _record_preference_checkpoint(
             "checkpointSHA256": _preference_checkpoint_directory_manifest(
                 candidate,
                 expected_base_model=expected_base_model,
+                expected_base_revision=expected_base_revision,
                 precision=precision,
             )["checkpointSHA256"],
         }
@@ -1126,40 +1104,6 @@ def _preference_checkpoint_callback(
             return control
 
     return PreferenceCheckpointLineageCallback()
-
-
-def _base_model_weight_shard_contract(value: Any) -> dict[str, Any]:
-    if not isinstance(value, list) or not value:
-        raise RuntimeError("baseModelWeightShards must be a non-empty list")
-    shards: list[dict[str, Any]] = []
-    filenames: set[str] = set()
-    for item in value:
-        if not isinstance(item, dict):
-            raise RuntimeError("baseModelWeightShards entries must be objects")
-        filename = item.get("filename")
-        size = item.get("size")
-        digest = item.get("sha256")
-        if (
-            not isinstance(filename, str)
-            or filename != filename.rsplit("/", 1)[-1]
-            or not filename.endswith(".safetensors")
-            or filename in filenames
-            or type(size) is not int
-            or size <= 0
-        ):
-            raise RuntimeError("baseModelWeightShards contains invalid shard metadata")
-        filenames.add(filename)
-        shards.append(
-            {
-                "filename": filename,
-                "size": size,
-                "sha256": _require_sha256(digest, name=f"baseModelWeightShards[{filename}].sha256"),
-            }
-        )
-    return {
-        "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-        "shards": sorted(shards, key=lambda item: item["filename"]),
-    }
 
 
 _PROMPT_ROLES = {"system", "user", "assistant"}
@@ -1274,14 +1218,14 @@ def _token_length_statistics(values: list[int]) -> dict[str, int]:
     }
 
 
-def _preference_text_token_count(
+def _preference_text_token_ids(
     tokenizer: Any,
     value: Any,
     *,
     split: str,
     row_index: int,
     field: str,
-) -> int:
+) -> list[int]:
     if not isinstance(value, str):
         raise RuntimeError(
             "Preference token-length preflight received a non-text "
@@ -1303,7 +1247,54 @@ def _preference_text_token_count(
             "Preference token-length preflight received invalid input_ids "
             f"for {field} in {split} row {row_index}"
         )
-    return len(input_ids)
+    return input_ids
+
+
+def _preference_text_token_count(
+    tokenizer: Any,
+    value: Any,
+    *,
+    split: str,
+    row_index: int,
+    field: str,
+) -> int:
+    return len(
+        _preference_text_token_ids(
+            tokenizer,
+            value,
+            split=split,
+            row_index=row_index,
+            field=field,
+        )
+    )
+
+
+def _dpo_completion_token_ids(
+    tokenizer: Any,
+    value: Any,
+    *,
+    split: str,
+    row_index: int,
+    field: str,
+    appended_eos_token_id: int | None = None,
+) -> list[int]:
+    eos_token_id = (
+        _dpo_appended_eos_token_id(tokenizer)
+        if appended_eos_token_id is None
+        else appended_eos_token_id
+    )
+    if type(eos_token_id) is not int or eos_token_id < 0:
+        raise RuntimeError("DPO completion transcript requires a valid EOS token ID")
+    return [
+        *_preference_text_token_ids(
+            tokenizer,
+            value,
+            split=split,
+            row_index=row_index,
+            field=field,
+        ),
+        eos_token_id,
+    ]
 
 
 def _dpo_completion_token_count(
@@ -1323,15 +1314,14 @@ def _dpo_completion_token_count(
     when it produces two adjacent termination markers in the trainer input.
     """
 
-    return (
-        _preference_text_token_count(
+    return len(
+        _dpo_completion_token_ids(
             tokenizer,
             value,
             split=split,
             row_index=row_index,
             field=field,
         )
-        + DPO_COMPLETION_APPENDED_EOS_TOKENS
     )
 
 
@@ -1357,6 +1347,7 @@ def _preflight_preference_token_lengths(
     source_splits: Mapping[str, list[dict[str, Any]]] | None = None,
     agent: str | None = None,
     fleet_loss_share_contract: Any = None,
+    public_corpus_loss_share_contract: Any = None,
     fleet_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Prove TRL's rendered preference rows need no prompt/sequence truncation.
@@ -1400,13 +1391,24 @@ def _preflight_preference_token_lengths(
             lane="dpo",
             config=fleet_config,
         )
+    elif fleet_loss_share_contract is not None:
+        raise RuntimeError(
+            "Fleet preference loss-share input is forbidden for non-Fleet training"
+        )
+    if agent is not None:
+        _validated_public_corpus_loss_share_contract(
+            public_corpus_loss_share_contract,
+            lane="dpo",
+            config=fleet_config,
+        )
         if not isinstance(source_splits, Mapping) or set(source_splits) != set(splits):
             raise RuntimeError(
-                "Fleet preference token preflight requires aligned raw source splits"
+                "Public-corpus preference token preflight requires aligned raw "
+                "source splits"
             )
-    elif fleet_loss_share_contract is not None or source_splits is not None:
+    elif public_corpus_loss_share_contract is not None or source_splits is not None:
         raise RuntimeError(
-            "Fleet preference loss-share inputs are forbidden for non-Fleet training"
+            "Public-corpus preference loss-share inputs require a controlled agent"
         )
 
     aggregate: dict[str, list[int]] = {
@@ -1418,7 +1420,12 @@ def _preflight_preference_token_lengths(
         "maximumTotal": [],
     }
     split_summaries: dict[str, dict[str, Any]] = {}
+    transcript_rows: list[dict[str, Any]] = []
     fleet_target_rows: dict[
+        str,
+        list[tuple[Mapping[str, Any], int]],
+    ] = {}
+    public_corpus_target_rows: dict[
         str,
         list[tuple[Mapping[str, Any], int]],
     ] = {}
@@ -1428,17 +1435,20 @@ def _preflight_preference_token_lengths(
         if not isinstance(rows, list):
             raise TypeError("Preference token-length splits must contain row lists")
         raw_source_rows = source_splits[split] if source_splits is not None else None
-        if agent == "fleet" and (
+        if agent is not None and (
             not isinstance(raw_source_rows, list)
             or len(raw_source_rows) != len(rows)
         ):
             raise RuntimeError(
-                f"Fleet preference {split} source rows are not aligned"
+                f"Public-corpus preference {split} source rows are not aligned"
             )
         lengths: dict[str, list[int]] = {
             key: [] for key in aggregate
         }
         split_fleet_target_rows: list[tuple[Mapping[str, Any], int]] = []
+        split_public_corpus_target_rows: list[
+            tuple[Mapping[str, Any], int]
+        ] = []
         for row_index, row in enumerate(rows):
             try:
                 rendered = render_preference(dict(row), tokenizer=tokenizer)
@@ -1452,27 +1462,32 @@ def _preflight_preference_token_lengths(
                     "Preference token-length preflight received invalid rendered "
                     f"data for {split} row {row_index}"
                 )
-            prompt_tokens = _preference_text_token_count(
+            prompt_token_ids = _preference_text_token_ids(
                 tokenizer,
                 rendered.get("prompt"),
                 split=split,
                 row_index=row_index,
                 field="prompt",
             )
-            chosen_completion_tokens = _dpo_completion_token_count(
+            chosen_completion_token_ids = _dpo_completion_token_ids(
                 tokenizer,
                 rendered.get("chosen"),
                 split=split,
                 row_index=row_index,
                 field="chosen completion",
+                appended_eos_token_id=appended_eos_token_id,
             )
-            rejected_completion_tokens = _dpo_completion_token_count(
+            rejected_completion_token_ids = _dpo_completion_token_ids(
                 tokenizer,
                 rendered.get("rejected"),
                 split=split,
                 row_index=row_index,
                 field="rejected completion",
+                appended_eos_token_id=appended_eos_token_id,
             )
+            prompt_tokens = len(prompt_token_ids)
+            chosen_completion_tokens = len(chosen_completion_token_ids)
+            rejected_completion_tokens = len(rejected_completion_token_ids)
             chosen_total_tokens = prompt_tokens + chosen_completion_tokens
             rejected_total_tokens = prompt_tokens + rejected_completion_tokens
             maximum_total_tokens = max(
@@ -1501,21 +1516,42 @@ def _preflight_preference_token_lengths(
                 "rejectedTotal": rejected_total_tokens,
                 "maximumTotal": maximum_total_tokens,
             }
+            row_transcript = {
+                "schemaVersion": PREFERENCE_TOKENIZATION_TRANSCRIPT_SCHEMA,
+                "split": split,
+                "rowIndex": row_index,
+                "promptInputIDs": prompt_token_ids,
+                "chosenCompletionInputIDs": chosen_completion_token_ids,
+                "rejectedCompletionInputIDs": rejected_completion_token_ids,
+            }
+            transcript_rows.append(
+                {
+                    "split": split,
+                    "rowIndex": row_index,
+                    "rowSHA256": _canonical_sha256(row_transcript),
+                }
+            )
             for key, value in row_lengths.items():
                 lengths[key].append(value)
                 aggregate[key].append(value)
-            if agent == "fleet":
+            if agent is not None:
                 raw_source_row = raw_source_rows[row_index]
                 if not isinstance(raw_source_row, Mapping):
                     raise RuntimeError(
-                        "Fleet preference source rows must be JSON objects"
+                        "Preference source rows must be JSON objects"
                     )
+                split_public_corpus_target_rows.append(
+                    (raw_source_row, chosen_completion_tokens)
+                )
+            if agent == "fleet":
                 split_fleet_target_rows.append(
                     (raw_source_row, chosen_completion_tokens)
                 )
 
         if agent == "fleet":
             fleet_target_rows[split] = split_fleet_target_rows
+        if agent is not None:
+            public_corpus_target_rows[split] = split_public_corpus_target_rows
 
         if rows:
             split_summaries[split] = {
@@ -1601,6 +1637,12 @@ def _preflight_preference_token_lengths(
         "smallestSequenceMarginTokens": smallest_sequence_margin,
         "truncationRequired": False,
         "splits": split_summaries,
+        "tokenizationTranscriptSHA256": _canonical_sha256(
+            {
+                "schemaVersion": PREFERENCE_TOKENIZATION_TRANSCRIPT_SCHEMA,
+                "rows": transcript_rows,
+            }
+        ),
     }
     if agent == "fleet":
         report["fleetLossShareEvidence"] = _build_fleet_loss_share_evidence(
@@ -1608,6 +1650,15 @@ def _preflight_preference_token_lengths(
             lane="dpo",
             split_target_rows=fleet_target_rows,
             config=fleet_config,
+        )
+    if agent is not None:
+        report["publicCorpusLossShareEvidence"] = (
+            _build_public_corpus_loss_share_evidence(
+                contract_value=public_corpus_loss_share_contract,
+                lane="dpo",
+                split_target_rows=public_corpus_target_rows,
+                config=fleet_config,
+            )
         )
     return report
 
@@ -1643,6 +1694,9 @@ def _bind_preference_token_length_preflight(
         "baseModelID": cfg.get("base_model_name"),
         "baseModelRevision": cfg.get("baseModelRevision"),
         "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
         "chatTemplateContract": cfg.get("chatTemplateContract"),
         "parentSFTAdapterSHA256": parent_sha256,
         "referenceSFTAdapterSHA256": record.get("referenceSFTAdapterSHA256"),
@@ -1782,12 +1836,18 @@ def _build_preference_trainer(
     raise ValueError("preference_trainer must be exactly 'dpo'")
 
 
-def _save_policy_adapter(model: Any, output_dir: Path) -> None:
+def _save_policy_adapter(
+    model: Any,
+    output_dir: Path,
+    cfg: Mapping[str, Any],
+) -> dict[str, Any]:
     model.set_adapter(POLICY_ADAPTER_NAME)
-    model.save_pretrained(
-        str(output_dir),
-        safe_serialization=True,
+    return _save_portable_peft_adapter(
+        model,
+        output_dir,
+        cfg,
         selected_adapters=[POLICY_ADAPTER_NAME],
+        expected_adapter_names=[POLICY_ADAPTER_NAME],
     )
 
 
@@ -2488,6 +2548,10 @@ def _expected_sft_parent_lineage(cfg: Mapping[str, Any]) -> dict[str, Any]:
         "baseModelArtifactDigest": cfg.get("baseModelArtifactDigest"),
         "baseModelWeightShards": cfg.get("baseModelWeightShards"),
         "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerFiles": cfg.get("baseModelTokenizerFiles"),
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
         "trainingEnvironmentLockSHA256": environment_lock_sha256,
         "trainingDependencyLockSHA256": cfg.get(
             "trainingDependencyLockSHA256"
@@ -2569,17 +2633,28 @@ def _verified_sft_parent(
         artifact.get("adapterSHA256"),
         name="finalized SFT adapterSHA256",
     )
-    adapter_manifest = verify_adapter_artifact(
-        adapter_dir,
-        expected_adapter_sha256=parent_sha256,
-        expected_training_phase="sft",
-    )
+    try:
+        adapter_manifest = verify_adapter_artifact(
+            adapter_dir,
+            expected_adapter_sha256=parent_sha256,
+            expected_training_phase="sft",
+            expected_base_model=str(cfg.get("baseModelID") or ""),
+            expected_base_revision=str(cfg.get("baseModelRevision") or ""),
+        )
+    except ValueError as exc:
+        if "base model" in str(exc) or "revision" in str(exc):
+            raise RuntimeError(
+                "Finalized SFT adapter base model or revision does not match "
+                "preference-training configuration"
+            ) from exc
+        raise
     if artifact.get("adapterManifestSHA256") != adapter_manifest["adapterSHA256"]:
         raise RuntimeError("Finalized SFT manifest does not bind the canonical adapter file manifest")
     adapter_config_path = adapter_dir / "adapter_config.json"
     adapter_config = json.loads(adapter_config_path.read_text(encoding="utf-8"))
     if not isinstance(adapter_config, Mapping) or (
         adapter_config.get("base_model_name_or_path") != cfg.get("base_model_name")
+        or adapter_config.get("revision") != cfg.get("baseModelRevision")
     ):
         raise RuntimeError(
             "Finalized SFT adapter base model does not match preference-training configuration"
@@ -2783,12 +2858,35 @@ def main() -> None:
     # Unsloth must patch Transformers before the shared seed helper imports it.
     _seed_everything(seed)
 
+    (
+        expected_runtime_tokenizer,
+        runtime_tokenizer_snapshot_path,
+        runtime_tokenizer_snapshot_verification,
+    ) = _load_verified_runtime_tokenizer_source(cfg)
+
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=cfg["base_model_name"],
+        model_name=str(runtime_tokenizer_snapshot_path),
         revision=cfg["baseModelRevision"],
+        tokenizer_name=str(runtime_tokenizer_snapshot_path),
         max_seq_length=int(cfg["max_seq_length"]),
+        dtype=_controlled_torch_dtype(cfg),
         load_in_4bit=bool(cfg["load_in_4bit"]),
+        local_files_only=True,
+        trust_remote_code=False,
         use_exact_model_name=True,
+    )
+    runtime_model_binding = _verify_runtime_model_binding(
+        cfg,
+        runtime_model=model,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+    )
+    runtime_tokenizer_binding = _verify_runtime_tokenizer_binding(
+        cfg,
+        expected_tokenizer=expected_runtime_tokenizer,
+        runtime_tokenizer=tokenizer,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
     )
     verify_chat_template_contract(cfg["chatTemplateContract"], tokenizer=tokenizer)
 
@@ -2812,13 +2910,12 @@ def main() -> None:
             "preference_minimum_sequence_margin_tokens",
             PREFERENCE_MINIMUM_SEQUENCE_MARGIN_TOKENS,
         ),
-        source_splits=(
-            {"train": train_raw, "validation": val_raw}
-            if cfg.get("agent") == "fleet"
-            else None
-        ),
+        source_splits={"train": train_raw, "validation": val_raw},
         agent=cfg.get("agent"),
         fleet_loss_share_contract=cfg.get("fleetLossShareContract"),
+        public_corpus_loss_share_contract=cfg.get(
+            "publicCorpusLossShareContract"
+        ),
         fleet_config=cfg,
     )
     token_length_preflight_evidence = (
@@ -2830,12 +2927,20 @@ def main() -> None:
         if checkpoint_lineage_path is not None
         else token_length_preflight
     )
+    if checkpoint_lineage_path is not None:
+        _verify_prepared_global_tokenizer_preflight(
+            cfg,
+            cfg_path=cfg_path,
+            phase=preference_trainer,
+            bound_preflight=token_length_preflight_evidence,
+        )
     model = _load_sft_policy(
         model,
         peft_model_class=PeftModel,
         sft_adapter_dir=sft_adapter_dir,
         preference_trainer=preference_trainer,
     )
+    peft_base_model_identity = _normalize_peft_base_model_identity(model, cfg)
     train_dataset = Dataset.from_list(train_rows)
     val_dataset = Dataset.from_list(val_rows) if val_rows else None
 
@@ -2919,12 +3024,23 @@ def main() -> None:
         train_record_count=len(train_rows),
         expected_precision=preference_config["precision"],
     )
-    _save_policy_adapter(trainer.model, dpo_adapter_dir)
-    tokenizer.save_pretrained(str(dpo_adapter_dir), legacy_format=False)
+    peft_base_model_identity = _save_policy_adapter(
+        trainer.model,
+        dpo_adapter_dir,
+        cfg,
+    )
+    adapter_tokenizer_binding = _publish_exact_base_tokenizer_subset(
+        cfg,
+        adapter_output_dir=dpo_adapter_dir,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+    )
     dpo_artifact_manifest = write_adapter_artifact_manifest(
         dpo_adapter_dir,
         training_phase="sft_dpo",
         parent_sft_adapter_sha256=sft_artifact_manifest["adapterSHA256"],
+        expected_base_model=cfg["baseModelID"],
+        expected_base_revision=cfg["baseModelRevision"],
     )
     finalized_manifest_path = output_dir / "finalized_variant_manifest.json"
     finalized_variant = _finalize_dpo_variant(
@@ -2961,8 +3077,29 @@ def main() -> None:
     )
 
     report = {
+        "schema": "lumen.train_preference.report/1.0.0",
         "agent": cfg["agent"],
         "trainer": "ORPOTrainer" if preference_trainer == "orpo" else "DPOTrainer",
+        "base_model_name": cfg["base_model_name"],
+        "baseModelRevision": cfg["baseModelRevision"],
+        "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": cfg["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": cfg[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelGenerationConfigFile": cfg["baseModelGenerationConfigFile"],
+        "baseModelTokenizerSnapshotVerification": (
+            cfg["baseModelTokenizerSnapshotVerification"]
+        ),
+        "baseModelTokenizerSnapshotPath": cfg["baseModelTokenizerSnapshotPath"],
+        "baseModelRuntimeSnapshotPath": str(runtime_tokenizer_snapshot_path),
+        "baseModelRuntimeSnapshotVerification": (
+            runtime_tokenizer_snapshot_verification
+        ),
+        "runtimeModelBinding": runtime_model_binding,
+        "runtimeTokenizerBinding": runtime_tokenizer_binding,
+        "peftBaseModelIdentity": peft_base_model_identity,
+        "adapterTokenizerBinding": adapter_tokenizer_binding,
         "dataset_dir": str(dataset_dir),
         "datasetRepository": cfg.get("datasetRepository"),
         "datasetRevision": cfg.get("datasetRevision"),

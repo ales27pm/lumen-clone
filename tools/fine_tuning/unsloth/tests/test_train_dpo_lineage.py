@@ -13,7 +13,11 @@ import pytest
 
 from lumen_manifest_crawler.dataset import adapter_evaluation
 from tools.fine_tuning.unsloth import train_dpo, train_sft
-from tools.fine_tuning.unsloth.adapter_artifact import write_adapter_artifact_manifest
+from tools.fine_tuning.unsloth.adapter_artifact import (
+    portable_adapter_model_card,
+    write_adapter_artifact_manifest,
+    write_portable_adapter_model_card,
+)
 
 
 QWEN_MODEL_ID = "Qwen/Qwen3-1.7B"
@@ -229,6 +233,7 @@ def _write_sft_adapter(
     path: Path,
     *,
     base_model_name: str = QWEN_MODEL_ID,
+    base_model_revision: str | None = QWEN_REVISION,
 ) -> dict:
     path.mkdir()
     (path / "adapter_config.json").write_text(
@@ -236,6 +241,7 @@ def _write_sft_adapter(
             {
                 "peft_type": "LORA",
                 "base_model_name_or_path": base_model_name,
+                "revision": base_model_revision,
                 "target_modules": ["q_proj"],
             }
         ),
@@ -244,6 +250,11 @@ def _write_sft_adapter(
     (path / "adapter_model.safetensors").write_bytes(_safetensors_bytes())
     (path / "tokenizer.json").write_text("{}", encoding="utf-8")
     (path / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+    write_portable_adapter_model_card(
+        path,
+        base_model_id=base_model_name,
+        base_model_revision=base_model_revision,
+    )
     return write_adapter_artifact_manifest(path, training_phase="sft")
 
 
@@ -251,6 +262,7 @@ def _sft_parent_fixture(
     tmp_path: Path,
     *,
     adapter_base_model_name: str = QWEN_MODEL_ID,
+    adapter_base_model_revision: str | None = QWEN_REVISION,
 ) -> tuple[Path, Path, dict, dict]:
     pending = adapter_evaluation.build_experiment_variant_manifest(
         agent="executor",
@@ -268,6 +280,7 @@ def _sft_parent_fixture(
     artifact = _write_sft_adapter(
         adapter,
         base_model_name=adapter_base_model_name,
+        base_model_revision=adapter_base_model_revision,
     )
     resolved_environment = _resolved_environment()
     environment = {
@@ -325,6 +338,10 @@ def _sft_parent_fixture(
         "baseModelArtifactDigest": pending["baseModelArtifactDigest"],
         "baseModelWeightShards": pending["baseModelWeightShards"],
         "baseModelTokenizerDigest": pending["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": pending["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": pending[
+            "baseModelTokenizerClosureSHA256"
+        ],
         "trainingEnvironmentLock": pending["trainingEnvironmentLock"],
         "trainingEnvironmentLockSHA256": pending[
             "trainingEnvironmentLockSHA256"
@@ -386,6 +403,8 @@ def test_verified_sft_parent_returns_complete_audit_lineage(tmp_path: Path) -> N
         "baseModelArtifactDigest",
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
+        "baseModelTokenizerFiles",
+        "baseModelTokenizerClosureSHA256",
         "trainingEnvironmentLockSHA256",
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
@@ -463,6 +482,38 @@ def test_verified_sft_parent_rejects_adapter_base_model_mismatch(
         train_dpo._verified_sft_parent(
             cfg, adapter_dir=adapter, finalized_manifest_path=finalized
         )
+
+
+@pytest.mark.parametrize("adapter_revision", (None, "f" * 40))
+def test_verified_sft_parent_rejects_floating_or_wrong_base_revision(
+    tmp_path: Path,
+    adapter_revision: str | None,
+) -> None:
+    if adapter_revision is None:
+        with pytest.raises(ValueError, match="revision"):
+            _sft_parent_fixture(
+                tmp_path,
+                adapter_base_model_revision=adapter_revision,
+            )
+        return
+    adapter, finalized, cfg, _ = _sft_parent_fixture(
+        tmp_path,
+        adapter_base_model_revision=adapter_revision,
+    )
+
+    with pytest.raises((RuntimeError, ValueError), match="revision"):
+        train_dpo._verified_sft_parent(
+            cfg,
+            adapter_dir=adapter,
+            finalized_manifest_path=finalized,
+        )
+
+
+def test_adapter_artifact_rejects_floating_main_revision(tmp_path: Path) -> None:
+    adapter = tmp_path / "sft"
+
+    with pytest.raises(ValueError, match="full commit SHA"):
+        _write_sft_adapter(adapter, base_model_revision="main")
 
 
 @pytest.mark.parametrize("mutation", ("modified", "missing"))
@@ -1025,8 +1076,36 @@ def test_reference_logps_precompute_fails_if_trainer_does_not_bind_columns() -> 
 
 def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) -> None:
     events: list[tuple[str, object]] = []
+    private_path = "/outputs/run/training/base_model_runtime_snapshot"
+
+    class RuntimeConfig:
+        def __init__(self) -> None:
+            self._name_or_path = private_path
+            self.name_or_path = private_path
+
+        def to_dict(self) -> dict[str, str]:
+            return {"_name_or_path": self._name_or_path}
+
+    runtime_config = RuntimeConfig()
+    runtime_base_model = types.SimpleNamespace(
+        config=runtime_config,
+        name_or_path=private_path,
+    )
 
     class Model:
+        def __init__(self) -> None:
+            self.peft_config = {
+                train_dpo.POLICY_ADAPTER_NAME: types.SimpleNamespace(
+                    base_model_name_or_path=private_path,
+                    revision="main",
+                )
+            }
+            self.base_model = runtime_base_model
+            self.config = runtime_config
+
+        def get_base_model(self) -> object:
+            return runtime_base_model
+
         def load_adapter(self, path: str, *, adapter_name: str, is_trainable: bool) -> None:
             events.append(("load", (path, adapter_name, is_trainable)))
 
@@ -1035,6 +1114,13 @@ def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) ->
 
         def save_pretrained(self, path: str, **kwargs: object) -> None:
             events.append(("save", (path, kwargs)))
+            output_dir = Path(path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "README.md").write_text(
+                f"base_model: {self.config.to_dict()['_name_or_path']}\n"
+                f"tag: base_model:adapter:{self.base_model.name_or_path}\n",
+                encoding="utf-8",
+            )
 
     class PeftModelProbe:
         @staticmethod
@@ -1052,12 +1138,18 @@ def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) ->
 
     adapter_dir = tmp_path / "executor-sft-adapter"
     model = train_dpo._load_sft_policy(
-        object(),
+        runtime_base_model,
         peft_model_class=PeftModelProbe,
         sft_adapter_dir=adapter_dir,
         preference_trainer="dpo",
     )
-    train_dpo._save_policy_adapter(model, tmp_path / "executor-dpo-adapter")
+    output_dir = tmp_path / "executor-dpo-adapter"
+    cfg = {
+        "base_model_name": QWEN_MODEL_ID,
+        "baseModelID": QWEN_MODEL_ID,
+        "baseModelRevision": QWEN_REVISION,
+    }
+    evidence = train_dpo._save_policy_adapter(model, output_dir, cfg)
 
     assert events[0][1][2:] == (train_dpo.POLICY_ADAPTER_NAME, True)
     assert events[1] == (
@@ -1068,164 +1160,176 @@ def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) ->
         "safe_serialization": True,
         "selected_adapters": [train_dpo.POLICY_ADAPTER_NAME],
     }
+    assert evidence["baseModelID"] == QWEN_MODEL_ID
+    assert evidence["baseModelRevision"] == QWEN_REVISION
+    assert (output_dir / "README.md").read_text(
+        encoding="utf-8"
+    ) == portable_adapter_model_card(QWEN_MODEL_ID, QWEN_REVISION)
+    assert private_path not in (output_dir / "README.md").read_text(
+        encoding="utf-8"
+    )
 
 
-def test_verify_base_model_lineage_checks_pinned_artifacts(
+def _tokenizer_closure_fixture(
+    payloads: dict[str, bytes],
+) -> tuple[list[dict[str, object]], str]:
+    files = [
+        {
+            "path": filename,
+            "sizeBytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "huggingFaceBlobID": train_sft._git_blob_sha1(payload),
+        }
+        for filename, payload in sorted(payloads.items())
+    ]
+    closure = {
+        "schemaVersion": "lumen.base-model-tokenizer-closure/1.0.0",
+        "baseModelID": "example/model",
+        "baseModelRevision": "a" * 40,
+        "files": files,
+    }
+    return files, train_sft._canonical_sha256(closure)
+
+
+def _private_runtime_snapshot_fixture(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+) -> tuple[dict[str, object], Path, Path]:
     revision = "a" * 40
     shard_name = "weights.safetensors"
-    artifacts = {
-        "model.safetensors.index.json": json.dumps(
-            {"weight_map": {"layer.weight": shard_name}}, sort_keys=True
-        ).encode(),
-        "tokenizer.json": b"tokenizer",
-        shard_name: b"weights",
+    tokenizer_payloads = {
+        "config.json": b'{"model_type":"qwen3"}',
+        "merges.txt": b"#version: 0.2\n",
+        "tokenizer.json": b'{"version":"1.0"}',
+        "tokenizer_config.json": b'{"chat_template":"pinned"}',
+        "vocab.json": b'{"token":0}',
     }
-    downloaded: list[tuple[str, str, str]] = []
-    for filename, content in artifacts.items():
-        (tmp_path / filename).write_bytes(content)
-
-    def hf_hub_download(*, repo_id: str, filename: str, revision: str) -> str:
-        downloaded.append((repo_id, filename, revision))
-        return str(tmp_path / filename)
-
-    monkeypatch.setitem(
-        sys.modules,
-        "huggingface_hub",
-        types.SimpleNamespace(hf_hub_download=hf_hub_download),
+    tokenizer_files, tokenizer_closure_sha256 = _tokenizer_closure_fixture(
+        tokenizer_payloads
     )
+    generation_payload = b'{"eos_token_id":2}\n'
+    generation_file = {
+        "path": "generation_config.json",
+        "sizeBytes": len(generation_payload),
+        "sha256": hashlib.sha256(generation_payload).hexdigest(),
+        "huggingFaceBlobID": train_sft._git_blob_sha1(generation_payload),
+    }
+    index_payload = json.dumps(
+        {"weight_map": {"layer.weight": shard_name}},
+        sort_keys=True,
+    ).encode()
+    shared_cache = tmp_path / "writable-hf-cache"
+    shared_cache.mkdir()
+    shared_shard = shared_cache / shard_name
+    shared_shard.write_bytes(b"weights")
+    runtime = tmp_path / "private-runtime-snapshot"
+    runtime.mkdir(mode=0o700)
+    runtime.chmod(0o700)
+    payloads = {
+        **tokenizer_payloads,
+        "generation_config.json": generation_payload,
+        "model.safetensors.index.json": index_payload,
+        shard_name: shared_shard.read_bytes(),
+    }
+    for filename, payload in payloads.items():
+        path = runtime / filename
+        path.write_bytes(payload)
+        path.chmod(0o400)
+    shards = [
+        {
+            "filename": shard_name,
+            "size": len(payloads[shard_name]),
+            "sha256": hashlib.sha256(payloads[shard_name]).hexdigest(),
+        }
+    ]
     shard_contract = {
         "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-        "shards": [
-            {
-                "filename": shard_name,
-                "size": len(artifacts[shard_name]),
-                "sha256": hashlib.sha256(artifacts[shard_name]).hexdigest(),
-            }
-        ],
+        "shards": shards,
     }
-    index_digest = hashlib.sha256(artifacts["model.safetensors.index.json"]).hexdigest()
-    artifact_digest = train_dpo._canonical_sha256(shard_contract)
-    train_dpo._verify_base_model_lineage(
+    index_digest = hashlib.sha256(index_payload).hexdigest()
+    artifact_digest = train_sft._canonical_sha256(shard_contract)
+    index_binding = train_sft._canonical_sha256(
         {
-            "base_model_name": "example/model",
-            "baseModelRevision": revision,
-            "baseModelIndexDigest": index_digest,
-            "baseModelIndexReferencedShardNames": [shard_name],
-            "baseModelIndexShardBindingSHA256": train_dpo._canonical_sha256(
-                {
-                    "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
-                    "indexDigest": index_digest,
-                    "referencedShardNames": [shard_name],
-                    "shardContractDigest": artifact_digest,
-                }
-            ),
-            "baseModelWeightShards": shard_contract["shards"],
-            "baseModelTokenizerDigest": hashlib.sha256(artifacts["tokenizer.json"]).hexdigest(),
-            "baseModelArtifactDigest": artifact_digest,
+            "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+            "indexDigest": index_digest,
+            "referencedShardNames": [shard_name],
+            "shardContractDigest": artifact_digest,
         }
     )
+    cfg: dict[str, object] = {
+        "base_model_name": "example/model",
+        "baseModelID": "example/model",
+        "baseModelRevision": revision,
+        "baseModelIndexDigest": index_digest,
+        "baseModelIndexReferencedShardNames": [shard_name],
+        "baseModelIndexShardBindingSHA256": index_binding,
+        "baseModelWeightShards": shards,
+        "baseModelArtifactDigest": artifact_digest,
+        "baseModelGenerationConfigFile": generation_file,
+        "baseModelTokenizerDigest": hashlib.sha256(
+            tokenizer_payloads["tokenizer.json"]
+        ).hexdigest(),
+        "baseModelTokenizerFiles": tokenizer_files,
+        "baseModelTokenizerClosureSHA256": tokenizer_closure_sha256,
+        "baseModelRuntimeSnapshotPath": str(runtime),
+    }
+    verification = train_sft.verify_private_base_model_conversion_snapshot(
+        runtime,
+        base_model_id="example/model",
+        base_model_name="example/model",
+        base_model_revision=revision,
+        tokenizer_files=tokenizer_files,
+        tokenizer_digest=str(cfg["baseModelTokenizerDigest"]),
+        tokenizer_closure_sha256=tokenizer_closure_sha256,
+        generation_config_file=generation_file,
+        model_index_digest=index_digest,
+        index_referenced_shard_names=[shard_name],
+        index_shard_binding_sha256=index_binding,
+        model_artifact_digest=artifact_digest,
+        weight_shards=shards,
+    )
+    cfg["baseModelRuntimeSnapshotVerification"] = verification
+    return cfg, shared_shard, runtime / shard_name
 
-    assert downloaded == [
-        ("example/model", "model.safetensors.index.json", revision),
-        ("example/model", "tokenizer.json", revision),
-        ("example/model", shard_name, revision),
-    ]
 
-
-def test_verify_base_model_lineage_rejects_digest_mismatch(
+def test_verify_base_model_lineage_uses_only_private_full_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    artifact = tmp_path / "model.safetensors.index.json"
-    artifact.write_bytes(b"unexpected")
-
-    monkeypatch.setitem(
-        sys.modules,
-        "huggingface_hub",
-        types.SimpleNamespace(hf_hub_download=lambda **_: str(artifact)),
-    )
-
-    with pytest.raises(RuntimeError, match="Pinned base-model artifact digest mismatch"):
-        train_dpo._verify_base_model_lineage(
-            {
-                "base_model_name": "example/model",
-                "baseModelRevision": "a" * 40,
-                "baseModelIndexDigest": "0" * 64,
-                "baseModelArtifactDigest": train_dpo._canonical_sha256(
-                    {
-                        "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-                        "shards": [
-                            {
-                                "filename": "weights.safetensors",
-                                "size": 1,
-                                "sha256": "2" * 64,
-                            }
-                        ],
-                    }
-                ),
-                "baseModelWeightShards": [
-                    {
-                        "filename": "weights.safetensors",
-                        "size": 1,
-                        "sha256": "2" * 64,
-                    }
-                ],
-                "baseModelTokenizerDigest": "1" * 64,
-            }
-        )
-
-
-def test_sft_lineage_rejects_modified_weight_shard(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    index = tmp_path / "model.safetensors.index.json"
-    tokenizer = tmp_path / "tokenizer.json"
-    shard = tmp_path / "weights.safetensors"
-    index.write_text(
-        json.dumps({"weight_map": {"layer.weight": shard.name}}),
-        encoding="utf-8",
-    )
-    tokenizer.write_bytes(b"tokenizer")
-    shard.write_bytes(b"modified")
-    files = {path.name: path for path in (index, tokenizer, shard)}
+    cfg, shared_shard, private_shard = _private_runtime_snapshot_fixture(tmp_path)
     monkeypatch.setitem(
         sys.modules,
         "huggingface_hub",
         types.SimpleNamespace(
-            hf_hub_download=lambda **kwargs: str(files[kwargs["filename"]])
+            hf_hub_download=lambda **_: pytest.fail("runtime re-entered HF cache")
         ),
     )
-    declared_shards = [
-        {"filename": shard.name, "size": 8, "sha256": hashlib.sha256(b"expected").hexdigest()}
-    ]
-    index_digest = hashlib.sha256(index.read_bytes()).hexdigest()
-    artifact_digest = train_sft._canonical_sha256(
-        {
-            "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-            "shards": declared_shards,
-        }
-    )
-    with pytest.raises(RuntimeError, match="weight shard digest mismatch"):
-        train_sft._verify_base_model_lineage(
-            {
-                "base_model_name": "example/model",
-                "baseModelRevision": "a" * 40,
-                "baseModelIndexDigest": index_digest,
-                "baseModelIndexReferencedShardNames": [shard.name],
-                "baseModelIndexShardBindingSHA256": train_sft._canonical_sha256(
-                    {
-                        "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
-                        "indexDigest": index_digest,
-                        "referencedShardNames": [shard.name],
-                        "shardContractDigest": artifact_digest,
-                    }
-                ),
-                "baseModelArtifactDigest": artifact_digest,
-                "baseModelWeightShards": declared_shards,
-                "baseModelTokenizerDigest": hashlib.sha256(tokenizer.read_bytes()).hexdigest(),
-            }
-        )
+
+    shared_shard.write_bytes(b"malware")
+    train_dpo._verify_base_model_lineage(cfg)
+    shared_shard.write_bytes(b"weights")
+    train_dpo._verify_base_model_lineage(cfg)
+
+    assert private_shard.read_bytes() == b"weights"
+    assert private_shard.stat().st_ino != shared_shard.stat().st_ino
+
+
+def test_verify_base_model_lineage_rejects_digest_mismatch(
+    tmp_path: Path,
+) -> None:
+    cfg, _, _ = _private_runtime_snapshot_fixture(tmp_path)
+    cfg["baseModelIndexDigest"] = "0" * 64
+
+    with pytest.raises(RuntimeError, match="runtime snapshot verification failed"):
+        train_dpo._verify_base_model_lineage(cfg)
+
+
+def test_sft_lineage_rejects_modified_weight_shard(
+    tmp_path: Path,
+) -> None:
+    cfg, _, private_shard = _private_runtime_snapshot_fixture(tmp_path)
+    private_shard.chmod(0o600)
+    private_shard.write_bytes(b"modified")
+    private_shard.chmod(0o400)
+
+    with pytest.raises(RuntimeError, match="runtime snapshot verification failed"):
+        train_sft._verify_base_model_lineage(cfg)

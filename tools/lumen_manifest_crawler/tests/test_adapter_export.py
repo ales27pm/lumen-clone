@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
     RUNTIME_SOURCE_AUDIT_FIELDS,
 )
@@ -30,13 +32,19 @@ def test_export_surfaces_preserve_phase_code_and_runtime_source_audit() -> None:
     runtime = adapter_runtime_manifest({"executor": _dataset(config)})
     runtime_adapter = runtime["adapters"][0]
 
-    assert ADAPTER_EXPORT_SCHEMA_VERSION == "1.5.0"
+    assert ADAPTER_EXPORT_SCHEMA_VERSION == "1.6.0"
     assert runtime["schemaVersion"] == ADAPTER_EXPORT_SCHEMA_VERSION
     assert runtime["sharedTrainingCodeSHA256ByPhase"] == config[
         "trainingCodeSHA256ByPhase"
     ]
 
     for exported in (config["adapterExport"], plan, runtime_adapter):
+        assert exported["baseModelTokenizerFiles"] == config[
+            "baseModelTokenizerFiles"
+        ]
+        assert exported["baseModelTokenizerClosureSHA256"] == config[
+            "baseModelTokenizerClosureSHA256"
+        ]
         assert exported["trainingCodeSHA256"] == config["trainingCodeSHA256"]
         assert exported["trainingCodeSHA256ByPhase"] == config[
             "trainingCodeSHA256ByPhase"
@@ -46,6 +54,45 @@ def test_export_surfaces_preserve_phase_code_and_runtime_source_audit() -> None:
         ]
         for field in RUNTIME_SOURCE_AUDIT_FIELDS:
             assert exported[field] == config[field]
+    assert runtime["sharedBaseModelTokenizerFiles"] == config[
+        "baseModelTokenizerFiles"
+    ]
+    assert runtime["sharedBaseModelTokenizerClosureSHA256"] == config[
+        "baseModelTokenizerClosureSHA256"
+    ]
+
+
+@pytest.mark.parametrize(
+    "exporter",
+    (
+        lambda config: augment_unsloth_config_for_adapter_export(
+            "executor", config
+        ),
+        lambda config: agent_adapter_export_plan("executor", {}, config),
+        lambda config: adapter_runtime_manifest(
+            {"executor": _dataset(config)}
+        ),
+    ),
+)
+def test_export_surfaces_reject_custom_model_with_qwen_defaults(exporter) -> None:
+    with pytest.raises(ValueError, match="only the pinned Qwen"):
+        exporter(
+            {
+                "baseModelID": "another/model",
+                "baseModelRevision": "a" * 40,
+            }
+        )
+
+
+def test_export_rejects_conflicting_base_model_aliases() -> None:
+    with pytest.raises(ValueError, match="only the pinned Qwen"):
+        augment_unsloth_config_for_adapter_export(
+            "executor",
+            {
+                "baseModelID": "Qwen/Qwen3-1.7B",
+                "base_model_name": "another/model",
+            },
+        )
 
 
 def test_runtime_prompt_composer_policy_hash_is_cross_language_stable() -> None:

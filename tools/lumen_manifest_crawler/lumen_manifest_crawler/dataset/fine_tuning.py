@@ -18,6 +18,8 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
     DEFAULT_BASE_MODEL_REVISION,
     DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    DEFAULT_BASE_MODEL_TOKENIZER_FILES,
+    DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256,
     DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
     EVALUATION_SCHEMA_VERSION,
     EXPERIMENT_VARIANTS,
@@ -46,12 +48,25 @@ EXPERIMENT_PUBLIC_SELECTION_DENOMINATOR = 5
 FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX = 0.30
 FLEET_SUPPLEMENTAL_SOURCE_PROXY_SELECTION_SHARE_HARD_MAX = 0.15
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX = 0.05
-FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = 0.35
+PUBLIC_CORPUS_ASSISTANT_TARGET_TOKEN_SHARE_HARD_MAX = 0.35
+PUBLIC_CORPUS_SOURCE_PROXY_SELECTION_SHARE_HARD_MAX = 0.30
+FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = (
+    PUBLIC_CORPUS_ASSISTANT_TARGET_TOKEN_SHARE_HARD_MAX
+)
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_TOKEN_SHARE_HARD_MAX = 0.10
 FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR = 10_000
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.1.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.2.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
     "lumen.fleet-loss-share-evidence/1.1.0"
+)
+PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = (
+    "lumen.public-corpus-loss-share/1.0.0"
+)
+PUBLIC_CORPUS_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
+    "lumen.public-corpus-loss-share-evidence/1.0.0"
+)
+FLEET_VALIDATION_SAMPLING_SCHEMA_VERSION = (
+    "lumen.fleet-validation-sampling/1.0.0"
 )
 FLEET_DPO_TOKENIZATION_POLICY = {
     "trainerImplementation": "trl.DPOTrainer.tokenize_row",
@@ -811,6 +826,7 @@ class FineTuningDatasetConfig:
     max_cortex_supplemental_assistant_char_share: float = 0.15
     max_fleet_supplemental_assistant_char_share: float = 0.25
     max_fleet_supplemental_assistant_token_share: float = 0.25
+    max_fleet_validation_sft_records: int = 128
     max_cortex_public_sft_records_per_tool: int = 8
 
 
@@ -837,6 +853,10 @@ def compile_agent_fine_tuning_datasets(
     config: FineTuningDatasetConfig | None = None,
 ) -> dict[str, AgentFineTuningDataset]:
     config = config or FineTuningDatasetConfig()
+    requested_public_loss_share = _requested_public_corpus_loss_share(config)
+    public_source_proxy_selection_share = (
+        _public_corpus_source_proxy_selection_share(config)
+    )
     runtime_audit_reports = runtime_audit_reports or []
     public_snapshot = _compiled_public_corpus_snapshot(compiled_records)
 
@@ -893,6 +913,22 @@ def compile_agent_fine_tuning_datasets(
     _validate_cortex_sft_route_intents(manifest, routed_sft["cortex"])
 
     routed_dpo = _build_agent_dpo_records(manifest, augmented_records, config, known_tools)
+    routed_sft = {
+        agent: _normalize_training_source_metadata(
+            records,
+            agent=agent,
+            lane="sft",
+        )
+        for agent, records in routed_sft.items()
+    }
+    routed_dpo = {
+        agent: _normalize_training_source_metadata(
+            records,
+            agent=agent,
+            lane="dpo",
+        )
+        for agent, records in routed_dpo.items()
+    }
     routed_eval = _build_agent_eval_records(manifest, augmented_records, known_tools)
     public_validation_group_keys = _public_validation_group_keys(
         [
@@ -925,11 +961,19 @@ def compile_agent_fine_tuning_datasets(
             budget_eligible_sft,
             config,
         )
-        role_balanced_sft = _limit_supplemental_sft_records(
-            agent,
-            public_balanced_sft,
-            config,
-        )
+        if agent == "fleet":
+            role_balanced_sft = (
+                _pin_required_fleet_supplemental_train_representatives(
+                    public_balanced_sft,
+                    config=config,
+                )
+            )
+        else:
+            role_balanced_sft = _limit_supplemental_sft_records(
+                agent,
+                public_balanced_sft,
+                config,
+            )
         train_sft, val_sft = _stable_source_stratified_split(
             role_balanced_sft,
             config,
@@ -940,25 +984,44 @@ def compile_agent_fine_tuning_datasets(
         available_val_sft = list(val_sft)
         train_sft = _cap_public_corpus_token_share(
             train_sft,
-            config.max_public_corpus_token_share,
+            public_source_proxy_selection_share,
             max_chars_per_token=config.max_chars_per_token,
         )
         val_sft = _cap_public_corpus_token_share(
             val_sft,
-            config.max_public_corpus_token_share,
+            public_source_proxy_selection_share,
             max_chars_per_token=config.max_chars_per_token,
         )
-        materialized_role_balanced_sft = _limit_supplemental_sft_records(
-            agent,
-            train_sft + val_sft,
-            config,
-        )
-        train_sft, val_sft = _stable_source_stratified_split(
-            materialized_role_balanced_sft,
-            config,
-            public_validation_group_keys=public_validation_group_keys,
-            agent=agent,
-        )
+        validation_sampling_input_sft = list(val_sft)
+        if agent == "fleet":
+            val_sft = _bound_fleet_validation_sft_records(
+                val_sft,
+                config=config,
+                required_reference_records=available_val_sft,
+            )
+        if agent != "fleet":
+            materialized_role_balanced_sft = _limit_supplemental_sft_records(
+                agent,
+                train_sft + val_sft,
+                config,
+            )
+            train_sft, val_sft = _stable_source_stratified_split(
+                materialized_role_balanced_sft,
+                config,
+                public_validation_group_keys=public_validation_group_keys,
+                agent=agent,
+            )
+            train_sft = _cap_public_corpus_token_share(
+                train_sft,
+                public_source_proxy_selection_share,
+                max_chars_per_token=config.max_chars_per_token,
+            )
+            val_sft = _cap_public_corpus_token_share(
+                val_sft,
+                public_source_proxy_selection_share,
+                max_chars_per_token=config.max_chars_per_token,
+            )
+            validation_sampling_input_sft = list(val_sft)
 
         dpo_records = (
             _exclude_evaluation_segment_matches(
@@ -968,11 +1031,6 @@ def compile_agent_fine_tuning_datasets(
             if config.include_dpo
             else []
         )
-        if agent == "fleet":
-            dpo_records = _limit_fleet_supplemental_dpo_records(
-                dpo_records,
-                config,
-            )
         train_dpo, val_dpo = _stable_dpo_split(
             dpo_records,
             config,
@@ -982,23 +1040,26 @@ def compile_agent_fine_tuning_datasets(
         available_val_dpo = list(val_dpo)
         train_dpo = _cap_public_corpus_token_share(
             train_dpo,
-            config.max_public_corpus_token_share,
+            public_source_proxy_selection_share,
             max_chars_per_token=config.max_chars_per_token,
+            target_mode="dpo_chosen",
         )
         val_dpo = _cap_public_corpus_token_share(
             val_dpo,
-            config.max_public_corpus_token_share,
+            public_source_proxy_selection_share,
             max_chars_per_token=config.max_chars_per_token,
+            target_mode="dpo_chosen",
         )
         if agent == "fleet":
-            materialized_dpo = _limit_fleet_supplemental_dpo_records(
-                train_dpo + val_dpo,
-                config,
+            train_sft = _finalize_fleet_optimizer_lane(
+                train_sft,
+                lane="sft",
+                config=config,
             )
-            train_dpo, val_dpo = _stable_dpo_split(
-                materialized_dpo,
-                config,
-                public_validation_group_keys=public_validation_group_keys,
+            train_dpo = _finalize_fleet_optimizer_lane(
+                train_dpo,
+                lane="dpo",
+                config=config,
             )
             _assert_fleet_native_orchestration_training_coverage(
                 train_sft=train_sft,
@@ -1053,8 +1114,7 @@ def compile_agent_fine_tuning_datasets(
             available_val_dpo=available_val_dpo,
             evaluation_records=eval_records,
             training_config=unsloth_config,
-            max_public_share=config.max_public_corpus_token_share,
-            max_chars_per_token=config.max_chars_per_token,
+            dataset_config=config,
         )
 
         materialized_sft = train_sft + val_sft
@@ -1195,9 +1255,14 @@ def compile_agent_fine_tuning_datasets(
                 available_val_sft=available_val_sft,
                 available_train_dpo=available_train_dpo,
                 available_val_dpo=available_val_dpo,
-                max_token_share=config.max_public_corpus_token_share,
+                public_cap_selected_val_sft=validation_sampling_input_sft,
+                requested_exact_token_share=requested_public_loss_share,
+                source_proxy_selection_share=(
+                    public_source_proxy_selection_share
+                ),
                 max_chars_per_token=config.max_chars_per_token,
                 public_snapshot=public_snapshot,
+                dpo_target_mode="dpo_chosen",
             ),
             "evaluation": {
                 "schemaVersion": EVALUATION_SCHEMA_VERSION,
@@ -1230,8 +1295,14 @@ def compile_agent_fine_tuning_datasets(
                 "sentinelSafe": True,
                 "agentSpecific": True,
                 "ultraSpecificAdapterCorpus": True,
+                "requestedMaxPublicCorpusAssistantTargetTokenShare": (
+                    requested_public_loss_share
+                ),
                 "maxPublicCorpusSFTTokenProxyShare": (
-                    config.max_public_corpus_token_share
+                    public_source_proxy_selection_share
+                ),
+                "publicCorpusLossShareContract": (
+                    _public_corpus_loss_share_contract(config)
                 ),
                 "maxCortexSupplementalAssistantCharShare": (
                     config.max_cortex_supplemental_assistant_char_share
@@ -1285,6 +1356,25 @@ def compile_agent_fine_tuning_datasets(
                     )
                     if agent == "fleet"
                     else None
+                ),
+                "fleetLossShareEnforcementScope": (
+                    "optimizer_train_only" if agent == "fleet" else None
+                ),
+                "fleetValidationLossSharePolicy": (
+                    "observed_not_enforced" if agent == "fleet" else None
+                ),
+                "fleetValidationSamplingPolicy": (
+                    _fleet_validation_sampling_contract(
+                        candidate_records=available_val_sft,
+                        sampling_input_records=validation_sampling_input_sft,
+                        selected_records=val_sft,
+                        config=config,
+                    )
+                    if agent == "fleet"
+                    else None
+                ),
+                "fleetOrchestrationEvaluationRequired": (
+                    fleet_artifacts is not None if agent == "fleet" else None
                 ),
                 "fleetSourceRoleRegistry": (
                     _fleet_source_role_registry_contract()
@@ -1493,6 +1583,105 @@ def _public_corpus_metadata(record: dict[str, Any]) -> dict[str, Any] | None:
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
     public_corpus = metadata.get("publicCorpus")
     return dict(public_corpus) if isinstance(public_corpus, dict) else None
+
+
+def _normalize_training_source_metadata(
+    records: list[dict[str, Any]],
+    *,
+    agent: str,
+    lane: str,
+) -> list[dict[str, Any]]:
+    """Bind one canonical source family before any split or optimizer selection.
+
+    Public rows are intentionally fail-closed: their source-family prefix and
+    non-empty lineage object must appear together. Internal generated rows that
+    predate canonical source metadata are role-native curriculum and receive the
+    ultra-specific family. This boundary runs before every root and experiment
+    split, so all emitted SFT/DPO lanes share the same classification contract.
+    """
+
+    if agent not in AGENTS:
+        raise ValueError(f"Unsupported training-source agent: {agent!r}")
+    if lane not in {"sft", "dpo"}:
+        raise ValueError(f"Unsupported training-source lane: {lane!r}")
+
+    normalized: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record.get("metadata"), dict):
+            raise ValueError(f"{agent} {lane} record requires metadata")
+        metadata = dict(record["metadata"])
+        if metadata.get("agent") != agent:
+            raise ValueError(
+                f"{agent} {lane} record has mismatched metadata.agent"
+            )
+        public_field_present = "publicCorpus" in metadata
+        public_corpus = metadata.get("publicCorpus")
+        if public_field_present and (
+            not isinstance(public_corpus, dict) or not public_corpus
+        ):
+            raise ValueError(
+                f"{agent} {lane} publicCorpus must be a non-empty lineage object"
+            )
+        has_public_lineage = isinstance(public_corpus, dict) and bool(public_corpus)
+
+        if "sourceFamily" not in metadata:
+            if has_public_lineage:
+                raise ValueError(
+                    f"{agent} {lane} public row is missing "
+                    "metadata.sourceFamily"
+                )
+            source_family = ULTRA_SPECIFIC_SOURCE_FAMILY
+        else:
+            raw_source_family = metadata["sourceFamily"]
+            if not isinstance(raw_source_family, str) or not raw_source_family.strip():
+                raise ValueError(
+                    f"{agent} {lane} metadata.sourceFamily must be a "
+                    "non-empty string"
+                )
+            if raw_source_family != raw_source_family.strip():
+                raise ValueError(
+                    f"{agent} {lane} metadata.sourceFamily is not canonical"
+                )
+            source_family = raw_source_family
+        has_public_prefix = source_family.startswith(
+            PUBLIC_ADAPTER_CORPUS_PREFIX
+        )
+        if has_public_prefix != has_public_lineage:
+            raise ValueError(
+                f"{agent} {lane} public source classification mismatch: "
+                f"sourceFamily={source_family!r}, "
+                f"hasPublicCorpus={has_public_lineage}"
+            )
+
+        if "taskType" in metadata:
+            raw_task_type = metadata["taskType"]
+            if not isinstance(raw_task_type, str) or not raw_task_type.strip():
+                raise ValueError(
+                    f"{agent} {lane} metadata.taskType must be a non-empty string"
+                )
+            if raw_task_type != raw_task_type.strip():
+                raise ValueError(
+                    f"{agent} {lane} metadata.taskType is not canonical"
+                )
+            task_type = raw_task_type
+        else:
+            preference_type = metadata.get("preferenceType")
+            task_type = (
+                preference_type.strip()
+                if isinstance(preference_type, str) and preference_type.strip()
+                else source_family
+            )
+        normalized.append(
+            {
+                **record,
+                "metadata": {
+                    **metadata,
+                    "sourceFamily": source_family,
+                    "taskType": task_type,
+                },
+            }
+        )
+    return normalized
 
 
 def _fleet_source_role(record: dict[str, Any]) -> str:
@@ -1813,6 +2002,115 @@ def _fleet_source_role_registry_contract() -> dict[str, Any]:
     }
 
 
+def _requested_public_corpus_loss_share(
+    config: FineTuningDatasetConfig,
+) -> float:
+    configured_cap = config.max_public_corpus_token_share
+    if configured_cap is not None and (
+        isinstance(configured_cap, bool)
+        or not isinstance(configured_cap, (int, float))
+        or not 0.0 <= configured_cap < 1.0
+    ):
+        raise ValueError("max_public_corpus_token_share must be in [0, 1)")
+    return min(
+        (
+            float(configured_cap)
+            if configured_cap is not None
+            else PUBLIC_CORPUS_ASSISTANT_TARGET_TOKEN_SHARE_HARD_MAX
+        ),
+        PUBLIC_CORPUS_ASSISTANT_TARGET_TOKEN_SHARE_HARD_MAX,
+    )
+
+
+def _public_corpus_source_proxy_selection_share(
+    config: FineTuningDatasetConfig,
+) -> float:
+    return min(
+        _requested_public_corpus_loss_share(config),
+        PUBLIC_CORPUS_SOURCE_PROXY_SELECTION_SHARE_HARD_MAX,
+    )
+
+
+def _public_corpus_loss_share_contract(
+    config: FineTuningDatasetConfig,
+) -> dict[str, Any]:
+    requested_basis_points = int(
+        _requested_public_corpus_loss_share(config)
+        * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+    )
+    source_proxy_basis_points = int(
+        _public_corpus_source_proxy_selection_share(config)
+        * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+    )
+    return {
+        "schemaVersion": PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION,
+        "enforcementRequired": True,
+        "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "requiredLanes": ["sft", "dpo"],
+        "authoritativeCapEncoding": "integer_basis_points",
+        "basisPointDenominator": FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR,
+        "capBasisPoints": {
+            "requested": requested_basis_points,
+            "hard": int(
+                PUBLIC_CORPUS_ASSISTANT_TARGET_TOKEN_SHARE_HARD_MAX
+                * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+            ),
+        },
+        "dpoTokenizationPolicy": dict(FLEET_DPO_TOKENIZATION_POLICY),
+        "exactTokenEvidenceContract": {
+            "required": True,
+            "schemaVersion": PUBLIC_CORPUS_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION,
+            "statusAtGeneration": "pending_exact_tokenizer_preflight",
+            "tokenizer": "pinned_qwen_tokenizer",
+            "comparisonRule": (
+                "numeratorTokenCount*basisPointDenominator<="
+                "denominatorTokenCount*capBasisPoints"
+            ),
+            "lanes": {
+                "sft": {
+                    "denominatorTokenCount": "assistantTargetTokenCount",
+                    "publicNumeratorTokenCount": (
+                        "publicAssistantTargetTokenCount"
+                    ),
+                },
+                "dpo": {
+                    "denominatorTokenCount": "chosenTargetTokenCount",
+                    "publicNumeratorTokenCount": "publicChosenTargetTokenCount",
+                },
+            },
+        },
+        "failurePolicy": "abort_before_optimizer",
+        "rowMetadataContract": {
+            "publicSourceFamilyPrefix": PUBLIC_ADAPTER_CORPUS_PREFIX,
+            "publicCorpusField": "publicCorpus",
+            "classificationRule": "prefix_and_nonempty_lineage_required",
+            "mismatch": "hard_fail",
+        },
+        "sourceSelectionProxy": {
+            "status": "safety_budget_not_exact_token_count",
+            "maximumPublicShareBasisPoints": source_proxy_basis_points,
+            "contract": _source_token_proxy_contract(
+                config.max_chars_per_token
+            ),
+        },
+        "tokenizer": {
+            "baseModelID": DEFAULT_BASE_MODEL_ID,
+            "baseModelRevision": DEFAULT_BASE_MODEL_REVISION,
+            "tokenizerSHA256": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+            "tokenizerClosureSHA256": (
+                DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+            ),
+        },
+        "tokenAccounting": {
+            "sft": "assistant_mask_non_ignored_token_count",
+            "dpo": (
+                "rendered_chosen_completion_tokens_add_special_tokens_false_"
+                "plus_one_trl_0_24_0_appended_eos"
+            ),
+        },
+    }
+
+
 def _fleet_loss_share_contract(
     config: FineTuningDatasetConfig,
 ) -> dict[str, Any]:
@@ -1820,15 +2118,7 @@ def _fleet_loss_share_contract(
         max(config.max_fleet_supplemental_assistant_token_share, 0.0),
         FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
     )
-    configured_public_cap = config.max_public_corpus_token_share
-    public_cap = min(
-        (
-            max(configured_public_cap, 0.0)
-            if configured_public_cap is not None
-            else FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX
-        ),
-        FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX,
-    )
+    public_cap = _requested_public_corpus_loss_share(config)
     requested_supplemental_basis_points = int(
         requested_cap * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
     )
@@ -1900,6 +2190,10 @@ def _fleet_loss_share_contract(
                 )
                 * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
             ),
+            "maximumPublicBehavioralShareBasisPoints": int(
+                _public_corpus_source_proxy_selection_share(config)
+                * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+            ),
             "contract": _source_token_proxy_contract(
                 config.max_chars_per_token
             ),
@@ -1915,6 +2209,9 @@ def _fleet_loss_share_contract(
             "baseModelID": DEFAULT_BASE_MODEL_ID,
             "baseModelRevision": DEFAULT_BASE_MODEL_REVISION,
             "tokenizerSHA256": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+            "tokenizerClosureSHA256": (
+                DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+            ),
         },
         "tokenAccounting": {
             "sft": "assistant_mask_non_ignored_token_count",
@@ -13399,6 +13696,12 @@ def _agent_unsloth_config(
         "baseModelArtifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
         "baseModelWeightShards": [dict(item) for item in DEFAULT_BASE_MODEL_WEIGHT_SHARDS],
         "baseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+        "baseModelTokenizerFiles": [
+            dict(item) for item in DEFAULT_BASE_MODEL_TOKENIZER_FILES
+        ],
+        "baseModelTokenizerClosureSHA256": (
+            DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+        ),
         "chatTemplateContract": chat_template_contract(),
         "trainingEnvironmentLock": default_training_environment_lock(),
         **training_lineage,
@@ -13488,6 +13791,9 @@ def _agent_unsloth_config(
                 None if agent == "cortex" else NON_CORTEX_MAX_TRAINING_EPOCHS
             ),
         },
+        "publicCorpusLossShareContract": _public_corpus_loss_share_contract(
+            config
+        ),
         **(
             {"fleetLossShareContract": _fleet_loss_share_contract(config)}
             if agent == "fleet"
@@ -13534,7 +13840,7 @@ def _unique_sft_records_by_messages(records: list[dict[str, Any]]) -> list[dict[
     return [deduped[key] for key in sorted(deduped)]
 
 
-def _sft_record_preference_score(record: dict[str, Any]) -> tuple[int, int]:
+def _sft_record_preference_score(record: dict[str, Any]) -> tuple[int, int, int]:
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
     task_type = str(metadata.get("taskType") or "")
     source_family = str(metadata.get("sourceFamily") or "")
@@ -13544,6 +13850,7 @@ def _sft_record_preference_score(record: dict[str, Any]) -> tuple[int, int]:
         "intent_routing",
     }
     return (
+        1 if metadata.get("requiredSplit") in {"train", "validation"} else 0,
         1 if _public_corpus_metadata(record) is None else 0,
         1 if role_specific_task else 0,
     )
@@ -13696,6 +14003,7 @@ def _cap_public_corpus_token_share(
     prefer_quality: bool = True,
     max_public_groups: int | None = None,
     max_chars_per_token: int = FineTuningDatasetConfig.max_chars_per_token,
+    target_mode: str = "all_assistant",
 ) -> list[dict[str, Any]]:
     """Keep public examples below total and target source-token proxy caps.
 
@@ -13709,6 +14017,8 @@ def _cap_public_corpus_token_share(
         type(max_public_groups) is not int or max_public_groups < 0
     ):
         raise ValueError("max_public_groups must be a non-negative integer")
+    if target_mode not in {"all_assistant", "dpo_chosen"}:
+        raise ValueError(f"Unsupported target token proxy mode: {target_mode!r}")
     if max_share is not None and not 0.0 <= max_share < 1.0:
         raise ValueError("max_public_corpus_token_share must be in [0, 1)")
     public_records = [record for record in records if _public_corpus_metadata(record) is not None]
@@ -13722,6 +14032,7 @@ def _cap_public_corpus_token_share(
         _record_token_counts(
             record,
             max_chars_per_token=max_chars_per_token,
+            target_mode=target_mode,
         )[0]
         for record in public_records
     )
@@ -13729,6 +14040,7 @@ def _cap_public_corpus_token_share(
         _record_token_counts(
             record,
             max_chars_per_token=max_chars_per_token,
+            target_mode=target_mode,
         )[1]
         for record in public_records
     )
@@ -13744,6 +14056,7 @@ def _cap_public_corpus_token_share(
             _record_token_counts(
                 record,
                 max_chars_per_token=max_chars_per_token,
+                target_mode=target_mode,
             )[0]
             for record in internal_records
         )
@@ -13751,6 +14064,7 @@ def _cap_public_corpus_token_share(
             _record_token_counts(
                 record,
                 max_chars_per_token=max_chars_per_token,
+                target_mode=target_mode,
             )[1]
             for record in internal_records
         )
@@ -13821,6 +14135,7 @@ def _cap_public_corpus_token_share(
             _record_token_counts(
                 record,
                 max_chars_per_token=max_chars_per_token,
+                target_mode=target_mode,
             )[0]
             for record in group_records
         )
@@ -13828,6 +14143,7 @@ def _cap_public_corpus_token_share(
             _record_token_counts(
                 record,
                 max_chars_per_token=max_chars_per_token,
+                target_mode=target_mode,
             )[1]
             for record in group_records
         )
@@ -13933,7 +14249,10 @@ def _record_token_counts(
     record: dict[str, Any],
     *,
     max_chars_per_token: int = FineTuningDatasetConfig.max_chars_per_token,
+    target_mode: str = "all_assistant",
 ) -> tuple[int, int]:
+    if target_mode not in {"all_assistant", "dpo_chosen"}:
+        raise ValueError(f"Unsupported target token proxy mode: {target_mode!r}")
     total_text: list[str] = []
     target_text: list[str] = []
 
@@ -13946,14 +14265,18 @@ def _record_token_counts(
                 continue
             content = message["content"]
             total_text.append(content)
-            if str(message.get("role") or "").lower() == "assistant":
+            if (
+                target_mode == "all_assistant"
+                and str(message.get("role") or "").lower() == "assistant"
+            ):
                 target_text.append(content)
 
     for field in ("chosen", "rejected"):
         message = record.get(field)
         if isinstance(message, dict) and isinstance(message.get("content"), str):
             total_text.append(message["content"])
-            target_text.append(message["content"])
+            if target_mode == "all_assistant" or field == "chosen":
+                target_text.append(message["content"])
 
     total = sum(
         _source_token_proxy_count(
@@ -14574,6 +14897,417 @@ def _limit_fleet_supplemental_dpo_records(
     return _unique_sorted_records(behavioral + selected)
 
 
+def _fleet_optimizer_target_token_proxy_count(
+    record: dict[str, Any],
+    *,
+    lane: str,
+    max_chars_per_token: int,
+) -> int:
+    if lane == "sft":
+        return _assistant_target_token_count(
+            record,
+            max_chars_per_token=max_chars_per_token,
+        )
+    if lane == "dpo":
+        return _dpo_chosen_target_token_count(
+            record,
+            max_chars_per_token=max_chars_per_token,
+        )
+    raise ValueError(f"Unsupported Fleet optimizer lane: {lane!r}")
+
+
+def _assert_fleet_optimizer_proxy_caps(
+    records: list[dict[str, Any]],
+    *,
+    lane: str,
+    config: FineTuningDatasetConfig,
+) -> None:
+    """Fail closed when a final Fleet optimizer lane exceeds source budgets."""
+
+    if not records:
+        return
+    total = 0
+    supplemental = 0
+    public = 0
+    supplemental_by_family: dict[str, int] = {}
+    for record in records:
+        target_tokens = _fleet_optimizer_target_token_proxy_count(
+            record,
+            lane=lane,
+            max_chars_per_token=config.max_chars_per_token,
+        )
+        total += target_tokens
+        role = _fleet_source_role(record)
+        if role == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC:
+            supplemental += target_tokens
+            metadata = (
+                record.get("metadata")
+                if isinstance(record.get("metadata"), dict)
+                else {}
+            )
+            source_family = str(metadata.get("sourceFamily") or "unknown")
+            supplemental_by_family[source_family] = (
+                supplemental_by_family.get(source_family, 0) + target_tokens
+            )
+        elif role == FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL:
+            public += target_tokens
+    if total <= 0:
+        raise ValueError(
+            f"Fleet {lane} optimizer lane has records but no target token proxy"
+        )
+
+    denominator = FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+    supplemental_cap = int(
+        min(
+            max(config.max_fleet_supplemental_assistant_token_share, 0.0),
+            FLEET_SUPPLEMENTAL_SOURCE_PROXY_SELECTION_SHARE_HARD_MAX,
+        )
+        * denominator
+    )
+    public_cap = int(
+        _public_corpus_source_proxy_selection_share(config)
+        * denominator
+    )
+    family_cap = int(
+        FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX
+        * denominator
+    )
+    if supplemental * denominator > total * supplemental_cap:
+        raise ValueError(
+            f"Fleet {lane} optimizer supplemental source-token proxy cap failed: "
+            f"{supplemental}*{denominator} > {total}*{supplemental_cap}"
+        )
+    if public * denominator > total * public_cap:
+        raise ValueError(
+            f"Fleet {lane} optimizer public source-token proxy cap failed: "
+            f"{public}*{denominator} > {total}*{public_cap}"
+        )
+    for source_family, family_tokens in sorted(supplemental_by_family.items()):
+        if family_tokens * denominator > total * family_cap:
+            raise ValueError(
+                f"Fleet {lane} optimizer supplemental source-family proxy cap "
+                f"failed for {source_family}: {family_tokens}*{denominator} > "
+                f"{total}*{family_cap}"
+            )
+
+
+def _fleet_validation_stratum(record: dict[str, Any]) -> tuple[str, ...]:
+    metadata = (
+        record.get("metadata")
+        if isinstance(record.get("metadata"), dict)
+        else {}
+    )
+    source_family = str(metadata.get("sourceFamily") or "unknown")
+    task_type = str(metadata.get("taskType") or "unknown")
+    public = _public_corpus_metadata(record)
+    public_source = _public_source_id(public) if public is not None else ""
+    public_stratum = (
+        str(public.get("stratum") or "unstratified")
+        if public is not None
+        else ""
+    )
+    behavior_class = (
+        str(metadata.get("behaviorClass") or "unknown")
+        if source_family == "fleet_orchestration_native"
+        else ""
+    )
+    return (
+        source_family,
+        task_type,
+        public_source,
+        public_stratum,
+        behavior_class,
+    )
+
+
+def _bound_fleet_validation_sft_records(
+    records: list[dict[str, Any]],
+    *,
+    config: FineTuningDatasetConfig,
+    required_reference_records: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Bound Fleet SFT validation cost without applying optimizer loss caps.
+
+    Every explicit validation assignment is immutable. Remaining capacity is
+    allocated to the least-represented source/task stratum, refined by public
+    corpus intent or native orchestration behavior where present, with a salted
+    deterministic selection order within that stratum. This keeps
+    validation observational and representative while preventing source chunks
+    from making evaluation several times larger than the optimizer lane.
+    """
+
+    limit = config.max_fleet_validation_sft_records
+    if type(limit) is not int or limit <= 0:
+        raise ValueError(
+            "max_fleet_validation_sft_records must be a positive integer"
+        )
+
+    ordered = _unique_sorted_sft_records(records)
+    reference = _unique_sorted_sft_records(
+        records
+        if required_reference_records is None
+        else required_reference_records
+    )
+    required_keys = {
+        _canonical_messages_key(record)
+        for record in reference
+        if isinstance(record.get("metadata"), dict)
+        and record["metadata"].get("requiredSplit") == "validation"
+    }
+    selected_by_key = {
+        _canonical_messages_key(record): record for record in ordered
+    }
+    missing_required = required_keys - selected_by_key.keys()
+    if missing_required:
+        raise ValueError(
+            "Fleet SFT validation selection dropped explicitly assigned "
+            f"records: missingCount={len(missing_required)}"
+        )
+    invalid_train_assignments = [
+        record
+        for record in ordered
+        if isinstance(record.get("metadata"), dict)
+        and record["metadata"].get("requiredSplit") == "train"
+    ]
+    if invalid_train_assignments:
+        raise ValueError(
+            "Fleet SFT validation contains explicitly train-assigned records"
+        )
+
+    required = [selected_by_key[key] for key in sorted(required_keys)]
+    if len(required) > limit:
+        raise ValueError(
+            "Fleet explicit SFT validation assignments exceed the configured "
+            f"bound: {len(required)} > {limit}"
+        )
+    if len(ordered) <= limit:
+        return ordered
+
+    all_strata = {_fleet_validation_stratum(record) for record in ordered}
+    required_strata = {
+        _fleet_validation_stratum(record) for record in required
+    }
+    minimum_representative_count = len(required) + len(
+        all_strata - required_strata
+    )
+    if minimum_representative_count > limit:
+        raise ValueError(
+            "Fleet SFT validation bound cannot retain every source/task "
+            "stratum plus explicit assignments: "
+            f"{minimum_representative_count} > {limit}"
+        )
+
+    selected = list(required)
+    selected_keys = set(required_keys)
+    selected_stratum_counts: dict[tuple[str, ...], int] = {}
+    for record in selected:
+        stratum = _fleet_validation_stratum(record)
+        selected_stratum_counts[stratum] = (
+            selected_stratum_counts.get(stratum, 0) + 1
+        )
+
+    groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    for record in ordered:
+        if _canonical_messages_key(record) in selected_keys:
+            continue
+        groups.setdefault(_fleet_validation_stratum(record), []).append(record)
+    for group in groups.values():
+        group.sort(
+            key=lambda record: hashlib.sha256(
+                (
+                    "lumen-fleet-validation-sft-v1\x1f"
+                    + _canonical_messages_key(record)
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+
+    while len(selected) < limit:
+        populated = [key for key, group in groups.items() if group]
+        if not populated:
+            break
+        minimum_count = min(
+            selected_stratum_counts.get(key, 0) for key in populated
+        )
+        stratum = min(
+            key
+            for key in populated
+            if selected_stratum_counts.get(key, 0) == minimum_count
+        )
+        record = groups[stratum].pop(0)
+        selected.append(record)
+        selected_keys.add(_canonical_messages_key(record))
+        selected_stratum_counts[stratum] = (
+            selected_stratum_counts.get(stratum, 0) + 1
+        )
+
+    bounded = _unique_sorted_sft_records(selected)
+    if len(bounded) != limit:
+        raise RuntimeError(
+            "Fleet SFT validation bounding did not fill the configured bound"
+        )
+    if not required_keys <= {
+        _canonical_messages_key(record) for record in bounded
+    }:
+        raise RuntimeError(
+            "Fleet SFT validation bounding lost an explicit assignment"
+        )
+    return bounded
+
+
+def _fleet_validation_sampling_contract(
+    *,
+    candidate_records: list[dict[str, Any]],
+    sampling_input_records: list[dict[str, Any]],
+    selected_records: list[dict[str, Any]],
+    config: FineTuningDatasetConfig,
+) -> dict[str, Any]:
+    candidates = _unique_sorted_sft_records(candidate_records)
+    sampling_input = _unique_sorted_sft_records(sampling_input_records)
+    selected = _unique_sorted_sft_records(selected_records)
+    limit = config.max_fleet_validation_sft_records
+    if type(limit) is not int or limit <= 0:
+        raise ValueError(
+            "max_fleet_validation_sft_records must be a positive integer"
+        )
+    if len(selected) > limit:
+        raise ValueError(
+            "Fleet SFT validation exceeds its declared sampling bound"
+        )
+    required_keys = {
+        _canonical_messages_key(record)
+        for record in candidates
+        if isinstance(record.get("metadata"), dict)
+        and record["metadata"].get("requiredSplit") == "validation"
+    }
+    candidate_keys = {
+        _canonical_messages_key(record) for record in candidates
+    }
+    sampling_input_keys = {
+        _canonical_messages_key(record) for record in sampling_input
+    }
+    selected_keys = {
+        _canonical_messages_key(record) for record in selected
+    }
+    if not selected_keys <= sampling_input_keys <= candidate_keys:
+        raise ValueError(
+            "Fleet SFT validation sampling lanes are not monotonic subsets"
+        )
+    if not required_keys <= selected_keys:
+        raise ValueError(
+            "Fleet SFT validation contract cannot attest required assignments"
+        )
+    sampling_input_strata = {
+        _fleet_validation_stratum(record) for record in sampling_input
+    }
+    selected_strata = {
+        _fleet_validation_stratum(record) for record in selected
+    }
+    if not sampling_input_strata <= selected_strata:
+        raise ValueError(
+            "Fleet SFT validation sampling dropped a source/task stratum"
+        )
+    return {
+        "schemaVersion": FLEET_VALIDATION_SAMPLING_SCHEMA_VERSION,
+        "status": "bounded_stratified_observation",
+        "lane": "sft_validation",
+        "maximumRecords": limit,
+        "candidateBeforePublicSelectionRecordCount": len(candidates),
+        "samplingInputRecordCount": len(sampling_input),
+        "selectedRecordCount": len(selected),
+        "rejectedByPublicSelectionCount": (
+            len(candidates) - len(sampling_input)
+        ),
+        "rejectedByValidationSamplingCount": (
+            len(sampling_input) - len(selected)
+        ),
+        "candidateStratumCount": len(
+            {_fleet_validation_stratum(record) for record in candidates}
+        ),
+        "samplingInputStratumCount": len(
+            sampling_input_strata
+        ),
+        "selectedStratumCount": len(selected_strata),
+        "stratificationFields": {
+            "base": ["sourceFamily", "taskType"],
+            "publicRefinement": [
+                "publicCorpus.sourceID",
+                "publicCorpus.stratum",
+            ],
+            "orchestrationRefinement": ["behaviorClass"],
+        },
+        "selectionStrategy": (
+            "least_represented_stratum_then_salted_stable_hash_v1"
+        ),
+        "deterministic": True,
+        "explicitValidationAssignmentCount": len(required_keys),
+        "explicitValidationAssignmentsPreserved": True,
+        "allSamplingInputStrataPreserved": True,
+        "optimizerLossShareCapsApplied": False,
+        "publicCorpusSelectionAppliedBeforeSampling": True,
+        "selectedCohortSHA256": canonical_sha256(
+            sorted(_canonical_messages_key(record) for record in selected)
+        ),
+    }
+
+
+def _finalize_fleet_optimizer_lane(
+    records: list[dict[str, Any]],
+    *,
+    lane: str,
+    config: FineTuningDatasetConfig,
+    prefer_public_quality: bool = True,
+    max_public_groups: int | None = None,
+) -> list[dict[str, Any]]:
+    """Converge coupled public/static caps on the exact final train lane.
+
+    Both selectors only remove records. Iterating is necessary because removing
+    public behavior raises the static share, while removing static grounding can
+    raise the public share. Validation lanes intentionally never enter here.
+    """
+
+    if lane not in {"sft", "dpo"}:
+        raise ValueError(f"Unsupported Fleet optimizer lane: {lane!r}")
+    current = (
+        _unique_sorted_sft_records(records)
+        if lane == "sft"
+        else _unique_sorted_records(records)
+    )
+    public_cap = _public_corpus_source_proxy_selection_share(config)
+    for _ in range(len(current) + 1):
+        public_bounded = _cap_public_corpus_token_share(
+            current,
+            public_cap,
+            prefer_quality=prefer_public_quality,
+            max_public_groups=max_public_groups,
+            max_chars_per_token=config.max_chars_per_token,
+            target_mode=(
+                "dpo_chosen" if lane == "dpo" else "all_assistant"
+            ),
+        )
+        bounded = (
+            _limit_supplemental_sft_records("fleet", public_bounded, config)
+            if lane == "sft"
+            else _limit_fleet_supplemental_dpo_records(public_bounded, config)
+        )
+        current_keys = {_canonical_record_key(record) for record in current}
+        bounded_keys = {_canonical_record_key(record) for record in bounded}
+        if not bounded_keys <= current_keys:
+            raise RuntimeError(
+                f"Fleet {lane} optimizer finalization added or replaced records"
+            )
+        if bounded_keys == current_keys:
+            _assert_fleet_optimizer_proxy_caps(
+                bounded,
+                lane=lane,
+                config=config,
+            )
+            return bounded
+        current = bounded
+    raise RuntimeError(
+        f"Fleet {lane} optimizer finalization did not converge after bounded removal"
+    )
+
+
 def _stable_stratified_sample(
     records: list[dict[str, Any]],
     limit: int,
@@ -14623,6 +15357,67 @@ def _fleet_cross_model_task_types(
         if isinstance(record.get("metadata"), dict)
         and record["metadata"].get("sourceFamily") == "cross_model_training"
     }
+
+
+def _pin_required_fleet_supplemental_train_representatives(
+    records: list[dict[str, Any]],
+    *,
+    config: FineTuningDatasetConfig,
+) -> list[dict[str, Any]]:
+    """Keep one compact required static behavior in the optimizer split.
+
+    Other rows in the same task family remain split-eligible, preserving held-out
+    coverage. An explicit validation assignment is never rewritten.
+    """
+
+    available_tasks = _fleet_cross_model_task_types(records)
+    if not available_tasks:
+        return records
+    missing = FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES - available_tasks
+    if missing:
+        raise ValueError(
+            "Fleet supplemental corpus is missing required cross-model task "
+            f"families: {sorted(missing)}"
+        )
+
+    selected_keys: set[str] = set()
+    for task_type in sorted(FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES):
+        candidates = [
+            record
+            for record in records
+            if isinstance(record.get("metadata"), dict)
+            and record["metadata"].get("sourceFamily")
+            == "cross_model_training"
+            and record["metadata"].get("taskType") == task_type
+            and record["metadata"].get("requiredSplit") != "validation"
+        ]
+        if not candidates:
+            raise ValueError(
+                "Required Fleet supplemental optimizer coverage is assigned "
+                f"only to validation: {task_type}"
+            )
+        representative = min(
+            candidates,
+            key=lambda record: _supplemental_target_size_key(
+                record,
+                max_chars_per_token=config.max_chars_per_token,
+            ),
+        )
+        selected_keys.add(_canonical_record_key(representative))
+
+    pinned: list[dict[str, Any]] = []
+    for record in records:
+        if _canonical_record_key(record) not in selected_keys:
+            pinned.append(record)
+            continue
+        metadata = (
+            dict(record["metadata"])
+            if isinstance(record.get("metadata"), dict)
+            else {}
+        )
+        metadata["requiredSplit"] = "train"
+        pinned.append({**record, "metadata": metadata})
+    return _unique_sorted_sft_records(pinned)
 
 
 def _assert_required_fleet_supplemental_coverage(
@@ -14691,9 +15486,15 @@ def _fleet_coverage_first_supplemental_candidates(
         ]
         representative = min(
             candidates,
-            key=lambda record: _supplemental_target_size_key(
-                record,
-                max_chars_per_token=max_chars_per_token,
+            key=lambda record: (
+                0
+                if isinstance(record.get("metadata"), dict)
+                and record["metadata"].get("requiredSplit") == "train"
+                else 1,
+                _supplemental_target_size_key(
+                    record,
+                    max_chars_per_token=max_chars_per_token,
+                ),
             ),
         )
         required.append(representative)
@@ -14833,9 +15634,15 @@ def _build_experiment_variants(
     available_val_dpo: list[dict[str, Any]],
     evaluation_records: list[dict[str, Any]],
     training_config: dict[str, Any],
-    max_public_share: float | None,
-    max_chars_per_token: int = FineTuningDatasetConfig.max_chars_per_token,
+    dataset_config: FineTuningDatasetConfig,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    requested_public_loss_share = _requested_public_corpus_loss_share(
+        dataset_config
+    )
+    max_public_share = _public_corpus_source_proxy_selection_share(
+        dataset_config
+    )
+    max_chars_per_token = dataset_config.max_chars_per_token
     available_lanes = {
         "train_sft": available_train_sft,
         "val_sft": available_val_sft,
@@ -14873,6 +15680,7 @@ def _build_experiment_variants(
             prefer_quality=False,
             max_public_groups=public_group_limits["train_dpo"],
             max_chars_per_token=max_chars_per_token,
+            target_mode="dpo_chosen",
         ),
         "val_dpo": _cap_public_corpus_token_share(
             available_val_dpo,
@@ -14880,6 +15688,7 @@ def _build_experiment_variants(
             prefer_quality=False,
             max_public_groups=public_group_limits["val_dpo"],
             max_chars_per_token=max_chars_per_token,
+            target_mode="dpo_chosen",
         ),
     }
     optimized = {
@@ -14889,6 +15698,11 @@ def _build_experiment_variants(
             prefer_quality=True,
             max_public_groups=public_group_limits[lane],
             max_chars_per_token=max_chars_per_token,
+            target_mode=(
+                "dpo_chosen"
+                if lane in {"train_dpo", "val_dpo"}
+                else "all_assistant"
+            ),
         )
         for lane, records in available_lanes.items()
     }
@@ -14900,7 +15714,48 @@ def _build_experiment_variants(
     variants: dict[str, dict[str, Any]] = {}
     manifests: dict[str, dict[str, Any]] = {}
     for variant in EXPERIMENT_VARIANTS:
-        lanes = lanes_by_variant[variant]
+        lanes = dict(lanes_by_variant[variant])
+        validation_sampling_policy: dict[str, Any] | None = None
+        if agent == "fleet":
+            prefer_public_quality = variant != "internal_plus_public_baseline"
+            lane_public_group_limits = (
+                {lane: 0 for lane in available_lanes}
+                if variant == "internal_only"
+                else public_group_limits
+            )
+            lanes["train_sft"] = _finalize_fleet_optimizer_lane(
+                lanes["train_sft"],
+                lane="sft",
+                config=dataset_config,
+                prefer_public_quality=prefer_public_quality,
+                max_public_groups=lane_public_group_limits["train_sft"],
+            )
+            lanes["train_dpo"] = _finalize_fleet_optimizer_lane(
+                lanes["train_dpo"],
+                lane="dpo",
+                config=dataset_config,
+                prefer_public_quality=prefer_public_quality,
+                max_public_groups=lane_public_group_limits["train_dpo"],
+            )
+            validation_sampling_input_sft = list(lanes["val_sft"])
+            lanes["val_sft"] = _bound_fleet_validation_sft_records(
+                lanes["val_sft"],
+                config=dataset_config,
+                required_reference_records=available_val_sft,
+            )
+            validation_sampling_policy = _fleet_validation_sampling_contract(
+                candidate_records=available_val_sft,
+                sampling_input_records=validation_sampling_input_sft,
+                selected_records=lanes["val_sft"],
+                config=dataset_config,
+            )
+            _assert_fleet_native_orchestration_training_coverage(
+                train_sft=lanes["train_sft"],
+                val_sft=lanes["val_sft"],
+                train_dpo=lanes["train_dpo"],
+                val_dpo=lanes["val_dpo"],
+            )
+        lanes_by_variant[variant] = lanes
         training_records = [
             *lanes["train_sft"],
             *lanes["val_sft"],
@@ -14921,6 +15776,18 @@ def _build_experiment_variants(
             evaluation_records=evaluation_records,
             contamination_report=contamination,
         )
+        if validation_sampling_policy is not None:
+            variant_manifest = {
+                key: value
+                for key, value in variant_manifest.items()
+                if key != "variantManifestSHA256"
+            }
+            variant_manifest["validationSamplingPolicy"] = (
+                validation_sampling_policy
+            )
+            variant_manifest["variantManifestSHA256"] = canonical_sha256(
+                variant_manifest
+            )
         variants[variant] = {
             **lanes,
             "contamination_report": contamination,
@@ -14936,12 +15803,18 @@ def _build_experiment_variants(
     selection_policies = {
         "internal_only": {
             "strategy": "internal_only",
+            "requestedExactPublicAssistantTargetShare": (
+                requested_public_loss_share
+            ),
             "maxPublicCorpusTokenProxyShare": 0.0,
             "lanePublicGroupLimits": {lane: 0 for lane in available_lanes},
         },
         "internal_plus_public_baseline": {
             "strategy": "deterministic_source_stratified_group_balanced_v1",
             "qualityScorePreference": False,
+            "requestedExactPublicAssistantTargetShare": (
+                requested_public_loss_share
+            ),
             "maxPublicCorpusTokenProxyShare": max_public_share,
             "lanePublicGroupLimits": public_group_limits,
             "sourceBalancing": "round_robin_equal_source_opportunity",
@@ -14949,6 +15822,9 @@ def _build_experiment_variants(
         "internal_plus_public_optimized": {
             "strategy": "quality_ranked_source_stratified_group_balanced_v2",
             "qualityScorePreference": True,
+            "requestedExactPublicAssistantTargetShare": (
+                requested_public_loss_share
+            ),
             "maxPublicCorpusTokenProxyShare": max_public_share,
             "lanePublicGroupLimits": public_group_limits,
             "sourceBalancing": "round_robin_equal_source_opportunity",
@@ -15027,19 +15903,33 @@ def _public_corpus_card(
     available_val_sft: list[dict[str, Any]],
     available_train_dpo: list[dict[str, Any]],
     available_val_dpo: list[dict[str, Any]],
-    max_token_share: float | None,
+    public_cap_selected_val_sft: list[dict[str, Any]],
+    requested_exact_token_share: float,
+    source_proxy_selection_share: float,
     max_chars_per_token: int,
     public_snapshot: dict[str, Any] | None,
+    dpo_target_mode: str,
 ) -> dict[str, Any]:
+    if dpo_target_mode not in {"all_assistant", "dpo_chosen"}:
+        raise ValueError(
+            f"Unsupported DPO target token proxy mode: {dpo_target_mode!r}"
+        )
     lanes = {
         "train_sft": train_sft,
         "val_sft": val_sft,
         "train_dpo": train_dpo,
         "val_dpo": val_dpo,
     }
+    lane_target_token_proxy_modes = {
+        "train_sft": "all_assistant",
+        "val_sft": "all_assistant",
+        "train_dpo": dpo_target_mode,
+        "val_dpo": dpo_target_mode,
+    }
     record_counts: dict[str, int] = {}
     available_record_counts: dict[str, int] = {}
     rejected_by_token_cap: dict[str, int] = {}
+    rejected_by_validation_sampling: dict[str, int] = {}
     source_split_counts: dict[str, dict[str, int]] = {}
     licenses: set[str] = set()
     token_proxy_shares: dict[str, dict[str, float]] = {}
@@ -15048,6 +15938,12 @@ def _public_corpus_card(
         "val_sft": available_val_sft,
         "train_dpo": available_train_dpo,
         "val_dpo": available_val_dpo,
+    }
+    public_cap_selected_lanes = {
+        "train_sft": train_sft,
+        "val_sft": public_cap_selected_val_sft,
+        "train_dpo": train_dpo,
+        "val_dpo": val_dpo,
     }
     all_available_public = [
         record
@@ -15063,6 +15959,7 @@ def _public_corpus_card(
     ]
 
     for lane, records in lanes.items():
+        target_mode = lane_target_token_proxy_modes[lane]
         public_records = [record for record in records if _public_corpus_metadata(record) is not None]
         record_counts[lane] = len(public_records)
         available_public_records = [
@@ -15070,12 +15967,25 @@ def _public_corpus_card(
             for record in available_lanes[lane]
             if _public_corpus_metadata(record) is not None
         ]
+        public_cap_selected_records = [
+            record
+            for record in public_cap_selected_lanes[lane]
+            if _public_corpus_metadata(record) is not None
+        ]
         available_record_counts[lane] = len(available_public_records)
-        rejected_by_token_cap[lane] = max(0, len(available_public_records) - len(public_records))
+        rejected_by_token_cap[lane] = max(
+            0,
+            len(available_public_records) - len(public_cap_selected_records),
+        )
+        rejected_by_validation_sampling[lane] = max(
+            0,
+            len(public_cap_selected_records) - len(public_records),
+        )
         lane_total = sum(
             _record_token_counts(
                 record,
                 max_chars_per_token=max_chars_per_token,
+                target_mode=target_mode,
             )[0]
             for record in records
         )
@@ -15083,6 +15993,7 @@ def _public_corpus_card(
             _record_token_counts(
                 record,
                 max_chars_per_token=max_chars_per_token,
+                target_mode=target_mode,
             )[1]
             for record in records
         )
@@ -15090,6 +16001,7 @@ def _public_corpus_card(
             _record_token_counts(
                 record,
                 max_chars_per_token=max_chars_per_token,
+                target_mode=target_mode,
             )[0]
             for record in public_records
         )
@@ -15097,6 +16009,7 @@ def _public_corpus_card(
             _record_token_counts(
                 record,
                 max_chars_per_token=max_chars_per_token,
+                target_mode=target_mode,
             )[1]
             for record in public_records
         )
@@ -15174,7 +16087,11 @@ def _public_corpus_card(
         for source_id, values in sorted(source_lineage.items())
     }
     selection_contract = {
-        "maxTokenProxyShare": max_token_share,
+        "requestedExactPublicAssistantTargetShare": (
+            requested_exact_token_share
+        ),
+        "maxTokenProxyShare": source_proxy_selection_share,
+        "laneTargetTokenProxyModes": lane_target_token_proxy_modes,
         "policyVersions": sorted(policy_versions),
         "strategy": "group_atomic_quality_ranked_source_stratified_v2",
         "sourceTokenProxyContract": _source_token_proxy_contract(
@@ -15185,6 +16102,7 @@ def _public_corpus_card(
         "recordCounts": record_counts,
         "availableRecordCounts": available_record_counts,
         "rejectedByTokenCap": rejected_by_token_cap,
+        "rejectedByValidationSampling": rejected_by_validation_sampling,
         "sourceCounts": source_counts,
         "availableSourceCounts": dict(sorted(available_source_counts.items())),
         "availableSourceLineage": normalized_lineage,
@@ -15193,8 +16111,14 @@ def _public_corpus_card(
             for source_id, split_counts in sorted(source_split_counts.items())
         },
         "licenses": sorted(licenses),
-        "maxSFTTokenProxyShare": max_token_share,
-        "maxDPOTokenProxyShare": max_token_share,
+        "requestedMaxSFTAssistantTargetTokenShare": (
+            requested_exact_token_share
+        ),
+        "requestedMaxDPOChosenTargetTokenShare": (
+            requested_exact_token_share
+        ),
+        "maxSFTTokenProxyShare": source_proxy_selection_share,
+        "maxDPOTokenProxyShare": source_proxy_selection_share,
         "tokenProxyShares": token_proxy_shares,
         "selectionContract": {
             **selection_contract,

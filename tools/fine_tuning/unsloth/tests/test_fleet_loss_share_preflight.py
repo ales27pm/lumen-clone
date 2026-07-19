@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import inspect
 import json
+import os
+import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -14,12 +18,29 @@ from tools.fine_tuning.unsloth import train_dpo, train_sft, ubuntu_pipeline
 BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 BASE_MODEL_REVISION = "a" * 40
 TOKENIZER_SHA256 = "b" * 64
+TOKENIZER_FILES = [
+    {
+        "path": filename,
+        "sizeBytes": 1,
+        "sha256": TOKENIZER_SHA256,
+        "huggingFaceBlobID": "c" * 40,
+    }
+    for filename in ubuntu_pipeline.GLOBAL_TOKENIZER_SNAPSHOT_FILES
+]
+TOKENIZER_CLOSURE_SHA256 = ubuntu_pipeline.canonical_sha256(
+    {
+        "schemaVersion": "lumen.base-model-tokenizer-closure/1.0.0",
+        "baseModelID": BASE_MODEL_ID,
+        "baseModelRevision": BASE_MODEL_REVISION,
+        "files": TOKENIZER_FILES,
+    }
+)
 
 
 def _contract() -> dict[str, Any]:
     fields = train_sft.FLEET_LOSS_SHARE_FIELD_NAMES
     return {
-        "schemaVersion": "lumen.fleet-loss-share/1.1.0",
+        "schemaVersion": "lumen.fleet-loss-share/1.2.0",
         "enforcementRequired": True,
         "enforcementPhase": "post_tokenizer_load_pre_optimizer",
         "requiredLanes": ["sft", "dpo"],
@@ -44,6 +65,7 @@ def _contract() -> dict[str, Any]:
         "failurePolicy": "abort_before_optimizer",
         "sourceSelectionProxy": {
             "status": "safety_budget_not_exact_token_count",
+            "maximumPublicBehavioralShareBasisPoints": 3_000,
             "maximumSupplementalStaticShareBasisPoints": 1_500,
             "contract": {
                 "schemaVersion": "lumen.source-token-proxy/1.0.0",
@@ -98,6 +120,71 @@ def _contract() -> dict[str, Any]:
             "baseModelID": BASE_MODEL_ID,
             "baseModelRevision": BASE_MODEL_REVISION,
             "tokenizerSHA256": TOKENIZER_SHA256,
+            "tokenizerClosureSHA256": TOKENIZER_CLOSURE_SHA256,
+        },
+        "tokenAccounting": {
+            "sft": "assistant_mask_non_ignored_token_count",
+            "dpo": (
+                "rendered_chosen_completion_tokens_add_special_tokens_false_"
+                "plus_one_trl_0_24_0_appended_eos"
+            ),
+        },
+    }
+
+
+def _public_contract() -> dict[str, Any]:
+    return {
+        "schemaVersion": "lumen.public-corpus-loss-share/1.0.0",
+        "enforcementRequired": True,
+        "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "requiredLanes": ["sft", "dpo"],
+        "authoritativeCapEncoding": "integer_basis_points",
+        "basisPointDenominator": 10_000,
+        "capBasisPoints": {"requested": 3_500, "hard": 3_500},
+        "dpoTokenizationPolicy": copy.deepcopy(
+            train_sft.PUBLIC_CORPUS_DPO_TOKENIZATION_POLICY
+        ),
+        "exactTokenEvidenceContract": {
+            "required": True,
+            "schemaVersion": (
+                "lumen.public-corpus-loss-share-evidence/1.0.0"
+            ),
+            "statusAtGeneration": "pending_exact_tokenizer_preflight",
+            "tokenizer": "pinned_qwen_tokenizer",
+            "comparisonRule": (
+                "numeratorTokenCount*basisPointDenominator<="
+                "denominatorTokenCount*capBasisPoints"
+            ),
+            "lanes": copy.deepcopy(
+                train_sft.PUBLIC_CORPUS_LOSS_SHARE_FIELD_NAMES
+            ),
+        },
+        "failurePolicy": "abort_before_optimizer",
+        "rowMetadataContract": {
+            "publicSourceFamilyPrefix": "public_adapter_corpus_",
+            "publicCorpusField": "publicCorpus",
+            "classificationRule": "prefix_and_nonempty_lineage_required",
+            "mismatch": "hard_fail",
+        },
+        "sourceSelectionProxy": {
+            "status": "safety_budget_not_exact_token_count",
+            "maximumPublicShareBasisPoints": 3_000,
+            "contract": {
+                "schemaVersion": "lumen.source-token-proxy/1.0.0",
+                "status": "source_side_selection_proxy_not_exact_token_count",
+                "strategy": "max_whitespace_terms_utf8_byte_ceiling",
+                "maxCharsPerToken": 4,
+                "exactPinnedTokenizerAuthoritative": True,
+                "authoritativeEnforcementPhase": (
+                    "post_tokenizer_load_pre_optimizer"
+                ),
+            },
+        },
+        "tokenizer": {
+            "baseModelID": BASE_MODEL_ID,
+            "baseModelRevision": BASE_MODEL_REVISION,
+            "tokenizerSHA256": TOKENIZER_SHA256,
+            "tokenizerClosureSHA256": TOKENIZER_CLOSURE_SHA256,
         },
         "tokenAccounting": {
             "sft": "assistant_mask_non_ignored_token_count",
@@ -113,9 +200,13 @@ def _config() -> dict[str, Any]:
     return {
         "agent": "fleet",
         "base_model_name": BASE_MODEL_ID,
+        "baseModelID": BASE_MODEL_ID,
         "baseModelRevision": BASE_MODEL_REVISION,
         "baseModelTokenizerDigest": TOKENIZER_SHA256,
+        "baseModelTokenizerFiles": copy.deepcopy(TOKENIZER_FILES),
+        "baseModelTokenizerClosureSHA256": TOKENIZER_CLOSURE_SHA256,
         "fleetLossShareContract": _contract(),
+        "publicCorpusLossShareContract": _public_contract(),
     }
 
 
@@ -284,6 +375,9 @@ def _sft_preflight(
         max_sequence_length=512,
         agent="fleet",
         fleet_loss_share_contract=config["fleetLossShareContract"],
+        public_corpus_loss_share_contract=config[
+            "publicCorpusLossShareContract"
+        ],
         fleet_config=config,
     )
 
@@ -318,6 +412,9 @@ def _dpo_preflight(
             source_splits=source_splits,
             agent="fleet",
             fleet_loss_share_contract=config["fleetLossShareContract"],
+            public_corpus_loss_share_contract=config[
+                "publicCorpusLossShareContract"
+            ],
             fleet_config=config,
         ),
         source_splits,
@@ -369,6 +466,132 @@ def test_sft_and_dpo_happy_paths_record_exact_split_evidence() -> None:
     assert dpo_evidence["dpoTokenizationPolicy"] == (
         train_dpo.DPO_COMPLETION_TOKENIZATION_POLICY
     )
+
+
+def test_public_verifier_rejects_rehashed_self_consistent_false_counts(
+    tmp_path: Path,
+) -> None:
+    config = _config()
+    run_root = tmp_path / "run"
+    dataset_dir = (
+        run_root
+        / "generated/fine_tuning/fleet/experiments/optimized"
+    )
+    config.update(
+        {
+            "dataset_dir": str(dataset_dir),
+            "variant": "optimized",
+            "max_seq_length": 512,
+            "sft_minimum_sequence_margin_tokens": 128,
+        }
+    )
+    rows = _sft_rows(HAPPY_SPECIFICATION)
+    _write_jsonl(dataset_dir / "train_sft.jsonl", rows)
+    _write_jsonl(dataset_dir / "val_sft.jsonl", rows)
+    phase_evidence = copy.deepcopy(_sft_preflight(HAPPY_SPECIFICATION))
+    evidence = phase_evidence["publicCorpusLossShareEvidence"]
+    train = evidence["splits"]["train"]
+    public_row = next(
+        row for row in train["rowTokenEvidence"] if row["isPublicCorpus"]
+    )
+    original = public_row["targetTokenCount"]
+    public_row["targetTokenCount"] = original - 1
+    train["assistantTargetTokenCount"] -= 1
+    train["publicAssistantTargetTokenCount"] -= 1
+
+    # The forgery is arithmetically coherent and can be placed in a freshly
+    # self-hashed audit, but it no longer matches the pinned tokenizer.
+    unsigned_audit = {
+        "schemaVersion": ubuntu_pipeline.GLOBAL_TOKENIZER_PREFLIGHT_SCHEMA,
+        "status": "passed",
+        "agents": [{"agent": "fleet", "sft": phase_evidence}],
+    }
+    forged_audit = {
+        **unsigned_audit,
+        "globalPreflightSHA256": ubuntu_pipeline.canonical_sha256(
+            unsigned_audit
+        ),
+    }
+    assert forged_audit["globalPreflightSHA256"] == (
+        ubuntu_pipeline.canonical_sha256(
+            {
+                key: value
+                for key, value in forged_audit.items()
+                if key != "globalPreflightSHA256"
+            }
+        )
+    )
+    with pytest.raises(RuntimeError, match="exact-token row evidence drifted"):
+        ubuntu_pipeline._verify_global_tokenizer_phase_evidence(
+            run_root=run_root,
+            agent="fleet",
+            config=config,
+            phase="sft",
+            evidence=forged_audit["agents"][0]["sft"],
+            tokenizer=_ExactMaskTokenizer(),
+        )
+
+
+def test_public_dpo_verifier_rejects_rehashed_false_chosen_counts(
+    tmp_path: Path,
+) -> None:
+    config = _config()
+    preflight, source_splits = _dpo_preflight(HAPPY_SPECIFICATION)
+    _write_jsonl(tmp_path / "train_dpo.jsonl", source_splits["train"])
+    _write_jsonl(
+        tmp_path / "val_dpo.jsonl",
+        source_splits["validation"],
+    )
+    evidence = copy.deepcopy(preflight["publicCorpusLossShareEvidence"])
+    train = evidence["splits"]["train"]
+    public_row = next(
+        row for row in train["rowTokenEvidence"] if row["isPublicCorpus"]
+    )
+    public_row["targetTokenCount"] -= 1
+    train["chosenTargetTokenCount"] -= 1
+    train["publicChosenTargetTokenCount"] -= 1
+    forged_sha256 = ubuntu_pipeline.canonical_sha256(evidence)
+    assert len(forged_sha256) == 64
+
+    with pytest.raises(RuntimeError, match="exact-token row evidence drifted"):
+        ubuntu_pipeline._verify_public_corpus_loss_share_evidence(
+            value=evidence,
+            config=config,
+            phase="preference",
+            dataset_dir=tmp_path,
+            tokenizer=_ExactTextTokenizer(),
+            preference_renderer=_render_preference,
+            require_exact_tokenizer_counts=True,
+        )
+
+
+def test_mouth_pilot_exact_37_29_percent_share_is_rejected() -> None:
+    config = _config()
+    config["agent"] = "mouth"
+    config.pop("fleetLossShareContract")
+    train_rows = _sft_rows([("primary", 1_643), ("public", 977)])
+    validation_rows = _sft_rows([("primary", 80), ("public", 20)])
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"977\*10000 > 2620\*3500",
+    ):
+        train_sft._preflight_sft_token_lengths(
+            {
+                "train": (train_rows, Path("train_sft.jsonl")),
+                "validation": (
+                    validation_rows,
+                    Path("val_sft.jsonl"),
+                ),
+            },
+            tokenizer=_ExactMaskTokenizer(),
+            max_sequence_length=4_096,
+            agent="mouth",
+            public_corpus_loss_share_contract=config[
+                "publicCorpusLossShareContract"
+            ],
+            fleet_config=config,
+        )
 
 
 def test_small_validation_denominator_is_observed_without_false_optimizer_block(
@@ -472,6 +695,9 @@ def test_contract_and_metadata_are_fail_closed() -> None:
             max_sequence_length=512,
             agent="fleet",
             fleet_loss_share_contract=config["fleetLossShareContract"],
+            public_corpus_loss_share_contract=config[
+                "publicCorpusLossShareContract"
+            ],
             fleet_config=config,
         )
 
@@ -488,6 +714,9 @@ def test_contract_and_metadata_are_fail_closed() -> None:
             max_sequence_length=512,
             agent="fleet",
             fleet_loss_share_contract=config["fleetLossShareContract"],
+            public_corpus_loss_share_contract=config[
+                "publicCorpusLossShareContract"
+            ],
             fleet_config=config,
         )
 
@@ -684,6 +913,75 @@ def test_bound_preflight_verifier_checks_config_dataset_and_training_code(
         chat_contract_verifier=lambda *_args, **_kwargs: None,
     )
     assert global_result["status"] == "global_tokenizer_preflight_passed"
+    def verify_prepared() -> dict[str, object]:
+        return ubuntu_pipeline._verified_prepared_global_tokenizer_preflight(
+            run_root=run_root,
+            agents=("fleet",),
+            tokenizer=_ExactMaskTokenizer(),
+            tokenizer_file_sha256=TOKENIZER_SHA256,
+            preference_renderer=_render_preference,
+            chat_contract_verifier=lambda *_args, **_kwargs: None,
+        )
+
+    prepared_audit = verify_prepared()
+    assert prepared_audit["globalPreflightSHA256"] == global_result[
+        "globalPreflightSHA256"
+    ]
+    global_audit_path = (
+        run_root
+        / "training"
+        / ubuntu_pipeline.GLOBAL_TOKENIZER_PREFLIGHT_FILENAME
+    )
+    drifted_global = copy.deepcopy(prepared_audit)
+    drifted_global["agents"][0]["sft"]["records"] += 1
+    unsigned_global = dict(drifted_global)
+    unsigned_global.pop("globalPreflightSHA256")
+    drifted_global["globalPreflightSHA256"] = (
+        ubuntu_pipeline.canonical_sha256(unsigned_global)
+    )
+    _write_json(global_audit_path, drifted_global)
+    with pytest.raises(RuntimeError, match="exact tokenizer evidence drifted"):
+        verify_prepared()
+
+    fabricated_statistics = copy.deepcopy(prepared_audit)
+    fabricated_statistics["agents"][0]["sft"]["totalTokens"]["p50"] += 1
+    unsigned_global = dict(fabricated_statistics)
+    unsigned_global.pop("globalPreflightSHA256")
+    fabricated_statistics["globalPreflightSHA256"] = (
+        ubuntu_pipeline.canonical_sha256(unsigned_global)
+    )
+    _write_json(global_audit_path, fabricated_statistics)
+    with pytest.raises(RuntimeError, match="exact tokenizer evidence drifted"):
+        verify_prepared()
+
+    fabricated_fleet_row_tokens = copy.deepcopy(prepared_audit)
+    fabricated_fleet_row_tokens["agents"][0]["sft"][
+        "fleetLossShareEvidence"
+    ]["splits"]["train"]["rowTokenEvidence"][0]["targetTokenCount"] += 1
+    unsigned_global = dict(fabricated_fleet_row_tokens)
+    unsigned_global.pop("globalPreflightSHA256")
+    fabricated_fleet_row_tokens["globalPreflightSHA256"] = (
+        ubuntu_pipeline.canonical_sha256(unsigned_global)
+    )
+    _write_json(global_audit_path, fabricated_fleet_row_tokens)
+    with pytest.raises(RuntimeError, match="exact tokenizer evidence drifted"):
+        verify_prepared()
+
+    rebound_global = copy.deepcopy(prepared_audit)
+    rebound_global["agents"][0]["sftDatasetFileSHA256"] = {
+        "train_sft.jsonl": "0" * 64,
+        "val_sft.jsonl": "0" * 64,
+        "variant_manifest.json": "0" * 64,
+    }
+    unsigned_global = dict(rebound_global)
+    unsigned_global.pop("globalPreflightSHA256")
+    rebound_global["globalPreflightSHA256"] = (
+        ubuntu_pipeline.canonical_sha256(unsigned_global)
+    )
+    _write_json(global_audit_path, rebound_global)
+    with pytest.raises(RuntimeError, match="input binding drifted"):
+        verify_prepared()
+    _write_json(global_audit_path, prepared_audit)
     preflight = train_sft._preflight_sft_token_lengths(
         {
             "train": (rows, dataset_dir / "train_sft.jsonl"),
@@ -693,6 +991,9 @@ def test_bound_preflight_verifier_checks_config_dataset_and_training_code(
         max_sequence_length=512,
         agent="fleet",
         fleet_loss_share_contract=config["fleetLossShareContract"],
+        public_corpus_loss_share_contract=config[
+            "publicCorpusLossShareContract"
+        ],
         fleet_config=config,
     )
     evidence = train_sft._bind_sft_token_length_preflight(
@@ -705,6 +1006,19 @@ def test_bound_preflight_verifier_checks_config_dataset_and_training_code(
         "token_length_preflight_path": config["sftTokenLengthPreflightPath"],
         "token_length_preflight_sha256": evidence["preflightSHA256"],
     }
+    def verify_injected_global(**kwargs: Any) -> dict[str, Any]:
+        return ubuntu_pipeline._verified_global_tokenizer_preflight_test_only(
+            **kwargs,
+            audit_snapshot=ubuntu_pipeline.read_object(global_audit_path),
+            tokenizer=_ExactMaskTokenizer(),
+            preference_renderer=_render_preference,
+        )
+
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_global_tokenizer_preflight",
+        verify_injected_global,
+    )
 
     verified = ubuntu_pipeline._verify_training_token_length_preflight(
         run_root=run_root,
@@ -742,11 +1056,112 @@ def test_bound_preflight_verifier_checks_config_dataset_and_training_code(
         )
 
 
+def test_global_tokenizer_snapshot_binds_complete_local_closure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot_dir = tmp_path / "global_tokenizer_snapshot"
+    snapshot_dir.mkdir(mode=0o700)
+    payloads = {
+        filename: f"fixture:{filename}".encode("utf-8")
+        for filename in ubuntu_pipeline.GLOBAL_TOKENIZER_SNAPSHOT_FILES
+    }
+    for filename, payload in payloads.items():
+        path = snapshot_dir / filename
+        path.write_bytes(payload)
+        path.chmod(0o400)
+    snapshot_dir.chmod(0o700)
+    config = {
+        "base_model_name": BASE_MODEL_ID,
+        "baseModelID": BASE_MODEL_ID,
+        "baseModelRevision": BASE_MODEL_REVISION,
+        "baseModelTokenizerDigest": hashlib.sha256(
+            payloads["tokenizer.json"]
+        ).hexdigest(),
+        "baseModelTokenizerFiles": [
+            {
+                "path": filename,
+                "sizeBytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "huggingFaceBlobID": ubuntu_pipeline._git_blob_sha1(payload),
+            }
+            for filename, payload in sorted(payloads.items())
+        ],
+    }
+    config["baseModelTokenizerClosureSHA256"] = (
+        ubuntu_pipeline.canonical_sha256(
+            {
+                "schemaVersion": "lumen.base-model-tokenizer-closure/1.0.0",
+                "baseModelID": BASE_MODEL_ID,
+                "baseModelRevision": BASE_MODEL_REVISION,
+                "files": config["baseModelTokenizerFiles"],
+            }
+        )
+    )
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class StableAutoTokenizer:
+        @staticmethod
+        def from_pretrained(path: str, **kwargs: object) -> object:
+            calls.append((path, kwargs))
+            return types.SimpleNamespace(is_fast=True)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        types.SimpleNamespace(AutoTokenizer=StableAutoTokenizer),
+    )
+    tokenizer, contract = (
+        ubuntu_pipeline._load_verified_global_tokenizer_snapshot(
+            snapshot_dir=snapshot_dir,
+            config=config,
+        )
+    )
+    assert tokenizer.is_fast is True
+    assert [item["path"] for item in contract["files"]] == list(
+        ubuntu_pipeline.GLOBAL_TOKENIZER_SNAPSHOT_FILES
+    )
+    assert calls == [
+        (
+            str(snapshot_dir),
+            {
+                "local_files_only": True,
+                "trust_remote_code": False,
+                "use_fast": True,
+            },
+        )
+    ]
+
+    class SwapAndRestoreAutoTokenizer:
+        @staticmethod
+        def from_pretrained(_path: str, **_kwargs: object) -> object:
+            target = snapshot_dir / "tokenizer_config.json"
+            original = target.read_bytes()
+            target.chmod(0o600)
+            target.write_bytes(b"temporary unbound tokenizer state")
+            target.write_bytes(original)
+            target.chmod(0o400)
+            return types.SimpleNamespace(is_fast=True)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        types.SimpleNamespace(AutoTokenizer=SwapAndRestoreAutoTokenizer),
+    )
+    with pytest.raises(RuntimeError, match="changed while loading"):
+        ubuntu_pipeline._load_verified_global_tokenizer_snapshot(
+            snapshot_dir=snapshot_dir,
+            config=config,
+            expected_contract=contract,
+        )
+
+
 def test_loss_share_preflight_occurs_before_optimizer_owning_objects() -> None:
     tokenizer_loader_source = inspect.getsource(
-        ubuntu_pipeline._load_exact_global_preflight_tokenizer
+        ubuntu_pipeline._load_verified_global_tokenizer_snapshot
     )
     assert "AutoTokenizer" in tokenizer_loader_source
+    assert "local_files_only=True" in tokenizer_loader_source
     assert "AutoModel" not in tokenizer_loader_source
     assert "FastLanguageModel" not in tokenizer_loader_source
 
@@ -769,5 +1184,14 @@ def test_loss_share_preflight_occurs_before_optimizer_owning_objects() -> None:
     ).read_text(encoding="utf-8")
     global_preflight = launcher.index("global-tokenizer-preflight")
     first_agent_loop = launcher.index('for agent in "${AGENTS[@]}"; do')
-    assert launcher.index('if [[ "$PREPARE_ONLY" == "1" ]]') < global_preflight
-    assert global_preflight < first_agent_loop
+    prepare_only_exit = launcher.index('if [[ "$PREPARE_ONLY" == "1" ]]')
+    assert global_preflight < prepare_only_exit < first_agent_loop
+    assert (
+        'log "prepared run manifest: $RUN_ROOT/aio_run_manifest.json"'
+        in launcher
+    )
+    assert (
+        'log "global tokenizer preflight audit: '
+        '$RUN_ROOT/training/global_tokenizer_preflight.json"'
+        in launcher
+    )

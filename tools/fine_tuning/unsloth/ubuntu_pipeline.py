@@ -6,6 +6,7 @@ import json
 import math
 import os
 import re
+import resource
 import shutil
 import stat
 import subprocess
@@ -48,6 +49,10 @@ DATASET_FILES = (
     "train_dpo.jsonl",
     "val_dpo.jsonl",
 )
+PREPARED_INPUT_MAX_ENTRIES = 10_000
+PREPARED_INPUT_MAX_DEPTH = 64
+PREPARED_INPUT_MAX_LOGICAL_BYTES = 8 * 1024 * 1024 * 1024
+PREPARED_INPUT_FD_RESERVE = 32
 RUNTIME_SOURCE_FIELDS = (
     "runtimeSourceKind",
     "runtimeSourceRevision",
@@ -62,6 +67,36 @@ UBUNTU_SOURCE_INTEGRITY_FIELDS = (
     "ubuntuOrchestrationCodeSHA256",
     "ubuntuSourceIntegritySHA256",
     "ubuntuSourceIntegrity",
+)
+PRIVATE_TOKENIZER_SNAPSHOT_CONFIG_PROOF_FIELDS = (
+    ("base_model_name", "baseModelID"),
+    ("baseModelID", "baseModelID"),
+    ("baseModelRevision", "baseModelRevision"),
+    ("baseModelTokenizerDigest", "baseModelTokenizerDigest"),
+    ("baseModelTokenizerFiles", "baseModelTokenizerFiles"),
+    ("baseModelTokenizerClosureSHA256", "baseModelTokenizerClosureSHA256"),
+    ("baseModelTokenizerSnapshotPath", "snapshotPath"),
+)
+PRIVATE_RUNTIME_SNAPSHOT_CONFIG_PROOF_FIELDS = (
+    ("base_model_name", "baseModelID"),
+    ("baseModelID", "baseModelID"),
+    ("baseModelRevision", "baseModelRevision"),
+    ("baseModelIndexDigest", "baseModelIndexDigest"),
+    (
+        "baseModelIndexReferencedShardNames",
+        "baseModelIndexReferencedShardNames",
+    ),
+    (
+        "baseModelIndexShardBindingSHA256",
+        "baseModelIndexShardBindingSHA256",
+    ),
+    ("baseModelArtifactDigest", "baseModelArtifactDigest"),
+    ("baseModelWeightShards", "baseModelWeightShards"),
+    ("baseModelGenerationConfigFile", "baseModelGenerationConfigFile"),
+    ("baseModelTokenizerDigest", "baseModelTokenizerDigest"),
+    ("baseModelTokenizerFiles", "baseModelTokenizerFiles"),
+    ("baseModelTokenizerClosureSHA256", "baseModelTokenizerClosureSHA256"),
+    ("baseModelRuntimeSnapshotPath", "snapshotPath"),
 )
 RUNTIME_CONFIG_FIELDS = {
     "trainingContainerImageDigest",
@@ -118,7 +153,10 @@ ADAPTER_GGUF_SEMANTIC_FIELDS = (
     "adapterGGUFChatTemplateSHA256",
 )
 GGUF_CONVERSION_RECEIPT_SCHEMA_VERSION = (
-    "lumen.gguf-conversion-receipt/1.0.0"
+    "lumen.gguf-conversion-receipt/1.3.0"
+)
+GGUF_BASE_SNAPSHOT_VERIFICATION_FILENAME = (
+    "base_model_conversion_snapshot_verification.json"
 )
 GGUF_CONVERSION_QUALIFICATION = "attested_converter_execution"
 GGUF_TENSOR_EQUIVALENCE_STATUS = "not_independently_verified"
@@ -127,6 +165,8 @@ GGUF_CONVERSION_SUMMARY_FIELDS = (
     "adapterGGUFConversionReceiptSHA256",
     "adapterGGUFConversionQualification",
     "adapterGGUFTensorEquivalenceStatus",
+    "adapterGGUFRuntimeModelBindingSHA256",
+    "adapterGGUFRuntimeTokenizerBindingSHA256",
 )
 GGUF_CONVERSION_RECEIPT_FIELDS = (
     "schema",
@@ -143,6 +183,8 @@ GGUF_CONVERSION_RECEIPT_FIELDS = (
     "preferenceFinalizedVariantManifest",
     "preferenceFinalizedVariantManifestSHA256",
     "preferenceFinalizedVariantManifestFileSHA256",
+    "runtimeModelBindingSHA256",
+    "runtimeTokenizerBindingSHA256",
     "config",
     "configSHA256",
     "baseModelID",
@@ -151,6 +193,11 @@ GGUF_CONVERSION_RECEIPT_FIELDS = (
     "baseModelIndexShardBindingSHA256",
     "baseModelArtifactDigest",
     "baseModelTokenizerDigest",
+    "baseModelTokenizerFiles",
+    "baseModelTokenizerClosureSHA256",
+    "baseModelTokenizerSnapshotPath",
+    "baseModelTokenizerSnapshotVerification",
+    "baseModelConversionSnapshotVerification",
     "trainingContainerImageDigest",
     "ubuntuOrchestrationCodeSHA256",
     "ubuntuSourceIntegritySHA256",
@@ -163,9 +210,9 @@ GGUF_CONVERSION_RECEIPT_FIELDS = (
     "readerFileSHA256",
     "conversionReceiptSHA256",
 )
-SUMMARY_SCHEMA_VERSION = "lumen.ubuntu-training-summary/3.2.0"
-UPLOAD_SCHEMA_VERSION = "lumen.ubuntu-training-upload/2.3.0"
-UPLOAD_INTENT_SCHEMA_VERSION = "lumen.ubuntu-upload-intent/1.0.0"
+SUMMARY_SCHEMA_VERSION = "lumen.ubuntu-training-summary/3.6.0"
+UPLOAD_SCHEMA_VERSION = "lumen.ubuntu-training-upload/2.7.0"
+UPLOAD_INTENT_SCHEMA_VERSION = "lumen.ubuntu-upload-intent/1.4.0"
 UPLOAD_ATTEMPT_SCHEMA_VERSION = "lumen.ubuntu-upload-attempt/1.0.0"
 UPLOAD_COMMIT_SCHEMA_VERSION = "lumen.ubuntu-upload-commit/1.0.0"
 UPLOAD_INTENT_FILENAME = ".lumen-upload-intent.json"
@@ -175,7 +222,23 @@ UPLOAD_REMOTE_MARKER_FILENAME = ".lumen-upload-intent.json"
 PREPARATION_OWNER_SCHEMA_VERSION = "lumen.ubuntu-preparation-owner/1.1.0"
 PREPARATION_OWNER_FILENAME = ".lumen-preparation-owner.json"
 EXECUTION_PLAN_SCHEMA_VERSION = "lumen.ubuntu-training-execution-plan/1.0.0"
-RUN_SCHEMA_VERSION = "lumen.ubuntu-training-run/3.1.0"
+RUN_SCHEMA_VERSION = "lumen.ubuntu-training-run/3.3.0"
+PHASE_RUNTIME_EVIDENCE_FIELDS = (
+    "trainingReportFileSHA256",
+    "runtimeModelBindingSHA256",
+    "runtimeTokenizerBindingSHA256",
+    "peftBaseModelIdentitySHA256",
+    "adapterTokenizerBindingSHA256",
+    "baseModelTokenizerSnapshotVerificationSHA256",
+    "baseModelRuntimeSnapshotVerificationSHA256",
+)
+RUNTIME_BINDING_SMOKE_SUMMARY_FIELDS = (
+    "runtimeBindingSmokeReport",
+    "runtimeBindingSmokeReportFileSHA256",
+    "runtimeBindingSmokeGateSHA256",
+    "runtimeBindingSmokeContractEvidence",
+    "runtimeBindingSmokeBindingsByAgent",
+)
 _GGUF_READER_FD_BOOTSTRAP = """
 import os
 import sys
@@ -228,6 +291,178 @@ class _SnapshottedUploadInput:
     size_bytes: int
 
 
+@dataclass(frozen=True)
+class _PreparedInputDirectory:
+    relative_path: str
+    descriptor: int
+    signature: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class _PreparedInputFile:
+    relative_path: str
+    descriptor: int
+    signature: tuple[int, ...]
+    sha256: str
+
+
+@dataclass(frozen=True)
+class _MountIdentity:
+    mount_id: int
+    parent_id: int
+    device: str
+    root: str
+    mount_point: str
+    mount_options: tuple[str, ...]
+    filesystem_type: str
+    mount_source: str
+    super_options: tuple[str, ...]
+
+
+class _PreparedInputClosure:
+    """Retained, recursively attested prepare-only run inputs."""
+
+    def __init__(
+        self,
+        *,
+        run_root: Path,
+        directories: Sequence[_PreparedInputDirectory],
+        files: Sequence[_PreparedInputFile],
+        require_exact_readonly_mount: bool,
+        mount_identity: _MountIdentity | None,
+    ) -> None:
+        self.run_root = run_root
+        self.directories = tuple(directories)
+        self.files = tuple(files)
+        self.require_exact_readonly_mount = require_exact_readonly_mount
+        self.mount_identity = mount_identity
+        self.inventory = tuple(
+            sorted(
+                (
+                    *(
+                        {
+                            "path": item.relative_path,
+                            "kind": "directory",
+                            "signature": list(item.signature),
+                        }
+                        for item in self.directories
+                    ),
+                    *(
+                        {
+                            "path": item.relative_path,
+                            "kind": "file",
+                            "signature": list(item.signature),
+                            "sha256": item.sha256,
+                        }
+                        for item in self.files
+                    ),
+                ),
+                key=lambda item: (item["path"], item["kind"]),
+            )
+        )
+        self.inventory_sha256 = canonical_sha256(self.inventory)
+        self._closed = False
+
+    def _verify_mount_boundary(self) -> None:
+        nested = _mounted_descendants(self.run_root)
+        if nested:
+            raise RuntimeError(
+                "Prepare-only input closure contains nested mounts: "
+                + ", ".join(str(item) for item in sorted(nested))
+            )
+        if not self.require_exact_readonly_mount:
+            return
+        observed = _exact_readonly_mount_identity(self.run_root)
+        if observed != self.mount_identity:
+            raise RuntimeError(
+                "Prepare-only input read-only mount identity changed during "
+                "verification"
+            )
+
+    @property
+    def mount_identity_sha256(self) -> str | None:
+        if self.mount_identity is None:
+            return None
+        return canonical_sha256(_mount_identity_payload(self.mount_identity))
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for item in reversed((*self.files, *self.directories)):
+            try:
+                os.close(item.descriptor)
+            except OSError:
+                pass
+
+    def _verify_retained_descriptors(self) -> None:
+        if self._closed:
+            raise RuntimeError("Prepare-only input closure is already closed")
+        for item in self.directories:
+            try:
+                observed = _file_stability_signature(os.fstat(item.descriptor))
+            except OSError as exc:
+                raise RuntimeError(
+                    "Prepare-only input directory descriptor became unavailable: "
+                    f"{item.relative_path}"
+                ) from exc
+            if observed != item.signature:
+                raise RuntimeError(
+                    "Prepare-only input directory changed during verification: "
+                    f"{item.relative_path}"
+                )
+        for item in self.files:
+            try:
+                observed = _file_stability_signature(os.fstat(item.descriptor))
+                observed_sha256 = _descriptor_sha256(item.descriptor)
+                stable = _file_stability_signature(os.fstat(item.descriptor))
+            except OSError as exc:
+                raise RuntimeError(
+                    "Prepare-only input file descriptor became unavailable: "
+                    f"{item.relative_path}"
+                ) from exc
+            if (
+                observed != item.signature
+                or stable != item.signature
+                or observed_sha256 != item.sha256
+            ):
+                raise RuntimeError(
+                    "Prepare-only input file changed during verification: "
+                    f"{item.relative_path}"
+                )
+
+    def verify_unchanged(self) -> None:
+        """Fail if any retained input or its current path binding changed."""
+
+        self._verify_mount_boundary()
+        _require_prepared_input_fd_headroom(
+            len(self.directories) + len(self.files) + PREPARED_INPUT_FD_RESERVE
+        )
+        self._verify_retained_descriptors()
+        observed = _acquire_prepared_input_closure_impl(
+            self.run_root,
+            require_exact_readonly_mount=self.require_exact_readonly_mount,
+        )
+        try:
+            observed._verify_retained_descriptors()
+            if (
+                observed.inventory_sha256 != self.inventory_sha256
+                or observed.inventory != self.inventory
+            ):
+                raise RuntimeError(
+                    "Prepare-only input inventory or path binding changed during "
+                    "verification"
+                )
+            # Recheck both descriptor sets after the path walk so a mutation
+            # during the comparison cannot be accepted as a stable closure.
+            observed._verify_retained_descriptors()
+            self._verify_retained_descriptors()
+            observed._verify_mount_boundary()
+            self._verify_mount_boundary()
+        finally:
+            observed.close()
+
+
 def _reject_nonfinite_json_constant(value: str) -> None:
     raise ValueError(f"Non-finite JSON number is not allowed: {value}")
 
@@ -269,6 +504,17 @@ def _read_descriptor_bytes(handle: BinaryIO) -> bytes:
         if not chunk:
             return b"".join(chunks)
         chunks.append(chunk)
+        offset += len(chunk)
+
+
+def _descriptor_sha256(descriptor: int) -> str:
+    digest = hashlib.sha256()
+    offset = 0
+    while True:
+        chunk = os.pread(descriptor, 1 << 20, offset)
+        if not chunk:
+            return digest.hexdigest()
+        digest.update(chunk)
         offset += len(chunk)
 
 
@@ -326,6 +572,320 @@ def _require_path_matches_descriptor(
         or current.st_ino != expected.st_ino
     ):
         raise RuntimeError(f"{label} changed while it was being verified")
+
+
+def _open_descriptor_count() -> int:
+    descriptor_root = Path("/proc/self/fd")
+    if descriptor_root.is_dir():
+        try:
+            return len(os.listdir(descriptor_root))
+        except OSError:
+            pass
+    return PREPARED_INPUT_FD_RESERVE
+
+
+def _require_prepared_input_fd_headroom(additional_descriptors: int) -> None:
+    soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft_limit == resource.RLIM_INFINITY:
+        return
+    observed = _open_descriptor_count()
+    if observed + additional_descriptors > soft_limit:
+        raise RuntimeError(
+            "Prepare-only input closure lacks file-descriptor headroom: "
+            f"open={observed}, additionalRequired={additional_descriptors}, "
+            f"softLimit={soft_limit}"
+        )
+
+
+def _acquire_prepared_input_closure_impl(
+    run_root: Path,
+    *,
+    require_exact_readonly_mount: bool,
+) -> _PreparedInputClosure:
+    """Open and hash the complete prepare-only input tree without links."""
+
+    run_root = Path(os.path.abspath(run_root))
+    nested_mounts = _mounted_descendants(run_root)
+    if nested_mounts:
+        raise RuntimeError(
+            "Prepare-only input closure contains nested mounts: "
+            + ", ".join(str(item) for item in sorted(nested_mounts))
+        )
+    mount_identity = (
+        _exact_readonly_mount_identity(run_root)
+        if require_exact_readonly_mount
+        else None
+    )
+    _require_prepared_input_fd_headroom(PREPARED_INPUT_FD_RESERVE)
+
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    if nofollow == 0 or directory == 0:
+        raise RuntimeError(
+            "Prepare-only input closure requires O_NOFOLLOW and O_DIRECTORY support"
+        )
+    common_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow
+    directory_flags = common_flags | directory
+    owned_descriptors: list[int] = []
+    directories: list[_PreparedInputDirectory] = []
+    files: list[_PreparedInputFile] = []
+    entry_count = 0
+    logical_bytes = 0
+
+    def checked_open(
+        name_or_path: str | os.PathLike[str],
+        flags: int,
+        *,
+        dir_fd: int | None = None,
+        label: str,
+    ) -> int:
+        try:
+            descriptor = os.open(name_or_path, flags, dir_fd=dir_fd)
+        except OSError as exc:
+            raise RuntimeError(
+                "Prepare-only input could not be opened without following links: "
+                f"{label}: {exc.strerror or type(exc).__name__} "
+                f"(errno {exc.errno})"
+            ) from exc
+        owned_descriptors.append(descriptor)
+        return descriptor
+
+    def child_path(parent: str, name: str) -> str:
+        return name if parent == "." else f"{parent}/{name}"
+
+    try:
+        root_descriptor = checked_open(
+            run_root,
+            directory_flags,
+            label=".",
+        )
+        root_stat = os.fstat(root_descriptor)
+        if not stat.S_ISDIR(root_stat.st_mode):
+            raise RuntimeError("Prepare-only input root must be a regular directory")
+        root_device = root_stat.st_dev
+
+        def capture_directory(
+            descriptor: int,
+            relative_path: str,
+            *,
+            depth: int,
+        ) -> None:
+            nonlocal entry_count, logical_bytes
+            if depth > PREPARED_INPUT_MAX_DEPTH:
+                raise RuntimeError(
+                    "Prepare-only input closure exceeds maximum directory depth: "
+                    f"{PREPARED_INPUT_MAX_DEPTH}"
+                )
+            entry_count += 1
+            if entry_count > PREPARED_INPUT_MAX_ENTRIES:
+                raise RuntimeError(
+                    "Prepare-only input closure exceeds maximum entry count: "
+                    f"{PREPARED_INPUT_MAX_ENTRIES}"
+                )
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISDIR(before.st_mode)
+                or before.st_dev != root_device
+            ):
+                raise RuntimeError(
+                    "Prepare-only input closure contains an unsafe directory: "
+                    f"{relative_path}"
+                )
+            signature = _file_stability_signature(before)
+            directories.append(
+                _PreparedInputDirectory(
+                    relative_path=relative_path,
+                    descriptor=descriptor,
+                    signature=signature,
+                )
+            )
+            try:
+                with os.scandir(descriptor) as scanner:
+                    entries = sorted(scanner, key=lambda item: item.name)
+            except OSError as exc:
+                raise RuntimeError(
+                    "Prepare-only input directory could not be enumerated: "
+                    f"{relative_path}"
+                ) from exc
+
+            for entry in entries:
+                try:
+                    entry.name.encode("utf-8", errors="strict")
+                except UnicodeEncodeError as exc:
+                    raise RuntimeError(
+                        "Prepare-only input closure contains a non-UTF-8 path"
+                    ) from exc
+                relative_child = child_path(relative_path, entry.name)
+                try:
+                    entry_stat = entry.stat(follow_symlinks=False)
+                except OSError as exc:
+                    raise RuntimeError(
+                        "Prepare-only input changed while its inventory was acquired: "
+                        f"{relative_child}"
+                    ) from exc
+                if stat.S_ISLNK(entry_stat.st_mode):
+                    raise RuntimeError(
+                        "Prepare-only input closure contains a symbolic link: "
+                        f"{relative_child}"
+                    )
+                if entry_stat.st_dev != root_device:
+                    raise RuntimeError(
+                        "Prepare-only input closure crosses a filesystem boundary: "
+                        f"{relative_child}"
+                    )
+                if stat.S_ISDIR(entry_stat.st_mode):
+                    child_descriptor = checked_open(
+                        entry.name,
+                        directory_flags,
+                        dir_fd=descriptor,
+                        label=relative_child,
+                    )
+                    opened_stat = os.fstat(child_descriptor)
+                    if (
+                        not stat.S_ISDIR(opened_stat.st_mode)
+                        or opened_stat.st_dev != entry_stat.st_dev
+                        or opened_stat.st_ino != entry_stat.st_ino
+                    ):
+                        raise RuntimeError(
+                            "Prepare-only input directory path binding changed while "
+                            f"it was opened: {relative_child}"
+                        )
+                    capture_directory(
+                        child_descriptor,
+                        relative_child,
+                        depth=depth + 1,
+                    )
+                    continue
+                if not stat.S_ISREG(entry_stat.st_mode):
+                    raise RuntimeError(
+                        "Prepare-only input closure contains a special file: "
+                        f"{relative_child}"
+                    )
+                entry_count += 1
+                if entry_count > PREPARED_INPUT_MAX_ENTRIES:
+                    raise RuntimeError(
+                        "Prepare-only input closure exceeds maximum entry count: "
+                        f"{PREPARED_INPUT_MAX_ENTRIES}"
+                    )
+                logical_bytes += entry_stat.st_size
+                if logical_bytes > PREPARED_INPUT_MAX_LOGICAL_BYTES:
+                    raise RuntimeError(
+                        "Prepare-only input closure exceeds maximum logical size: "
+                        f"{PREPARED_INPUT_MAX_LOGICAL_BYTES} bytes"
+                    )
+                file_descriptor = checked_open(
+                    entry.name,
+                    common_flags,
+                    dir_fd=descriptor,
+                    label=relative_child,
+                )
+                opened_stat = os.fstat(file_descriptor)
+                if (
+                    not stat.S_ISREG(opened_stat.st_mode)
+                    or opened_stat.st_dev != entry_stat.st_dev
+                    or opened_stat.st_ino != entry_stat.st_ino
+                ):
+                    raise RuntimeError(
+                        "Prepare-only input file path binding changed while it was "
+                        f"opened: {relative_child}"
+                    )
+                file_signature = _file_stability_signature(opened_stat)
+                file_digest = _descriptor_sha256(file_descriptor)
+                after_hash = os.fstat(file_descriptor)
+                try:
+                    rebound_stat = os.stat(
+                        entry.name,
+                        dir_fd=descriptor,
+                        follow_symlinks=False,
+                    )
+                except OSError as exc:
+                    raise RuntimeError(
+                        "Prepare-only input file path binding changed while it was "
+                        f"hashed: {relative_child}"
+                    ) from exc
+                if (
+                    _file_stability_signature(after_hash) != file_signature
+                    or not stat.S_ISREG(rebound_stat.st_mode)
+                    or rebound_stat.st_dev != opened_stat.st_dev
+                    or rebound_stat.st_ino != opened_stat.st_ino
+                ):
+                    raise RuntimeError(
+                        "Prepare-only input file changed while it was hashed: "
+                        f"{relative_child}"
+                    )
+                files.append(
+                    _PreparedInputFile(
+                        relative_path=relative_child,
+                        descriptor=file_descriptor,
+                        signature=file_signature,
+                        sha256=file_digest,
+                    )
+                )
+
+            after = os.fstat(descriptor)
+            if _file_stability_signature(after) != signature:
+                raise RuntimeError(
+                    "Prepare-only input directory changed while its inventory was "
+                    f"acquired: {relative_path}"
+                )
+
+        capture_directory(root_descriptor, ".", depth=0)
+        try:
+            rebound_root = os.stat(run_root, follow_symlinks=False)
+        except OSError as exc:
+            raise RuntimeError(
+                "Prepare-only input root path binding changed while its inventory "
+                "was acquired"
+            ) from exc
+        if (
+            not stat.S_ISDIR(rebound_root.st_mode)
+            or rebound_root.st_dev != root_stat.st_dev
+            or rebound_root.st_ino != root_stat.st_ino
+        ):
+            raise RuntimeError(
+                "Prepare-only input root path binding changed while its inventory "
+                "was acquired"
+            )
+        closure = _PreparedInputClosure(
+            run_root=run_root,
+            directories=directories,
+            files=files,
+            require_exact_readonly_mount=require_exact_readonly_mount,
+            mount_identity=mount_identity,
+        )
+        closure._verify_mount_boundary()
+        _require_prepared_input_fd_headroom(
+            len(directories) + len(files) + PREPARED_INPUT_FD_RESERVE
+        )
+        owned_descriptors.clear()
+        return closure
+    except BaseException:
+        for descriptor in reversed(owned_descriptors):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        raise
+
+
+def _acquire_prepared_input_closure(run_root: Path) -> _PreparedInputClosure:
+    """Acquire production closure from an exact read-only mount point."""
+
+    return _acquire_prepared_input_closure_impl(
+        run_root,
+        require_exact_readonly_mount=True,
+    )
+
+
+def _acquire_prepared_input_closure_test_only(
+    run_root: Path,
+) -> _PreparedInputClosure:
+    """Acquire the closure on a mutable test filesystem."""
+
+    return _acquire_prepared_input_closure_impl(
+        run_root,
+        require_exact_readonly_mount=False,
+    )
 
 
 def canonical_sha256(value: Any) -> str:
@@ -1529,6 +2089,24 @@ def validate_variant(
         raise RuntimeError(f"Generated config drifted from the controlled variant:{detail} {config_path}")
     if config.get("agent") != agent:
         raise RuntimeError(f"Generated config agent mismatch: {config_path}")
+    public_corpus_contract = (
+        _pipeline_validated_public_corpus_loss_share_contract(
+            config.get("publicCorpusLossShareContract"),
+            config=config,
+        )
+    )
+    for lane_name, rows in lanes.items():
+        for row_index, row in enumerate(rows):
+            try:
+                _pipeline_public_corpus_row_classification(
+                    row,
+                    contract=public_corpus_contract,
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(
+                    "Public-corpus row-metadata preflight rejected "
+                    f"{lane_name} row {row_index}"
+                ) from exc
     if agent == "fleet":
         fleet_contract = _pipeline_validated_fleet_loss_share_contract(
             config.get("fleetLossShareContract"),
@@ -1796,7 +2374,7 @@ def _training_attestation(
     if not isinstance(datasets, Mapping):
         raise RuntimeError("Variant manifest lacks dataset lineage")
     return {
-        "schema": "lumen.training-variant-attestation/1.0.0",
+        "schema": "lumen.training-variant-attestation/1.1.0",
         "variant": manifest["variant"],
         "variantManifestSHA256": manifest["variantManifestSHA256"],
         "trainingCorpusSHA256": manifest["trainingCorpusSHA256"],
@@ -1817,6 +2395,10 @@ def _training_attestation(
         "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
         "baseModelWeightShards": manifest["baseModelWeightShards"],
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": manifest["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": manifest[
+            "baseModelTokenizerClosureSHA256"
+        ],
         "trainingEnvironmentLockSHA256": manifest[
             "trainingEnvironmentLockSHA256"
         ],
@@ -2181,11 +2763,80 @@ def _assert_incomplete_preparation_has_no_progress(
     if any(entry.is_symlink() for entry in entries):
         raise RuntimeError("Incomplete preparation root contains a top-level symlink")
 
-    for name in ("logs", "training", "evaluation"):
+    for name in ("logs", "evaluation"):
         directory = run_root / name
         if directory.exists() and any(directory.iterdir()):
             raise RuntimeError(
                 f"Refusing to remove incomplete preparation with {name} progress"
+            )
+
+    training = run_root / "training"
+    if training.exists():
+        from tools.fine_tuning.unsloth.training_lineage import (
+            BASE_MODEL_TOKENIZER_REQUIRED_PATHS,
+        )
+
+        tokenizer_names = set(BASE_MODEL_TOKENIZER_REQUIRED_PATHS)
+        runtime_names = {
+            *tokenizer_names,
+            "generation_config.json",
+            "model.safetensors.index.json",
+        }
+        snapshot_targets = {
+            GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME: tokenizer_names,
+            "base_model_runtime_snapshot": runtime_names,
+        }
+
+        def snapshot_target(entry: Path) -> str | None:
+            if entry.name in snapshot_targets:
+                return entry.name
+            for target in snapshot_targets:
+                prefix = f".{target}."
+                suffix = entry.name.removeprefix(prefix)
+                if (
+                    entry.name.startswith(prefix)
+                    and re.fullmatch(r"[A-Za-z0-9_]{6,}", suffix) is not None
+                ):
+                    return target
+            return None
+
+        def is_preparation_snapshot(entry: Path) -> bool:
+            target = snapshot_target(entry)
+            if target is None or entry.is_symlink() or not entry.is_dir():
+                return False
+            entry_stat = entry.stat(follow_symlinks=False)
+            if (
+                entry_stat.st_uid != os.geteuid()
+                or stat.S_IMODE(entry_stat.st_mode) != 0o700
+                or entry_stat.st_dev != training.stat(follow_symlinks=False).st_dev
+            ):
+                return False
+            allowed_names = snapshot_targets[target]
+            for child in entry.iterdir():
+                child_stat = child.stat(follow_symlinks=False)
+                is_runtime_shard = (
+                    target == "base_model_runtime_snapshot"
+                    and re.fullmatch(
+                        r"model-[0-9]{5}-of-[0-9]{5}\.safetensors",
+                        child.name,
+                    )
+                    is not None
+                )
+                if (
+                    child.is_symlink()
+                    or not child.is_file()
+                    or child_stat.st_uid != os.geteuid()
+                    or child_stat.st_dev != entry_stat.st_dev
+                    or stat.S_IMODE(child_stat.st_mode) not in {0o400, 0o600, 0o644}
+                    or (child.name not in allowed_names and not is_runtime_shard)
+                ):
+                    return False
+            return True
+
+        training_entries = list(training.iterdir())
+        if any(not is_preparation_snapshot(entry) for entry in training_entries):
+            raise RuntimeError(
+                "Refusing to remove incomplete preparation with training progress"
             )
 
     models = run_root / "models"
@@ -2279,12 +2930,12 @@ def _durably_remove_preparation_owner(run_root: Path) -> None:
     _fsync_directory(run_root, label="the preparation-owner removal")
 
 
-def _mounted_descendants(path: Path) -> list[Path]:
-    """Return Linux mount points strictly below ``path`` without resolving them."""
+def _mountinfo_records() -> tuple[_MountIdentity, ...]:
+    """Return canonical records from the current Linux mount namespace."""
 
     mountinfo = Path("/proc/self/mountinfo")
     if not mountinfo.is_file():
-        return []
+        return ()
 
     def decode_mount_path(value: str) -> str:
         return re.sub(
@@ -2293,17 +2944,80 @@ def _mounted_descendants(path: Path) -> list[Path]:
             value,
         )
 
-    root = Path(os.path.abspath(path))
-    descendants: list[Path] = []
     try:
         lines = mountinfo.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
-        raise RuntimeError("Unable to inspect nested mount boundaries") from exc
+        raise RuntimeError("Unable to inspect mount boundaries") from exc
+    records: list[_MountIdentity] = []
     for line in lines:
         fields = line.split()
-        if len(fields) < 5:
+        try:
+            separator = fields.index("-")
+        except ValueError as exc:
+            raise RuntimeError("Malformed Linux mountinfo record") from exc
+        if separator < 6 or len(fields) < separator + 4:
             raise RuntimeError("Malformed Linux mountinfo record")
-        candidate = Path(decode_mount_path(fields[4]))
+        try:
+            mount_id = int(fields[0])
+            parent_id = int(fields[1])
+        except ValueError as exc:
+            raise RuntimeError("Malformed Linux mountinfo identity") from exc
+        records.append(
+            _MountIdentity(
+                mount_id=mount_id,
+                parent_id=parent_id,
+                device=fields[2],
+                root=decode_mount_path(fields[3]),
+                mount_point=decode_mount_path(fields[4]),
+                mount_options=tuple(sorted(fields[5].split(","))),
+                filesystem_type=fields[separator + 1],
+                mount_source=decode_mount_path(fields[separator + 2]),
+                super_options=tuple(sorted(fields[separator + 3].split(","))),
+            )
+        )
+    return tuple(records)
+
+
+def _mount_identity_payload(identity: _MountIdentity) -> dict[str, Any]:
+    return {
+        "mountID": identity.mount_id,
+        "parentID": identity.parent_id,
+        "device": identity.device,
+        "root": identity.root,
+        "mountPoint": identity.mount_point,
+        "mountOptions": list(identity.mount_options),
+        "filesystemType": identity.filesystem_type,
+        "mountSource": identity.mount_source,
+        "superOptions": list(identity.super_options),
+    }
+
+
+def _exact_readonly_mount_identity(path: Path) -> _MountIdentity:
+    root = os.path.abspath(path)
+    matches = tuple(
+        record for record in _mountinfo_records() if record.mount_point == root
+    )
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Prepare-only input root must be an exact mount point in the current "
+            "namespace"
+        )
+    identity = matches[0]
+    if "ro" not in identity.mount_options or "rw" in identity.mount_options:
+        raise RuntimeError(
+            "Prepare-only input root must be mounted read-only in the current "
+            "namespace"
+        )
+    return identity
+
+
+def _mounted_descendants(path: Path) -> list[Path]:
+    """Return Linux mount points strictly below ``path`` without resolving them."""
+
+    root = Path(os.path.abspath(path))
+    descendants: list[Path] = []
+    for record in _mountinfo_records():
+        candidate = Path(record.mount_point)
         if candidate != root and root in candidate.parents:
             descendants.append(candidate)
     return descendants
@@ -2519,6 +3233,9 @@ def prepare_run(
         seed=seed,
         base_model_override=base_model_override,
     )
+    prepared_tokenizer_closure = _validated_base_model_tokenizer_closure(
+        source_config
+    )
     source_integrity = current_source_integrity(root)
     runtime_lineage, runtime_environment = _runtime_lineage(
         root=root,
@@ -2593,6 +3310,87 @@ def prepare_run(
     ):
         directory.mkdir(parents=True, exist_ok=True)
 
+    tokenizer_snapshot_path = (
+        run_root / "training" / GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME
+    )
+    _create_global_tokenizer_snapshot(
+        snapshot_dir=tokenizer_snapshot_path,
+        config=source_config,
+    )
+    from tools.fine_tuning.unsloth.training_lineage import (
+        DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE,
+        create_private_base_model_runtime_snapshot,
+        private_base_model_runtime_snapshot_required_bytes,
+        verify_private_base_model_tokenizer_snapshot,
+    )
+
+    tokenizer_snapshot_verification = (
+        verify_private_base_model_tokenizer_snapshot(
+            tokenizer_snapshot_path,
+            base_model_id=str(source_config["baseModelID"]),
+            base_model_name=str(source_config["base_model_name"]),
+            base_model_revision=str(source_config["baseModelRevision"]),
+            tokenizer_files=source_config["baseModelTokenizerFiles"],
+            tokenizer_digest=str(source_config["baseModelTokenizerDigest"]),
+            tokenizer_closure_sha256=str(
+                source_config["baseModelTokenizerClosureSHA256"]
+            ),
+        )
+    )
+    if source_config.get("baseModelID") != EXPECTED_ADAPTER_GGUF_BASE_MODEL_ID:
+        raise RuntimeError(
+            "Private runtime snapshot registry supports only the pinned Qwen base"
+        )
+    required_runtime_bytes = private_base_model_runtime_snapshot_required_bytes(
+        weight_shards=source_config["baseModelWeightShards"],
+        tokenizer_files=source_config["baseModelTokenizerFiles"],
+        generation_config_file=DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE,
+    )
+    if shutil.disk_usage(run_root / "training").free < required_runtime_bytes:
+        raise RuntimeError(
+            "Insufficient free space for private base-model runtime snapshot"
+        )
+    from huggingface_hub import snapshot_download  # type: ignore
+
+    cached_model_snapshot = Path(
+        snapshot_download(
+            repo_id=str(source_config["baseModelID"]),
+            revision=str(source_config["baseModelRevision"]),
+        )
+    )
+    model_runtime_snapshot_path = (
+        run_root / "training" / "base_model_runtime_snapshot"
+    )
+    model_runtime_snapshot_verification = (
+        create_private_base_model_runtime_snapshot(
+            source_snapshot_dir=cached_model_snapshot,
+            private_tokenizer_snapshot_dir=tokenizer_snapshot_path,
+            destination=model_runtime_snapshot_path,
+            base_model_id=str(source_config["baseModelID"]),
+            base_model_name=str(source_config["base_model_name"]),
+            base_model_revision=str(source_config["baseModelRevision"]),
+            tokenizer_files=source_config["baseModelTokenizerFiles"],
+            tokenizer_digest=str(source_config["baseModelTokenizerDigest"]),
+            tokenizer_closure_sha256=str(
+                source_config["baseModelTokenizerClosureSHA256"]
+            ),
+            generation_config_file=(
+                DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE
+            ),
+            model_index_digest=str(source_config["baseModelIndexDigest"]),
+            index_referenced_shard_names=source_config[
+                "baseModelIndexReferencedShardNames"
+            ],
+            index_shard_binding_sha256=str(
+                source_config["baseModelIndexShardBindingSHA256"]
+            ),
+            model_artifact_digest=str(
+                source_config["baseModelArtifactDigest"]
+            ),
+            weight_shards=source_config["baseModelWeightShards"],
+        )
+    )
+
     runtime_manifest = read_object(snapshot_root / "adapter_runtime_manifest.json")
     base_by_agent = {
         item["agent"]: item.get("baseModelID")
@@ -2620,9 +3418,24 @@ def prepare_run(
             "trainingDependencyLock",
             "trainingDependencyLockSHA256",
             "requirementsSHA256",
+            "baseModelTokenizerFiles",
+            "baseModelTokenizerClosureSHA256",
         ):
             if config.get(field) != source_config.get(field):
                 raise RuntimeError(f"Shared training lineage differs for {agent}: {field}")
+        if (
+            _validated_base_model_tokenizer_closure(config)
+            != prepared_tokenizer_closure
+            or manifest.get("baseModelTokenizerFiles")
+            != prepared_tokenizer_closure["files"]
+            or manifest.get("baseModelTokenizerClosureSHA256")
+            != prepared_tokenizer_closure[
+                "baseModelTokenizerClosureSHA256"
+            ]
+        ):
+            raise RuntimeError(
+                f"Shared tokenizer closure differs for {agent}"
+            )
         base_model = (
             base_model_override
             or str(base_by_agent.get(agent) or "")
@@ -2640,6 +3453,21 @@ def prepare_run(
         gguf_path = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
         config["base_model_name"] = base_model
         config["baseModelID"] = base_model
+        config["baseModelTokenizerSnapshotPath"] = str(
+            tokenizer_snapshot_path
+        )
+        config["baseModelTokenizerSnapshotVerification"] = (
+            tokenizer_snapshot_verification
+        )
+        config["baseModelGenerationConfigFile"] = (
+            DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE
+        )
+        config["baseModelRuntimeSnapshotPath"] = str(
+            model_runtime_snapshot_path
+        )
+        config["baseModelRuntimeSnapshotVerification"] = (
+            model_runtime_snapshot_verification
+        )
         config["trainingContainerImageDigest"] = container_digest
         config["trainingContainerImageDigestSource"] = "operator_declared"
         config["trainingRuntimeImageBindingStatus"] = "manual_validation_required"
@@ -2787,6 +3615,30 @@ def prepare_run(
         "behaviorManifestFileSHA256": file_sha256(behavior_manifest_snapshot),
         "trainingEnvironment": runtime_environment,
         "executionPlan": prepared_execution_plan,
+        "baseModelID": prepared_tokenizer_closure["baseModelID"],
+        "baseModelRevision": prepared_tokenizer_closure[
+            "baseModelRevision"
+        ],
+        "baseModelTokenizerDigest": next(
+            item["sha256"]
+            for item in prepared_tokenizer_closure["files"]
+            if item["path"] == "tokenizer.json"
+        ),
+        "baseModelTokenizerFiles": prepared_tokenizer_closure["files"],
+        "baseModelTokenizerClosureSHA256": prepared_tokenizer_closure[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelTokenizerSnapshotPath": str(tokenizer_snapshot_path),
+        "baseModelTokenizerSnapshotVerification": (
+            tokenizer_snapshot_verification
+        ),
+        "baseModelGenerationConfigFile": (
+            DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE
+        ),
+        "baseModelRuntimeSnapshotPath": str(model_runtime_snapshot_path),
+        "baseModelRuntimeSnapshotVerification": (
+            model_runtime_snapshot_verification
+        ),
         **runtime_source,
         **integrity_fields,
         "agents": prepared,
@@ -2854,6 +3706,8 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
         is None
     ):
         raise RuntimeError("Prepared run manifest does not own this exact run root")
+    shared_tokenizer_snapshot_verification: dict[str, Any] | None = None
+    shared_runtime_snapshot_verification: dict[str, Any] | None = None
     for prepared_agent in manifest_agents:
         agent = str(prepared_agent["agent"])
         config_path = run_root / "configs" / f"{agent}.json"
@@ -2869,6 +3723,81 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
                 f"Prepared run config binding failed verification for {agent}"
             )
         prepared_config = read_object(config_path)
+        prepared_tokenizer_closure = _validated_base_model_tokenizer_closure(
+            prepared_config
+        )
+        if shared_tokenizer_snapshot_verification is None:
+            shared_tokenizer_snapshot_verification = (
+                _verified_private_tokenizer_snapshot_binding(prepared_config)
+            )
+            shared_runtime_snapshot_verification = (
+                _verified_private_base_model_runtime_snapshot_binding(
+                    prepared_config
+                )
+            )
+        tokenizer_snapshot_verification = shared_tokenizer_snapshot_verification
+        runtime_snapshot_verification = shared_runtime_snapshot_verification
+        if runtime_snapshot_verification is None:  # pragma: no cover - paired above.
+            raise RuntimeError("Prepared shared runtime snapshot was not verified")
+        _assert_config_matches_private_snapshot_proof(
+            prepared_config,
+            tokenizer_snapshot_verification,
+            field_bindings=PRIVATE_TOKENIZER_SNAPSHOT_CONFIG_PROOF_FIELDS,
+            label="private-tokenizer snapshot",
+        )
+        _assert_config_matches_private_snapshot_proof(
+            prepared_config,
+            runtime_snapshot_verification,
+            field_bindings=PRIVATE_RUNTIME_SNAPSHOT_CONFIG_PROOF_FIELDS,
+            label="base-model runtime snapshot",
+        )
+        expected_tokenizer_snapshot_path = str(
+            run_root / "training" / GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME
+        )
+        expected_runtime_snapshot_path = str(
+            run_root / "training" / "base_model_runtime_snapshot"
+        )
+        if (
+            manifest.get("baseModelID")
+            != prepared_tokenizer_closure["baseModelID"]
+            or manifest.get("baseModelRevision")
+            != prepared_tokenizer_closure["baseModelRevision"]
+            or manifest.get("baseModelTokenizerDigest")
+            != next(
+                item["sha256"]
+                for item in prepared_tokenizer_closure["files"]
+                if item["path"] == "tokenizer.json"
+            )
+            or manifest.get("baseModelTokenizerFiles")
+            != prepared_tokenizer_closure["files"]
+            or manifest.get("baseModelTokenizerClosureSHA256")
+            != prepared_tokenizer_closure[
+                "baseModelTokenizerClosureSHA256"
+            ]
+            or prepared_config.get("baseModelTokenizerSnapshotPath")
+            != expected_tokenizer_snapshot_path
+            or manifest.get("baseModelTokenizerSnapshotPath")
+            != expected_tokenizer_snapshot_path
+            or prepared_config.get(
+                "baseModelTokenizerSnapshotVerification"
+            )
+            != tokenizer_snapshot_verification
+            or manifest.get("baseModelTokenizerSnapshotVerification")
+            != tokenizer_snapshot_verification
+            or prepared_config.get("baseModelRuntimeSnapshotPath")
+            != expected_runtime_snapshot_path
+            or manifest.get("baseModelRuntimeSnapshotPath")
+            != expected_runtime_snapshot_path
+            or prepared_config.get("baseModelRuntimeSnapshotVerification")
+            != runtime_snapshot_verification
+            or manifest.get("baseModelRuntimeSnapshotVerification")
+            != runtime_snapshot_verification
+            or prepared_config.get("baseModelGenerationConfigFile")
+            != manifest.get("baseModelGenerationConfigFile")
+        ):
+            raise RuntimeError(
+                f"Prepared run tokenizer closure drifted for {agent}"
+            )
         from tools.fine_tuning.unsloth.train_sft import (
             _validate_sft_checkpoint_lineage_static,
         )
@@ -2890,9 +3819,42 @@ def _verified_run_manifest(run_root: Path) -> dict[str, Any]:
             or not isinstance(variant_attestation, Mapping)
             or variant_attestation.get("executionPlanSHA256")
             != prepared_execution_plan["executionPlanSHA256"]
+            or variant_attestation.get("baseModelTokenizerFiles")
+            != prepared_tokenizer_closure["files"]
+            or variant_attestation.get(
+                "baseModelTokenizerClosureSHA256"
+            )
+            != prepared_tokenizer_closure[
+                "baseModelTokenizerClosureSHA256"
+            ]
         ):
             raise RuntimeError(
                 f"Prepared run execution plan drifted from the config for {agent}"
+            )
+        expected_variant_root = (
+            run_root
+            / "generated"
+            / "fine_tuning"
+            / agent
+            / "experiments"
+            / str(manifest.get("variant") or "")
+        )
+        if prepared_agent.get("datasetDir") != str(expected_variant_root):
+            raise RuntimeError(
+                f"Prepared variant path drifted for {agent}"
+            )
+        variant_manifest_path = expected_variant_root / "variant_manifest.json"
+        variant_manifest = _verify_manifest_integrity(variant_manifest_path)
+        if (
+            variant_manifest.get("baseModelTokenizerFiles")
+            != prepared_tokenizer_closure["files"]
+            or variant_manifest.get("baseModelTokenizerClosureSHA256")
+            != prepared_tokenizer_closure[
+                "baseModelTokenizerClosureSHA256"
+            ]
+        ):
+            raise RuntimeError(
+                f"Prepared variant tokenizer closure drifted for {agent}"
             )
     return manifest
 
@@ -3085,6 +4047,20 @@ def validate_prepared_runtime(
     seed = manifest.get("seed")
     if type(seed) is not int:
         raise RuntimeError("Prepared run manifest has an invalid seed")
+    # _verified_run_manifest() has already live-reverified each shared private
+    # snapshot once for this command and proved that every prepared config is
+    # bound to the same exact evidence.  Reuse that command-local evidence here
+    # instead of hashing the multi-gigabyte runtime snapshot once per agent.
+    tokenizer_snapshot_verification = manifest.get(
+        "baseModelTokenizerSnapshotVerification"
+    )
+    runtime_snapshot_verification = manifest.get(
+        "baseModelRuntimeSnapshotVerification"
+    )
+    if not isinstance(tokenizer_snapshot_verification, Mapping) or not isinstance(
+        runtime_snapshot_verification, Mapping
+    ):
+        raise RuntimeError("Prepared run lacks verified private snapshot evidence")
     for agent in agents:
         paths = _expected_agent_paths(run_root, agent)
         config_path = paths["config"]
@@ -3097,6 +4073,15 @@ def validate_prepared_runtime(
         ):
             raise RuntimeError(f"Prepared config integrity check failed for {agent}")
         prepared_config = read_object(config_path)
+        prepared_tokenizer_closure = _validated_base_model_tokenizer_closure(
+            prepared_config
+        )
+        expected_tokenizer_snapshot_path = str(
+            run_root / "training" / GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME
+        )
+        expected_runtime_snapshot_path = str(
+            run_root / "training" / "base_model_runtime_snapshot"
+        )
         preference_config = _validate_preference_training_config(
             prepared_config
         )
@@ -3145,6 +4130,38 @@ def validate_prepared_runtime(
             prepared_config.get("dataset_dir") != str(variant_root)
             or prepared_config.get("variantManifestSHA256")
             != pending_manifest.get("variantManifestSHA256")
+            or pending_manifest.get("baseModelTokenizerFiles")
+            != prepared_tokenizer_closure["files"]
+            or pending_manifest.get("baseModelTokenizerClosureSHA256")
+            != prepared_tokenizer_closure[
+                "baseModelTokenizerClosureSHA256"
+            ]
+            or manifest.get("baseModelTokenizerFiles")
+            != prepared_tokenizer_closure["files"]
+            or manifest.get("baseModelTokenizerClosureSHA256")
+            != prepared_tokenizer_closure[
+                "baseModelTokenizerClosureSHA256"
+            ]
+            or prepared_config.get("baseModelTokenizerSnapshotPath")
+            != expected_tokenizer_snapshot_path
+            or manifest.get("baseModelTokenizerSnapshotPath")
+            != expected_tokenizer_snapshot_path
+            or prepared_config.get(
+                "baseModelTokenizerSnapshotVerification"
+            )
+            != tokenizer_snapshot_verification
+            or manifest.get("baseModelTokenizerSnapshotVerification")
+            != tokenizer_snapshot_verification
+            or prepared_config.get("baseModelRuntimeSnapshotPath")
+            != expected_runtime_snapshot_path
+            or manifest.get("baseModelRuntimeSnapshotPath")
+            != expected_runtime_snapshot_path
+            or prepared_config.get("baseModelRuntimeSnapshotVerification")
+            != runtime_snapshot_verification
+            or manifest.get("baseModelRuntimeSnapshotVerification")
+            != runtime_snapshot_verification
+            or prepared_config.get("baseModelGenerationConfigFile")
+            != manifest.get("baseModelGenerationConfigFile")
             or prepared_config.get("trainingContainerImageDigest")
             != container_digest
             or prepared_config.get("runExecutionPlan")
@@ -3166,6 +4183,10 @@ def validate_prepared_runtime(
             raise RuntimeError(
                 f"Prepared config or dataset snapshot drifted for {agent}{detail}"
             )
+    _validated_global_tokenizer_resume_state(
+        run_root=run_root,
+        agents=agents,
+    )
     if not observe_runtime:
         training_environment = manifest.get("trainingEnvironment")
         if not isinstance(training_environment, Mapping):
@@ -3319,10 +4340,83 @@ def _verify_gguf_inventory(
     return {name: path for name, path in expected.items() if name in observed}
 
 
+def _validated_base_model_conversion_snapshot_verification(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.training_lineage import (
+        PRIVATE_BASE_MODEL_CONVERSION_SNAPSHOT_VERIFICATION_SCHEMA_VERSION,
+        PRIVATE_BASE_MODEL_TOKENIZER_SNAPSHOT_VERIFICATION_SCHEMA_VERSION,
+    )
+
+    if not isinstance(value, Mapping):
+        raise RuntimeError("GGUF conversion lacks private base-snapshot proof")
+    record = dict(value)
+    declared = record.get("snapshotVerificationSHA256")
+    unsigned = dict(record)
+    unsigned.pop("snapshotVerificationSHA256", None)
+    tokenizer_record = record.get("tokenizerSnapshotVerification")
+    tokenizer_unsigned = (
+        dict(tokenizer_record)
+        if isinstance(tokenizer_record, Mapping)
+        else {}
+    )
+    tokenizer_declared = tokenizer_unsigned.pop(
+        "snapshotVerificationSHA256",
+        None,
+    )
+    if (
+        record.get("schemaVersion")
+        != PRIVATE_BASE_MODEL_CONVERSION_SNAPSHOT_VERIFICATION_SCHEMA_VERSION
+        or canonical_sha256(unsigned) != declared
+        or not isinstance(tokenizer_record, Mapping)
+        or tokenizer_record.get("schemaVersion")
+        != PRIVATE_BASE_MODEL_TOKENIZER_SNAPSHOT_VERIFICATION_SCHEMA_VERSION
+        or canonical_sha256(tokenizer_unsigned) != tokenizer_declared
+        or record.get("baseModelID") != config.get("baseModelID")
+        or record.get("baseModelRevision") != config.get("baseModelRevision")
+        or record.get("baseModelIndexDigest")
+        != config.get("baseModelIndexDigest")
+        or record.get("baseModelIndexReferencedShardNames")
+        != config.get("baseModelIndexReferencedShardNames")
+        or record.get("baseModelIndexShardBindingSHA256")
+        != config.get("baseModelIndexShardBindingSHA256")
+        or record.get("baseModelArtifactDigest")
+        != config.get("baseModelArtifactDigest")
+        or record.get("baseModelWeightShards")
+        != sorted(
+            config.get("baseModelWeightShards") or [],
+            key=lambda item: item.get("filename", ""),
+        )
+        or record.get("baseModelGenerationConfigFile")
+        != config.get("baseModelGenerationConfigFile")
+        or record.get("baseModelTokenizerDigest")
+        != config.get("baseModelTokenizerDigest")
+        or record.get("baseModelTokenizerFiles")
+        != _validated_base_model_tokenizer_closure(config)["files"]
+        or record.get("baseModelTokenizerClosureSHA256")
+        != config.get("baseModelTokenizerClosureSHA256")
+        or tokenizer_record.get("baseModelTokenizerFiles")
+        != record.get("baseModelTokenizerFiles")
+        or tokenizer_record.get("baseModelTokenizerClosureSHA256")
+        != record.get("baseModelTokenizerClosureSHA256")
+        or not isinstance(record.get("snapshotPath"), str)
+        or not Path(record["snapshotPath"]).is_absolute()
+        or record.get("snapshotPath")
+        != config.get("baseModelRuntimeSnapshotPath")
+        or record != config.get("baseModelRuntimeSnapshotVerification")
+    ):
+        raise RuntimeError("GGUF private base-snapshot proof drifted")
+    return record
+
+
 def _gguf_conversion_receipt_payload(
     run_root: Path,
     agent: str,
     artifact_path: Path,
+    *,
+    conversion_snapshot_verification: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     prepared_run, prepared_agents = _prepared_gguf_agents(run_root)
     if agent not in prepared_agents:
@@ -3341,6 +4435,21 @@ def _gguf_conversion_receipt_payload(
     if prepared_entry.get("configSHA256") != config_sha256:
         raise RuntimeError(f"Prepared GGUF config digest drifted for {agent}")
     config = read_object(config_path)
+    if conversion_snapshot_verification is None:
+        proof_path = (
+            artifact_path.parent / GGUF_BASE_SNAPSHOT_VERIFICATION_FILENAME
+        )
+        if proof_path.is_symlink() or not proof_path.is_file():
+            raise RuntimeError(
+                "GGUF conversion snapshot verification proof is missing"
+            )
+        conversion_snapshot_verification = read_object(proof_path)
+    conversion_verification = (
+        _validated_base_model_conversion_snapshot_verification(
+            conversion_snapshot_verification,
+            config=config,
+        )
+    )
 
     preference = verify_preference(run_root, agent)
     preference_adapter = run_root / "models" / "lora_qwen3_dpo" / agent
@@ -3362,6 +4471,7 @@ def _gguf_conversion_receipt_payload(
 
     base_model_id = config.get("base_model_name")
     base_revision = config.get("baseModelRevision")
+    base_tokenizer_closure = _validated_base_model_tokenizer_closure(config)
     container_digest = config.get("trainingContainerImageDigest")
     base_digest_fields = {
         field: config.get(field)
@@ -3415,11 +4525,26 @@ def _gguf_conversion_receipt_payload(
             "finalizedVariantManifestSHA256"
         ],
         "preferenceFinalizedVariantManifestFileSHA256": file_sha256(finalized_path),
+        "runtimeModelBindingSHA256": preference["runtimeModelBindingSHA256"],
+        "runtimeTokenizerBindingSHA256": preference[
+            "runtimeTokenizerBindingSHA256"
+        ],
         "config": str(config_path),
         "configSHA256": config_sha256,
         "baseModelID": base_model_id,
         "baseModelRevision": base_revision,
         **base_digest_fields,
+        "baseModelTokenizerFiles": base_tokenizer_closure["files"],
+        "baseModelTokenizerClosureSHA256": base_tokenizer_closure[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelTokenizerSnapshotPath": config[
+            "baseModelTokenizerSnapshotPath"
+        ],
+        "baseModelTokenizerSnapshotVerification": config[
+            "baseModelTokenizerSnapshotVerification"
+        ],
+        "baseModelConversionSnapshotVerification": conversion_verification,
         "trainingContainerImageDigest": container_digest,
         "ubuntuOrchestrationCodeSHA256": prepared_run[
             "ubuntuOrchestrationCodeSHA256"
@@ -3462,7 +4587,14 @@ def _verified_gguf_conversion_receipt(
         or canonical_sha256(unsigned) != declared
     ):
         raise RuntimeError(f"GGUF conversion receipt failed integrity checks: {receipt_path}")
-    expected = _gguf_conversion_receipt_payload(run_root, agent, artifact_path)
+    expected = _gguf_conversion_receipt_payload(
+        run_root,
+        agent,
+        artifact_path,
+        conversion_snapshot_verification=receipt.get(
+            "baseModelConversionSnapshotVerification"
+        ),
+    )
     if receipt != expected:
         raise RuntimeError(
             f"GGUF conversion receipt drifted from current lineage: {receipt_path}"
@@ -3487,6 +4619,12 @@ def _gguf_verification_evidence(
         "adapterGGUFConversionQualification": receipt["qualification"],
         "adapterGGUFTensorEquivalenceStatus": receipt[
             "tensorEquivalenceStatus"
+        ],
+        "adapterGGUFRuntimeModelBindingSHA256": receipt[
+            "runtimeModelBindingSHA256"
+        ],
+        "adapterGGUFRuntimeTokenizerBindingSHA256": receipt[
+            "runtimeTokenizerBindingSHA256"
         ],
     }
 
@@ -3543,10 +4681,11 @@ def write_gguf_conversion_receipt(
         raise RuntimeError(
             f"Staged GGUF is not at the owned per-agent path: {staging_path}"
         )
+    proof_path = staging_dir / GGUF_BASE_SNAPSHOT_VERIFICATION_FILENAME
     _verify_private_gguf_staging(
         run_root,
         agent,
-        expected_names={expected_name},
+        expected_names={expected_name, proof_path.name},
     )
     final_artifact, final_receipt = _gguf_owned_paths(run_root, agent)
     staged_receipt = staging_dir / "conversion_receipt.json"
@@ -3557,6 +4696,8 @@ def write_gguf_conversion_receipt(
         raise RuntimeError(f"Refusing to replace existing GGUF lineage for {agent}")
     _verify_gguf_inventory(run_root, prepared_agents, require_all=False)
     receipt = _gguf_conversion_receipt_payload(run_root, agent, staging_path)
+    proof_path.unlink()
+    _fsync_directory(staging_dir, label="the GGUF conversion staging directory")
     write_object(staged_receipt, receipt)
     _verify_private_gguf_staging(
         run_root,
@@ -4114,6 +5255,10 @@ def _verify_finalized_variant_binding(
         "baseModelArtifactDigest": attestation.get("baseModelArtifactDigest"),
         "baseModelWeightShards": attestation.get("baseModelWeightShards"),
         "baseModelTokenizerDigest": attestation.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerFiles": attestation.get("baseModelTokenizerFiles"),
+        "baseModelTokenizerClosureSHA256": attestation.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
         "trainingEnvironmentLockSHA256": attestation.get(
             "trainingEnvironmentLockSHA256"
         ),
@@ -4228,18 +5373,882 @@ def _valid_token_length_statistics(value: Any, *, require_positive: bool) -> boo
 
 
 GLOBAL_TOKENIZER_PREFLIGHT_SCHEMA = (
-    "lumen.global-tokenizer-preflight/1.0.0"
+    "lumen.global-tokenizer-preflight/2.2.0"
 )
 GLOBAL_TOKENIZER_PREFLIGHT_FILENAME = "global_tokenizer_preflight.json"
+GLOBAL_TOKENIZER_SNAPSHOT_SCHEMA = "lumen.global-tokenizer-snapshot/1.1.0"
+GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME = "global_tokenizer_snapshot"
+GLOBAL_TOKENIZER_SNAPSHOT_FILES = (
+    "config.json",
+    "merges.txt",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.json",
+)
+
+
+def _validated_base_model_tokenizer_closure(
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    from lumen_manifest_crawler.dataset.adapter_evaluation import (
+        DEFAULT_BASE_MODEL_ID,
+        DEFAULT_BASE_MODEL_REVISION,
+        DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256,
+        DEFAULT_BASE_MODEL_TOKENIZER_FILES,
+        canonical_base_model_tokenizer_closure,
+    )
+
+    if (
+        not isinstance(config.get("baseModelID"), str)
+        or not config.get("baseModelID")
+        or config.get("baseModelID") != config.get("base_model_name")
+    ):
+        raise RuntimeError(
+            "baseModelID must exactly match base_model_name"
+        )
+    files = config.get("baseModelTokenizerFiles")
+    if not isinstance(files, Sequence) or isinstance(files, (str, bytes)):
+        raise RuntimeError("Base-model tokenizer file closure is missing")
+    try:
+        closure = canonical_base_model_tokenizer_closure(
+            base_model_id=config.get("baseModelID"),
+            base_model_revision=config.get("baseModelRevision"),
+            files=files,
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Base-model tokenizer file closure is invalid"
+        ) from exc
+    declared = config.get("baseModelTokenizerClosureSHA256")
+    tokenizer_json = next(
+        item for item in closure["files"]
+        if item["path"] == "tokenizer.json"
+    )
+    if (
+        canonical_sha256(closure) != declared
+        or tokenizer_json["sha256"]
+        != config.get("baseModelTokenizerDigest")
+    ):
+        raise RuntimeError("Base-model tokenizer closure digest drifted")
+    if (
+        closure["baseModelID"] == DEFAULT_BASE_MODEL_ID
+        and closure["baseModelRevision"] == DEFAULT_BASE_MODEL_REVISION
+        and (
+            closure["files"] != DEFAULT_BASE_MODEL_TOKENIZER_FILES
+            or declared != DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+        )
+    ):
+        raise RuntimeError(
+            "Pinned Qwen tokenizer closure drifted from the trusted registry"
+        )
+    return {
+        **closure,
+        "baseModelTokenizerClosureSHA256": declared,
+    }
+
+
+def _verified_private_tokenizer_snapshot_binding(
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.training_lineage import (
+        verify_private_base_model_tokenizer_snapshot,
+    )
+
+    raw_path = config.get("baseModelTokenizerSnapshotPath")
+    if not isinstance(raw_path, str) or not Path(raw_path).is_absolute():
+        raise RuntimeError("Private tokenizer snapshot path is invalid")
+    observed = verify_private_base_model_tokenizer_snapshot(
+        Path(raw_path),
+        base_model_id=str(config.get("baseModelID") or ""),
+        base_model_name=str(config.get("base_model_name") or ""),
+        base_model_revision=str(config.get("baseModelRevision") or ""),
+        tokenizer_files=config.get("baseModelTokenizerFiles"),
+        tokenizer_digest=str(config.get("baseModelTokenizerDigest") or ""),
+        tokenizer_closure_sha256=str(
+            config.get("baseModelTokenizerClosureSHA256") or ""
+        ),
+    )
+    if observed != config.get("baseModelTokenizerSnapshotVerification"):
+        raise RuntimeError("Private tokenizer snapshot verification drifted")
+    return observed
+
+
+def _assert_config_matches_private_snapshot_proof(
+    config: Mapping[str, Any],
+    proof: Mapping[str, Any],
+    *,
+    field_bindings: Sequence[tuple[str, str]],
+    label: str,
+) -> None:
+    drifted = [
+        config_field
+        for config_field, proof_field in field_bindings
+        if config.get(config_field) != proof.get(proof_field)
+    ]
+    if drifted:
+        raise RuntimeError(
+            f"Prepared config {label} contract drifted from the shared "
+            f"observed proof: {', '.join(drifted)}"
+        )
+
+
+def _verified_private_base_model_runtime_snapshot_binding(
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.training_lineage import (
+        verify_private_base_model_conversion_snapshot,
+    )
+
+    raw_path = config.get("baseModelRuntimeSnapshotPath")
+    if not isinstance(raw_path, str) or not Path(raw_path).is_absolute():
+        raise RuntimeError("Private base-model runtime snapshot path is invalid")
+    observed = verify_private_base_model_conversion_snapshot(
+        Path(raw_path),
+        base_model_id=str(config.get("baseModelID") or ""),
+        base_model_name=str(config.get("base_model_name") or ""),
+        base_model_revision=str(config.get("baseModelRevision") or ""),
+        tokenizer_files=config.get("baseModelTokenizerFiles"),
+        tokenizer_digest=str(config.get("baseModelTokenizerDigest") or ""),
+        tokenizer_closure_sha256=str(
+            config.get("baseModelTokenizerClosureSHA256") or ""
+        ),
+        generation_config_file=config.get("baseModelGenerationConfigFile"),
+        model_index_digest=str(config.get("baseModelIndexDigest") or ""),
+        index_referenced_shard_names=config.get(
+            "baseModelIndexReferencedShardNames"
+        ),
+        index_shard_binding_sha256=str(
+            config.get("baseModelIndexShardBindingSHA256") or ""
+        ),
+        model_artifact_digest=str(config.get("baseModelArtifactDigest") or ""),
+        weight_shards=config.get("baseModelWeightShards"),
+    )
+    if observed != config.get("baseModelRuntimeSnapshotVerification"):
+        raise RuntimeError("Private base-model runtime snapshot verification drifted")
+    return observed
+
+
+def _verified_runtime_model_binding(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+    snapshot_verification: Mapping[str, Any],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.train_sft import RUNTIME_MODEL_BINDING_SCHEMA
+
+    expected_keys = {
+        "schemaVersion",
+        "baseModelID",
+        "baseModelRevision",
+        "baseModelIndexDigest",
+        "baseModelIndexShardBindingSHA256",
+        "baseModelArtifactDigest",
+        "baseModelTokenizerClosureSHA256",
+        "baseModelGenerationConfigFile",
+        "runtimeSnapshotVerificationSHA256",
+        "runtimeSnapshotPath",
+        "modelConfigSHA256",
+        "modelConfigVerificationStatus",
+        "sourceGenerationConfigSHA256",
+        "generationConfigSHA256",
+        "generationConfigSource",
+        "allowedGenerationConfigTransformations",
+        "runtimeLoadMaterialization",
+        "localFilesOnly",
+        "runtimeModelBindingSHA256",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected_keys:
+        raise RuntimeError("Runtime model binding has an invalid schema")
+    binding = dict(value)
+    declared = binding.pop("runtimeModelBindingSHA256")
+    runtime_snapshot_path = Path(
+        str(config.get("baseModelRuntimeSnapshotPath") or "")
+    )
+    runtime_model_config = read_object(runtime_snapshot_path / "config.json")
+    configured_max_length = config.get("max_seq_length")
+    max_position_embeddings = runtime_model_config.get("max_position_embeddings")
+    if (
+        type(configured_max_length) is not int
+        or configured_max_length <= 0
+        or type(max_position_embeddings) is not int
+        or max_position_embeddings <= 0
+    ):
+        raise RuntimeError("Runtime generation binding inputs are invalid")
+    expected_runtime_max_length = max(
+        configured_max_length,
+        max_position_embeddings,
+    )
+    from transformers import GenerationConfig  # type: ignore
+
+    source_generation = GenerationConfig.from_pretrained(
+        str(runtime_snapshot_path),
+        local_files_only=True,
+    ).to_dict()
+    original_generation_max_length = source_generation.get("max_length")
+    if (
+        not isinstance(source_generation, Mapping)
+        or type(original_generation_max_length) is not int
+        or original_generation_max_length <= 0
+    ):
+        raise RuntimeError("Private generation configuration is not canonical")
+    expected_source_generation_sha256 = canonical_sha256(
+        dict(source_generation)
+    )
+    expected_runtime_generation = dict(source_generation)
+    expected_runtime_generation["max_length"] = expected_runtime_max_length
+    expected_runtime_generation_sha256 = canonical_sha256(
+        expected_runtime_generation
+    )
+    from tools.fine_tuning.unsloth.runtime_binding_smoke_gate import (
+        verify_runtime_load_materialization_evidence,
+    )
+
+    verified_materialization = verify_runtime_load_materialization_evidence(
+        binding.get("runtimeLoadMaterialization", {}),
+        config,
+        runtime_model_config,
+    )
+    after_generation_read = (
+        _verified_private_base_model_runtime_snapshot_binding(config)
+    )
+    if after_generation_read != dict(snapshot_verification):
+        raise RuntimeError(
+            "Private base-model runtime snapshot changed while reconstructing "
+            "generation configuration"
+        )
+    expected_static = {
+        "schemaVersion": RUNTIME_MODEL_BINDING_SCHEMA,
+        "baseModelID": config.get("baseModelID"),
+        "baseModelRevision": config.get("baseModelRevision"),
+        "baseModelIndexDigest": config.get("baseModelIndexDigest"),
+        "baseModelIndexShardBindingSHA256": config.get(
+            "baseModelIndexShardBindingSHA256"
+        ),
+        "baseModelArtifactDigest": config.get("baseModelArtifactDigest"),
+        "baseModelTokenizerClosureSHA256": config.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "baseModelGenerationConfigFile": config.get(
+            "baseModelGenerationConfigFile"
+        ),
+        "runtimeSnapshotVerificationSHA256": snapshot_verification.get(
+            "snapshotVerificationSHA256"
+        ),
+        "runtimeSnapshotPath": config.get("baseModelRuntimeSnapshotPath"),
+        "modelConfigVerificationStatus": (
+            "attested_runtime_observation_not_independently_reconstructed"
+        ),
+        "sourceGenerationConfigSHA256": expected_source_generation_sha256,
+        "generationConfigSHA256": expected_runtime_generation_sha256,
+        "generationConfigSource": "verified_private_generation_config_file",
+        "allowedGenerationConfigTransformations": {
+            "maxLength": {
+                "source": "verified_runtime_model.config.max_position_embeddings",
+                "sourceValue": expected_runtime_max_length,
+                "originalValue": original_generation_max_length,
+                "runtimeValue": expected_runtime_max_length,
+            }
+        },
+        "runtimeLoadMaterialization": verified_materialization,
+        "localFilesOnly": True,
+    }
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(declared or "")) is None
+        or canonical_sha256(binding) != declared
+        or any(binding.get(field) != expected for field, expected in expected_static.items())
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(binding.get("modelConfigSHA256") or "")
+        )
+        is None
+    ):
+        raise RuntimeError("Runtime model binding drifted from the private base view")
+    return dict(value)
+
+
+def _verified_runtime_tokenizer_binding(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+    snapshot_verification: Mapping[str, Any],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.train_sft import RUNTIME_TOKENIZER_BINDING_SCHEMA
+
+    expected_keys = {
+        "schemaVersion",
+        "baseModelID",
+        "baseModelRevision",
+        "baseModelTokenizerClosureSHA256",
+        "runtimeSnapshotVerificationSHA256",
+        "runtimeSnapshotPath",
+        "backendContractSHA256",
+        "allowedRuntimeTransformations",
+        "runtimeTokenizerBindingSHA256",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected_keys:
+        raise RuntimeError("Runtime tokenizer binding has an invalid schema")
+    binding = dict(value)
+    declared = binding.pop("runtimeTokenizerBindingSHA256")
+    transformations = binding.get("allowedRuntimeTransformations")
+    runtime_model_config_path = (
+        Path(str(config.get("baseModelRuntimeSnapshotPath") or ""))
+        / "config.json"
+    )
+    runtime_model_config = read_object(runtime_model_config_path)
+    max_position_embeddings = runtime_model_config.get("max_position_embeddings")
+    configured_max_length = config.get("max_seq_length")
+    if (
+        type(configured_max_length) is not int
+        or configured_max_length <= 0
+        or type(max_position_embeddings) is not int
+        or max_position_embeddings <= 0
+    ):
+        raise RuntimeError("Runtime tokenizer maximum-length inputs are invalid")
+    expected_runtime_max_length = max(
+        configured_max_length,
+        max_position_embeddings,
+    )
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(declared or "")) is None
+        or canonical_sha256(binding) != declared
+        or binding.get("schemaVersion") != RUNTIME_TOKENIZER_BINDING_SCHEMA
+        or binding.get("baseModelID") != config.get("baseModelID")
+        or binding.get("baseModelRevision") != config.get("baseModelRevision")
+        or binding.get("baseModelTokenizerClosureSHA256")
+        != config.get("baseModelTokenizerClosureSHA256")
+        or binding.get("runtimeSnapshotVerificationSHA256")
+        != snapshot_verification.get("snapshotVerificationSHA256")
+        or binding.get("runtimeSnapshotPath")
+        != config.get("baseModelRuntimeSnapshotPath")
+        or re.fullmatch(
+            r"[0-9a-f]{64}", str(binding.get("backendContractSHA256") or "")
+        )
+        is None
+        or not isinstance(transformations, Mapping)
+        or set(transformations)
+        != {"modelMaxLength", "paddingSide", "truncationSide"}
+        or transformations.get("modelMaxLength") != expected_runtime_max_length
+        or transformations.get("paddingSide") != "left"
+        or transformations.get("truncationSide") != "right"
+    ):
+        raise RuntimeError(
+            "Runtime tokenizer binding drifted from the private tokenizer closure"
+        )
+    return dict(value)
+
+
+def _verified_peft_base_model_evidence(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected_keys = {
+        "schemaVersion",
+        "baseModelID",
+        "baseModelRevision",
+        "adapterNames",
+        "privateRuntimePathPersisted",
+        "peftBaseModelIdentitySHA256",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected_keys:
+        raise RuntimeError("PEFT base-model identity evidence has an invalid schema")
+    evidence = dict(value)
+    declared = evidence.pop("peftBaseModelIdentitySHA256")
+    names = evidence.get("adapterNames")
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(declared or "")) is None
+        or canonical_sha256(evidence) != declared
+        or evidence.get("schemaVersion")
+        != "lumen.peft-base-model-identity/1.0.0"
+        or evidence.get("baseModelID") != config.get("baseModelID")
+        or evidence.get("baseModelRevision") != config.get("baseModelRevision")
+        or names != ["default"]
+        or evidence.get("privateRuntimePathPersisted") is not False
+    ):
+        raise RuntimeError("PEFT base-model identity evidence drifted")
+    return dict(value)
+
+
+def _verified_adapter_tokenizer_evidence(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+    adapter_dir: Path,
+    snapshot_verification: Mapping[str, Any],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.train_sft import (
+        ADAPTER_BASE_TOKENIZER_FILES,
+        ADAPTER_DERIVED_TOKENIZER_FILES,
+    )
+
+    expected_keys = {
+        "schemaVersion",
+        "baseModelTokenizerClosureSHA256",
+        "runtimeSnapshotVerificationSHA256",
+        "files",
+        "transformation",
+        "adapterTokenizerBindingSHA256",
+    }
+    if not isinstance(value, Mapping) or set(value) != expected_keys:
+        raise RuntimeError("Adapter tokenizer binding has an invalid schema")
+    evidence = dict(value)
+    declared = evidence.pop("adapterTokenizerBindingSHA256")
+    closure_by_path = {
+        item.get("path"): item
+        for item in config.get("baseModelTokenizerFiles", [])
+        if isinstance(item, Mapping)
+    }
+    expected_files: list[dict[str, Any]] = []
+    for filename in ADAPTER_BASE_TOKENIZER_FILES:
+        source = closure_by_path.get(filename)
+        path = adapter_dir / filename
+        if (
+            not isinstance(source, Mapping)
+            or path.is_symlink()
+            or not path.is_file()
+            or path.stat(follow_symlinks=False).st_size != source.get("sizeBytes")
+            or file_sha256(path) != source.get("sha256")
+        ):
+            raise RuntimeError("Adapter tokenizer files drifted from the base closure")
+        expected_files.append(
+            {
+                "path": filename,
+                "sizeBytes": source["sizeBytes"],
+                "sha256": source["sha256"],
+            }
+        )
+    if any(
+        (adapter_dir / filename).exists() or (adapter_dir / filename).is_symlink()
+        for filename in ADAPTER_DERIVED_TOKENIZER_FILES
+    ):
+        raise RuntimeError("Adapter contains unapproved derived tokenizer files")
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(declared or "")) is None
+        or canonical_sha256(evidence) != declared
+        or evidence.get("schemaVersion")
+        != "lumen.adapter-base-tokenizer-binding/1.0.0"
+        or evidence.get("baseModelTokenizerClosureSHA256")
+        != config.get("baseModelTokenizerClosureSHA256")
+        or evidence.get("runtimeSnapshotVerificationSHA256")
+        != snapshot_verification.get("snapshotVerificationSHA256")
+        or evidence.get("files") != expected_files
+        or evidence.get("transformation")
+        != "exact_byte_subset_no_derived_tokenizer"
+    ):
+        raise RuntimeError("Adapter tokenizer binding drifted")
+    return dict(value)
+
+
+def _verify_phase_runtime_evidence(
+    *,
+    config: Mapping[str, Any],
+    report: Mapping[str, Any],
+    adapter_dir: Path,
+) -> dict[str, str]:
+    tokenizer_verification = _verified_private_tokenizer_snapshot_binding(config)
+    runtime_verification = _verified_private_base_model_runtime_snapshot_binding(config)
+    expected_report_values = {
+        "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerFiles": config.get("baseModelTokenizerFiles"),
+        "baseModelTokenizerClosureSHA256": config.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "baseModelGenerationConfigFile": config.get(
+            "baseModelGenerationConfigFile"
+        ),
+        "baseModelTokenizerSnapshotPath": config.get(
+            "baseModelTokenizerSnapshotPath"
+        ),
+        "baseModelTokenizerSnapshotVerification": tokenizer_verification,
+        "baseModelRuntimeSnapshotPath": config.get("baseModelRuntimeSnapshotPath"),
+        "baseModelRuntimeSnapshotVerification": runtime_verification,
+    }
+    drifted = [
+        field
+        for field, expected in expected_report_values.items()
+        if report.get(field) != expected
+    ]
+    if drifted:
+        raise RuntimeError(
+            "Training report private-runtime evidence drifted: "
+            + ", ".join(drifted)
+        )
+    runtime_model_binding = _verified_runtime_model_binding(
+        report.get("runtimeModelBinding"),
+        config=config,
+        snapshot_verification=runtime_verification,
+    )
+    runtime_tokenizer_binding = _verified_runtime_tokenizer_binding(
+        report.get("runtimeTokenizerBinding"),
+        config=config,
+        snapshot_verification=runtime_verification,
+    )
+    peft_base_model_identity = _verified_peft_base_model_evidence(
+        report.get("peftBaseModelIdentity"),
+        config=config,
+    )
+    adapter_tokenizer_binding = _verified_adapter_tokenizer_evidence(
+        report.get("adapterTokenizerBinding"),
+        config=config,
+        adapter_dir=adapter_dir,
+        snapshot_verification=runtime_verification,
+    )
+    evidence = {
+        "runtimeModelBindingSHA256": runtime_model_binding.get(
+            "runtimeModelBindingSHA256"
+        ),
+        "runtimeTokenizerBindingSHA256": runtime_tokenizer_binding.get(
+            "runtimeTokenizerBindingSHA256"
+        ),
+        "peftBaseModelIdentitySHA256": peft_base_model_identity.get(
+            "peftBaseModelIdentitySHA256"
+        ),
+        "adapterTokenizerBindingSHA256": adapter_tokenizer_binding.get(
+            "adapterTokenizerBindingSHA256"
+        ),
+        "baseModelTokenizerSnapshotVerificationSHA256": (
+            tokenizer_verification.get("snapshotVerificationSHA256")
+        ),
+        "baseModelRuntimeSnapshotVerificationSHA256": (
+            runtime_verification.get("snapshotVerificationSHA256")
+        ),
+    }
+    if any(
+        re.fullmatch(r"[0-9a-f]{64}", str(value or "")) is None
+        for value in evidence.values()
+    ):
+        raise RuntimeError("Training report runtime evidence lacks exact digests")
+    return {field: str(value) for field, value in evidence.items()}
+
+
+def _global_tokenizer_snapshot_stability_signatures(
+    snapshot_dir: Path,
+) -> dict[str, tuple[int, ...]]:
+    signatures = {
+        ".": _file_stability_signature(
+            os.stat(snapshot_dir, follow_symlinks=False)
+        )
+    }
+    for filename in GLOBAL_TOKENIZER_SNAPSHOT_FILES:
+        signatures[filename] = _file_stability_signature(
+            os.stat(snapshot_dir / filename, follow_symlinks=False)
+        )
+    return signatures
+
+
+def _global_tokenizer_snapshot_contract(
+    *,
+    snapshot_dir: Path,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Hash the exact local-only tokenizer closure through stable descriptors."""
+
+    base_closure = _validated_base_model_tokenizer_closure(config)
+    expected_files = base_closure["files"]
+    expected_by_path = {item["path"]: item for item in expected_files}
+
+    try:
+        directory_stat = os.stat(snapshot_dir, follow_symlinks=False)
+    except OSError as exc:
+        raise RuntimeError("Global tokenizer snapshot is unavailable") from exc
+    if (
+        snapshot_dir.is_symlink()
+        or not stat.S_ISDIR(directory_stat.st_mode)
+        or directory_stat.st_uid != os.getuid()
+        or stat.S_IMODE(directory_stat.st_mode) != 0o700
+    ):
+        raise RuntimeError(
+            "Global tokenizer snapshot must be process-owned mode 0700"
+        )
+    observed_names = sorted(item.name for item in os.scandir(snapshot_dir))
+    if observed_names != sorted(GLOBAL_TOKENIZER_SNAPSHOT_FILES):
+        raise RuntimeError("Global tokenizer snapshot file closure drifted")
+
+    files: list[dict[str, Any]] = []
+    for filename in GLOBAL_TOKENIZER_SNAPSHOT_FILES:
+        path = snapshot_dir / filename
+        handle, file_stat = _open_regular_readonly(
+            path,
+            label=f"Global tokenizer snapshot {filename}",
+        )
+        try:
+            if (
+                file_stat.st_uid != os.getuid()
+                or stat.S_IMODE(file_stat.st_mode) != 0o400
+            ):
+                raise RuntimeError(
+                    f"Global tokenizer snapshot {filename} must be process-owned mode 0400"
+                )
+            payload = _read_descriptor_bytes(handle)
+            _require_stable_descriptor(
+                handle,
+                file_stat,
+                label=f"Global tokenizer snapshot {filename}",
+            )
+            _require_path_matches_descriptor(
+                path,
+                file_stat,
+                label=f"Global tokenizer snapshot {filename}",
+            )
+        finally:
+            handle.close()
+        observed = {
+            "path": filename,
+            "sizeBytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        expected = expected_by_path[filename]
+        if observed != {
+            key: expected[key] for key in ("path", "sizeBytes", "sha256")
+        }:
+            raise RuntimeError(
+                f"Pinned tokenizer snapshot binding failed for {filename}"
+            )
+        files.append(dict(expected))
+
+    unsigned = {
+        "schemaVersion": GLOBAL_TOKENIZER_SNAPSHOT_SCHEMA,
+        "baseModelID": config.get("base_model_name"),
+        "baseModelRevision": config.get("baseModelRevision"),
+        "baseModelTokenizerClosureSHA256": base_closure[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "files": files,
+    }
+    return {
+        **unsigned,
+        "tokenizerClosureSHA256": canonical_sha256(unsigned),
+    }
+
+
+def _injected_global_tokenizer_snapshot_contract(
+    config: Mapping[str, Any],
+    tokenizer_file_sha256: str,
+) -> dict[str, Any]:
+    """Build an unmistakable unit-test seam that production verification rejects."""
+
+    unsigned = {
+        "schemaVersion": "lumen.global-tokenizer-snapshot/injected-test-double",
+        "baseModelID": config.get("base_model_name"),
+        "baseModelRevision": config.get("baseModelRevision"),
+        "baseModelTokenizerClosureSHA256": config.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "files": [
+            {
+                "path": "tokenizer.json",
+                "sizeBytes": 0,
+                "sha256": tokenizer_file_sha256,
+            }
+        ],
+    }
+    return {
+        **unsigned,
+        "tokenizerClosureSHA256": canonical_sha256(unsigned),
+    }
+
+
+def _validated_global_tokenizer_closure_record(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+    allow_injected_test_double: bool = False,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != {
+        "schemaVersion",
+        "baseModelID",
+        "baseModelRevision",
+        "baseModelTokenizerClosureSHA256",
+        "files",
+        "tokenizerClosureSHA256",
+    }:
+        raise RuntimeError("Global tokenizer closure has an invalid schema")
+    record = dict(value)
+    schema = record.get("schemaVersion")
+    expected_paths = (
+        list(GLOBAL_TOKENIZER_SNAPSHOT_FILES)
+        if schema == GLOBAL_TOKENIZER_SNAPSHOT_SCHEMA
+        else ["tokenizer.json"]
+        if allow_injected_test_double
+        and schema == "lumen.global-tokenizer-snapshot/injected-test-double"
+        else None
+    )
+    base_closure = _validated_base_model_tokenizer_closure(config)
+    files = record.get("files")
+    expected_file_keys = (
+        {"path", "sizeBytes", "sha256", "huggingFaceBlobID"}
+        if schema == GLOBAL_TOKENIZER_SNAPSHOT_SCHEMA
+        else {"path", "sizeBytes", "sha256"}
+    )
+    if (
+        expected_paths is None
+        or record.get("baseModelID") != config.get("base_model_name")
+        or record.get("baseModelRevision") != config.get("baseModelRevision")
+        or record.get("baseModelTokenizerClosureSHA256")
+        != base_closure["baseModelTokenizerClosureSHA256"]
+        or not isinstance(files, list)
+        or [item.get("path") if isinstance(item, Mapping) else None for item in files]
+        != expected_paths
+        or any(
+            not isinstance(item, Mapping)
+            or set(item) != expected_file_keys
+            or type(item.get("sizeBytes")) is not int
+            or item["sizeBytes"] < 0
+            or re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256") or ""))
+            is None
+            for item in files
+        )
+    ):
+        raise RuntimeError("Global tokenizer closure binding drifted")
+    if (
+        schema == GLOBAL_TOKENIZER_SNAPSHOT_SCHEMA
+        and [dict(item) for item in files] != base_closure["files"]
+    ):
+        raise RuntimeError("Global tokenizer closure files drifted")
+    tokenizer_files = [item for item in files if item["path"] == "tokenizer.json"]
+    unsigned = dict(record)
+    declared = unsigned.pop("tokenizerClosureSHA256")
+    if (
+        len(tokenizer_files) != 1
+        or tokenizer_files[0]["sha256"]
+        != config.get("baseModelTokenizerDigest")
+        or re.fullmatch(r"[0-9a-f]{64}", str(declared or "")) is None
+        or canonical_sha256(unsigned) != declared
+    ):
+        raise RuntimeError("Global tokenizer closure integrity drifted")
+    return record
+
+
+def _create_global_tokenizer_snapshot(
+    *,
+    snapshot_dir: Path,
+    config: Mapping[str, Any],
+) -> None:
+    from huggingface_hub import hf_hub_download  # type: ignore
+
+    model_id = str(config["base_model_name"])
+    revision = str(config["baseModelRevision"])
+    base_closure = _validated_base_model_tokenizer_closure(config)
+    snapshot_dir.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    staging: Path | None = Path(
+        tempfile.mkdtemp(
+            prefix=f".{GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME}.",
+            dir=snapshot_dir.parent,
+        )
+    )
+    try:
+        os.chmod(staging, 0o700, follow_symlinks=False)
+        for expected in base_closure["files"]:
+            filename = str(expected["path"])
+            cached_link = Path(
+                hf_hub_download(
+                    repo_id=model_id,
+                    filename=filename,
+                    revision=revision,
+                )
+            )
+            cached = cached_link.resolve(strict=True)
+            cache_handle, cache_stat = _open_regular_readonly(
+                cached,
+                label=f"Pinned Hugging Face tokenizer cache blob {filename}",
+            )
+            try:
+                cache_payload = _read_descriptor_bytes(cache_handle)
+                cache_payload_sha256 = hashlib.sha256(cache_payload).hexdigest()
+                blob_id = cached.name
+                if (
+                    blob_id != expected["huggingFaceBlobID"]
+                    or len(cache_payload) != expected["sizeBytes"]
+                    or cache_payload_sha256 != expected["sha256"]
+                    or (
+                        len(blob_id) == 64
+                        and cache_payload_sha256 != blob_id
+                    )
+                    or (
+                        len(blob_id) == 40
+                        and _git_blob_sha1(cache_payload) != blob_id
+                    )
+                ):
+                    raise RuntimeError(
+                        f"Pinned tokenizer cache blob identity failed for {filename}"
+                    )
+                _require_stable_descriptor(
+                    cache_handle,
+                    cache_stat,
+                    label=f"Pinned Hugging Face tokenizer cache blob {filename}",
+                )
+                _require_path_matches_descriptor(
+                    cached,
+                    cache_stat,
+                    label=f"Pinned Hugging Face tokenizer cache blob {filename}",
+                )
+            finally:
+                cache_handle.close()
+            destination = staging / filename
+            _copy_private_regular_file(cached, destination)
+            if file_sha256(destination) != cache_payload_sha256:
+                raise RuntimeError(
+                    f"Pinned tokenizer cache blob changed before copying {filename}"
+                )
+            os.chmod(destination, 0o400, follow_symlinks=False)
+        _fsync_directory(staging, label="the global tokenizer snapshot")
+        os.chmod(staging, 0o700, follow_symlinks=False)
+        if snapshot_dir.exists() or snapshot_dir.is_symlink():
+            raise RuntimeError("Global tokenizer snapshot appeared during creation")
+        os.replace(staging, snapshot_dir)
+        staging = None
+        _fsync_directory(
+            snapshot_dir.parent,
+            label="the global tokenizer snapshot parent",
+        )
+    finally:
+        if staging is not None and staging.exists():
+            os.chmod(staging, 0o700, follow_symlinks=False)
+            shutil.rmtree(staging)
+
+
+def _load_verified_global_tokenizer_snapshot(
+    *,
+    snapshot_dir: Path,
+    config: Mapping[str, Any],
+    expected_contract: Mapping[str, Any] | None = None,
+) -> tuple[Any, dict[str, Any]]:
+    from transformers import AutoTokenizer  # type: ignore
+
+    before_signatures = _global_tokenizer_snapshot_stability_signatures(
+        snapshot_dir
+    )
+    before = _global_tokenizer_snapshot_contract(
+        snapshot_dir=snapshot_dir,
+        config=config,
+    )
+    if expected_contract is not None and before != dict(expected_contract):
+        raise RuntimeError("Global tokenizer snapshot audit binding drifted")
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(snapshot_dir),
+        local_files_only=True,
+        trust_remote_code=False,
+        use_fast=True,
+    )
+    after = _global_tokenizer_snapshot_contract(
+        snapshot_dir=snapshot_dir,
+        config=config,
+    )
+    after_signatures = _global_tokenizer_snapshot_stability_signatures(
+        snapshot_dir
+    )
+    if after != before or after_signatures != before_signatures:
+        raise RuntimeError("Global tokenizer snapshot changed while loading")
+    if getattr(tokenizer, "is_fast", None) is not True:
+        raise RuntimeError("Global tokenizer preflight requires the pinned fast tokenizer")
+    return tokenizer, before
 
 
 def _load_exact_global_preflight_tokenizer(
     config: Mapping[str, Any],
-) -> tuple[Any, str]:
-    """Load only the pinned tokenizer and prove its tokenizer.json digest."""
-
-    from huggingface_hub import hf_hub_download  # type: ignore
-    from transformers import AutoTokenizer  # type: ignore
+    *,
+    snapshot_dir: Path,
+) -> tuple[Any, dict[str, Any]]:
+    """Snapshot and load the pinned tokenizer without model weights."""
 
     model_id = config.get("base_model_name")
     revision = config.get("baseModelRevision")
@@ -4251,25 +6260,16 @@ def _load_exact_global_preflight_tokenizer(
         or re.fullmatch(r"[0-9a-f]{64}", str(expected_digest or "")) is None
     ):
         raise RuntimeError("Global tokenizer preflight has invalid model lineage")
-    tokenizer_json = Path(
-        hf_hub_download(
-            repo_id=model_id,
-            filename="tokenizer.json",
-            revision=revision,
+    _validated_base_model_tokenizer_closure(config)
+    if not snapshot_dir.exists() and not snapshot_dir.is_symlink():
+        _create_global_tokenizer_snapshot(
+            snapshot_dir=snapshot_dir,
+            config=config,
         )
+    return _load_verified_global_tokenizer_snapshot(
+        snapshot_dir=snapshot_dir,
+        config=config,
     )
-    observed_digest = file_sha256(tokenizer_json)
-    if observed_digest != expected_digest:
-        raise RuntimeError("Pinned tokenizer.json digest failed global preflight")
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_id,
-        revision=revision,
-        trust_remote_code=False,
-        use_fast=True,
-    )
-    if getattr(tokenizer, "is_fast", None) is not True:
-        raise RuntimeError("Global tokenizer preflight requires the pinned fast tokenizer")
-    return tokenizer, observed_digest
 
 
 def global_tokenizer_preflight(
@@ -4308,8 +6308,20 @@ def global_tokenizer_preflight(
     if tokenizer is None:
         if tokenizer_file_sha256 is not None:
             raise RuntimeError("Observed tokenizer digest cannot be supplied without a tokenizer")
-        tokenizer, observed_tokenizer_digest = (
-            _load_exact_global_preflight_tokenizer(first_config)
+        tokenizer, tokenizer_closure = (
+            _load_exact_global_preflight_tokenizer(
+                first_config,
+                snapshot_dir=(
+                    run_root
+                    / "training"
+                    / GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME
+                ),
+            )
+        )
+        observed_tokenizer_digest = next(
+            item["sha256"]
+            for item in tokenizer_closure["files"]
+            if item["path"] == "tokenizer.json"
         )
     else:
         observed_tokenizer_digest = tokenizer_file_sha256
@@ -4317,6 +6329,10 @@ def global_tokenizer_preflight(
             "baseModelTokenizerDigest"
         ):
             raise RuntimeError("Injected global-preflight tokenizer digest drifted")
+        tokenizer_closure = _injected_global_tokenizer_snapshot_contract(
+            first_config,
+            str(observed_tokenizer_digest),
+        )
     if preference_renderer is None:
         from trl.data_utils import maybe_apply_chat_template  # type: ignore
 
@@ -4332,6 +6348,9 @@ def global_tokenizer_preflight(
         "baseModelID": first_config.get("base_model_name"),
         "baseModelRevision": first_config.get("baseModelRevision"),
         "baseModelTokenizerDigest": first_config.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerClosureSHA256": first_config.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
     }
     entries: list[dict[str, Any]] = []
     for agent in agents:
@@ -4344,6 +6363,9 @@ def global_tokenizer_preflight(
                 "baseModelRevision": config.get("baseModelRevision"),
                 "baseModelTokenizerDigest": config.get(
                     "baseModelTokenizerDigest"
+                ),
+                "baseModelTokenizerClosureSHA256": config.get(
+                    "baseModelTokenizerClosureSHA256"
                 ),
             }
             != base_binding
@@ -4406,6 +6428,9 @@ def global_tokenizer_preflight(
             ),
             agent=agent,
             fleet_loss_share_contract=config.get("fleetLossShareContract"),
+            public_corpus_loss_share_contract=config.get(
+                "publicCorpusLossShareContract"
+            ),
             fleet_config=config,
         )
         preference_preflight = train_dpo._preflight_preference_token_lengths(
@@ -4425,14 +6450,33 @@ def global_tokenizer_preflight(
                 "preference_minimum_sequence_margin_tokens",
                 train_dpo.PREFERENCE_MINIMUM_SEQUENCE_MARGIN_TOKENS,
             ),
-            source_splits=(
-                {"train": train_dpo_source, "validation": val_dpo_source}
-                if agent == "fleet"
-                else None
-            ),
+            source_splits={
+                "train": train_dpo_source,
+                "validation": val_dpo_source,
+            },
             agent=agent,
             fleet_loss_share_contract=config.get("fleetLossShareContract"),
+            public_corpus_loss_share_contract=config.get(
+                "publicCorpusLossShareContract"
+            ),
             fleet_config=config,
+        )
+        _verify_global_tokenizer_phase_evidence(
+            run_root=run_root,
+            agent=agent,
+            config=config,
+            phase="sft",
+            evidence=sft_preflight,
+            tokenizer=tokenizer,
+        )
+        _verify_global_tokenizer_phase_evidence(
+            run_root=run_root,
+            agent=agent,
+            config=config,
+            phase="preference",
+            evidence=preference_preflight,
+            tokenizer=tokenizer,
+            preference_renderer=preference_renderer,
         )
         sft_dataset_hashes = train_sft._sft_checkpoint_dataset_sha256(config)
         dpo_dataset_hashes = train_dpo._preference_dataset_file_sha256(config)
@@ -4462,6 +6506,7 @@ def global_tokenizer_preflight(
         "runManifestSHA256": manifest.get("runManifestSHA256"),
         **base_binding,
         "observedTokenizerFileSHA256": observed_tokenizer_digest,
+        "tokenizerClosure": tokenizer_closure,
         "agents": entries,
     }
     audit = {
@@ -4474,23 +6519,34 @@ def global_tokenizer_preflight(
         "status": "global_tokenizer_preflight_passed",
         "path": str(audit_path),
         "globalPreflightSHA256": audit["globalPreflightSHA256"],
+        "tokenizerClosureSHA256": tokenizer_closure[
+            "tokenizerClosureSHA256"
+        ],
         "agents": list(agents),
         **base_binding,
     }
 
 
-def _verified_global_tokenizer_preflight(
+def _verified_global_tokenizer_preflight_impl(
     *,
     run_root: Path,
     agent: str,
     config: Mapping[str, Any],
     phase: str,
     bound_preflight: Mapping[str, Any],
+    audit_snapshot: Mapping[str, Any] | None = None,
+    allow_injected_test_double: bool,
+    tokenizer: Any | None = None,
+    preference_renderer: Any | None = None,
 ) -> dict[str, Any]:
     path = run_root / "training" / GLOBAL_TOKENIZER_PREFLIGHT_FILENAME
     if path.is_symlink() or not path.is_file():
         raise RuntimeError("Global tokenizer preflight audit is missing")
-    audit = read_object(path)
+    audit = (
+        dict(audit_snapshot)
+        if audit_snapshot is not None
+        else read_object(path)
+    )
     digest = audit.get("globalPreflightSHA256")
     unsigned = dict(audit)
     unsigned.pop("globalPreflightSHA256", None)
@@ -4504,7 +6560,9 @@ def _verified_global_tokenizer_preflight(
             "baseModelID",
             "baseModelRevision",
             "baseModelTokenizerDigest",
+            "baseModelTokenizerClosureSHA256",
             "observedTokenizerFileSHA256",
+            "tokenizerClosure",
             "agents",
             "globalPreflightSHA256",
         }
@@ -4517,10 +6575,24 @@ def _verified_global_tokenizer_preflight(
         or audit.get("baseModelRevision") != config.get("baseModelRevision")
         or audit.get("baseModelTokenizerDigest")
         != config.get("baseModelTokenizerDigest")
+        or audit.get("baseModelTokenizerClosureSHA256")
+        != config.get("baseModelTokenizerClosureSHA256")
         or audit.get("observedTokenizerFileSHA256")
         != config.get("baseModelTokenizerDigest")
     ):
         raise RuntimeError("Global tokenizer preflight audit binding drifted")
+    tokenizer_closure = _validated_global_tokenizer_closure_record(
+        audit.get("tokenizerClosure"),
+        config=config,
+        allow_injected_test_double=allow_injected_test_double,
+    )
+    tokenizer_file = next(
+        item
+        for item in tokenizer_closure["files"]
+        if item["path"] == "tokenizer.json"
+    )
+    if tokenizer_file["sha256"] != audit.get("observedTokenizerFileSHA256"):
+        raise RuntimeError("Global tokenizer closure file digest drifted")
     entries = audit.get("agents")
     manifest_agents = manifest.get("agents")
     expected_agents = (
@@ -4590,6 +6662,712 @@ def _verified_global_tokenizer_preflight(
         raise RuntimeError(
             f"Global {phase} tokenizer preflight drifted from authoritative evidence"
         )
+    if tokenizer is None:
+        if allow_injected_test_double:
+            raise RuntimeError(
+                "Injected tokenizer audit verification requires its tokenizer"
+            )
+        tokenizer, verified_closure = _load_verified_global_tokenizer_snapshot(
+            snapshot_dir=(
+                run_root
+                / "training"
+                / GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME
+            ),
+            config=config,
+            expected_contract=tokenizer_closure,
+        )
+        if verified_closure != tokenizer_closure:
+            raise RuntimeError(
+                "Global tokenizer verification closure changed while loading"
+            )
+    if phase == "preference" and preference_renderer is None:
+        from trl.data_utils import maybe_apply_chat_template  # type: ignore
+
+        preference_renderer = maybe_apply_chat_template
+    _verify_global_tokenizer_phase_evidence(
+        run_root=run_root,
+        agent=agent,
+        config=config,
+        phase=phase,
+        evidence=global_preflight,
+        tokenizer=tokenizer,
+        preference_renderer=preference_renderer,
+    )
+    return audit
+
+
+def _verified_global_tokenizer_preflight(
+    *,
+    run_root: Path,
+    agent: str,
+    config: Mapping[str, Any],
+    phase: str,
+    bound_preflight: Mapping[str, Any],
+    audit_snapshot: Mapping[str, Any] | None = None,
+    tokenizer: Any | None = None,
+    preference_renderer: Any | None = None,
+) -> dict[str, Any]:
+    """Production verifier; injected tokenizer audits are never accepted."""
+
+    return _verified_global_tokenizer_preflight_impl(
+        run_root=run_root,
+        agent=agent,
+        config=config,
+        phase=phase,
+        bound_preflight=bound_preflight,
+        audit_snapshot=audit_snapshot,
+        allow_injected_test_double=False,
+        tokenizer=tokenizer,
+        preference_renderer=preference_renderer,
+    )
+
+
+def _verified_global_tokenizer_preflight_test_only(
+    *,
+    run_root: Path,
+    agent: str,
+    config: Mapping[str, Any],
+    phase: str,
+    bound_preflight: Mapping[str, Any],
+    audit_snapshot: Mapping[str, Any],
+    tokenizer: Any,
+    preference_renderer: Any | None = None,
+) -> dict[str, Any]:
+    """Narrow unit-test seam for an explicitly injected in-memory tokenizer."""
+
+    return _verified_global_tokenizer_preflight_impl(
+        run_root=run_root,
+        agent=agent,
+        config=config,
+        phase=phase,
+        bound_preflight=bound_preflight,
+        audit_snapshot=audit_snapshot,
+        allow_injected_test_double=True,
+        tokenizer=tokenizer,
+        preference_renderer=preference_renderer,
+    )
+
+
+def _verify_global_tokenizer_phase_evidence(
+    *,
+    run_root: Path,
+    agent: str,
+    config: Mapping[str, Any],
+    phase: str,
+    evidence: Any,
+    tokenizer: Any,
+    preference_renderer: Any | None = None,
+) -> None:
+    """Validate raw global evidence without trusting its self-declared hashes."""
+
+    from tools.fine_tuning.unsloth import train_dpo, train_sft
+
+    dataset_dir = Path(str(config.get("dataset_dir") or "")).resolve()
+    expected_dataset_dir = (
+        run_root
+        / "generated"
+        / "fine_tuning"
+        / agent
+        / "experiments"
+        / str(config.get("variant") or "")
+    ).resolve()
+    if dataset_dir != expected_dataset_dir:
+        raise RuntimeError(
+            f"Global {phase} tokenizer dataset path drifted for {agent}"
+        )
+    loss_share_fields = {"publicCorpusLossShareEvidence"}
+    if agent == "fleet":
+        loss_share_fields.add("fleetLossShareEvidence")
+    if phase == "sft":
+        expected_keys = {
+            "schemaVersion",
+            "maxSequenceLength",
+            "minimumSequenceMarginTokens",
+            "percentileMethod",
+            "records",
+            "totalTokens",
+            "assistantTargetTokens",
+            "tokenizationTranscriptSHA256",
+            "smallestSequenceMarginTokens",
+            "truncationRequired",
+            "splits",
+            *loss_share_fields,
+        }
+        if not isinstance(evidence, Mapping) or set(evidence) != expected_keys:
+            raise RuntimeError("Global SFT tokenizer evidence has an invalid schema")
+        max_sequence_length = config.get("max_seq_length")
+        required_sequence_margin = max(
+            train_sft.SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            int(config.get("sft_minimum_sequence_margin_tokens", 0)),
+        )
+        split_rows = {
+            "train": train_sft._limit_records(
+                read_jsonl(dataset_dir / "train_sft.jsonl"),
+                config.get("max_train_records"),
+            ),
+            "validation": train_sft._limit_records(
+                read_jsonl(dataset_dir / "val_sft.jsonl"),
+                config.get("max_val_records"),
+            ),
+        }
+        if (
+            evidence.get("schemaVersion")
+            != train_sft.SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA
+            or evidence.get("maxSequenceLength") != max_sequence_length
+            or evidence.get("minimumSequenceMarginTokens")
+            != required_sequence_margin
+            or evidence.get("percentileMethod") != "nearest_rank"
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(evidence.get("tokenizationTranscriptSHA256") or ""),
+            )
+            is None
+            or evidence.get("truncationRequired") is not False
+            or not _valid_token_length_statistics(
+                evidence.get("totalTokens"),
+                require_positive=True,
+            )
+            or not _valid_token_length_statistics(
+                evidence.get("assistantTargetTokens"),
+                require_positive=True,
+            )
+            or type(evidence.get("smallestSequenceMarginTokens")) is not int
+            or evidence.get("smallestSequenceMarginTokens")
+            != max_sequence_length - evidence["totalTokens"]["max"]
+            or evidence["smallestSequenceMarginTokens"]
+            < required_sequence_margin
+        ):
+            raise RuntimeError("Global SFT tokenizer evidence controls drifted")
+        split_stat_fields = ("totalTokens", "assistantTargetTokens")
+        split_margin_fields = ("smallestSequenceMarginTokens",)
+    elif phase == "preference":
+        expected_keys = {
+            "schemaVersion",
+            "renderer",
+            "addSpecialTokens",
+            "completionTokenizationPolicy",
+            "appendedEOSTokenID",
+            "percentileMethod",
+            "maxPromptLength",
+            "maxSequenceLength",
+            "minimumPromptMarginTokens",
+            "minimumSequenceMarginTokens",
+            "records",
+            "promptTokens",
+            "chosenCompletionTokens",
+            "rejectedCompletionTokens",
+            "chosenTotalTokens",
+            "rejectedTotalTokens",
+            "maximumTotalTokens",
+            "tokenizationTranscriptSHA256",
+            "smallestPromptMarginTokens",
+            "smallestSequenceMarginTokens",
+            "truncationRequired",
+            "splits",
+            *loss_share_fields,
+        }
+        if not isinstance(evidence, Mapping) or set(evidence) != expected_keys:
+            raise RuntimeError(
+                "Global preference tokenizer evidence has an invalid schema"
+            )
+        preference_config = train_dpo._validate_preference_training_config(
+            config
+        )
+        max_prompt_length = preference_config["maxPromptLength"]
+        max_sequence_length = config.get("max_seq_length")
+        required_prompt_margin = max(
+            train_dpo.PREFERENCE_MINIMUM_PROMPT_MARGIN_TOKENS,
+            int(config.get("preference_minimum_prompt_margin_tokens", 0)),
+        )
+        required_sequence_margin = max(
+            train_dpo.PREFERENCE_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            int(config.get("preference_minimum_sequence_margin_tokens", 0)),
+        )
+        split_rows = {
+            "train": read_jsonl(dataset_dir / "train_dpo.jsonl"),
+            "validation": read_jsonl(dataset_dir / "val_dpo.jsonl"),
+        }
+        statistic_fields = (
+            "promptTokens",
+            "chosenCompletionTokens",
+            "rejectedCompletionTokens",
+            "chosenTotalTokens",
+            "rejectedTotalTokens",
+            "maximumTotalTokens",
+        )
+        if (
+            evidence.get("schemaVersion")
+            != train_dpo.PREFERENCE_TOKEN_LENGTH_PREFLIGHT_SCHEMA
+            or not isinstance(evidence.get("renderer"), str)
+            or not evidence.get("renderer")
+            or evidence.get("addSpecialTokens") is not False
+            or evidence.get("completionTokenizationPolicy")
+            != train_dpo.DPO_COMPLETION_TOKENIZATION_POLICY
+            or type(evidence.get("appendedEOSTokenID")) is not int
+            or evidence.get("appendedEOSTokenID") < 0
+            or evidence.get("percentileMethod") != "nearest_rank"
+            or re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(evidence.get("tokenizationTranscriptSHA256") or ""),
+            )
+            is None
+            or evidence.get("maxPromptLength") != max_prompt_length
+            or evidence.get("maxSequenceLength") != max_sequence_length
+            or evidence.get("minimumPromptMarginTokens")
+            != required_prompt_margin
+            or evidence.get("minimumSequenceMarginTokens")
+            != required_sequence_margin
+            or evidence.get("truncationRequired") is not False
+            or any(
+                not _valid_token_length_statistics(
+                    evidence.get(field),
+                    require_positive=True,
+                )
+                for field in statistic_fields
+            )
+            or type(evidence.get("smallestPromptMarginTokens")) is not int
+            or evidence.get("smallestPromptMarginTokens")
+            != max_prompt_length - evidence["promptTokens"]["max"]
+            or evidence["smallestPromptMarginTokens"] < required_prompt_margin
+            or type(evidence.get("smallestSequenceMarginTokens")) is not int
+            or evidence.get("smallestSequenceMarginTokens")
+            != max_sequence_length - evidence["maximumTotalTokens"]["max"]
+            or evidence["smallestSequenceMarginTokens"]
+            < required_sequence_margin
+        ):
+            raise RuntimeError(
+                "Global preference tokenizer evidence controls drifted"
+            )
+        split_stat_fields = statistic_fields
+        split_margin_fields = (
+            "smallestPromptMarginTokens",
+            "smallestSequenceMarginTokens",
+        )
+    else:
+        raise RuntimeError(f"Unsupported global tokenizer phase: {phase}")
+
+    splits = evidence.get("splits")
+    if not isinstance(splits, Mapping) or set(splits) != {"train", "validation"}:
+        raise RuntimeError(f"Global {phase} tokenizer split evidence is invalid")
+    observed_records = 0
+    for split in ("train", "validation"):
+        split_evidence = splits.get(split)
+        expected_records = len(split_rows[split])
+        observed_records += expected_records
+        expected_split_keys = (
+            {"records"}
+            if expected_records == 0
+            else {"records", *split_stat_fields, *split_margin_fields}
+        )
+        if (
+            not isinstance(split_evidence, Mapping)
+            or set(split_evidence) != expected_split_keys
+            or split_evidence.get("records") != expected_records
+        ):
+            raise RuntimeError(
+                f"Global {phase} {split} tokenizer split binding drifted"
+            )
+        if expected_records == 0:
+            continue
+        if any(
+            not _valid_token_length_statistics(
+                split_evidence.get(field),
+                require_positive=True,
+            )
+            for field in split_stat_fields
+        ):
+            raise RuntimeError(
+                f"Global {phase} {split} token statistics are invalid"
+            )
+        if phase == "sft":
+            if split_evidence["smallestSequenceMarginTokens"] != (
+                max_sequence_length - split_evidence["totalTokens"]["max"]
+            ):
+                raise RuntimeError("Global SFT split margin drifted")
+        elif (
+            split_evidence["smallestPromptMarginTokens"]
+            != max_prompt_length - split_evidence["promptTokens"]["max"]
+            or split_evidence["smallestSequenceMarginTokens"]
+            != max_sequence_length
+            - split_evidence["maximumTotalTokens"]["max"]
+        ):
+            raise RuntimeError("Global preference split margin drifted")
+    if evidence.get("records") != observed_records:
+        raise RuntimeError(f"Global {phase} tokenizer record count drifted")
+
+    _verify_fleet_loss_share_evidence(
+        value=evidence.get("fleetLossShareEvidence"),
+        config=config,
+        phase=phase,
+        dataset_dir=dataset_dir,
+    )
+    _verify_public_corpus_loss_share_evidence(
+        value=evidence.get("publicCorpusLossShareEvidence"),
+        config=config,
+        phase=phase,
+        dataset_dir=dataset_dir,
+        tokenizer=tokenizer,
+        preference_renderer=preference_renderer,
+        require_exact_tokenizer_counts=True,
+    )
+
+
+def _validated_global_tokenizer_resume_state(
+    *,
+    run_root: Path,
+    agents: Sequence[str],
+) -> str:
+    """Validate every durable global-tokenizer preflight resume state."""
+
+    snapshot_dir = run_root / "training" / GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME
+    audit_path = run_root / "training" / GLOBAL_TOKENIZER_PREFLIGHT_FILENAME
+    snapshot_present = snapshot_dir.exists() or snapshot_dir.is_symlink()
+    audit_present = audit_path.exists() or audit_path.is_symlink()
+    if snapshot_present and (
+        snapshot_dir.is_symlink() or not snapshot_dir.is_dir()
+    ):
+        raise RuntimeError("Global tokenizer resume snapshot is not a regular directory")
+    if audit_present and (audit_path.is_symlink() or not audit_path.is_file()):
+        raise RuntimeError("Global tokenizer resume audit is not a regular file")
+    if audit_present and not snapshot_present:
+        raise RuntimeError(
+            "Global tokenizer resume audit exists without its verified snapshot"
+        )
+    if not snapshot_present:
+        return "not_started"
+    if not agents:
+        raise RuntimeError("Global tokenizer resume state requires prepared agents")
+
+    first_config = read_object(run_root / "configs" / f"{agents[0]}.json")
+    snapshot_contract = _global_tokenizer_snapshot_contract(
+        snapshot_dir=snapshot_dir,
+        config=first_config,
+    )
+    if not audit_present:
+        return "verified_snapshot_audit_pending"
+
+    audit = read_object(audit_path)
+    closure = _validated_global_tokenizer_closure_record(
+        audit.get("tokenizerClosure"),
+        config=first_config,
+    )
+    if closure != snapshot_contract:
+        raise RuntimeError(
+            "Global tokenizer resume audit drifted from its verified snapshot"
+        )
+    tokenizer, loaded_closure = _load_verified_global_tokenizer_snapshot(
+        snapshot_dir=snapshot_dir,
+        config=first_config,
+        expected_contract=closure,
+    )
+    if loaded_closure != closure:
+        raise RuntimeError(
+            "Global tokenizer resume closure changed while loading"
+        )
+    entries = audit.get("agents")
+    if not isinstance(entries, list):
+        raise RuntimeError("Global tokenizer resume audit agents are invalid")
+    by_agent = {
+        str(entry.get("agent")): entry
+        for entry in entries
+        if isinstance(entry, Mapping)
+    }
+    if set(by_agent) != set(agents) or len(by_agent) != len(agents):
+        raise RuntimeError("Global tokenizer resume audit agent set drifted")
+    for agent in agents:
+        config = read_object(run_root / "configs" / f"{agent}.json")
+        if _validated_base_model_tokenizer_closure(config) != (
+            _validated_base_model_tokenizer_closure(first_config)
+        ):
+            raise RuntimeError(
+                f"Global tokenizer resume closure differs for {agent}"
+            )
+        entry = by_agent[agent]
+        for phase, dataset_field, training_code_field in (
+            (
+                "sft",
+                "sftDatasetFileSHA256",
+                "sftTrainingCodeSHA256",
+            ),
+            (
+                "preference",
+                "preferenceDatasetFileSHA256",
+                "preferenceTrainingCodeSHA256",
+            ),
+        ):
+            evidence = entry.get(phase)
+            if not isinstance(evidence, Mapping):
+                raise RuntimeError(
+                    f"Global tokenizer resume audit lacks {agent} {phase}"
+                )
+            _verified_global_tokenizer_preflight(
+                run_root=run_root,
+                agent=agent,
+                config=config,
+                phase=phase,
+                bound_preflight={
+                    **evidence,
+                    "datasetFileSHA256": entry.get(dataset_field),
+                    "trainingCodeSHA256": entry.get(training_code_field),
+                },
+                audit_snapshot=audit,
+                tokenizer=tokenizer,
+            )
+    return "verified_snapshot_and_audit"
+
+
+def _verified_prepared_global_tokenizer_preflight(
+    *,
+    run_root: Path,
+    agents: tuple[str, ...],
+    tokenizer: Any | None = None,
+    tokenizer_file_sha256: str | None = None,
+    preference_renderer: Any | None = None,
+    chat_contract_verifier: Any | None = None,
+) -> dict[str, Any]:
+    """Retokenize every bound row before accepting prepare-only output."""
+
+    from tools.fine_tuning.unsloth import train_dpo, train_sft
+
+    injected_tokenizer = tokenizer is not None
+    path = run_root / "training" / GLOBAL_TOKENIZER_PREFLIGHT_FILENAME
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("Prepare-only global tokenizer preflight audit is missing")
+    audit = read_object(path)
+    entries = audit.get("agents")
+    if not isinstance(entries, list):
+        raise RuntimeError("Prepare-only global tokenizer preflight agents are invalid")
+    by_agent = {
+        str(entry.get("agent")): entry
+        for entry in entries
+        if isinstance(entry, Mapping)
+    }
+    if set(by_agent) != set(agents) or len(by_agent) != len(agents):
+        raise RuntimeError("Prepare-only global tokenizer preflight agent set drifted")
+    first_config = read_object(run_root / "configs" / f"{agents[0]}.json")
+    audit_tokenizer_closure = _validated_global_tokenizer_closure_record(
+        audit.get("tokenizerClosure"),
+        config=first_config,
+        allow_injected_test_double=tokenizer is not None,
+    )
+    if tokenizer is None:
+        if tokenizer_file_sha256 is not None:
+            raise RuntimeError(
+                "Prepare-only tokenizer digest cannot be injected without a tokenizer"
+            )
+        if (
+            audit_tokenizer_closure.get("schemaVersion")
+            != GLOBAL_TOKENIZER_SNAPSHOT_SCHEMA
+        ):
+            raise RuntimeError(
+                "Prepare-only requires a production tokenizer snapshot"
+            )
+        tokenizer, verified_tokenizer_closure = (
+            _load_verified_global_tokenizer_snapshot(
+                snapshot_dir=(
+                    run_root
+                    / "training"
+                    / GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME
+                ),
+                config=first_config,
+                expected_contract=audit_tokenizer_closure,
+            )
+        )
+    else:
+        if tokenizer_file_sha256 != first_config.get("baseModelTokenizerDigest"):
+            raise RuntimeError("Injected prepare-only tokenizer digest drifted")
+        verified_tokenizer_closure = (
+            _injected_global_tokenizer_snapshot_contract(
+                first_config,
+                str(tokenizer_file_sha256),
+            )
+        )
+        if verified_tokenizer_closure != audit_tokenizer_closure:
+            raise RuntimeError("Injected prepare-only tokenizer closure drifted")
+    if preference_renderer is None:
+        from trl.data_utils import maybe_apply_chat_template  # type: ignore
+
+        preference_renderer = maybe_apply_chat_template
+    if not callable(preference_renderer):
+        raise RuntimeError("Prepare-only preference renderer is unavailable")
+    if chat_contract_verifier is None:
+        chat_contract_verifier = train_sft.verify_chat_template_contract
+    if not callable(chat_contract_verifier):
+        raise RuntimeError("Prepare-only chat-template verifier is unavailable")
+    for agent in agents:
+        entry = by_agent[agent]
+        config = read_object(run_root / "configs" / f"{agent}.json")
+        preference_config = train_dpo._validate_preference_training_config(
+            config
+        )
+        expected_sft_datasets = train_sft._sft_checkpoint_dataset_sha256(
+            config
+        )
+        expected_preference_datasets = (
+            train_dpo._preference_dataset_file_sha256(config)
+        )
+        expected_sft_code = train_sft._sft_training_code_sha256(config)
+        expected_preference_code = train_dpo._preference_training_code_sha256(
+            config,
+            preference_trainer=preference_config["preferenceTrainer"],
+        )
+        chat_contract_verifier(
+            config.get("chatTemplateContract"),
+            tokenizer=tokenizer,
+        )
+        dataset_dir = Path(str(config.get("dataset_dir") or "")).resolve()
+        expected_dataset_dir = (
+            run_root
+            / "generated"
+            / "fine_tuning"
+            / agent
+            / "experiments"
+            / str(config.get("variant") or "")
+        ).resolve()
+        if dataset_dir != expected_dataset_dir:
+            raise RuntimeError(
+                f"Prepare-only tokenizer dataset path drifted for {agent}"
+            )
+        train_sft_path = dataset_dir / "train_sft.jsonl"
+        val_sft_path = dataset_dir / "val_sft.jsonl"
+        train_dpo_path = dataset_dir / "train_dpo.jsonl"
+        val_dpo_path = dataset_dir / "val_dpo.jsonl"
+        train_sft_rows = train_sft._limit_records(
+            read_jsonl(train_sft_path),
+            config.get("max_train_records"),
+        )
+        val_sft_rows = train_sft._limit_records(
+            read_jsonl(val_sft_path),
+            config.get("max_val_records"),
+        )
+        train_dpo_source = read_jsonl(train_dpo_path)
+        val_dpo_source = read_jsonl(val_dpo_path)
+        recomputed_sft = train_sft._preflight_sft_token_lengths(
+            {
+                "train": (train_sft_rows, train_sft_path),
+                "validation": (val_sft_rows, val_sft_path),
+            },
+            tokenizer=tokenizer,
+            max_sequence_length=config.get("max_seq_length"),
+            minimum_sequence_margin_tokens=config.get(
+                "sft_minimum_sequence_margin_tokens",
+                train_sft.SFT_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            ),
+            agent=agent,
+            fleet_loss_share_contract=config.get("fleetLossShareContract"),
+            public_corpus_loss_share_contract=config.get(
+                "publicCorpusLossShareContract"
+            ),
+            fleet_config=config,
+        )
+        recomputed_preference = train_dpo._preflight_preference_token_lengths(
+            {
+                "train": [
+                    train_dpo.row_to_preference(row)
+                    for row in train_dpo_source
+                ],
+                "validation": [
+                    train_dpo.row_to_preference(row)
+                    for row in val_dpo_source
+                ],
+            },
+            tokenizer=tokenizer,
+            render_preference=preference_renderer,
+            max_prompt_length=preference_config["maxPromptLength"],
+            max_sequence_length=config.get("max_seq_length"),
+            minimum_prompt_margin_tokens=config.get(
+                "preference_minimum_prompt_margin_tokens",
+                train_dpo.PREFERENCE_MINIMUM_PROMPT_MARGIN_TOKENS,
+            ),
+            minimum_sequence_margin_tokens=config.get(
+                "preference_minimum_sequence_margin_tokens",
+                train_dpo.PREFERENCE_MINIMUM_SEQUENCE_MARGIN_TOKENS,
+            ),
+            source_splits={
+                "train": train_dpo_source,
+                "validation": val_dpo_source,
+            },
+            agent=agent,
+            fleet_loss_share_contract=config.get("fleetLossShareContract"),
+            public_corpus_loss_share_contract=config.get(
+                "publicCorpusLossShareContract"
+            ),
+            fleet_config=config,
+        )
+        if (
+            entry.get("sft") != recomputed_sft
+            or entry.get("preference") != recomputed_preference
+        ):
+            raise RuntimeError(
+                f"Prepare-only exact tokenizer evidence drifted for {agent}"
+            )
+        for phase, dataset_field, training_code_field, expected_datasets, expected_code in (
+            (
+                "sft",
+                "sftDatasetFileSHA256",
+                "sftTrainingCodeSHA256",
+                expected_sft_datasets,
+                expected_sft_code,
+            ),
+            (
+                "preference",
+                "preferenceDatasetFileSHA256",
+                "preferenceTrainingCodeSHA256",
+                expected_preference_datasets,
+                expected_preference_code,
+            ),
+        ):
+            phase_evidence = entry.get(phase)
+            if not isinstance(phase_evidence, Mapping):
+                raise RuntimeError(
+                    f"Prepare-only global tokenizer preflight lacks {agent} {phase}"
+                )
+            if (
+                entry.get(dataset_field) != expected_datasets
+                or entry.get(training_code_field) != expected_code
+            ):
+                raise RuntimeError(
+                    f"Prepare-only global tokenizer preflight {agent} {phase} "
+                    "input binding drifted"
+                )
+            reconstructed = {
+                **phase_evidence,
+                "datasetFileSHA256": expected_datasets,
+                "trainingCodeSHA256": expected_code,
+            }
+            verifier = (
+                _verified_global_tokenizer_preflight_test_only
+                if injected_tokenizer
+                else _verified_global_tokenizer_preflight
+            )
+            verifier(
+                run_root=run_root,
+                agent=agent,
+                config=config,
+                phase=phase,
+                bound_preflight=reconstructed,
+                audit_snapshot=audit,
+                tokenizer=tokenizer,
+                preference_renderer=(
+                    preference_renderer if phase == "preference" else None
+                ),
+            )
+    if read_object(path) != audit:
+        raise RuntimeError("Prepare-only global tokenizer preflight changed during verification")
+    if (
+        verified_tokenizer_closure.get("schemaVersion")
+        == GLOBAL_TOKENIZER_SNAPSHOT_SCHEMA
+        and _global_tokenizer_snapshot_contract(
+            snapshot_dir=(
+                run_root / "training" / GLOBAL_TOKENIZER_SNAPSHOT_DIRNAME
+            ),
+            config=first_config,
+        )
+        != verified_tokenizer_closure
+    ):
+        raise RuntimeError(
+            "Prepare-only global tokenizer snapshot changed during verification"
+        )
     return audit
 
 
@@ -4644,6 +7422,543 @@ def _pipeline_exact_mapping(
     return value
 
 
+_PUBLIC_CORPUS_LOSS_SHARE_FIELD_NAMES = {
+    "sft": {
+        "denominatorTokenCount": "assistantTargetTokenCount",
+        "publicNumeratorTokenCount": "publicAssistantTargetTokenCount",
+    },
+    "dpo": {
+        "denominatorTokenCount": "chosenTargetTokenCount",
+        "publicNumeratorTokenCount": "publicChosenTargetTokenCount",
+    },
+}
+_PUBLIC_CORPUS_DPO_TOKENIZATION_POLICY = dict(
+    _FLEET_DPO_TOKENIZATION_POLICY
+)
+
+
+def _pipeline_validated_public_corpus_loss_share_contract(
+    value: Any,
+    *,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Independently validate the all-agent exact public-target cap."""
+
+    contract = _pipeline_exact_mapping(
+        value,
+        {
+            "schemaVersion",
+            "enforcementRequired",
+            "enforcementPhase",
+            "requiredLanes",
+            "authoritativeCapEncoding",
+            "basisPointDenominator",
+            "capBasisPoints",
+            "dpoTokenizationPolicy",
+            "exactTokenEvidenceContract",
+            "failurePolicy",
+            "rowMetadataContract",
+            "sourceSelectionProxy",
+            "tokenizer",
+            "tokenAccounting",
+        },
+        label="Public-corpus loss-share contract",
+    )
+    if (
+        contract.get("schemaVersion")
+        != "lumen.public-corpus-loss-share/1.0.0"
+        or contract.get("enforcementRequired") is not True
+        or contract.get("enforcementPhase")
+        != "post_tokenizer_load_pre_optimizer"
+        or contract.get("requiredLanes") != ["sft", "dpo"]
+        or contract.get("authoritativeCapEncoding")
+        != "integer_basis_points"
+        or type(contract.get("basisPointDenominator")) is not int
+        or contract.get("basisPointDenominator") != 10_000
+        or contract.get("failurePolicy") != "abort_before_optimizer"
+    ):
+        raise RuntimeError("Public-corpus loss-share contract controls drifted")
+
+    caps = _pipeline_exact_mapping(
+        contract.get("capBasisPoints"),
+        {"requested", "hard"},
+        label="Public-corpus loss-share caps",
+    )
+    requested_cap = caps.get("requested")
+    hard_cap = caps.get("hard")
+    if (
+        type(requested_cap) is not int
+        or type(hard_cap) is not int
+        or not 0 <= requested_cap <= hard_cap
+        or hard_cap != 3_500
+    ):
+        raise RuntimeError("Public-corpus loss-share caps drifted")
+
+    if contract.get("rowMetadataContract") != {
+        "publicSourceFamilyPrefix": "public_adapter_corpus_",
+        "publicCorpusField": "publicCorpus",
+        "classificationRule": "prefix_and_nonempty_lineage_required",
+        "mismatch": "hard_fail",
+    }:
+        raise RuntimeError("Public-corpus row-metadata contract drifted")
+
+    source_selection_proxy = _pipeline_exact_mapping(
+        contract.get("sourceSelectionProxy"),
+        {"status", "maximumPublicShareBasisPoints", "contract"},
+        label="Public-corpus source-selection proxy",
+    )
+    source_proxy_contract = _pipeline_exact_mapping(
+        source_selection_proxy.get("contract"),
+        {
+            "schemaVersion",
+            "status",
+            "strategy",
+            "maxCharsPerToken",
+            "exactPinnedTokenizerAuthoritative",
+            "authoritativeEnforcementPhase",
+        },
+        label="Public-corpus source-token proxy contract",
+    )
+    if (
+        source_selection_proxy.get("status")
+        != "safety_budget_not_exact_token_count"
+        or source_selection_proxy.get("maximumPublicShareBasisPoints")
+        != min(requested_cap, 3_000)
+        or source_proxy_contract.get("schemaVersion")
+        != "lumen.source-token-proxy/1.0.0"
+        or source_proxy_contract.get("status")
+        != "source_side_selection_proxy_not_exact_token_count"
+        or source_proxy_contract.get("strategy")
+        != "max_whitespace_terms_utf8_byte_ceiling"
+        or type(source_proxy_contract.get("maxCharsPerToken")) is not int
+        or source_proxy_contract["maxCharsPerToken"] <= 0
+        or source_proxy_contract.get("exactPinnedTokenizerAuthoritative")
+        is not True
+        or source_proxy_contract.get("authoritativeEnforcementPhase")
+        != "post_tokenizer_load_pre_optimizer"
+    ):
+        raise RuntimeError("Public-corpus source-selection proxy drifted")
+
+    dpo_policy = _pipeline_exact_mapping(
+        contract.get("dpoTokenizationPolicy"),
+        set(_PUBLIC_CORPUS_DPO_TOKENIZATION_POLICY),
+        label="Public-corpus DPO tokenization policy",
+    )
+    if dict(dpo_policy) != _PUBLIC_CORPUS_DPO_TOKENIZATION_POLICY:
+        raise RuntimeError("Public-corpus DPO tokenization policy drifted")
+    if contract.get("tokenAccounting") != {
+        "sft": "assistant_mask_non_ignored_token_count",
+        "dpo": (
+            "rendered_chosen_completion_tokens_add_special_tokens_false_"
+            "plus_one_trl_0_24_0_appended_eos"
+        ),
+    }:
+        raise RuntimeError("Public-corpus token-accounting contract drifted")
+
+    tokenizer = _pipeline_exact_mapping(
+        contract.get("tokenizer"),
+        {
+            "baseModelID",
+            "baseModelRevision",
+            "tokenizerSHA256",
+            "tokenizerClosureSHA256",
+        },
+        label="Public-corpus tokenizer binding",
+    )
+    if (
+        tokenizer.get("baseModelID") != config.get("base_model_name")
+        or tokenizer.get("baseModelRevision")
+        != config.get("baseModelRevision")
+        or tokenizer.get("tokenizerSHA256")
+        != config.get("baseModelTokenizerDigest")
+        or tokenizer.get("tokenizerClosureSHA256")
+        != config.get("baseModelTokenizerClosureSHA256")
+        or re.fullmatch(
+            r"[0-9a-f]{40}",
+            str(tokenizer.get("baseModelRevision") or ""),
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(tokenizer.get("tokenizerSHA256") or ""),
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(tokenizer.get("tokenizerClosureSHA256") or ""),
+        )
+        is None
+    ):
+        raise RuntimeError("Public-corpus tokenizer binding drifted")
+
+    exact = _pipeline_exact_mapping(
+        contract.get("exactTokenEvidenceContract"),
+        {
+            "required",
+            "schemaVersion",
+            "statusAtGeneration",
+            "tokenizer",
+            "comparisonRule",
+            "lanes",
+        },
+        label="Public-corpus exact-token evidence contract",
+    )
+    if (
+        exact.get("required") is not True
+        or exact.get("schemaVersion")
+        != "lumen.public-corpus-loss-share-evidence/1.0.0"
+        or exact.get("statusAtGeneration")
+        != "pending_exact_tokenizer_preflight"
+        or exact.get("tokenizer") != "pinned_qwen_tokenizer"
+        or exact.get("comparisonRule")
+        != (
+            "numeratorTokenCount*basisPointDenominator<="
+            "denominatorTokenCount*capBasisPoints"
+        )
+    ):
+        raise RuntimeError("Public-corpus exact-token evidence contract drifted")
+    lanes = _pipeline_exact_mapping(
+        exact.get("lanes"),
+        {"sft", "dpo"},
+        label="Public-corpus exact-token evidence lanes",
+    )
+    for lane, fields in _PUBLIC_CORPUS_LOSS_SHARE_FIELD_NAMES.items():
+        if lanes.get(lane) != fields:
+            raise RuntimeError(
+                f"Public-corpus {lane} exact-token fields drifted"
+            )
+    return dict(contract)
+
+
+def _pipeline_public_corpus_row_classification(
+    row: Mapping[str, Any],
+    *,
+    contract: Mapping[str, Any],
+) -> tuple[str, bool]:
+    metadata = row.get("metadata")
+    if not isinstance(metadata, Mapping):
+        raise RuntimeError("Public-corpus evidence row has invalid metadata")
+    source_family = metadata.get("sourceFamily")
+    if (
+        not isinstance(source_family, str)
+        or not source_family
+        or source_family.strip() != source_family
+    ):
+        raise RuntimeError(
+            "Public-corpus evidence row metadata.sourceFamily is not canonical"
+        )
+    row_contract = contract["rowMetadataContract"]
+    has_public_prefix = source_family.startswith(
+        row_contract["publicSourceFamilyPrefix"]
+    )
+    lineage = metadata.get(row_contract["publicCorpusField"])
+    has_public_lineage = isinstance(lineage, Mapping) and bool(lineage)
+    if has_public_prefix != has_public_lineage:
+        raise RuntimeError(
+            "Public-corpus evidence prefix and lineage classification disagree"
+        )
+    return source_family, has_public_prefix
+
+
+def _pipeline_public_corpus_cap_passes(
+    numerator: Any,
+    denominator: Any,
+    cap: Any,
+) -> bool:
+    return (
+        type(numerator) is int
+        and numerator >= 0
+        and type(denominator) is int
+        and denominator > 0
+        and type(cap) is int
+        and 0 <= cap <= 10_000
+        and numerator * 10_000 <= denominator * cap
+    )
+
+
+def _pipeline_exact_public_target_token_count(
+    row: Mapping[str, Any],
+    *,
+    lane: str,
+    tokenizer: Any,
+    source_path: Path,
+    split: str,
+    row_index: int,
+    preference_renderer: Any | None,
+    appended_eos_token_id: int | None,
+) -> int:
+    """Recompute the optimizer-bearing target count from the pinned tokenizer."""
+
+    if lane == "sft":
+        from tools.fine_tuning.unsloth import train_sft
+
+        messages = train_sft.normalize_chat_messages(
+            dict(row),
+            row_index=row_index,
+            path=source_path,
+        )
+        tokenized = train_sft.tokenize_assistant_only_row(
+            tokenizer,
+            messages,
+            path=source_path,
+            row_index=row_index,
+            max_seq_length=None,
+        )
+        labels = tokenized.get("labels")
+        if not isinstance(labels, list):
+            raise RuntimeError(
+                f"Public-corpus SFT {split} row {row_index} lacks exact labels"
+            )
+        target_tokens = sum(1 for label in labels if label != -100)
+    elif lane == "dpo":
+        from tools.fine_tuning.unsloth import train_dpo
+
+        if not callable(preference_renderer):
+            raise RuntimeError(
+                "Public-corpus DPO verification requires the pinned renderer"
+            )
+        if type(appended_eos_token_id) is not int:
+            raise RuntimeError(
+                "Public-corpus DPO verification lacks the pinned EOS token"
+            )
+        try:
+            rendered = preference_renderer(
+                train_dpo.row_to_preference(dict(row)),
+                tokenizer=tokenizer,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Public-corpus DPO verification could not render "
+                f"{split} row {row_index}"
+            ) from exc
+        if not isinstance(rendered, Mapping):
+            raise RuntimeError(
+                f"Public-corpus DPO {split} row {row_index} rendered invalid data"
+            )
+        target_tokens = len(
+            train_dpo._dpo_completion_token_ids(
+                tokenizer,
+                rendered.get("chosen"),
+                split=split,
+                row_index=row_index,
+                field="chosen completion",
+                appended_eos_token_id=appended_eos_token_id,
+            )
+        )
+    else:
+        raise RuntimeError(f"Unsupported public-corpus target lane: {lane}")
+    if type(target_tokens) is not int or target_tokens <= 0:
+        raise RuntimeError(
+            f"Public-corpus {lane} {split} row {row_index} has no target tokens"
+        )
+    return target_tokens
+
+
+def _verify_public_corpus_loss_share_evidence(
+    *,
+    value: Any,
+    config: Mapping[str, Any],
+    phase: str,
+    dataset_dir: Path,
+    tokenizer: Any | None = None,
+    preference_renderer: Any | None = None,
+    require_exact_tokenizer_counts: bool = False,
+) -> dict[str, Any]:
+    agent = config.get("agent")
+    if not isinstance(agent, str) or not agent:
+        raise RuntimeError(
+            "Public-corpus exact-token evidence requires a controlled agent"
+        )
+    if phase not in {"sft", "preference"}:
+        raise RuntimeError(f"Unsupported public-corpus loss-share phase: {phase}")
+    lane = "sft" if phase == "sft" else "dpo"
+    contract = _pipeline_validated_public_corpus_loss_share_contract(
+        config.get("publicCorpusLossShareContract"),
+        config=config,
+    )
+    evidence = _pipeline_exact_mapping(
+        value,
+        {
+            "schemaVersion",
+            "status",
+            "lane",
+            "enforcementScope",
+            "basisPointDenominator",
+            "capBasisPoints",
+            "tokenizer",
+            "tokenAccounting",
+            "dpoTokenizationPolicy",
+            "contractSHA256",
+            "splits",
+        },
+        label="Public-corpus loss-share evidence",
+    )
+    if (
+        evidence.get("schemaVersion")
+        != "lumen.public-corpus-loss-share-evidence/1.0.0"
+        or evidence.get("status") != "passed"
+        or evidence.get("lane") != lane
+        or evidence.get("enforcementScope")
+        != "optimizer_train_with_validation_observation"
+        or type(evidence.get("basisPointDenominator")) is not int
+        or evidence.get("basisPointDenominator") != 10_000
+        or evidence.get("capBasisPoints") != contract["capBasisPoints"]
+        or evidence.get("tokenizer") != contract["tokenizer"]
+        or evidence.get("tokenAccounting")
+        != contract["tokenAccounting"][lane]
+        or evidence.get("dpoTokenizationPolicy")
+        != (contract["dpoTokenizationPolicy"] if lane == "dpo" else None)
+        or evidence.get("contractSHA256") != canonical_sha256(contract)
+    ):
+        raise RuntimeError("Public-corpus loss-share evidence bindings drifted")
+
+    split_values = _pipeline_exact_mapping(
+        evidence.get("splits"),
+        {"train", "validation"},
+        label="Public-corpus loss-share evidence splits",
+    )
+    filenames = (
+        {"train": "train_sft.jsonl", "validation": "val_sft.jsonl"}
+        if lane == "sft"
+        else {"train": "train_dpo.jsonl", "validation": "val_dpo.jsonl"}
+    )
+    fields = _PUBLIC_CORPUS_LOSS_SHARE_FIELD_NAMES[lane]
+    if require_exact_tokenizer_counts and tokenizer is None:
+        raise RuntimeError(
+            "Public-corpus verification requires the exact pinned tokenizer"
+        )
+    appended_eos_token_id = None
+    if lane == "dpo" and tokenizer is not None:
+        from tools.fine_tuning.unsloth import train_dpo
+
+        if preference_renderer is None:
+            from trl.data_utils import maybe_apply_chat_template  # type: ignore
+
+            preference_renderer = maybe_apply_chat_template
+        appended_eos_token_id = train_dpo._dpo_appended_eos_token_id(tokenizer)
+    for split in ("train", "validation"):
+        split_evidence = _pipeline_exact_mapping(
+            split_values.get(split),
+            {
+                "records",
+                "capEnforcementStatus",
+                "sourceRowsSHA256",
+                "rowTokenEvidence",
+                *fields.values(),
+            },
+            label=f"Public-corpus {lane} {split} loss-share evidence",
+        )
+        source_rows = read_jsonl(dataset_dir / filenames[split])
+        if lane == "sft":
+            limit_key = (
+                "max_train_records" if split == "train" else "max_val_records"
+            )
+            limit = int(config.get(limit_key) or 0)
+            if limit > 0:
+                source_rows = source_rows[:limit]
+        expected_enforcement_status = (
+            "optimizer_enforced"
+            if split == "train"
+            else "observed_non_optimizer_split"
+        )
+        row_values = split_evidence.get("rowTokenEvidence")
+        if (
+            not source_rows
+            or not isinstance(row_values, list)
+            or len(row_values) != len(source_rows)
+            or split_evidence.get("records") != len(source_rows)
+            or split_evidence.get("capEnforcementStatus")
+            != expected_enforcement_status
+        ):
+            raise RuntimeError(
+                f"Public-corpus {lane} {split} evidence row count drifted"
+            )
+        denominator = 0
+        public = 0
+        row_hashes: list[str] = []
+        for index, (source_row, row_value) in enumerate(
+            zip(source_rows, row_values)
+        ):
+            row_evidence = _pipeline_exact_mapping(
+                row_value,
+                {
+                    "rowIndex",
+                    "sourceRowSHA256",
+                    "sourceFamily",
+                    "isPublicCorpus",
+                    "targetTokenCount",
+                },
+                label=f"Public-corpus {lane} {split} row evidence",
+            )
+            row_hash = canonical_sha256(source_row)
+            source_family, is_public = (
+                _pipeline_public_corpus_row_classification(
+                    source_row,
+                    contract=contract,
+                )
+            )
+            target_tokens = row_evidence.get("targetTokenCount")
+            exact_target_tokens = (
+                _pipeline_exact_public_target_token_count(
+                    source_row,
+                    lane=lane,
+                    tokenizer=tokenizer,
+                    source_path=dataset_dir / filenames[split],
+                    split=split,
+                    row_index=index,
+                    preference_renderer=preference_renderer,
+                    appended_eos_token_id=appended_eos_token_id,
+                )
+                if tokenizer is not None
+                else None
+            )
+            if (
+                type(row_evidence.get("rowIndex")) is not int
+                or row_evidence.get("rowIndex") != index
+                or row_evidence.get("sourceRowSHA256") != row_hash
+                or row_evidence.get("sourceFamily") != source_family
+                or type(row_evidence.get("isPublicCorpus")) is not bool
+                or row_evidence.get("isPublicCorpus") is not is_public
+                or type(target_tokens) is not int
+                or target_tokens <= 0
+                or (
+                    exact_target_tokens is not None
+                    and target_tokens != exact_target_tokens
+                )
+            ):
+                raise RuntimeError(
+                    f"Public-corpus {lane} {split} exact-token row evidence drifted"
+                )
+            row_hashes.append(row_hash)
+            denominator += target_tokens
+            if is_public:
+                public += target_tokens
+        if (
+            type(split_evidence.get(fields["denominatorTokenCount"])) is not int
+            or type(
+                split_evidence.get(fields["publicNumeratorTokenCount"])
+            )
+            is not int
+            or split_evidence.get("sourceRowsSHA256")
+            != canonical_sha256(row_hashes)
+            or split_evidence.get(fields["denominatorTokenCount"])
+            != denominator
+            or split_evidence.get(fields["publicNumeratorTokenCount"])
+            != public
+        ):
+            raise RuntimeError(
+                f"Public-corpus {lane} {split} totals failed reconstruction"
+            )
+        if split == "train" and any(
+            not _pipeline_public_corpus_cap_passes(public, denominator, cap)
+            for cap in contract["capBasisPoints"].values()
+        ):
+            raise RuntimeError(
+                f"Public-corpus {lane} {split} exact-token cap failed"
+            )
+    return dict(evidence)
+
+
 def _pipeline_validated_fleet_loss_share_contract(
     value: Any,
     *,
@@ -4671,7 +7986,7 @@ def _pipeline_validated_fleet_loss_share_contract(
         label="Fleet loss-share contract",
     )
     if (
-        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.1.0"
+        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.2.0"
         or contract.get("enforcementRequired") is not True
         or contract.get("enforcementPhase")
         != "post_tokenizer_load_pre_optimizer"
@@ -4714,6 +8029,7 @@ def _pipeline_validated_fleet_loss_share_contract(
         contract.get("sourceSelectionProxy"),
         {
             "status",
+            "maximumPublicBehavioralShareBasisPoints",
             "maximumSupplementalStaticShareBasisPoints",
             "contract",
         },
@@ -4734,6 +8050,10 @@ def _pipeline_validated_fleet_loss_share_contract(
     if (
         source_selection_proxy.get("status")
         != "safety_budget_not_exact_token_count"
+        or source_selection_proxy.get(
+            "maximumPublicBehavioralShareBasisPoints"
+        )
+        != 3_000
         or source_selection_proxy.get("maximumSupplementalStaticShareBasisPoints")
         != 1_500
         or source_proxy_contract.get("schemaVersion")
@@ -4766,7 +8086,12 @@ def _pipeline_validated_fleet_loss_share_contract(
         raise RuntimeError("Fleet token-accounting contract drifted")
     tokenizer = _pipeline_exact_mapping(
         contract.get("tokenizer"),
-        {"baseModelID", "baseModelRevision", "tokenizerSHA256"},
+        {
+            "baseModelID",
+            "baseModelRevision",
+            "tokenizerSHA256",
+            "tokenizerClosureSHA256",
+        },
         label="Fleet tokenizer binding",
     )
     if (
@@ -4774,9 +8099,16 @@ def _pipeline_validated_fleet_loss_share_contract(
         or tokenizer.get("baseModelRevision") != config.get("baseModelRevision")
         or tokenizer.get("tokenizerSHA256")
         != config.get("baseModelTokenizerDigest")
+        or tokenizer.get("tokenizerClosureSHA256")
+        != config.get("baseModelTokenizerClosureSHA256")
         or re.fullmatch(r"[0-9a-f]{40}", str(tokenizer.get("baseModelRevision") or ""))
         is None
         or re.fullmatch(r"[0-9a-f]{64}", str(tokenizer.get("tokenizerSHA256") or ""))
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(tokenizer.get("tokenizerClosureSHA256") or ""),
+        )
         is None
     ):
         raise RuntimeError("Fleet tokenizer binding drifted")
@@ -5229,6 +8561,8 @@ def _verify_training_token_length_preflight(
         and evidence.get("baseModelRevision") == config.get("baseModelRevision")
         and evidence.get("baseModelTokenizerDigest")
         == config.get("baseModelTokenizerDigest")
+        and evidence.get("baseModelTokenizerClosureSHA256")
+        == config.get("baseModelTokenizerClosureSHA256")
         and evidence.get("chatTemplateContract") == config.get("chatTemplateContract")
         and evidence.get("truncationRequired") is False
         and type(observed_sequence_margin) is int
@@ -5285,6 +8619,12 @@ def _verify_training_token_length_preflight(
         phase=phase,
         dataset_dir=dataset_dir,
     )
+    _verify_public_corpus_loss_share_evidence(
+        value=evidence.get("publicCorpusLossShareEvidence"),
+        config=config,
+        phase=phase,
+        dataset_dir=dataset_dir,
+    )
     _verified_global_tokenizer_preflight(
         run_root=run_root,
         agent=agent,
@@ -5295,12 +8635,31 @@ def _verify_training_token_length_preflight(
     return evidence
 
 
+def _verify_peft_base_model_identity(
+    adapter_dir: Path,
+    config: Mapping[str, Any],
+) -> dict[str, Any]:
+    path = adapter_dir / "adapter_config.json"
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("Adapter lacks a regular PEFT configuration")
+    value = read_object(path)
+    revision = value.get("revision")
+    if (
+        value.get("base_model_name_or_path") != config.get("baseModelID")
+        or revision != config.get("baseModelRevision")
+        or re.fullmatch(r"[0-9a-f]{40}", str(revision or "")) is None
+    ):
+        raise RuntimeError("Adapter PEFT base-model identity or revision drifted")
+    return value
+
+
 def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
     from tools.fine_tuning.unsloth.adapter_artifact import verify_adapter_artifact
 
     config = read_object(run_root / "configs" / f"{agent}.json")
     precision = _reconstructed_training_precision(config)
     adapter_dir = run_root / "models" / "lora_qwen3_bootstrap" / agent
+    _verify_peft_base_model_identity(adapter_dir, config)
     finalized_path = run_root / "training" / agent / "finalized_variant_manifest.json"
     report_path = run_root / "training" / agent / "training_report.json"
     finalized = _verify_manifest_integrity(finalized_path)
@@ -5327,6 +8686,8 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
         adapter_dir,
         expected_adapter_sha256=str(artifact.get("adapterSHA256") or ""),
         expected_training_phase="sft",
+        expected_base_model=str(config.get("baseModelID") or ""),
+        expected_base_revision=str(config.get("baseModelRevision") or ""),
     )
     training_report = _verify_training_report(
         report_path,
@@ -5338,8 +8699,9 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
         ),
         expected_precision=precision,
         expected={
-            "schema": "lumen.train_sft.manifest/1.0.0",
+            "schema": "lumen.train_sft.manifest/1.2.0",
             "agent": agent,
+            "baseModelID": config.get("baseModelID"),
             "trainingPhase": "sft",
             "seed": config.get("seed"),
             "config_sha256": file_sha256(
@@ -5357,6 +8719,11 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
             "precision": precision,
         },
     )
+    phase_runtime_evidence = _verify_phase_runtime_evidence(
+        config=config,
+        report=training_report,
+        adapter_dir=adapter_dir,
+    )
     token_length_preflight = _verify_training_token_length_preflight(
         run_root=run_root,
         agent=agent,
@@ -5369,6 +8736,8 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
         "adapterSHA256": adapter_manifest["adapterSHA256"],
         "finalizedVariantManifestSHA256": finalized["variantManifestSHA256"],
         "report": str(report_path),
+        "trainingReportFileSHA256": file_sha256(report_path),
+        **phase_runtime_evidence,
         "trainingCompletion": training_report["trainingCompletion"],
         "precision": precision,
         "tokenLengthPreflight": str(
@@ -5378,6 +8747,9 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
         "fleetLossShareEvidence": token_length_preflight.get(
             "fleetLossShareEvidence"
         ),
+        "publicCorpusLossShareEvidence": token_length_preflight[
+            "publicCorpusLossShareEvidence"
+        ],
         "tokenLengthStatistics": {
             field: token_length_preflight[field]
             for field in (
@@ -5400,6 +8772,7 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
     precision = _reconstructed_training_precision(config)
     sft = verify_sft(run_root, agent)
     adapter_dir = run_root / "models" / "lora_qwen3_dpo" / agent
+    _verify_peft_base_model_identity(adapter_dir, config)
     finalized_path = run_root / "training" / agent / "dpo" / "finalized_variant_manifest.json"
     report_path = run_root / "training" / agent / "dpo" / "dpo_report.json"
     finalized = _verify_manifest_integrity(finalized_path)
@@ -5428,6 +8801,8 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
         expected_adapter_sha256=str(artifact.get("adapterSHA256") or ""),
         expected_training_phase="sft_dpo",
         expected_parent_sft_adapter_sha256=sft["adapterSHA256"],
+        expected_base_model=str(config.get("baseModelID") or ""),
+        expected_base_revision=str(config.get("baseModelRevision") or ""),
     )
     training_report = _verify_training_report(
         report_path,
@@ -5439,6 +8814,7 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
         ),
         expected_precision=precision,
         expected={
+            "schema": "lumen.train_preference.report/1.0.0",
             "agent": agent,
             "trainer": "ORPOTrainer" if trainer == "orpo" else "DPOTrainer",
             "training_phase": "sft_dpo",
@@ -5461,6 +8837,11 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
             ],
             "precision": precision,
         },
+    )
+    phase_runtime_evidence = _verify_phase_runtime_evidence(
+        config=config,
+        report=training_report,
+        adapter_dir=adapter_dir,
     )
     reference_log_prob_evidence = None
     if trainer == "dpo":
@@ -5493,6 +8874,8 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
         "parentSFTAdapterSHA256": sft["adapterSHA256"],
         "finalizedVariantManifestSHA256": finalized["variantManifestSHA256"],
         "report": str(report_path),
+        "trainingReportFileSHA256": file_sha256(report_path),
+        **phase_runtime_evidence,
         "trainingCompletion": training_report["trainingCompletion"],
         "precision": precision,
         "referenceLogProbEvidence": reference_log_prob_evidence,
@@ -5503,6 +8886,9 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
         "fleetLossShareEvidence": token_length_preflight.get(
             "fleetLossShareEvidence"
         ),
+        "publicCorpusLossShareEvidence": token_length_preflight[
+            "publicCorpusLossShareEvidence"
+        ],
         "tokenLengthStatistics": {
             field: token_length_preflight[field]
             for field in (
@@ -5766,6 +9152,7 @@ def _verify_evaluation_outputs(
     agent: str,
     *,
     final_phase: Mapping[str, Any],
+    require_passing_status: bool = True,
 ) -> dict[str, Any]:
     if run_root.is_symlink() or not run_root.is_dir():
         raise RuntimeError(f"Evaluation run root is not a regular directory: {run_root}")
@@ -5809,6 +9196,16 @@ def _verify_evaluation_outputs(
         "configPath",
         "configSHA256",
         "chatTemplateContract",
+        "baseModelTokenizerDigest",
+        "baseModelTokenizerFiles",
+        "baseModelTokenizerClosureSHA256",
+        "baseModelGenerationConfigFile",
+        "baseModelTokenizerSnapshotPath",
+        "baseModelTokenizerSnapshotVerification",
+        "baseModelRuntimeSnapshotPath",
+        "baseModelRuntimeSnapshotVerification",
+        "runtimeModelBinding",
+        "runtimeTokenizerBinding",
         "adapterDirectory",
         "adapterSHA256",
         "finalizedVariantManifestPath",
@@ -5952,6 +9349,51 @@ def _verify_evaluation_outputs(
         raise RuntimeError(
             f"Frozen evaluation scoring lineage failed verification: {evaluation_path}"
         ) from exc
+
+    tokenizer_snapshot_verification = _verified_private_tokenizer_snapshot_binding(
+        config
+    )
+    runtime_snapshot_verification = (
+        _verified_private_base_model_runtime_snapshot_binding(config)
+    )
+    expected_runtime_evidence = {
+        "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerFiles": config.get("baseModelTokenizerFiles"),
+        "baseModelTokenizerClosureSHA256": config.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "baseModelGenerationConfigFile": config.get(
+            "baseModelGenerationConfigFile"
+        ),
+        "baseModelTokenizerSnapshotPath": config.get(
+            "baseModelTokenizerSnapshotPath"
+        ),
+        "baseModelTokenizerSnapshotVerification": (
+            tokenizer_snapshot_verification
+        ),
+        "baseModelRuntimeSnapshotPath": config.get("baseModelRuntimeSnapshotPath"),
+        "baseModelRuntimeSnapshotVerification": runtime_snapshot_verification,
+    }
+    runtime_evidence_drifted = [
+        field
+        for field, expected in expected_runtime_evidence.items()
+        if evaluation_run.get(field) != expected
+    ]
+    if runtime_evidence_drifted:
+        raise RuntimeError(
+            "Evaluation private-runtime evidence drifted: "
+            + ", ".join(runtime_evidence_drifted)
+        )
+    _verified_runtime_model_binding(
+        evaluation_run.get("runtimeModelBinding"),
+        config=config,
+        snapshot_verification=runtime_snapshot_verification,
+    )
+    _verified_runtime_tokenizer_binding(
+        evaluation_run.get("runtimeTokenizerBinding"),
+        config=config,
+        snapshot_verification=runtime_snapshot_verification,
+    )
 
     prepared_run = _verified_run_manifest(run_root)
     prepared_execution_plan = _verified_execution_plan(
@@ -6259,25 +9701,32 @@ def _verify_evaluation_outputs(
     ):
         raise RuntimeError(f"Evaluation evidence lineage failed verification: {evaluation_dir}")
     evaluation_status = evaluation_run.get("status")
-    if evaluation_status not in {"quality_gate_passed", "smoke_complete"}:
-        raise RuntimeError(f"Evaluation did not pass or complete a smoke run: {run_path}")
-    if evaluation_status == "quality_gate_passed" and (
-        complete_evaluation is not True
-        or quality_gate_passed is not True
-        or format_failure_count != 0
-        or recomputed_report.get("promotionEvidenceBound") is not True
-    ):
-        raise RuntimeError(f"Full evaluation quality gate failed: {run_path}")
-    if evaluation_status == "smoke_complete" and (
-        complete_evaluation is not False
-        or quality_gate_passed is not False
-        or format_failure_count != 0
-        or recomputed_report.get("promotionEvidenceBound") is not False
-        or recomputed_report.get("criticalFailureCount") != 0
-        or recomputed_report.get("passedCaseCount")
-        != recomputed_report.get("caseCount")
-    ):
-        raise RuntimeError(f"Evaluation smoke status is inconsistent: {run_path}")
+    passing_statuses = {"quality_gate_passed", "smoke_complete"}
+    failed_statuses = {"format_failed", "quality_gate_failed", "smoke_failed"}
+    if evaluation_status not in passing_statuses | failed_statuses:
+        raise RuntimeError(f"Evaluation has an unsupported terminal status: {run_path}")
+    if require_passing_status:
+        if evaluation_status not in passing_statuses:
+            raise RuntimeError(
+                f"Evaluation did not pass or complete a smoke run: {run_path}"
+            )
+        if evaluation_status == "quality_gate_passed" and (
+            complete_evaluation is not True
+            or quality_gate_passed is not True
+            or format_failure_count != 0
+            or recomputed_report.get("promotionEvidenceBound") is not True
+        ):
+            raise RuntimeError(f"Full evaluation quality gate failed: {run_path}")
+        if evaluation_status == "smoke_complete" and (
+            complete_evaluation is not False
+            or quality_gate_passed is not False
+            or format_failure_count != 0
+            or recomputed_report.get("promotionEvidenceBound") is not False
+            or recomputed_report.get("criticalFailureCount") != 0
+            or recomputed_report.get("passedCaseCount")
+            != recomputed_report.get("caseCount")
+        ):
+            raise RuntimeError(f"Evaluation smoke status is inconsistent: {run_path}")
     return evaluation_run
 
 
@@ -6292,17 +9741,190 @@ def verify_evaluation(run_root: Path, agent: str) -> dict[str, Any]:
     )
 
 
+def classify_completed_evaluation(run_root: Path, agent: str) -> dict[str, Any]:
+    """Verify a terminal evidence trio without treating failed quality as invalid."""
+
+    final_phase = verify_preference(run_root, agent)
+    evaluation = _verify_evaluation_outputs(
+        run_root,
+        agent,
+        final_phase=final_phase,
+        require_passing_status=False,
+    )
+    status = str(evaluation["status"])
+    state = (
+        "completed_success"
+        if status in {"quality_gate_passed", "smoke_complete"}
+        else "completed_quality_failure"
+    )
+    return {
+        "agent": agent,
+        "state": state,
+        "status": status,
+        "qualityGatePassed": evaluation["qualityGatePassed"],
+        "evaluationRunManifest": str(
+            run_root / "evaluation" / agent / "evaluation_run_manifest.json"
+        ),
+        "evaluationRunManifestSHA256": evaluation["runManifestSHA256"],
+    }
+
+
+def _verified_runtime_binding_smoke_summary_evidence(
+    run_root: Path,
+    agents: Sequence[str],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth import runtime_binding_smoke_gate
+
+    report = runtime_binding_smoke_gate.verify_existing_report(run_root, agents)
+    report_path = run_root / "training" / runtime_binding_smoke_gate.REPORT_FILENAME
+    report_digest = report.get(runtime_binding_smoke_gate.REPORT_HASH_FIELD)
+    contracts = report.get("contracts")
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", str(report_digest or "")) is None
+        or not isinstance(contracts, list)
+        or not contracts
+    ):
+        raise RuntimeError("Runtime-binding smoke evidence is incomplete")
+    compact_contracts: list[dict[str, Any]] = []
+    bindings_by_agent: dict[str, dict[str, str]] = {}
+    for item in contracts:
+        smoke = item.get("smoke") if isinstance(item, Mapping) else None
+        model_binding = (
+            smoke.get("runtimeModelBinding") if isinstance(smoke, Mapping) else None
+        )
+        tokenizer_binding = (
+            smoke.get("runtimeTokenizerBinding") if isinstance(smoke, Mapping) else None
+        )
+        contract_agents = item.get("agents") if isinstance(item, Mapping) else None
+        compact = {
+            "runtimeLoadContractSHA256": (
+                item.get("runtimeLoadContractSHA256")
+                if isinstance(item, Mapping)
+                else None
+            ),
+            "agents": contract_agents,
+            "representativeAgent": (
+                item.get("representativeAgent")
+                if isinstance(item, Mapping)
+                else None
+            ),
+            "runtimeBindingSmokeSHA256": (
+                smoke.get(runtime_binding_smoke_gate.SMOKE_HASH_FIELD)
+                if isinstance(smoke, Mapping)
+                else None
+            ),
+            "runtimeModelBindingSHA256": (
+                model_binding.get("runtimeModelBindingSHA256")
+                if isinstance(model_binding, Mapping)
+                else None
+            ),
+            "runtimeTokenizerBindingSHA256": (
+                tokenizer_binding.get("runtimeTokenizerBindingSHA256")
+                if isinstance(tokenizer_binding, Mapping)
+                else None
+            ),
+        }
+        digest_fields = (
+            "runtimeLoadContractSHA256",
+            "runtimeBindingSmokeSHA256",
+            "runtimeModelBindingSHA256",
+            "runtimeTokenizerBindingSHA256",
+        )
+        if (
+            not isinstance(contract_agents, list)
+            or not contract_agents
+            or any(not isinstance(agent, str) for agent in contract_agents)
+            or compact["representativeAgent"] not in contract_agents
+            or any(
+                re.fullmatch(r"[0-9a-f]{64}", str(compact[field] or "")) is None
+                for field in digest_fields
+            )
+        ):
+            raise RuntimeError("Runtime-binding smoke contract evidence is invalid")
+        compact_contracts.append(compact)
+        binding_evidence = {
+            "runtimeModelBindingSHA256": str(
+                compact["runtimeModelBindingSHA256"]
+            ),
+            "runtimeTokenizerBindingSHA256": str(
+                compact["runtimeTokenizerBindingSHA256"]
+            ),
+        }
+        for agent in contract_agents:
+            if agent in bindings_by_agent:
+                raise RuntimeError(
+                    "Runtime-binding smoke assigns an agent to multiple contracts"
+                )
+            bindings_by_agent[agent] = binding_evidence
+    if set(bindings_by_agent) != set(agents):
+        raise RuntimeError("Runtime-binding smoke agent coverage drifted")
+    return {
+        "runtimeBindingSmokeReport": str(report_path),
+        "runtimeBindingSmokeReportFileSHA256": file_sha256(report_path),
+        "runtimeBindingSmokeGateSHA256": str(report_digest),
+        "runtimeBindingSmokeContractEvidence": compact_contracts,
+        "runtimeBindingSmokeBindingsByAgent": bindings_by_agent,
+    }
+
+
+def _require_runtime_bindings_match_smoke(
+    *,
+    agent: str,
+    source: Mapping[str, Any],
+    smoke_evidence: Mapping[str, Any],
+    label: str,
+    model_field: str = "runtimeModelBindingSHA256",
+    tokenizer_field: str = "runtimeTokenizerBindingSHA256",
+) -> None:
+    bindings = smoke_evidence.get("runtimeBindingSmokeBindingsByAgent")
+    expected = bindings.get(agent) if isinstance(bindings, Mapping) else None
+    if (
+        not isinstance(expected, Mapping)
+        or source.get(model_field) != expected.get("runtimeModelBindingSHA256")
+        or source.get(tokenizer_field)
+        != expected.get("runtimeTokenizerBindingSHA256")
+    ):
+        raise RuntimeError(
+            f"{label} runtime bindings drifted from the pre-training smoke gate: {agent}"
+        )
+
+
 def _derived_summary_state(
     *,
     plan: Mapping[str, Any],
     evaluation_statuses: Sequence[str],
     agent_count: int,
     gguf_count: int,
+    preference_training: bool = True,
 ) -> dict[str, Any]:
     if agent_count <= 0:
         raise RuntimeError("Summary state requires at least one prepared agent")
+    if type(preference_training) is not bool:
+        raise RuntimeError("Summary preference-training state must be boolean")
     verified_plan = _verified_execution_plan(plan)
     evaluation_scope = str(verified_plan["evaluationScope"])
+    if not preference_training:
+        if (
+            evaluation_scope != "none"
+            or verified_plan["ggufRequested"] is not False
+            or evaluation_statuses
+            or gguf_count != 0
+        ):
+            raise RuntimeError(
+                "SFT-only diagnostic summaries cannot include preference, "
+                "evaluation, or GGUF evidence"
+            )
+        return {
+            "status": "sft_only_diagnostic_complete",
+            "trainingScope": "sft_only",
+            "evaluationStatus": "not_run",
+            "evaluationScope": "none",
+            "ggufStatus": "not_applicable_sft_only",
+            "ggufConversionStatus": "not_applicable",
+            "ggufTensorEquivalenceStatus": "not_applicable",
+            "qualification": "diagnostic_only",
+            "promotionEligible": False,
+        }
     if len(evaluation_statuses) not in {0, agent_count}:
         raise RuntimeError(
             "Summary contains partial evaluation evidence across prepared agents"
@@ -6355,6 +9977,7 @@ def _derived_summary_state(
         status = "training_complete_without_full_evaluation"
     return {
         "status": status,
+        "trainingScope": "sft_preference",
         "evaluationStatus": evaluation_status,
         "evaluationScope": evaluation_scope,
         "ggufStatus": gguf_status,
@@ -6397,14 +10020,29 @@ def write_summary(
         prepared_execution_plan["evaluationScope"] != "none"
     ):
         raise RuntimeError("Summary evaluation request drifted from the execution plan")
-    gguf_inventory = _verify_gguf_inventory(
-        run_root,
-        agents,
-        require_all=require_gguf,
+    if not preference and (
+        prepared_execution_plan["evaluationScope"] != "none"
+        or prepared_execution_plan["ggufRequested"] is not False
+    ):
+        raise RuntimeError(
+            "SFT-only diagnostic summaries require evaluation and GGUF to be disabled"
+        )
+    gguf_inventory = (
+        _verify_gguf_inventory(
+            run_root,
+            agents,
+            require_all=require_gguf,
+        )
+        if preference
+        else {}
+    )
+    runtime_binding_smoke_evidence = (
+        _verified_runtime_binding_smoke_summary_evidence(run_root, agents)
     )
     summary: dict[str, Any] = {
         "schema": SUMMARY_SCHEMA_VERSION,
         "status": "pending_verification",
+        "trainingScope": "pending_verification",
         "evaluationStatus": "pending_verification",
         "evaluationScope": "pending_verification",
         "ggufStatus": "pending_verification",
@@ -6416,6 +10054,32 @@ def write_summary(
         "variant": variant,
         "runRoot": str(run_root),
         "preferenceTraining": preference,
+        "baseModelID": run_manifest["baseModelID"],
+        "baseModelRevision": run_manifest["baseModelRevision"],
+        "baseModelTokenizerDigest": run_manifest[
+            "baseModelTokenizerDigest"
+        ],
+        "baseModelTokenizerFiles": run_manifest["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": run_manifest[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelTokenizerSnapshotPath": run_manifest[
+            "baseModelTokenizerSnapshotPath"
+        ],
+        "baseModelTokenizerSnapshotVerification": run_manifest[
+            "baseModelTokenizerSnapshotVerification"
+        ],
+        "baseModelGenerationConfigFile": run_manifest[
+            "baseModelGenerationConfigFile"
+        ],
+        "baseModelRuntimeSnapshotPath": run_manifest[
+            "baseModelRuntimeSnapshotPath"
+        ],
+        "baseModelRuntimeSnapshotVerification": run_manifest[
+            "baseModelRuntimeSnapshotVerification"
+        ],
+        "runManifestSHA256": run_manifest["runManifestSHA256"],
+        **runtime_binding_smoke_evidence,
         **{
             field: run_manifest[field]
             for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
@@ -6424,7 +10088,26 @@ def write_summary(
     }
     for agent in agents:
         sft = verify_sft(run_root, agent)
+        _require_runtime_bindings_match_smoke(
+            agent=agent,
+            source=sft,
+            smoke_evidence=runtime_binding_smoke_evidence,
+            label="SFT phase",
+        )
         final_phase = verify_preference(run_root, agent) if preference else sft
+        if preference:
+            _require_runtime_bindings_match_smoke(
+                agent=agent,
+                source=final_phase,
+                smoke_evidence=runtime_binding_smoke_evidence,
+                label="Preference phase",
+            )
+        if not preference:
+            summary["agents"][agent] = {
+                "sft": sft,
+                "finalPhase": final_phase,
+            }
+            continue
         gguf = run_root / "models" / "lora_qwen3_gguf" / f"lumen-{agent}-lora.gguf"
         gguf_metadata = (
             verify_gguf_file(run_root, gguf)
@@ -6434,6 +10117,15 @@ def write_summary(
         gguf_exists = gguf_metadata is not None
         if require_gguf and not gguf_exists:
             raise RuntimeError(f"Missing required GGUF adapter: {gguf}")
+        if gguf_metadata is not None:
+            _require_runtime_bindings_match_smoke(
+                agent=agent,
+                source=gguf_metadata,
+                smoke_evidence=runtime_binding_smoke_evidence,
+                label="GGUF conversion",
+                model_field="adapterGGUFRuntimeModelBindingSHA256",
+                tokenizer_field="adapterGGUFRuntimeTokenizerBindingSHA256",
+            )
         evaluation_dir = run_root / "evaluation" / agent
         evaluation = evaluation_dir / "evaluation_report.json"
         evaluation_run = evaluation_dir / "evaluation_run_manifest.json"
@@ -6449,6 +10141,31 @@ def write_summary(
                 run_root,
                 agent,
                 final_phase=final_phase,
+            )
+            _require_runtime_bindings_match_smoke(
+                agent=agent,
+                source={
+                    "runtimeModelBindingSHA256": (
+                        evaluation_status.get("runtimeModelBinding", {}).get(
+                            "runtimeModelBindingSHA256"
+                        )
+                        if isinstance(
+                            evaluation_status.get("runtimeModelBinding"), Mapping
+                        )
+                        else None
+                    ),
+                    "runtimeTokenizerBindingSHA256": (
+                        evaluation_status.get("runtimeTokenizerBinding", {}).get(
+                            "runtimeTokenizerBindingSHA256"
+                        )
+                        if isinstance(
+                            evaluation_status.get("runtimeTokenizerBinding"), Mapping
+                        )
+                        else None
+                    ),
+                },
+                smoke_evidence=runtime_binding_smoke_evidence,
+                label="Evaluation",
             )
         summary["agents"][agent] = {
             "sft": sft,
@@ -6484,6 +10201,7 @@ def write_summary(
             evaluation_statuses=[str(item.get("status")) for item in evaluations],
             agent_count=len(agents),
             gguf_count=len(gguf_inventory),
+            preference_training=preference,
         )
     )
     summary["summarySHA256"] = canonical_sha256(summary)
@@ -6523,6 +10241,7 @@ def _verified_completed_summary(
         != {
             "schema",
             "status",
+            "trainingScope",
             "evaluationStatus",
             "evaluationScope",
             "ggufStatus",
@@ -6534,6 +10253,18 @@ def _verified_completed_summary(
             "variant",
             "runRoot",
             "preferenceTraining",
+            "baseModelID",
+            "baseModelRevision",
+            "baseModelTokenizerDigest",
+            "baseModelTokenizerFiles",
+            "baseModelTokenizerClosureSHA256",
+            "baseModelTokenizerSnapshotPath",
+            "baseModelTokenizerSnapshotVerification",
+            "baseModelGenerationConfigFile",
+            "baseModelRuntimeSnapshotPath",
+            "baseModelRuntimeSnapshotVerification",
+            "runManifestSHA256",
+            *RUNTIME_BINDING_SMOKE_SUMMARY_FIELDS,
             *UBUNTU_SOURCE_INTEGRITY_FIELDS,
             "agents",
             "summarySHA256",
@@ -6541,7 +10272,23 @@ def _verified_completed_summary(
         or summary.get("schema") != SUMMARY_SCHEMA_VERSION
         or summary.get("runRoot") != str(run_root)
         or summary.get("variant") != run_manifest.get("variant")
-        or summary.get("preferenceTraining") is not True
+        or type(summary.get("preferenceTraining")) is not bool
+        or any(
+            summary.get(field) != run_manifest.get(field)
+            for field in (
+                "baseModelID",
+                "baseModelRevision",
+                "baseModelTokenizerDigest",
+                "baseModelTokenizerFiles",
+                "baseModelTokenizerClosureSHA256",
+                "baseModelTokenizerSnapshotPath",
+                "baseModelTokenizerSnapshotVerification",
+                "baseModelGenerationConfigFile",
+                "baseModelRuntimeSnapshotPath",
+                "baseModelRuntimeSnapshotVerification",
+                "runManifestSHA256",
+            )
+        )
         or any(
             summary.get(field) != run_manifest.get(field)
             for field in UBUNTU_SOURCE_INTEGRITY_FIELDS
@@ -6552,37 +10299,56 @@ def _verified_completed_summary(
             "complete_without_gguf",
             "smoke_complete",
             "training_complete_without_full_evaluation",
+            "sft_only_diagnostic_complete",
         }
         or summary.get("evaluationStatus")
         not in {"quality_gate_passed", "smoke_complete", "not_run"}
         or summary.get("evaluationScope") not in {"full", "smoke", "none"}
         or summary.get("ggufStatus")
-        not in {"verified", "skipped_by_operator"}
+        not in {"verified", "skipped_by_operator", "not_applicable_sft_only"}
         or summary.get("ggufConversionStatus")
-        not in {GGUF_CONVERSION_QUALIFICATION, "skipped_by_operator"}
+        not in {
+            GGUF_CONVERSION_QUALIFICATION,
+            "skipped_by_operator",
+            "not_applicable",
+        }
         or summary.get("ggufTensorEquivalenceStatus")
         not in {GGUF_TENSOR_EQUIVALENCE_STATUS, "not_applicable"}
         or summary.get("qualification")
         not in {"quality_gate_passed", "diagnostic_only"}
         or type(summary.get("promotionEligible")) is not bool
+        or summary.get("trainingScope") not in {"sft_preference", "sft_only"}
         or summary.get("executionPlanSHA256")
         != prepared_execution_plan["executionPlanSHA256"]
         or not isinstance(summary_agents, Mapping)
         or set(summary_agents) != set(agents)
     ):
         raise RuntimeError("Completed Ubuntu training summary failed verification")
-    gguf_inventory = _verify_gguf_inventory(
-        run_root,
-        agents,
-        require_all=False,
+    runtime_binding_smoke_evidence = (
+        _verified_runtime_binding_smoke_summary_evidence(run_root, agents)
+    )
+    if any(
+        summary.get(field) != runtime_binding_smoke_evidence.get(field)
+        for field in RUNTIME_BINDING_SMOKE_SUMMARY_FIELDS
+    ):
+        raise RuntimeError(
+            "Completed summary runtime-binding smoke evidence drifted"
+        )
+    preference_training = bool(summary["preferenceTraining"])
+    gguf_inventory = (
+        _verify_gguf_inventory(
+            run_root,
+            agents,
+            require_all=False,
+        )
+        if preference_training
+        else {}
     )
     evaluation_statuses: list[str] = []
     for agent in agents:
         item = summary_agents.get(agent)
-        if (
-            not isinstance(item, Mapping)
-            or set(item)
-            != {
+        expected_agent_fields = (
+            {
                 "sft",
                 "finalPhase",
                 "adapterGGUF",
@@ -6595,12 +10361,35 @@ def _verified_completed_summary(
                 "evaluationReportExists",
                 "evaluation",
             }
+            if preference_training
+            else {"sft", "finalPhase"}
+        )
+        if (
+            not isinstance(item, Mapping)
+            or set(item) != expected_agent_fields
         ):
             raise RuntimeError(f"Completed summary lacks agent {agent}")
         sft = verify_sft(run_root, agent)
-        final_phase = verify_preference(run_root, agent)
+        _require_runtime_bindings_match_smoke(
+            agent=agent,
+            source=sft,
+            smoke_evidence=runtime_binding_smoke_evidence,
+            label="SFT phase",
+        )
+        final_phase = (
+            verify_preference(run_root, agent) if preference_training else sft
+        )
+        if preference_training:
+            _require_runtime_bindings_match_smoke(
+                agent=agent,
+                source=final_phase,
+                smoke_evidence=runtime_binding_smoke_evidence,
+                label="Preference phase",
+            )
         if item.get("sft") != sft or item.get("finalPhase") != final_phase:
             raise RuntimeError(f"Completed summary adapter lineage drifted for {agent}")
+        if not preference_training:
+            continue
         evaluation_report = run_root / "evaluation" / agent / "evaluation_report.json"
         evaluation_report_exists = (
             not evaluation_report.is_symlink()
@@ -6623,6 +10412,31 @@ def _verified_completed_summary(
             )
             if evaluation != verified_evaluation:
                 raise RuntimeError(f"Completed summary evaluation drifted for {agent}")
+            _require_runtime_bindings_match_smoke(
+                agent=agent,
+                source={
+                    "runtimeModelBindingSHA256": (
+                        verified_evaluation.get("runtimeModelBinding", {}).get(
+                            "runtimeModelBindingSHA256"
+                        )
+                        if isinstance(
+                            verified_evaluation.get("runtimeModelBinding"), Mapping
+                        )
+                        else None
+                    ),
+                    "runtimeTokenizerBindingSHA256": (
+                        verified_evaluation.get("runtimeTokenizerBinding", {}).get(
+                            "runtimeTokenizerBindingSHA256"
+                        )
+                        if isinstance(
+                            verified_evaluation.get("runtimeTokenizerBinding"), Mapping
+                        )
+                        else None
+                    ),
+                },
+                smoke_evidence=runtime_binding_smoke_evidence,
+                label="Evaluation",
+            )
             evaluation_statuses.append(str(verified_evaluation.get("status")))
         elif evaluation_report_exists:
             raise RuntimeError(f"Completed summary evaluation flag drifted for {agent}")
@@ -6639,6 +10453,14 @@ def _verified_completed_summary(
         ):
             raise RuntimeError(f"Completed summary GGUF flag drifted for {agent}")
         if gguf_exists:
+            _require_runtime_bindings_match_smoke(
+                agent=agent,
+                source=gguf_metadata,
+                smoke_evidence=runtime_binding_smoke_evidence,
+                label="GGUF conversion",
+                model_field="adapterGGUFRuntimeModelBindingSHA256",
+                tokenizer_field="adapterGGUFRuntimeTokenizerBindingSHA256",
+            )
             if (
                 type(item.get("adapterGGUFSizeBytes")) is not int
                 or item["adapterGGUFSizeBytes"] <= 0
@@ -6679,10 +10501,50 @@ def _verified_completed_summary(
         evaluation_statuses=evaluation_statuses,
         agent_count=len(agents),
         gguf_count=len(gguf_inventory),
+        preference_training=preference_training,
     )
     if any(summary.get(field) != value for field, value in expected_state.items()):
         raise RuntimeError("Completed summary state does not match its verified evidence")
     return summary
+
+
+def _compact_phase_runtime_evidence(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise RuntimeError("Summary phase runtime evidence is missing")
+    evidence = {field: value.get(field) for field in PHASE_RUNTIME_EVIDENCE_FIELDS}
+    if any(
+        re.fullmatch(r"[0-9a-f]{64}", str(digest or "")) is None
+        for digest in evidence.values()
+    ):
+        raise RuntimeError("Summary phase runtime evidence lacks exact digests")
+    return {field: str(digest) for field, digest in evidence.items()}
+
+
+def _summary_phase_runtime_evidence(
+    summary: Mapping[str, Any],
+) -> dict[str, dict[str, dict[str, str]]]:
+    summary_agents = summary.get("agents")
+    preference_training = summary.get("preferenceTraining")
+    if (
+        not isinstance(summary_agents, Mapping)
+        or not summary_agents
+        or type(preference_training) is not bool
+    ):
+        raise RuntimeError("Upload summary lacks phase runtime evidence")
+    result: dict[str, dict[str, dict[str, str]]] = {}
+    for agent in sorted(summary_agents):
+        item = summary_agents.get(agent)
+        if not isinstance(agent, str) or not isinstance(item, Mapping):
+            raise RuntimeError("Upload summary phase runtime evidence is invalid")
+        sft = item.get("sft")
+        final_phase = item.get("finalPhase")
+        phases = {"sft": _compact_phase_runtime_evidence(sft)}
+        if preference_training:
+            phases["preference"] = _compact_phase_runtime_evidence(final_phase)
+        elif final_phase != sft:
+            raise RuntimeError("SFT-only upload summary has a preference final phase")
+        result[agent] = phases
+    return result
 
 
 def _upload_publication_contract(
@@ -6692,11 +10554,76 @@ def _upload_publication_contract(
 ) -> dict[str, Any]:
     if type(allow_diagnostic_upload) is not bool:
         raise RuntimeError("Diagnostic upload override must be boolean")
+    tokenizer_files = summary.get("baseModelTokenizerFiles")
+    tokenizer_json_records = (
+        [
+            item
+            for item in tokenizer_files
+            if isinstance(item, Mapping)
+            and item.get("path") == "tokenizer.json"
+        ]
+        if isinstance(tokenizer_files, list)
+        else []
+    )
+    tokenizer_digest = summary.get("baseModelTokenizerDigest")
+    if (
+        len(tokenizer_json_records) != 1
+        or re.fullmatch(r"[0-9a-f]{64}", str(tokenizer_digest or ""))
+        is None
+        or tokenizer_json_records[0].get("sha256") != tokenizer_digest
+    ):
+        raise RuntimeError(
+            "Upload summary tokenizer digest is not bound to tokenizer.json"
+        )
     promotion_eligible = summary.get("promotionEligible") is True
     qualification = str(summary.get("qualification") or "")
+    preference_training = summary.get("preferenceTraining")
+    training_scope = summary.get("trainingScope")
+    if type(preference_training) is not bool:
+        raise RuntimeError("Upload summary preference-training state is invalid")
+    runtime_binding_smoke_evidence = {
+        field: summary.get(field)
+        for field in RUNTIME_BINDING_SMOKE_SUMMARY_FIELDS
+    }
+    if (
+        not isinstance(
+            runtime_binding_smoke_evidence["runtimeBindingSmokeReport"], str
+        )
+        or any(
+            re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(runtime_binding_smoke_evidence[field] or ""),
+            )
+            is None
+            for field in (
+                "runtimeBindingSmokeReportFileSHA256",
+                "runtimeBindingSmokeGateSHA256",
+            )
+        )
+        or not isinstance(
+            runtime_binding_smoke_evidence["runtimeBindingSmokeContractEvidence"],
+            list,
+        )
+        or not isinstance(
+            runtime_binding_smoke_evidence["runtimeBindingSmokeBindingsByAgent"],
+            Mapping,
+        )
+    ):
+        raise RuntimeError("Upload summary runtime-binding smoke evidence is invalid")
+    phase_runtime_evidence = _summary_phase_runtime_evidence(summary)
+    for agent, phases in phase_runtime_evidence.items():
+        for phase_name, phase_evidence in phases.items():
+            _require_runtime_bindings_match_smoke(
+                agent=agent,
+                source=phase_evidence,
+                smoke_evidence=runtime_binding_smoke_evidence,
+                label=f"Upload {phase_name} phase",
+            )
     if promotion_eligible:
         if (
-            qualification != "quality_gate_passed"
+            preference_training is not True
+            or training_scope != "sft_preference"
+            or qualification != "quality_gate_passed"
             or summary.get("evaluationStatus") != "quality_gate_passed"
             or summary.get("evaluationScope") != "full"
             or summary.get("status") not in {"complete", "complete_without_gguf"}
@@ -6704,25 +10631,47 @@ def _upload_publication_contract(
             raise RuntimeError("Upload summary has inconsistent qualification state")
         remote_namespace = "runs"
     else:
+        if preference_training:
+            diagnostic_state_valid = (
+                training_scope == "sft_preference"
+                and summary.get("evaluationStatus")
+                in {"smoke_complete", "not_run"}
+                and summary.get("evaluationScope") in {"smoke", "none"}
+                and summary.get("status")
+                in {"smoke_complete", "training_complete_without_full_evaluation"}
+                and summary.get("ggufStatus")
+                in {"verified", "skipped_by_operator"}
+            )
+            remote_namespace = "diagnostic-runs"
+        else:
+            diagnostic_state_valid = (
+                training_scope == "sft_only"
+                and summary.get("evaluationStatus") == "not_run"
+                and summary.get("evaluationScope") == "none"
+                and summary.get("status") == "sft_only_diagnostic_complete"
+                and summary.get("ggufStatus") == "not_applicable_sft_only"
+                and summary.get("ggufConversionStatus") == "not_applicable"
+                and summary.get("ggufTensorEquivalenceStatus") == "not_applicable"
+            )
+            remote_namespace = "diagnostic-sft-runs"
         if (
             qualification != "diagnostic_only"
-            or summary.get("evaluationStatus")
-            not in {"smoke_complete", "not_run"}
-            or summary.get("evaluationScope") not in {"smoke", "none"}
-            or summary.get("status")
-            not in {"smoke_complete", "training_complete_without_full_evaluation"}
+            or not diagnostic_state_valid
         ):
             raise RuntimeError("Upload summary has inconsistent diagnostic state")
         if not allow_diagnostic_upload:
             raise RuntimeError(
                 "Diagnostic upload requires --allow-diagnostic-upload"
             )
-        remote_namespace = "diagnostic-runs"
     return {
         "remoteNamespace": remote_namespace,
         "qualification": qualification,
         "promotionEligible": promotion_eligible,
         "diagnosticUploadOverrideApplied": not promotion_eligible,
+        "preferenceTraining": preference_training,
+        "trainingScope": training_scope,
+        "phaseRuntimeEvidenceByAgent": phase_runtime_evidence,
+        **runtime_binding_smoke_evidence,
         "evaluationStatus": summary["evaluationStatus"],
         "evaluationScope": summary["evaluationScope"],
         "ggufStatus": summary["ggufStatus"],
@@ -6731,6 +10680,28 @@ def _upload_publication_contract(
             "ggufTensorEquivalenceStatus"
         ],
         "executionPlanSHA256": summary["executionPlanSHA256"],
+        "baseModelID": summary["baseModelID"],
+        "baseModelRevision": summary["baseModelRevision"],
+        "baseModelTokenizerDigest": tokenizer_digest,
+        "baseModelTokenizerClosureSHA256": summary[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelTokenizerSnapshotPath": summary[
+            "baseModelTokenizerSnapshotPath"
+        ],
+        "baseModelTokenizerSnapshotVerification": summary[
+            "baseModelTokenizerSnapshotVerification"
+        ],
+        "baseModelGenerationConfigFile": summary[
+            "baseModelGenerationConfigFile"
+        ],
+        "baseModelRuntimeSnapshotPath": summary[
+            "baseModelRuntimeSnapshotPath"
+        ],
+        "baseModelRuntimeSnapshotVerification": summary[
+            "baseModelRuntimeSnapshotVerification"
+        ],
+        "runManifestSHA256": summary["runManifestSHA256"],
     }
 
 
@@ -7130,14 +11101,51 @@ def upload_run(
     ):
         raise RuntimeError("Prepared training environment record drifted")
 
-    upload_contracts: list[_UploadInputContract] = []
+    observed_runtime_binding_smoke = (
+        _verified_runtime_binding_smoke_summary_evidence(run_root, agents)
+    )
+    if any(
+        summary.get(field) != observed_runtime_binding_smoke.get(field)
+        for field in RUNTIME_BINDING_SMOKE_SUMMARY_FIELDS
+    ):
+        raise RuntimeError("Upload runtime-binding smoke evidence drifted")
+    from tools.fine_tuning.unsloth.runtime_binding_smoke_gate import REPORT_FILENAME
+
+    smoke_report_relative = f"training/{REPORT_FILENAME}"
+    if summary.get("runtimeBindingSmokeReport") != str(
+        run_root / smoke_report_relative
+    ):
+        raise RuntimeError("Upload runtime-binding smoke report path drifted")
+    smoke_report = read_object(run_root / smoke_report_relative)
+    upload_contracts: list[_UploadInputContract] = [
+        _UploadInputContract(
+            relative_path=smoke_report_relative,
+            remote_path=f"{publication_root}/manifests/runtime_binding_smoke.json",
+            expected_json=smoke_report,
+        )
+    ]
+    preference_training = bool(summary["preferenceTraining"])
     for agent in agents:
-        preference = _verified_upload_final_phase(
+        summary_agent = summary["agents"][agent]
+        observed_sft = verify_sft(run_root, agent)
+        if observed_sft != summary_agent.get("sft"):
+            raise RuntimeError(
+                f"Upload SFT lineage drifted from the completed summary for {agent}"
+            )
+        final_phase = _verified_upload_final_phase(
             summary,
             agent,
-            verify_preference(run_root, agent),
+            (
+                verify_preference(run_root, agent)
+                if preference_training
+                else observed_sft
+            ),
         )
-        adapter_root = f"models/lora_qwen3_dpo/{agent}"
+        adapter_root = (
+            f"models/lora_qwen3_dpo/{agent}"
+            if preference_training
+            else f"models/lora_qwen3_bootstrap/{agent}"
+        )
         adapter_manifest_relative = f"{adapter_root}/adapter_artifact_manifest.json"
         adapter_manifest = read_object(run_root / adapter_manifest_relative)
         adapter_manifest_digest = adapter_manifest.get("adapterSHA256")
@@ -7150,7 +11158,7 @@ def upload_run(
             or re.fullmatch(r"[0-9a-f]{64}", str(adapter_manifest_digest or ""))
             is None
             or canonical_sha256(unsigned_adapter_manifest) != adapter_manifest_digest
-            or preference.get("adapterSHA256") != adapter_manifest_digest
+            or final_phase.get("adapterSHA256") != adapter_manifest_digest
         ):
             raise RuntimeError(f"Adapter upload manifest is invalid for {agent}")
         artifact_names: set[str] = set()
@@ -7192,11 +11200,13 @@ def upload_run(
         )
         finalized_relative = (
             f"training/{agent}/dpo/finalized_variant_manifest.json"
+            if preference_training
+            else f"training/{agent}/finalized_variant_manifest.json"
         )
         finalized = _verify_manifest_integrity(run_root / finalized_relative)
         if (
             finalized.get("variantManifestSHA256")
-            != preference.get("finalizedVariantManifestSHA256")
+            != final_phase.get("finalizedVariantManifestSHA256")
         ):
             raise RuntimeError(f"Upload finalized lineage drifted for {agent}")
         upload_contracts.append(
@@ -7206,7 +11216,36 @@ def upload_run(
                 expected_json=finalized,
             )
         )
-        evaluation = summary["agents"][agent].get("evaluation")
+        phase_reports = [("sft", observed_sft)]
+        if preference_training:
+            phase_reports.append(("preference", final_phase))
+        for phase_name, phase_evidence in phase_reports:
+            report_relative = (
+                f"training/{agent}/training_report.json"
+                if phase_name == "sft"
+                else f"training/{agent}/dpo/dpo_report.json"
+            )
+            report_path = run_root / report_relative
+            report_digest = phase_evidence.get("trainingReportFileSHA256")
+            if (
+                phase_evidence.get("report") != str(report_path)
+                or re.fullmatch(r"[0-9a-f]{64}", str(report_digest or "")) is None
+                or file_sha256(report_path) != report_digest
+            ):
+                raise RuntimeError(
+                    f"Upload {phase_name} training report drifted for {agent}"
+                )
+            upload_contracts.append(
+                _UploadInputContract(
+                    relative_path=report_relative,
+                    remote_path=(
+                        f"{publication_root}/manifests/{agent}/"
+                        f"{phase_name}_training_report.json"
+                    ),
+                    expected_sha256=str(report_digest),
+                )
+            )
+        evaluation = summary_agent.get("evaluation") if preference_training else None
         if isinstance(evaluation, Mapping):
             candidate_digest = evaluation.get("candidateOutputsFileSHA256")
             report_digest = evaluation.get("evaluationReportFileSHA256")
@@ -7279,6 +11318,10 @@ def upload_run(
                 != GGUF_CONVERSION_QUALIFICATION
                 or agent_summary.get("adapterGGUFTensorEquivalenceStatus")
                 != GGUF_TENSOR_EQUIVALENCE_STATUS
+                or agent_summary.get("adapterGGUFRuntimeModelBindingSHA256")
+                != conversion_receipt.get("runtimeModelBindingSHA256")
+                or agent_summary.get("adapterGGUFRuntimeTokenizerBindingSHA256")
+                != conversion_receipt.get("runtimeTokenizerBindingSHA256")
             ):
                 raise RuntimeError(
                     f"Upload GGUF conversion receipt drifted for {agent}"
@@ -7684,6 +11727,15 @@ def parse_args() -> argparse.Namespace:
     verify_evaluation_parser = subparsers.add_parser("verify-evaluation")
     verify_evaluation_parser.add_argument("--run-root", type=Path, required=True)
     verify_evaluation_parser.add_argument("--agent", choices=AGENTS, required=True)
+    classify_evaluation_parser = subparsers.add_parser(
+        "classify-completed-evaluation"
+    )
+    classify_evaluation_parser.add_argument(
+        "--run-root", type=Path, required=True
+    )
+    classify_evaluation_parser.add_argument(
+        "--agent", choices=AGENTS, required=True
+    )
     verify_gguf_parser = subparsers.add_parser("verify-gguf")
     verify_gguf_parser.add_argument("--run-root", type=Path, required=True)
     verify_gguf_parser.add_argument("--agent", choices=AGENTS, required=True)
@@ -7855,6 +11907,11 @@ def main() -> None:
         )
     elif args.command == "verify-evaluation":
         result = verify_evaluation(resolved_run_root, args.agent)
+    elif args.command == "classify-completed-evaluation":
+        result = classify_completed_evaluation(
+            resolved_run_root,
+            args.agent,
+        )
     elif args.command == "verify-gguf":
         result = verify_gguf(resolved_run_root, args.agent)
     elif args.command == "verify-gguf-file":
@@ -7895,26 +11952,61 @@ def main() -> None:
             require_evaluation=args.require_evaluation,
         )
     elif args.command == "verify-container-postcondition":
-        prepared = validate_prepared_runtime(
-            root=args.root.resolve(),
-            run_root=resolved_run_root,
-            agents=agents,
-            variant=args.variant,
-            container_digest=args.container_digest,
-            evaluation_scope=args.evaluation_scope,
-            evaluation_max_examples=args.evaluation_max_examples,
-            gguf_requested=args.gguf_requested,
-            observe_runtime=False,
-        )
         if args.prepare_only:
+            input_closure = _acquire_prepared_input_closure(resolved_run_root)
+            try:
+                prepared = validate_prepared_runtime(
+                    root=args.root.resolve(),
+                    run_root=resolved_run_root,
+                    agents=agents,
+                    variant=args.variant,
+                    container_digest=args.container_digest,
+                    evaluation_scope=args.evaluation_scope,
+                    evaluation_max_examples=args.evaluation_max_examples,
+                    gguf_requested=args.gguf_requested,
+                    observe_runtime=False,
+                )
+                global_preflight = _verified_prepared_global_tokenizer_preflight(
+                    run_root=resolved_run_root,
+                    agents=agents,
+                )
+                input_closure.verify_unchanged()
+                input_closure_sha256 = input_closure.inventory_sha256
+                input_closure_entry_count = len(input_closure.inventory)
+                input_mount_identity_sha256 = (
+                    input_closure.mount_identity_sha256
+                )
+            finally:
+                input_closure.close()
             result = {
                 "status": "prepared_postcondition_verified",
+                "prepareInputMountStatus": "exact_readonly_mount_verified",
+                "prepareInputMountIdentitySHA256": input_mount_identity_sha256,
+                "prepareInputClosureSHA256": input_closure_sha256,
+                "prepareInputClosureEntryCount": input_closure_entry_count,
                 "trainingEnvironmentSHA256": prepared[
                     "trainingEnvironmentSHA256"
                 ],
                 "observedAccelerator": prepared["observedAccelerator"],
+                "globalPreflightSHA256": global_preflight[
+                    "globalPreflightSHA256"
+                ],
+                "tokenizerClosureSHA256": global_preflight[
+                    "tokenizerClosure"
+                ]["tokenizerClosureSHA256"],
             }
         else:
+            prepared = validate_prepared_runtime(
+                root=args.root.resolve(),
+                run_root=resolved_run_root,
+                agents=agents,
+                variant=args.variant,
+                container_digest=args.container_digest,
+                evaluation_scope=args.evaluation_scope,
+                evaluation_max_examples=args.evaluation_max_examples,
+                gguf_requested=args.gguf_requested,
+                observe_runtime=False,
+            )
             completed = _verified_completed_summary(resolved_run_root, agents)
             result = {
                 "status": "completed_postcondition_verified",

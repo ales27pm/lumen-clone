@@ -12,13 +12,33 @@ from typing import Any
 
 try:
     from .adapter_artifact import verify_adapter_artifact
-    from .train_sft import _verify_base_model_lineage
+    from .train_sft import (
+        ADAPTER_BASE_TOKENIZER_FILES,
+        ADAPTER_DERIVED_TOKENIZER_FILES,
+        _controlled_torch_dtype,
+        _load_verified_runtime_tokenizer_source,
+        _runtime_tokenizer_evidence,
+        _verify_base_model_lineage,
+        _verify_runtime_model_binding,
+        _verify_runtime_tokenizer_binding,
+        _verified_private_runtime_model_snapshot,
+    )
 except ImportError:
     module_dir = str(Path(__file__).resolve().parent)
     if module_dir not in sys.path:
         sys.path.insert(0, module_dir)
     from adapter_artifact import verify_adapter_artifact
-    from train_sft import _verify_base_model_lineage
+    from train_sft import (
+        ADAPTER_BASE_TOKENIZER_FILES,
+        ADAPTER_DERIVED_TOKENIZER_FILES,
+        _controlled_torch_dtype,
+        _load_verified_runtime_tokenizer_source,
+        _runtime_tokenizer_evidence,
+        _verify_base_model_lineage,
+        _verify_runtime_model_binding,
+        _verify_runtime_tokenizer_binding,
+        _verified_private_runtime_model_snapshot,
+    )
 
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
@@ -134,19 +154,31 @@ def _validate_config(cfg: dict[str, Any], *, path: Path) -> dict[str, Any]:
     required = {
         "agent",
         "base_model_name",
+        "baseModelID",
         "baseModelRevision",
         "baseModelIndexDigest",
         "baseModelIndexReferencedShardNames",
         "baseModelIndexShardBindingSHA256",
         "baseModelArtifactDigest",
         "baseModelWeightShards",
+        "baseModelGenerationConfigFile",
         "baseModelTokenizerDigest",
+        "baseModelTokenizerFiles",
+        "baseModelTokenizerClosureSHA256",
+        "baseModelTokenizerSnapshotPath",
+        "baseModelTokenizerSnapshotVerification",
+        "baseModelRuntimeSnapshotPath",
+        "baseModelRuntimeSnapshotVerification",
         "max_seq_length",
         "output_dir",
     }
     missing = [key for key in sorted(required) if key not in cfg]
     if missing:
         raise ValueError(f"{path} missing required keys: {', '.join(missing)}")
+    if cfg["baseModelID"] != cfg["base_model_name"]:
+        raise ValueError(
+            f"{path} baseModelID must exactly match base_model_name"
+        )
     agent = str(cfg["agent"]).strip().lower()
     if agent not in AGENTS:
         raise ValueError(f"{path} has unsupported agent '{agent}'")
@@ -298,10 +330,12 @@ def _verified_release_bake_lineage(cfg: dict[str, Any]) -> dict[str, Any]:
         "baseModelArtifactDigest",
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
+        "baseModelTokenizerFiles",
+        "baseModelTokenizerClosureSHA256",
     ):
         if finalized.get(field) != cfg.get(field):
             raise ValueError(f"Finalized variant manifest {field} does not match the GGUF config")
-    if finalized.get("baseModelID") != cfg.get("baseModelID", cfg["base_model_name"]):
+    if finalized.get("baseModelID") != cfg["baseModelID"]:
         raise ValueError("Finalized variant manifest baseModelID does not match the GGUF config")
     training_environment_sha = cfg.get("trainingEnvironmentSHA256")
     training_environment = finalized.get("trainingEnvironment")
@@ -352,12 +386,47 @@ def _verified_release_bake_lineage(cfg: dict[str, Any]) -> dict[str, Any]:
         expected_parent_sft_adapter_sha256=(
             str(expected_parent_sft_sha) if expected_parent_sft_sha is not None else None
         ),
+        expected_base_model=cfg["baseModelID"],
+        expected_base_revision=cfg["baseModelRevision"],
     )
+
+    artifact_files = adapter_manifest.get("files")
+    artifact_by_path = {
+        item.get("path"): item
+        for item in artifact_files
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    } if isinstance(artifact_files, list) else {}
+    base_by_path = {
+        item.get("path"): item
+        for item in cfg["baseModelTokenizerFiles"]
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    }
+    unapproved_derived = sorted(
+        set(artifact_by_path).intersection(ADAPTER_DERIVED_TOKENIZER_FILES)
+    )
+    for filename in ADAPTER_BASE_TOKENIZER_FILES:
+        artifact_file = artifact_by_path.get(filename)
+        base_file = base_by_path.get(filename)
+        if (
+            not isinstance(artifact_file, dict)
+            or not isinstance(base_file, dict)
+            or artifact_file.get("sizeBytes") != base_file.get("sizeBytes")
+            or artifact_file.get("sha256") != base_file.get("sha256")
+        ):
+            raise ValueError(
+                "Adapter tokenizer files are not exact bytes from the pinned base closure"
+            )
+    if unapproved_derived:
+        raise ValueError(
+            "Adapter contains unapproved derived tokenizer files: "
+            + ", ".join(unapproved_derived)
+        )
 
     adapter_config = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
     if (
         not isinstance(adapter_config, dict)
         or adapter_config.get("base_model_name_or_path") != cfg["base_model_name"]
+        or adapter_config.get("revision") != cfg["baseModelRevision"]
     ):
         raise ValueError("Adapter base_model_name_or_path does not match the pinned GGUF base model")
     return {
@@ -370,7 +439,12 @@ def _verified_release_bake_lineage(cfg: dict[str, Any]) -> dict[str, Any]:
         "baseModelIndexReferencedShardNames": cfg["baseModelIndexReferencedShardNames"],
         "baseModelIndexShardBindingSHA256": cfg["baseModelIndexShardBindingSHA256"],
         "baseModelArtifactDigest": cfg["baseModelArtifactDigest"],
+        "baseModelGenerationConfigFile": cfg["baseModelGenerationConfigFile"],
         "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": cfg["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": cfg[
+            "baseModelTokenizerClosureSHA256"
+        ],
         "trainingEnvironmentSHA256": training_environment_sha,
     }
 
@@ -439,12 +513,42 @@ def export_agent_gguf(
         else cfg.get("gguf_maximum_memory_usage", 0.75)
     )
 
+    (
+        expected_runtime_tokenizer,
+        runtime_tokenizer_snapshot_path,
+        runtime_tokenizer_snapshot_verification,
+    ) = _load_verified_runtime_tokenizer_source(cfg)
+
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=cfg["base_model_name"],
+        model_name=str(runtime_tokenizer_snapshot_path),
         revision=cfg["baseModelRevision"],
+        tokenizer_name=str(runtime_tokenizer_snapshot_path),
         max_seq_length=int(cfg["max_seq_length"]),
+        dtype=_controlled_torch_dtype(cfg),
         load_in_4bit=True,
+        local_files_only=True,
+        trust_remote_code=False,
         use_exact_model_name=True,
+    )
+    runtime_model_binding = _verify_runtime_model_binding(
+        cfg,
+        runtime_model=model,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+    )
+    runtime_tokenizer_binding = _verify_runtime_tokenizer_binding(
+        cfg,
+        expected_tokenizer=expected_runtime_tokenizer,
+        runtime_tokenizer=tokenizer,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+    )
+    runtime_tokenizer_evidence = _runtime_tokenizer_evidence(
+        cfg,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+        runtime_model_binding=runtime_model_binding,
+        runtime_binding=runtime_tokenizer_binding,
     )
     model = PeftModel.from_pretrained(model, str(adapter_dir), is_trainable=False)
     if not hasattr(model, "save_pretrained_gguf"):
@@ -491,6 +595,7 @@ def export_agent_gguf(
         "size_bytes": target_path.stat().st_size,
         "sha256": sha256sum(target_path),
         "base_model_name": cfg["base_model_name"],
+        **runtime_tokenizer_evidence,
         **lineage,
     }
     (agent_output_dir / "gguf_release_bake_report.json").write_text(
@@ -533,6 +638,16 @@ def existing_summary_for_agent(
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if not isinstance(report, dict):
         raise ValueError(f"GGUF lineage report must be a JSON object: {report_path}")
+    runtime_snapshot_path, runtime_snapshot_verification = (
+        _verified_private_runtime_model_snapshot(cfg)
+    )
+    runtime_evidence = _runtime_tokenizer_evidence(
+        cfg,
+        snapshot_path=runtime_snapshot_path,
+        snapshot_verification=runtime_snapshot_verification,
+        runtime_model_binding=report.get("runtimeModelBinding") or {},
+        runtime_binding=report.get("runtimeTokenizerBinding") or {},
+    )
     expected = {
         "agent": agent,
         "mode": "optional_release_bake",
@@ -544,11 +659,19 @@ def existing_summary_for_agent(
         "size_bytes": target_path.stat().st_size,
         "sha256": sha256sum(target_path),
         "base_model_name": cfg["base_model_name"],
+        **runtime_evidence,
         **lineage,
     }
-    for key, value in expected.items():
-        if report.get(key) != value:
-            raise ValueError(f"Existing GGUF lineage report does not match current {key}")
+    if report != expected:
+        drifted = sorted(
+            key
+            for key in set(report) | set(expected)
+            if report.get(key) != expected.get(key)
+        )
+        raise ValueError(
+            "Existing GGUF lineage report does not match current "
+            + ", ".join(drifted)
+        )
     return {**expected, "reused_existing": True}
 
 

@@ -159,7 +159,27 @@ the exact per-run root, a read-only cross-container lock identity, and the three
 credential-free persistent Hugging Face cache subdirectories. It first runs one
 exact-tokenizer preflight for every requested role before loading model weights
 or creating an optimizer. That gate checks SFT sequence margins, DPO prompt and
-sequence margins, and Fleet's exact assistant-target loss-share limits. Each
+sequence margins, and Fleet's exact assistant-target loss-share limits. The
+tokenizer identity covers the pinned `config.json`, `merges.txt`,
+`tokenizer.json`, `tokenizer_config.json`, and `vocab.json` bytes rather than
+only `tokenizer.json`; the trainers must use that verified snapshot and bind any
+derived tokenizer files saved with an adapter. The independent `--prepare-only`
+postcondition reads the run from an exact read-only mount, rejects nested
+mounts or path substitution, and checks resource headroom before repeating the
+token-ID evidence. On an execution that continues past the prepare-only
+early-exit boundary, a second gate uses `train_sft --runtime-binding-smoke` to
+load the private model and tokenizer through the real pinned Unsloth path
+before converter setup, PEFT, or trainer construction. Prepared configs are
+grouped only when their complete runtime-load contracts match; the current six
+roles therefore require one load, while any future sequence-length or loader
+difference requires its own load. The gate atomically persists and re-verifies
+the self-hashed `training/runtime_binding_smoke.json` report on resume. Each
+load must prove the explicit FP16/BF16 choice, requested sequence length, exact
+196-projection CUDA NF4 materialization, the complete Qwen parameter inventory
+on CUDA, and a finite four-token CUDA forward with the expected logits shape
+and dtype. The offline report verifier independently reconstructs those facts
+from the pinned `config.json`; a merely self-consistent runtime report is not
+accepted. Each
 selected role then completes this order before the next role starts:
 
 ```text
@@ -170,6 +190,11 @@ frozen deterministic inference -> score and enforce the quality gate
 adapter-only GGUF conversion -> verify output digest
 write run summary
 ```
+
+An intentionally prepared SFT-only diagnostic run stops after the verified SFT phase. Its
+summary has `status=sft_only_diagnostic_complete` and `trainingScope=sft_only`; evaluation and
+GGUF are not applicable. Summary reconstruction and upload for that state read only the SFT
+artifact and report and must not probe preference, evaluation, or GGUF paths.
 
 The default order minimizes wasted GPU time if an unpiloted role fails. It does
 not change any role's dataset, seed, hyperparameters, evaluation, or output.
@@ -238,14 +263,14 @@ Additional launcher controls:
 | `--image-tag <tag>` | Override the local Docker image tag used for build/run. |
 | `--no-build` | Reuse an existing image. It cannot be combined with credential-scoped upload. |
 | `--no-pull` | Build without re-fetching the immutable pinned CUDA base digest. |
-| `--prepare-only` | Run controlled input, environment, and config preparation without model training. |
+| `--prepare-only` | Run controlled input, environment, and config preparation without model loading or training. The real Unsloth binding smoke runs only on executions that continue beyond this early exit. |
 | `--overwrite` | Destructively replace the selected run directory after path-safety checks. |
 | `--resume` | Reuse an existing run, skip phases whose complete artifacts re-verify, resume incomplete phases from a verified checkpoint when available, and otherwise restart the phase. |
 | `--no-evaluate` | Skip frozen inference/scoring. Full evaluation is enabled by default. |
 | `--eval-smoke <n>` | Evaluate a deterministic semantic cohort of `n` cases per role; `n` must be smaller than every selected role's frozen suite, and this is smoke evidence, not a quality pass. |
 | `--token-file <file>` | Mount an owner-only, mode-600 token only into the upload container. |
 | `--upload` | Upload a full quality-passed run after training. Upload is off by default and the destination is private by default. |
-| `--allow-diagnostic-upload` | With `--upload`, explicitly permit smoke or unevaluated artifacts under the separate `diagnostic-runs/` namespace. |
+| `--allow-diagnostic-upload` | With `--upload`, explicitly permit smoke or unevaluated artifacts under `diagnostic-runs/`, or a verified SFT-only diagnostic under `diagnostic-sft-runs/`. |
 | `--public` | With `--upload`, explicitly request public visibility. Public publication is never the default. |
 
 Ubuntu resume accepts only cryptographically bound pipeline state. With
@@ -261,7 +286,33 @@ SFT or DPO phase is kept. An incomplete phase resumes only from the newest
 complete checkpoint whose dataset, config, code, parent adapter, optimizer
 progress, and checkpoint bytes all re-verify; an incomplete newest checkpoint
 or any lineage drift fails closed. If there is no valid checkpoint, only that
-agent's owned incomplete phase is restarted. The outer launcher also retains
+agent's owned incomplete phase is restarted. Frozen inference has its own
+private, self-hashed `evaluation_checkpoint.json`: every completed selected
+case and its raw attempts are fsync-committed before the next case. Creation of
+every missing private evaluation-directory component fsyncs the new inode and
+its parent entry before the first journal write, so a later checkpoint fsync
+does not leave the directory name outside the power-loss durability boundary.
+The journal
+binds the adapter, config, evaluator code, frozen evaluation file, behavior/tool
+manifest, execution plan, generation settings, and selected-record order.
+`--resume` preserves an incomplete journal only when it is the directory's sole
+entry. A complete journal may coexist with only the known private subset of the
+three canonical final files, covering interruption between their atomic
+publication boundaries; those files are deterministically reconstructed and
+overwritten. Only after the existing journal verifies, the evaluator removes
+owned mode-0600 regular orphan temps whose basenames exactly match its atomic
+writer for the journal or one of the three final files. A symlink, unsafe
+lookalike, temp without a valid journal, tamper, duplicate, non-prefix, unknown
+entry, incomplete journal mixed with final files, binding drift, or operational
+verifier error fails closed while preserving the directory. The launcher also
+independently reconstructs a terminal candidate/report/run-manifest trio: a
+verified quality failure is retained and stops the run instead of being
+misclassified as disposable partial state. Automatic cleanup is never inferred
+from an untyped verifier exit.
+When the exact prefix is complete, canonical final evidence is reconstructed
+without another model load. The final evidence directory contains only the
+candidate/report/run-manifest trio; a leftover journal prevents final
+verification. The outer launcher also retains
 the exact Docker container across terminal or launcher disconnects. A
 subsequent explicit `--resume` authenticates its immutable launch environment
 and either reattaches to the running container, starts a never-started fresh
@@ -326,6 +377,7 @@ training/<agent>/dpo/token_length_preflight.json
 evaluation/<agent>/candidate_outputs.jsonl
 evaluation/<agent>/evaluation_report.json
 evaluation/<agent>/evaluation_run_manifest.json
+# evaluation/<agent>/evaluation_checkpoint.json exists only while interrupted
 ```
 
 The host wrapper gives each member of `baseline-and-optimized` or `all` a separate variant
@@ -390,6 +442,12 @@ latter is the intentional `--no-gguf` case. Smoke and unevaluated artifacts
 require a second, explicit acknowledgement and never use the qualified run
 namespace:
 
+In this upload record, `promotionEligible` means eligible for ordinary artifact
+publication after the frozen local gate. It is not a shipped-runtime or device
+promotion claim. Fresh TestFlight/device evidence must still show
+`runtimePath=sharedAdapter`, the expected adapter slot, and
+`adapterApplied=true` without fallback before release promotion.
+
 ```bash
 bash scripts/ubuntu_train_lumen_full_pipeline.sh \
   --eval-smoke 2 \
@@ -398,12 +456,17 @@ bash scripts/ubuntu_train_lumen_full_pipeline.sh \
   --token-file /secure/path/lumen-hf-token
 ```
 
-Qualified uploads use `runs/<run-id>/`; diagnostic uploads use
-`diagnostic-runs/<run-id>/`. The upload receipt binds the namespace, exact
+Qualified uploads use `runs/<run-id>/`; preference-trained diagnostic uploads use
+`diagnostic-runs/<run-id>/`; SFT-only diagnostic uploads use
+`diagnostic-sft-runs/<run-id>/`. The upload receipt binds the namespace, exact
 remote prefix, qualification, promotion eligibility, evaluation status/scope,
 exact execution-plan digest, GGUF status, whether GGUF was included, and whether
-the diagnostic override was applied. `--no-evaluate` and `--eval-smoke` are mutually exclusive regardless
-of argument order.
+the diagnostic override was applied. It also binds the exact pre-training
+runtime-binding smoke report and included SFT/DPO training-report file digests,
+plus their compact runtime-model, runtime-tokenizer, PEFT-base,
+adapter-tokenizer, and private-snapshot identities. SFT-only publication includes
+only the SFT report and adapter. `--no-evaluate` and `--eval-smoke` are mutually
+exclusive regardless of argument order.
 
 ## Evidence And Promotion Boundaries
 
@@ -416,6 +479,10 @@ quality pass. Its top-level summary status is `smoke_complete`; a run without
 evaluation is `training_complete_without_full_evaluation`. A complete all-agent
 frozen quality pass records `status=complete` when all requested GGUFs verify,
 or `status=complete_without_gguf` when conversion was disabled before execution.
+An intentionally SFT-only diagnostic records `status=sft_only_diagnostic_complete`,
+`trainingScope=sft_only`, `qualification=diagnostic_only`, and
+`promotionEligible=false`; it is never relabeled as a preference-trained,
+evaluated, or GGUF-complete run.
 The summary records evaluation and conversion independently through
 `evaluationStatus`, `evaluationScope`, and `ggufStatus`; partial or mixed agent
 evidence is rejected.
@@ -485,6 +552,12 @@ evidence owned by the release workflow even when the frozen evaluation passes.
   retained container or run root. Rerun the same clean source and run ID with
   `--resume --no-build`; the launcher authenticates and reattaches to the exact
   container or checkpoint state.
+- **The process stops during frozen evaluation:** keep the private evaluation
+  directory unchanged and resume the same run. The launcher preserves an exact
+  journal-only prefix, or a complete journal plus only a known partial-final
+  file subset. It never trusts edited, reordered, duplicated, incomplete mixed,
+  or unknown evidence. A complete verified journal can finalize without
+  reloading the model.
 - **Frozen evaluation exits 2 or 3:** keep the generated candidate outputs and
   reports. Exit 2 means malformed/empty role output; exit 3 means the complete
   suite failed its quality gate. Neither is a successful full pipeline.

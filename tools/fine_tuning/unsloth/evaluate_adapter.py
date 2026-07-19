@@ -12,7 +12,7 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Callable
 
 try:
     from lumen_manifest_crawler.dataset.chat_template_contract import (
@@ -34,7 +34,15 @@ try:
         _validate_config as _validate_export_config,
         _verified_release_bake_lineage,
     )
-    from .train_sft import _require_unsloth_before_transformers, _seed_everything
+    from .train_sft import (
+        _controlled_torch_dtype,
+        _load_verified_runtime_tokenizer_source,
+        _require_unsloth_before_transformers,
+        _runtime_tokenizer_evidence,
+        _seed_everything,
+        _verify_runtime_model_binding,
+        _verify_runtime_tokenizer_binding,
+    )
 except ImportError:
     module_dir = str(Path(__file__).resolve().parent)
     if module_dir not in sys.path:
@@ -44,12 +52,45 @@ except ImportError:
         _verified_release_bake_lineage,
     )
     from train_sft import (  # type: ignore
+        _controlled_torch_dtype,
+        _load_verified_runtime_tokenizer_source,
         _require_unsloth_before_transformers,
+        _runtime_tokenizer_evidence,
         _seed_everything,
+        _verify_runtime_model_binding,
+        _verify_runtime_tokenizer_binding,
     )
 
 
-EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.4.0"
+EVALUATION_RUN_SCHEMA_VERSION = "lumen.adapter-evaluation-run/1.5.0"
+EVALUATION_CHECKPOINT_SCHEMA_VERSION = (
+    "lumen.adapter-evaluation-checkpoint/1.0.0"
+)
+EVALUATION_CHECKPOINT_CONTRACT_SCHEMA_VERSION = (
+    "lumen.adapter-evaluation-checkpoint-contract/1.0.0"
+)
+EVALUATION_CHECKPOINT_ENTRY_SCHEMA_VERSION = (
+    "lumen.adapter-evaluation-checkpoint-entry/1.0.0"
+)
+EVALUATION_CHECKPOINT_FILENAME = "evaluation_checkpoint.json"
+EVALUATION_CHECKPOINT_HASH_FIELD = "evaluationCheckpointSHA256"
+EVALUATION_CHECKPOINT_MAX_BYTES = 256 << 20
+EVALUATION_FINAL_FILENAMES = (
+    "candidate_outputs.jsonl",
+    "evaluation_report.json",
+    "evaluation_run_manifest.json",
+)
+EVALUATION_ATOMIC_WRITE_TARGET_FILENAMES = (
+    EVALUATION_CHECKPOINT_FILENAME,
+    *EVALUATION_FINAL_FILENAMES,
+)
+EVALUATION_ATOMIC_WRITE_TEMP_NAME_PATTERN = re.compile(
+    r"^\.(?:"
+    + "|".join(
+        re.escape(name) for name in EVALUATION_ATOMIC_WRITE_TARGET_FILENAMES
+    )
+    + r")\.[a-z0-9_]{8}\.tmp$"
+)
 UBUNTU_SOURCE_INTEGRITY_FIELDS = (
     "workingTreeDigest",
     "ubuntuOrchestrationCodeSHA256",
@@ -288,6 +329,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--overwrite",
         action="store_true",
         help="Atomically replace existing evaluator output files.",
+    )
+    parser.add_argument(
+        "--verify-checkpoint-only",
+        action="store_true",
+        help=(
+            "Verify an exact recoverable interrupted evaluation state without "
+            "loading the model or publishing final outputs."
+        ),
     )
     return parser.parse_args(argv)
 
@@ -2089,6 +2138,7 @@ def evaluate_records(
     evaluation_module: ModuleType,
     tool_contracts: Mapping[str, Any] | None = None,
     torch_module: ModuleType | Any | None = None,
+    on_case_completed: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], int, int, int]:
     outputs: dict[str, Any] = {}
     output_rows: list[dict[str, Any]] = []
@@ -2213,6 +2263,11 @@ def evaluate_records(
         }
         row["candidateRecordSHA256"] = _canonical_sha256(row)
         output_rows.append(row)
+        if on_case_completed is not None:
+            # The callback is deliberately synchronous. A caller that journals
+            # the row must durably commit it before this loop advances to the
+            # next selected evaluation case.
+            on_case_completed(row)
         print(
             f"[{agent}] evaluated {index}/{len(records)} {eval_id} ({output_kind})",
             flush=True,
@@ -2230,7 +2285,7 @@ def load_inference_model(
     cfg: Mapping[str, Any],
     *,
     adapter_dir: Path,
-) -> tuple[Any, Any]:
+) -> tuple[Any, Any, dict[str, Any]]:
     if cfg.get("load_in_4bit") is not True:
         raise ValueError("Evaluation requires the controlled load_in_4bit=true config")
     _require_unsloth_before_transformers()
@@ -2243,12 +2298,41 @@ def load_inference_model(
         ) from exc
     # Seed only after Unsloth has patched Transformers, but before model loading.
     _seed_everything(int(cfg["seed"]))
+    (
+        expected_runtime_tokenizer,
+        runtime_tokenizer_snapshot_path,
+        runtime_tokenizer_snapshot_verification,
+    ) = _load_verified_runtime_tokenizer_source(cfg)
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=cfg["base_model_name"],
+        model_name=str(runtime_tokenizer_snapshot_path),
         revision=cfg["baseModelRevision"],
+        tokenizer_name=str(runtime_tokenizer_snapshot_path),
         max_seq_length=int(cfg["max_seq_length"]),
+        dtype=_controlled_torch_dtype(cfg),
         load_in_4bit=True,
+        local_files_only=True,
+        trust_remote_code=False,
         use_exact_model_name=True,
+    )
+    runtime_model_binding = _verify_runtime_model_binding(
+        cfg,
+        runtime_model=model,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+    )
+    runtime_tokenizer_binding = _verify_runtime_tokenizer_binding(
+        cfg,
+        expected_tokenizer=expected_runtime_tokenizer,
+        runtime_tokenizer=tokenizer,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+    )
+    runtime_tokenizer_evidence = _runtime_tokenizer_evidence(
+        cfg,
+        snapshot_path=runtime_tokenizer_snapshot_path,
+        snapshot_verification=runtime_tokenizer_snapshot_verification,
+        runtime_model_binding=runtime_model_binding,
+        runtime_binding=runtime_tokenizer_binding,
     )
     model = PeftModel.from_pretrained(
         model,
@@ -2257,11 +2341,11 @@ def load_inference_model(
     )
     FastLanguageModel.for_inference(model)
     model.eval()
-    return model, tokenizer
+    return model, tokenizer, runtime_tokenizer_evidence
 
 
 def _atomic_write_bytes(path: Path, value: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -2276,6 +2360,16 @@ def _atomic_write_bytes(path: Path, value: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
+        directory_descriptor = os.open(
+            path.parent,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
         temporary = None
     finally:
         if temporary is not None:
@@ -2412,42 +2506,18 @@ def _validated_generation_attempts(
     return attempts, normalized_attempt_outputs[-1]
 
 
-def load_candidate_outputs(
-    path: Path,
+def _validated_candidate_row(
+    row: Any,
     *,
     agent: str,
-    evaluation_records: Sequence[Mapping[str, Any]],
-    tool_contracts: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Load evaluator output without trusting duplicate or mutated JSONL rows."""
+    expected_record: Mapping[str, Any],
+    evaluation_module: ModuleType,
+    tool_contracts: Mapping[str, Any] | None,
+    path: Path,
+    line_number: int,
+) -> tuple[str, Any]:
+    """Reconstruct one candidate solely from its raw generation attempts."""
 
-    if not path.is_file():
-        raise FileNotFoundError(f"Candidate output JSONL not found: {path}")
-    evaluation_module = _load_evaluation_module()
-    expected_records: dict[str, Mapping[str, Any]] = {}
-    expected_record_order: list[str] = []
-    for index, raw_record in enumerate(evaluation_records):
-        record = evaluation_module.upgrade_evaluation_record(raw_record)
-        eval_id = record.get("evalID")
-        record_agent = str((record.get("metadata") or {}).get("agent") or "").strip().lower()
-        messages = record.get("messages")
-        if (
-            not isinstance(eval_id, str)
-            or not eval_id
-            or eval_id in expected_records
-            or record_agent != agent
-            or not isinstance(messages, list)
-            or not messages
-        ):
-            raise ValueError(
-                f"Expected evaluation record {index + 1} is not uniquely bound to agent {agent}"
-            )
-        expected_records[eval_id] = record
-        expected_record_order.append(eval_id)
-    if not expected_records:
-        raise ValueError("Expected evaluation records must not be empty")
-
-    outputs: dict[str, Any] = {}
     expected_keys = {
         "schemaVersion",
         "evalID",
@@ -2462,6 +2532,824 @@ def load_candidate_outputs(
         "generationAttempts",
         "candidateRecordSHA256",
     }
+    if not isinstance(row, dict) or set(row) != expected_keys:
+        raise ValueError(f"{path}:{line_number} has an invalid candidate record")
+    expected_eval_id = expected_record.get("evalID")
+    expected_sha256 = row.get("candidateRecordSHA256")
+    unsigned = dict(row)
+    unsigned.pop("candidateRecordSHA256", None)
+    eval_id = row.get("evalID")
+    expected_output_mode = _record_output_mode(expected_record, agent=agent)
+    if (
+        row.get("schemaVersion") != CANDIDATE_OUTPUT_SCHEMA_VERSION
+        or row.get("agent") != agent
+        or not isinstance(eval_id, str)
+        or not eval_id
+        or eval_id != expected_eval_id
+        or row.get("outputMode") != expected_output_mode
+        or not isinstance(expected_sha256, str)
+        or _SHA256_PATTERN.fullmatch(expected_sha256) is None
+        or _canonical_sha256(unsigned) != expected_sha256
+        or type(row.get("inputTokenCount")) is not int
+        or row["inputTokenCount"] <= 0
+        or type(row.get("generatedTokenCount")) is not int
+        or row["generatedTokenCount"] < 0
+    ):
+        raise ValueError(f"{path}:{line_number} failed candidate lineage validation")
+    record_messages = expected_record["messages"]
+    primary_messages = _structured_output_messages(
+        agent,
+        record_messages,
+        output_mode=expected_output_mode,
+        tool_contracts=tool_contracts,
+    )
+    expected_prompt_sha256 = [_canonical_sha256(primary_messages)]
+    cortex_retry_locked_row: Mapping[str, Any] | None = None
+    if expected_output_mode == "json":
+        raw_attempts = row.get("generationAttempts")
+        first_attempt = (
+            raw_attempts[0]
+            if isinstance(raw_attempts, list)
+            and raw_attempts
+            and isinstance(raw_attempts[0], Mapping)
+            else None
+        )
+        first_raw_output = (
+            first_attempt.get("rawOutput")
+            if isinstance(first_attempt, Mapping)
+            and isinstance(first_attempt.get("rawOutput"), str)
+            else None
+        )
+        first_output: Any = None
+        first_error: str | None = None
+        if first_raw_output is not None:
+            first_output, _, first_error = normalize_candidate_output(
+                agent,
+                first_raw_output,
+                output_mode=expected_output_mode,
+                evaluation_module=evaluation_module,
+                tool_contracts=tool_contracts,
+            )
+        if agent == "cortex":
+            cortex_retry_locked_row = _cortex_retry_locked_manifest_row(
+                primary_messages,
+                first_output,
+                tool_contracts,
+            )
+        expected_prompt_sha256.append(
+            _canonical_sha256(
+                _strict_json_retry_messages(
+                    agent,
+                    primary_messages,
+                    validation_error=first_error,
+                    failed_candidate=first_output,
+                    tool_contracts=tool_contracts,
+                )
+            )
+        )
+    attempts, selected_output = _validated_generation_attempts(
+        row,
+        agent=agent,
+        output_mode=expected_output_mode,
+        evaluation_module=evaluation_module,
+        tool_contracts=tool_contracts,
+        cortex_retry_locked_row=cortex_retry_locked_row,
+        expected_prompt_sha256=expected_prompt_sha256,
+        path=path,
+        line_number=line_number,
+    )
+    selected_attempt = attempts[-1]
+    if (
+        row.get("outputKind") != selected_attempt.get("outputKind")
+        or row.get("formatError") != selected_attempt.get("formatError")
+        or row.get("inputTokenCount") != selected_attempt.get("inputTokenCount")
+        or row.get("generatedTokenCount")
+        != selected_attempt.get("generatedTokenCount")
+        or _canonical_sha256(row.get("output"))
+        != _canonical_sha256(selected_output)
+    ):
+        raise ValueError(f"{path}:{line_number} has inconsistent selected attempt evidence")
+    # The outer evidence row is canonically serialized with sorted keys, so its
+    # nested output object cannot preserve the model's protocol-significant key
+    # order. Score the independently replayed selected raw attempt instead.
+    return eval_id, selected_output
+
+
+def _checkpoint_record_bindings(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    agent: str,
+    evaluation_module: ModuleType,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    upgraded: list[dict[str, Any]] = []
+    bindings: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for case_index, raw_record in enumerate(records, start=1):
+        record = evaluation_module.upgrade_evaluation_record(raw_record)
+        eval_id = record.get("evalID")
+        record_agent = str(
+            (record.get("metadata") or {}).get("agent") or ""
+        ).strip().lower()
+        if (
+            not isinstance(eval_id, str)
+            or not eval_id
+            or eval_id in seen
+            or record_agent != agent
+        ):
+            raise ValueError(
+                "Selected evaluation records are not a unique ordered agent cohort"
+            )
+        seen.add(eval_id)
+        upgraded.append(record)
+        bindings.append(
+            {
+                "caseIndex": case_index,
+                "evalID": eval_id,
+                "evaluationRecordSHA256": _canonical_sha256(record),
+            }
+        )
+    if not bindings:
+        raise ValueError("Selected evaluation checkpoint cohort must not be empty")
+    return upgraded, bindings
+
+
+def _checkpoint_execution_plan_binding(
+    evaluation_plan: Mapping[str, Any] | None,
+    *,
+    max_examples: int | None,
+    frozen_case_count: int,
+) -> dict[str, Any]:
+    if evaluation_plan is not None:
+        return {
+            "bindingKind": "prepared_execution_plan",
+            "executionPlan": dict(evaluation_plan),
+            "executionPlanSHA256": evaluation_plan.get("executionPlanSHA256"),
+        }
+    unsigned = {
+        "bindingKind": "derived_legacy_evaluation_request",
+        "evaluationScope": "smoke" if max_examples is not None else "full",
+        "evaluationMaxExamples": max_examples,
+        "frozenCaseCount": frozen_case_count,
+    }
+    return {**unsigned, "executionPlanSHA256": _canonical_sha256(unsigned)}
+
+
+def _evaluation_checkpoint_contract(
+    *,
+    agent: str,
+    variant: str,
+    config_path: Path,
+    config_file_sha256: str,
+    evaluator_path: Path,
+    adapter_dir: Path,
+    adapter_sha256: str,
+    finalized_path: Path,
+    finalized_sha256: str,
+    evaluation_path: Path,
+    evaluation_file_sha256: str,
+    evaluation_sha256: str,
+    behavior_manifest_path: Path,
+    behavior_manifest_file_sha256: str,
+    behavior_manifest_sha256: str,
+    output_dir: Path,
+    evaluation_plan: Mapping[str, Any] | None,
+    max_examples: int | None,
+    frozen_case_count: int,
+    selected_records: Sequence[Mapping[str, Any]],
+    evaluation_module: ModuleType,
+    generation: Mapping[str, Any],
+) -> dict[str, Any]:
+    upgraded, record_bindings = _checkpoint_record_bindings(
+        selected_records,
+        agent=agent,
+        evaluation_module=evaluation_module,
+    )
+    unsigned: dict[str, Any] = {
+        "schemaVersion": EVALUATION_CHECKPOINT_CONTRACT_SCHEMA_VERSION,
+        "agent": agent,
+        "variant": variant,
+        "configPath": str(config_path),
+        "configFileSHA256": config_file_sha256,
+        "evaluatorCodePath": str(evaluator_path),
+        "evaluatorCodeSHA256": _file_sha256(evaluator_path),
+        "adapterDirectory": str(adapter_dir),
+        "adapterSHA256": adapter_sha256,
+        "finalizedVariantManifestPath": str(finalized_path),
+        "finalizedVariantManifestSHA256": finalized_sha256,
+        "evaluationJSONLPath": str(evaluation_path),
+        "evaluationJSONLFileSHA256": evaluation_file_sha256,
+        "evaluationSHA256": evaluation_sha256,
+        "behaviorManifestPath": str(behavior_manifest_path),
+        "behaviorManifestFileSHA256": behavior_manifest_file_sha256,
+        "behaviorManifestSHA256": behavior_manifest_sha256,
+        "outputDirectory": str(output_dir),
+        "candidateOutputsPath": str(output_dir / "candidate_outputs.jsonl"),
+        "evaluationReportPath": str(output_dir / "evaluation_report.json"),
+        "evaluationRunManifestPath": str(
+            output_dir / "evaluation_run_manifest.json"
+        ),
+        "executionPlanBinding": _checkpoint_execution_plan_binding(
+            evaluation_plan,
+            max_examples=max_examples,
+            frozen_case_count=frozen_case_count,
+        ),
+        "selectedRecordCount": len(record_bindings),
+        "selectedRecordOrderSHA256": _canonical_sha256(record_bindings),
+        "selectedRecordsSHA256": _canonical_sha256(upgraded),
+        "generation": dict(generation),
+    }
+    return {
+        **unsigned,
+        "evaluationCheckpointContractSHA256": _canonical_sha256(unsigned),
+    }
+
+
+_RUNTIME_EVIDENCE_KEYS = {
+    "baseModelTokenizerDigest",
+    "baseModelTokenizerFiles",
+    "baseModelTokenizerClosureSHA256",
+    "baseModelGenerationConfigFile",
+    "baseModelTokenizerSnapshotPath",
+    "baseModelTokenizerSnapshotVerification",
+    "baseModelRuntimeSnapshotPath",
+    "baseModelRuntimeSnapshotVerification",
+    "runtimeModelBinding",
+    "runtimeTokenizerBinding",
+}
+
+
+def _verified_checkpoint_runtime_evidence(
+    value: Any,
+    *,
+    cfg: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != _RUNTIME_EVIDENCE_KEYS:
+        raise ValueError("Evaluation checkpoint runtime evidence has an invalid schema")
+    evidence = dict(value)
+    expected_static = {
+        "baseModelTokenizerDigest": cfg.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerFiles": cfg.get("baseModelTokenizerFiles"),
+        "baseModelTokenizerClosureSHA256": cfg.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "baseModelGenerationConfigFile": cfg.get(
+            "baseModelGenerationConfigFile"
+        ),
+        "baseModelTokenizerSnapshotPath": cfg.get(
+            "baseModelTokenizerSnapshotPath"
+        ),
+        "baseModelTokenizerSnapshotVerification": cfg.get(
+            "baseModelTokenizerSnapshotVerification"
+        ),
+        "baseModelRuntimeSnapshotPath": cfg.get("baseModelRuntimeSnapshotPath"),
+        "baseModelRuntimeSnapshotVerification": cfg.get(
+            "baseModelRuntimeSnapshotVerification"
+        ),
+    }
+    if any(evidence.get(field) != expected for field, expected in expected_static.items()):
+        raise ValueError("Evaluation checkpoint runtime snapshot evidence drifted")
+    from tools.fine_tuning.unsloth.ubuntu_pipeline import (
+        _verified_runtime_model_binding as verify_recorded_model_binding,
+        _verified_runtime_tokenizer_binding as verify_recorded_tokenizer_binding,
+    )
+
+    snapshot_verification = expected_static[
+        "baseModelRuntimeSnapshotVerification"
+    ]
+    if not isinstance(snapshot_verification, Mapping):
+        raise ValueError("Evaluation checkpoint runtime snapshot is invalid")
+    verify_recorded_model_binding(
+        evidence.get("runtimeModelBinding"),
+        config=cfg,
+        snapshot_verification=snapshot_verification,
+    )
+    verify_recorded_tokenizer_binding(
+        evidence.get("runtimeTokenizerBinding"),
+        config=cfg,
+        snapshot_verification=snapshot_verification,
+    )
+    return evidence
+
+
+def _checkpoint_entry(
+    *,
+    case_index: int,
+    record: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    unsigned = {
+        "schemaVersion": EVALUATION_CHECKPOINT_ENTRY_SCHEMA_VERSION,
+        "caseIndex": case_index,
+        "evalID": record.get("evalID"),
+        "evaluationRecordSHA256": _canonical_sha256(record),
+        "candidateRecord": dict(candidate),
+        "candidateRecordSHA256": candidate.get("candidateRecordSHA256"),
+    }
+    return {
+        **unsigned,
+        "evaluationCheckpointEntrySHA256": _canonical_sha256(unsigned),
+    }
+
+
+def _write_evaluation_checkpoint(
+    path: Path,
+    *,
+    contract: Mapping[str, Any],
+    runtime_evidence: Mapping[str, Any] | None,
+    entries: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    expected_count = contract.get("selectedRecordCount")
+    if (
+        type(expected_count) is not int
+        or expected_count <= 0
+        or len(entries) > expected_count
+    ):
+        raise ValueError("Evaluation checkpoint completion count is invalid")
+    unsigned = {
+        "schemaVersion": EVALUATION_CHECKPOINT_SCHEMA_VERSION,
+        "status": (
+            "ready_for_finalization"
+            if len(entries) == expected_count
+            else "in_progress"
+        ),
+        "contract": dict(contract),
+        "runtimeEvidence": (
+            dict(runtime_evidence) if runtime_evidence is not None else None
+        ),
+        "completedCaseCount": len(entries),
+        "completedCases": [dict(entry) for entry in entries],
+    }
+    checkpoint = {
+        **unsigned,
+        EVALUATION_CHECKPOINT_HASH_FIELD: _canonical_sha256(unsigned),
+    }
+    _atomic_write_bytes(path, _json_bytes(checkpoint))
+    return checkpoint
+
+
+def _require_private_checkpoint_path(path: Path) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"Evaluation checkpoint is not a regular file: {path}")
+    observed = path.stat(follow_symlinks=False)
+    if (
+        not stat.S_ISREG(observed.st_mode)
+        or observed.st_uid != os.geteuid()
+        or stat.S_IMODE(observed.st_mode) != 0o600
+        or observed.st_size <= 0
+        or observed.st_size > EVALUATION_CHECKPOINT_MAX_BYTES
+    ):
+        raise ValueError(
+            "Evaluation checkpoint must be a bounded process-owned mode-0600 "
+            f"file: {path}"
+        )
+
+
+def _fsync_directory_path(path: Path) -> None:
+    directory_descriptor = os.open(
+        path,
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
+
+
+def _durably_create_private_directory(path: Path) -> None:
+    """Create every missing component privately and persist each parent entry."""
+
+    missing: list[Path] = []
+    cursor = path
+    while not cursor.exists():
+        if cursor.is_symlink():
+            raise ValueError(
+                f"Evaluation output path contains a dangling symlink: {cursor}"
+            )
+        missing.append(cursor)
+        parent = cursor.parent
+        if parent == cursor:
+            raise ValueError(
+                f"Evaluation output has no existing directory ancestor: {path}"
+            )
+        cursor = parent
+    if cursor.is_symlink() or not cursor.is_dir():
+        raise ValueError(
+            f"Evaluation output ancestor is not a regular directory: {cursor}"
+        )
+
+    for directory in reversed(missing):
+        try:
+            directory.mkdir(mode=0o700)
+        except FileExistsError as error:
+            raise ValueError(
+                "Evaluation output path changed while its private directory "
+                f"was being created: {directory}"
+            ) from error
+        observed = directory.stat(follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(observed.st_mode)
+            or observed.st_uid != os.geteuid()
+            or stat.S_IMODE(observed.st_mode) != 0o700
+        ):
+            raise ValueError(
+                "New evaluation output directory must be process-owned mode 0700: "
+                f"{directory}"
+            )
+        # Persist the new inode before its name, then persist the name in the
+        # parent. A checkpoint fsync inside the child is not a substitute for
+        # making the parent's newly-created directory entry durable.
+        _fsync_directory_path(directory)
+        _fsync_directory_path(directory.parent)
+
+
+def _require_private_evaluation_directory(path: Path, *, create: bool) -> None:
+    if create and not path.exists():
+        _durably_create_private_directory(path)
+    if path.is_symlink() or not path.is_dir():
+        raise ValueError(f"Evaluation output is not a regular directory: {path}")
+    observed = path.stat(follow_symlinks=False)
+    if (
+        not stat.S_ISDIR(observed.st_mode)
+        or observed.st_uid != os.geteuid()
+        or stat.S_IMODE(observed.st_mode) != 0o700
+    ):
+        raise ValueError(
+            f"Evaluation output must be process-owned mode 0700: {path}"
+        )
+
+
+def _verified_evaluation_directory_entries(
+    path: Path,
+    *,
+    allowed_names: set[str],
+    required_names: set[str],
+) -> set[str]:
+    entries = list(path.iterdir())
+    observed_names = {entry.name for entry in entries}
+    if (
+        len(observed_names) != len(entries)
+        or not required_names.issubset(observed_names)
+        or not observed_names.issubset(allowed_names)
+    ):
+        raise ValueError("Evaluation output directory has an unrecognized state")
+    for entry in entries:
+        if entry.is_symlink() or not entry.is_file():
+            raise ValueError(f"Evaluation output entry is unsafe: {entry}")
+        observed = entry.stat(follow_symlinks=False)
+        if (
+            not stat.S_ISREG(observed.st_mode)
+            or observed.st_uid != os.geteuid()
+            or stat.S_IMODE(observed.st_mode) & 0o077
+        ):
+            raise ValueError(
+                f"Evaluation output entry must be private and process-owned: {entry}"
+            )
+    return observed_names
+
+
+def _remove_verified_atomic_write_orphans(path: Path) -> tuple[str, ...]:
+    """Remove exact private writer temps after the checkpoint was verified.
+
+    Callers must cryptographically verify the existing checkpoint before calling
+    this helper. The private directory prevents cross-user replacement; the
+    descriptor-relative re-stat prevents deleting a changed directory entry.
+    Temp contents are never opened or trusted.
+    """
+
+    _require_private_evaluation_directory(path, create=False)
+    directory_descriptor = os.open(
+        path,
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        orphan_names = tuple(
+            sorted(
+                name
+                for name in os.listdir(directory_descriptor)
+                if EVALUATION_ATOMIC_WRITE_TEMP_NAME_PATTERN.fullmatch(name)
+                is not None
+            )
+        )
+        verified_entries: dict[str, tuple[int, ...]] = {}
+        for name in orphan_names:
+            try:
+                observed = os.stat(
+                    name,
+                    dir_fd=directory_descriptor,
+                    follow_symlinks=False,
+                )
+            except OSError as error:
+                raise ValueError(
+                    f"Evaluation atomic-write orphan could not be verified: {name}"
+                ) from error
+            if (
+                not stat.S_ISREG(observed.st_mode)
+                or observed.st_uid != os.geteuid()
+                or stat.S_IMODE(observed.st_mode) != 0o600
+            ):
+                raise ValueError(
+                    "Evaluation atomic-write orphan must be a process-owned "
+                    f"mode-0600 regular file: {name}"
+                )
+            verified_entries[name] = (
+                observed.st_dev,
+                observed.st_ino,
+                observed.st_mode,
+                observed.st_uid,
+                observed.st_size,
+                observed.st_mtime_ns,
+                observed.st_ctime_ns,
+            )
+
+        removed_any = False
+        try:
+            for name in orphan_names:
+                try:
+                    observed = os.stat(
+                        name,
+                        dir_fd=directory_descriptor,
+                        follow_symlinks=False,
+                    )
+                except OSError as error:
+                    raise ValueError(
+                        "Evaluation atomic-write orphan changed before removal: "
+                        f"{name}"
+                    ) from error
+                current_entry = (
+                    observed.st_dev,
+                    observed.st_ino,
+                    observed.st_mode,
+                    observed.st_uid,
+                    observed.st_size,
+                    observed.st_mtime_ns,
+                    observed.st_ctime_ns,
+                )
+                if current_entry != verified_entries[name]:
+                    raise ValueError(
+                        "Evaluation atomic-write orphan changed before removal: "
+                        f"{name}"
+                    )
+                os.unlink(name, dir_fd=directory_descriptor)
+                removed_any = True
+        finally:
+            if removed_any:
+                os.fsync(directory_descriptor)
+        return orphan_names
+    finally:
+        os.close(directory_descriptor)
+
+
+def _require_recoverable_checkpoint_directory(
+    path: Path,
+    *,
+    completed_case_count: int,
+    selected_case_count: int,
+) -> None:
+    final_names = set(EVALUATION_FINAL_FILENAMES)
+    observed = _verified_evaluation_directory_entries(
+        path,
+        allowed_names={EVALUATION_CHECKPOINT_FILENAME, *final_names},
+        required_names={EVALUATION_CHECKPOINT_FILENAME},
+    )
+    published_final_subset = observed & final_names
+    if published_final_subset and completed_case_count != selected_case_count:
+        raise ValueError(
+            "Partially published final evidence requires a complete checkpoint"
+        )
+
+
+def _verify_evaluation_checkpoint(
+    path: Path,
+    *,
+    expected_contract: Mapping[str, Any],
+    selected_records: Sequence[Mapping[str, Any]],
+    agent: str,
+    cfg: Mapping[str, Any],
+    evaluation_module: ModuleType,
+    tool_contracts: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    _require_private_checkpoint_path(path)
+    checkpoint = _load_json_object(path, label="Evaluation checkpoint")
+    expected_keys = {
+        "schemaVersion",
+        "status",
+        "contract",
+        "runtimeEvidence",
+        "completedCaseCount",
+        "completedCases",
+        EVALUATION_CHECKPOINT_HASH_FIELD,
+    }
+    declared = checkpoint.get(EVALUATION_CHECKPOINT_HASH_FIELD)
+    unsigned = dict(checkpoint)
+    unsigned.pop(EVALUATION_CHECKPOINT_HASH_FIELD, None)
+    entries = checkpoint.get("completedCases")
+    completed_count = checkpoint.get("completedCaseCount")
+    if (
+        set(checkpoint) != expected_keys
+        or checkpoint.get("schemaVersion")
+        != EVALUATION_CHECKPOINT_SCHEMA_VERSION
+        or not isinstance(declared, str)
+        or _SHA256_PATTERN.fullmatch(declared) is None
+        or _canonical_sha256(unsigned) != declared
+        or checkpoint.get("contract") != dict(expected_contract)
+        or type(completed_count) is not int
+        or completed_count < 0
+        or not isinstance(entries, list)
+        or completed_count != len(entries)
+        or completed_count > len(selected_records)
+        or checkpoint.get("status")
+        != (
+            "ready_for_finalization"
+            if completed_count == len(selected_records)
+            else "in_progress"
+        )
+    ):
+        raise ValueError("Evaluation checkpoint failed its exact self-hashed schema")
+
+    runtime_value = checkpoint.get("runtimeEvidence")
+    runtime_evidence = (
+        _verified_checkpoint_runtime_evidence(runtime_value, cfg=cfg)
+        if runtime_value is not None
+        else None
+    )
+    if completed_count > 0 and runtime_evidence is None:
+        raise ValueError("Evaluation checkpoint candidates lack runtime evidence")
+
+    outputs: dict[str, Any] = {}
+    output_rows: list[dict[str, Any]] = []
+    verified_entries: list[dict[str, Any]] = []
+    seen_eval_ids: set[str] = set()
+    expected_entry_keys = {
+        "schemaVersion",
+        "caseIndex",
+        "evalID",
+        "evaluationRecordSHA256",
+        "candidateRecord",
+        "candidateRecordSHA256",
+        "evaluationCheckpointEntrySHA256",
+    }
+    for expected_index, raw_entry in enumerate(entries, start=1):
+        record = evaluation_module.upgrade_evaluation_record(
+            selected_records[expected_index - 1]
+        )
+        if not isinstance(raw_entry, Mapping):
+            raise ValueError("Evaluation checkpoint contains a non-object case")
+        entry = dict(raw_entry)
+        entry_declared = entry.pop("evaluationCheckpointEntrySHA256", None)
+        candidate = entry.get("candidateRecord")
+        eval_id = entry.get("evalID")
+        if (
+            set(raw_entry) != expected_entry_keys
+            or entry.get("schemaVersion")
+            != EVALUATION_CHECKPOINT_ENTRY_SCHEMA_VERSION
+            or entry.get("caseIndex") != expected_index
+            or not isinstance(eval_id, str)
+            or eval_id in seen_eval_ids
+            or eval_id != record.get("evalID")
+            or entry.get("evaluationRecordSHA256")
+            != _canonical_sha256(record)
+            or not isinstance(candidate, Mapping)
+            or entry.get("candidateRecordSHA256")
+            != candidate.get("candidateRecordSHA256")
+            or not isinstance(entry_declared, str)
+            or _SHA256_PATTERN.fullmatch(entry_declared) is None
+            or _canonical_sha256(entry) != entry_declared
+        ):
+            raise ValueError(
+                "Evaluation checkpoint is not an exact unique selected-record prefix"
+            )
+        verified_eval_id, selected_output = _validated_candidate_row(
+            dict(candidate),
+            agent=agent,
+            expected_record=record,
+            evaluation_module=evaluation_module,
+            tool_contracts=tool_contracts,
+            path=path,
+            line_number=expected_index,
+        )
+        if verified_eval_id != eval_id:
+            raise ValueError("Evaluation checkpoint candidate identity drifted")
+        seen_eval_ids.add(eval_id)
+        outputs[eval_id] = selected_output
+        output_rows.append(dict(candidate))
+        verified_entries.append(dict(raw_entry))
+    return {
+        "checkpoint": checkpoint,
+        "runtimeEvidence": runtime_evidence,
+        "entries": verified_entries,
+        "outputs": outputs,
+        "outputRows": output_rows,
+    }
+
+
+def _recover_evaluation_checkpoint_directory(
+    path: Path,
+    *,
+    expected_contract: Mapping[str, Any],
+    selected_records: Sequence[Mapping[str, Any]],
+    agent: str,
+    cfg: Mapping[str, Any],
+    evaluation_module: ModuleType,
+    tool_contracts: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    _require_private_evaluation_directory(path, create=False)
+    checkpoint_path = path / EVALUATION_CHECKPOINT_FILENAME
+    recovered = _verify_evaluation_checkpoint(
+        checkpoint_path,
+        expected_contract=expected_contract,
+        selected_records=selected_records,
+        agent=agent,
+        cfg=cfg,
+        evaluation_module=evaluation_module,
+        tool_contracts=tool_contracts,
+    )
+    _remove_verified_atomic_write_orphans(path)
+    _require_recoverable_checkpoint_directory(
+        path,
+        completed_case_count=len(recovered["entries"]),
+        selected_case_count=len(selected_records),
+    )
+    return recovered
+
+
+def _candidate_failure_counts(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[int, int, int]:
+    format_failures = 0
+    initial_failures = 0
+    recoveries = 0
+    for row in rows:
+        attempts = row.get("generationAttempts")
+        if not isinstance(attempts, list) or not attempts:
+            raise ValueError("Verified candidate row lost its generation attempts")
+        first_error = attempts[0].get("formatError")
+        final_error = row.get("formatError")
+        if first_error is not None:
+            initial_failures += 1
+        if final_error is not None:
+            format_failures += 1
+        if len(attempts) == STRICT_JSON_MAX_ATTEMPTS and first_error is not None and final_error is None:
+            recoveries += 1
+    return format_failures, initial_failures, recoveries
+
+
+def _remove_evaluation_checkpoint(path: Path) -> None:
+    _require_private_checkpoint_path(path)
+    path.unlink()
+    directory_descriptor = os.open(
+        path.parent,
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_DIRECTORY", 0),
+    )
+    try:
+        os.fsync(directory_descriptor)
+    finally:
+        os.close(directory_descriptor)
+
+
+def load_candidate_outputs(
+    path: Path,
+    *,
+    agent: str,
+    evaluation_records: Sequence[Mapping[str, Any]],
+    tool_contracts: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Load evaluator output without trusting duplicate or mutated JSONL rows."""
+
+    if not path.is_file():
+        raise FileNotFoundError(f"Candidate output JSONL not found: {path}")
+    evaluation_module = _load_evaluation_module()
+    expected_records: list[Mapping[str, Any]] = []
+    seen_expected_eval_ids: set[str] = set()
+    for index, raw_record in enumerate(evaluation_records):
+        record = evaluation_module.upgrade_evaluation_record(raw_record)
+        eval_id = record.get("evalID")
+        record_agent = str((record.get("metadata") or {}).get("agent") or "").strip().lower()
+        messages = record.get("messages")
+        if (
+            not isinstance(eval_id, str)
+            or not eval_id
+            or eval_id in seen_expected_eval_ids
+            or record_agent != agent
+            or not isinstance(messages, list)
+            or not messages
+        ):
+            raise ValueError(
+                f"Expected evaluation record {index + 1} is not uniquely bound to agent {agent}"
+            )
+        seen_expected_eval_ids.add(eval_id)
+        expected_records.append(record)
+    if not expected_records:
+        raise ValueError("Expected evaluation records must not be empty")
+
+    outputs: dict[str, Any] = {}
     for line_number, raw_line in enumerate(
         path.read_text(encoding="utf-8").splitlines(),
         start=1,
@@ -2471,119 +3359,30 @@ def load_candidate_outputs(
         row, row_error = evaluation_module._parse_candidate_json(raw_line)
         if row_error is not None:
             raise ValueError(f"{path}:{line_number} is not valid unique-key JSON")
-        if not isinstance(row, dict) or set(row) != expected_keys:
-            raise ValueError(f"{path}:{line_number} has an invalid candidate record")
-        expected_sha256 = row.get("candidateRecordSHA256")
-        unsigned = dict(row)
-        unsigned.pop("candidateRecordSHA256", None)
-        eval_id = row.get("evalID")
-        expected_record = expected_records.get(eval_id) if isinstance(eval_id, str) else None
-        expected_output_mode = (
-            _record_output_mode(expected_record, agent=agent)
-            if isinstance(expected_record, Mapping)
-            else None
-        )
-        if (
-            row.get("schemaVersion") != CANDIDATE_OUTPUT_SCHEMA_VERSION
-            or row.get("agent") != agent
-            or not isinstance(eval_id, str)
-            or not eval_id
-            or eval_id not in expected_records
-            or eval_id in outputs
-            or row.get("outputMode") != expected_output_mode
-            or not isinstance(expected_sha256, str)
-            or _SHA256_PATTERN.fullmatch(expected_sha256) is None
-            or _canonical_sha256(unsigned) != expected_sha256
-            or type(row.get("inputTokenCount")) is not int
-            or row["inputTokenCount"] <= 0
-            or type(row.get("generatedTokenCount")) is not int
-            or row["generatedTokenCount"] < 0
-        ):
+        expected_index = len(outputs)
+        if expected_index >= len(expected_records):
             raise ValueError(f"{path}:{line_number} failed candidate lineage validation")
-        record_messages = expected_records[eval_id]["messages"]
-        primary_messages = _structured_output_messages(
-            agent,
-            record_messages,
-            output_mode=expected_output_mode,
-            tool_contracts=tool_contracts,
-        )
-        expected_prompt_sha256 = [_canonical_sha256(primary_messages)]
-        cortex_retry_locked_row: Mapping[str, Any] | None = None
-        if expected_output_mode == "json":
-            raw_attempts = row.get("generationAttempts")
-            first_attempt = (
-                raw_attempts[0]
-                if isinstance(raw_attempts, list)
-                and raw_attempts
-                and isinstance(raw_attempts[0], Mapping)
-                else None
-            )
-            first_raw_output = (
-                first_attempt.get("rawOutput")
-                if isinstance(first_attempt, Mapping)
-                and isinstance(first_attempt.get("rawOutput"), str)
-                else None
-            )
-            first_output: Any = None
-            first_error: str | None = None
-            if first_raw_output is not None:
-                first_output, _, first_error = normalize_candidate_output(
-                    agent,
-                    first_raw_output,
-                    output_mode=expected_output_mode,
-                    evaluation_module=evaluation_module,
-                    tool_contracts=tool_contracts,
-                )
-            if agent == "cortex":
-                cortex_retry_locked_row = _cortex_retry_locked_manifest_row(
-                    primary_messages,
-                    first_output,
-                    tool_contracts,
-                )
-            expected_prompt_sha256.append(
-                _canonical_sha256(
-                    _strict_json_retry_messages(
-                        agent,
-                        primary_messages,
-                        validation_error=first_error,
-                        failed_candidate=first_output,
-                        tool_contracts=tool_contracts,
-                    )
-                )
-            )
-        attempts, selected_output = _validated_generation_attempts(
+        eval_id, selected_output = _validated_candidate_row(
             row,
             agent=agent,
-            output_mode=expected_output_mode,
+            expected_record=expected_records[expected_index],
             evaluation_module=evaluation_module,
             tool_contracts=tool_contracts,
-            cortex_retry_locked_row=cortex_retry_locked_row,
-            expected_prompt_sha256=expected_prompt_sha256,
             path=path,
             line_number=line_number,
         )
-        selected_attempt = attempts[-1]
-        if (
-            row.get("outputKind") != selected_attempt.get("outputKind")
-            or row.get("formatError") != selected_attempt.get("formatError")
-            or row.get("inputTokenCount") != selected_attempt.get("inputTokenCount")
-            or row.get("generatedTokenCount")
-            != selected_attempt.get("generatedTokenCount")
-            or _canonical_sha256(row.get("output"))
-            != _canonical_sha256(selected_output)
-        ):
-            raise ValueError(f"{path}:{line_number} has inconsistent selected attempt evidence")
-        # The outer evidence row is canonically serialized with sorted keys, so its
-        # nested output object cannot preserve the model's protocol-significant key
-        # order. Score the independently replayed selected raw attempt instead.
+        if eval_id in outputs:
+            raise ValueError(f"{path}:{line_number} failed candidate lineage validation")
         outputs[eval_id] = selected_output
     if not outputs:
         raise ValueError(f"Candidate output JSONL is empty: {path}")
-    if len(outputs) != len(expected_record_order) or set(outputs) != set(expected_record_order):
+    expected_record_order = [str(record["evalID"]) for record in expected_records]
+    if list(outputs) != expected_record_order:
         missing = sorted(set(expected_record_order) - set(outputs))
         extra = sorted(set(outputs) - set(expected_record_order))
         raise ValueError(
-            "Candidate output evalID set does not match the frozen evaluation records: "
+            "Candidate output evalID set does not match the frozen evaluation "
+            "records or is out of order: "
             f"missing={missing} extra={extra}"
         )
     return outputs
@@ -2593,8 +3392,8 @@ def _check_output_paths(paths: Sequence[Path], *, overwrite: bool) -> None:
     resolved = [path.resolve() for path in paths]
     if len(set(resolved)) != len(resolved):
         raise ValueError("Evaluator output paths must be distinct")
-    for path in resolved:
-        if path.exists() and (path.is_dir() or path.is_symlink()):
+    for path in paths:
+        if path.is_symlink() or (path.exists() and not path.is_file()):
             raise ValueError(f"Evaluator output path is not a regular file: {path}")
         if path.exists() and not overwrite:
             raise FileExistsError(
@@ -2650,14 +3449,18 @@ def run(args: argparse.Namespace) -> int:
         args.eval_jsonl or (Path(str(cfg["dataset_dir"])) / "eval.jsonl")
     ).resolve()
     behavior_manifest_path = Path(args.behavior_manifest).resolve()
-    output_dir = Path(args.output_dir or (finalized_path.parent / "evaluation")).resolve()
+    requested_output_dir = Path(
+        args.output_dir or (finalized_path.parent / "evaluation")
+    )
+    if requested_output_dir.is_symlink():
+        raise ValueError(
+            f"Evaluation output directory must not be a symlink: {requested_output_dir}"
+        )
+    output_dir = requested_output_dir.resolve()
     candidate_path = output_dir / "candidate_outputs.jsonl"
     report_path = output_dir / "evaluation_report.json"
     run_manifest_path = output_dir / "evaluation_run_manifest.json"
-    _check_output_paths(
-        (candidate_path, report_path, run_manifest_path),
-        overwrite=bool(args.overwrite),
-    )
+    checkpoint_path = output_dir / EVALUATION_CHECKPOINT_FILENAME
 
     evaluation_module = _load_evaluation_module()
     all_records, evaluation_sha256 = load_evaluation_records(
@@ -2665,6 +3468,7 @@ def run(args: argparse.Namespace) -> int:
         agent=agent,
         evaluation_module=evaluation_module,
     )
+    evaluation_file_sha256 = _file_sha256(eval_path)
     evaluation_plan = _verified_evaluation_execution_plan(
         cfg,
         max_examples=args.max_examples,
@@ -2711,31 +3515,207 @@ def run(args: argparse.Namespace) -> int:
         if evaluation_plan is not None
         else len(selected_records) == len(all_records)
     )
-    model, tokenizer = load_inference_model(cfg, adapter_dir=adapter_dir)
-    if (
-        verify_chat_template_contract(
-            cfg.get("chatTemplateContract"),
-            tokenizer=tokenizer,
-        )
-        != chat_template_contract_sha256
-    ):
-        raise RuntimeError("Loaded tokenizer chat-template contract digest drifted")
-    (
-        outputs,
-        output_rows,
-        format_failure_count,
-        initial_format_failure_count,
-        format_recovery_count,
-    ) = evaluate_records(
-        selected_records,
+    generation_evidence = {
+        "doSample": False,
+        "numBeams": 1,
+        "repetitionPenalty": GENERATION_REPETITION_PENALTY,
+        "thinkingEnabled": False,
+        "maxNewTokens": int(args.max_new_tokens),
+        "maxSequenceLength": int(cfg["max_seq_length"]),
+        "seed": int(cfg["seed"]),
+        "outputModeContract": _evaluation_output_mode_contract(
+            selected_records,
+            agent=agent,
+            tool_contracts=tool_contracts,
+        ),
+    }
+    evaluator_path = Path(__file__).resolve()
+    checkpoint_contract = _evaluation_checkpoint_contract(
         agent=agent,
-        model=model,
-        tokenizer=tokenizer,
-        max_seq_length=int(cfg["max_seq_length"]),
-        max_new_tokens=int(args.max_new_tokens),
+        variant=str(cfg["variant"]),
+        config_path=config_path,
+        config_file_sha256=config_file_sha256,
+        evaluator_path=evaluator_path,
+        adapter_dir=adapter_dir,
+        adapter_sha256=artifact_sha256,
+        finalized_path=finalized_path,
+        finalized_sha256=str(finalized["variantManifestSHA256"]),
+        evaluation_path=eval_path,
+        evaluation_file_sha256=evaluation_file_sha256,
+        evaluation_sha256=evaluation_sha256,
+        behavior_manifest_path=behavior_manifest_path,
+        behavior_manifest_file_sha256=behavior_manifest_file_sha256,
+        behavior_manifest_sha256=behavior_manifest_sha256,
+        output_dir=output_dir,
+        evaluation_plan=evaluation_plan,
+        max_examples=args.max_examples,
+        frozen_case_count=len(all_records),
+        selected_records=selected_records,
+        evaluation_module=evaluation_module,
+        generation=generation_evidence,
+    )
+
+    verify_checkpoint_only = bool(
+        getattr(args, "verify_checkpoint_only", False)
+    )
+    if verify_checkpoint_only and not output_dir.exists():
+        raise FileNotFoundError(
+            f"Evaluation checkpoint directory not found: {output_dir}"
+        )
+    _require_private_evaluation_directory(
+        output_dir,
+        create=not verify_checkpoint_only,
+    )
+    final_names = {
+        candidate_path.name,
+        report_path.name,
+        run_manifest_path.name,
+    }
+    checkpoint_exists = checkpoint_path.exists() or checkpoint_path.is_symlink()
+    if checkpoint_exists:
+        recovered = _recover_evaluation_checkpoint_directory(
+            output_dir,
+            expected_contract=checkpoint_contract,
+            selected_records=selected_records,
+            agent=agent,
+            cfg=cfg,
+            evaluation_module=evaluation_module,
+            tool_contracts=tool_contracts,
+        )
+    else:
+        _verified_evaluation_directory_entries(
+            output_dir,
+            allowed_names={EVALUATION_CHECKPOINT_FILENAME, *final_names},
+            required_names=set(),
+        )
+        if verify_checkpoint_only:
+            raise FileNotFoundError(
+                f"Evaluation checkpoint not found: {checkpoint_path}"
+            )
+        _check_output_paths(
+            (candidate_path, report_path, run_manifest_path),
+            overwrite=bool(args.overwrite),
+        )
+        _write_evaluation_checkpoint(
+            checkpoint_path,
+            contract=checkpoint_contract,
+            runtime_evidence=None,
+            entries=(),
+        )
+        recovered = _verify_evaluation_checkpoint(
+            checkpoint_path,
+            expected_contract=checkpoint_contract,
+            selected_records=selected_records,
+            agent=agent,
+            cfg=cfg,
+            evaluation_module=evaluation_module,
+            tool_contracts=tool_contracts,
+        )
+    if verify_checkpoint_only:
+        print(
+            "Verified evaluation checkpoint: "
+            f"{checkpoint_path} completed="
+            f"{len(recovered['entries'])}/{len(selected_records)}"
+        )
+        return 0
+
+    entries = list(recovered["entries"])
+    outputs = dict(recovered["outputs"])
+    output_rows = list(recovered["outputRows"])
+    runtime_tokenizer_evidence = recovered["runtimeEvidence"]
+    if len(entries) < len(selected_records):
+        model, tokenizer, observed_runtime_evidence = load_inference_model(
+            cfg,
+            adapter_dir=adapter_dir,
+        )
+        if (
+            verify_chat_template_contract(
+                cfg.get("chatTemplateContract"),
+                tokenizer=tokenizer,
+            )
+            != chat_template_contract_sha256
+        ):
+            raise RuntimeError("Loaded tokenizer chat-template contract digest drifted")
+        if (
+            runtime_tokenizer_evidence is not None
+            and observed_runtime_evidence != runtime_tokenizer_evidence
+        ):
+            raise RuntimeError(
+                "Resumed evaluation runtime evidence drifted from the checkpoint"
+            )
+        runtime_tokenizer_evidence = observed_runtime_evidence
+        _write_evaluation_checkpoint(
+            checkpoint_path,
+            contract=checkpoint_contract,
+            runtime_evidence=runtime_tokenizer_evidence,
+            entries=entries,
+        )
+
+        def persist_completed_case(row: dict[str, Any]) -> None:
+            case_index = len(entries) + 1
+            record = evaluation_module.upgrade_evaluation_record(
+                selected_records[case_index - 1]
+            )
+            entry = _checkpoint_entry(
+                case_index=case_index,
+                record=record,
+                candidate=row,
+            )
+            _write_evaluation_checkpoint(
+                checkpoint_path,
+                contract=checkpoint_contract,
+                runtime_evidence=runtime_tokenizer_evidence,
+                entries=(*entries, entry),
+            )
+            entries.append(entry)
+
+        (
+            generated_outputs,
+            generated_rows,
+            _generated_format_failures,
+            _generated_initial_failures,
+            _generated_recoveries,
+        ) = evaluate_records(
+            selected_records[len(entries) :],
+            agent=agent,
+            model=model,
+            tokenizer=tokenizer,
+            max_seq_length=int(cfg["max_seq_length"]),
+            max_new_tokens=int(args.max_new_tokens),
+            evaluation_module=evaluation_module,
+            tool_contracts=tool_contracts,
+            on_case_completed=persist_completed_case,
+        )
+        outputs.update(generated_outputs)
+        output_rows.extend(generated_rows)
+    else:
+        print(
+            "Evaluation checkpoint already covers the complete selected cohort; "
+            "finalizing without loading the model.",
+            flush=True,
+        )
+
+    recovered = _verify_evaluation_checkpoint(
+        checkpoint_path,
+        expected_contract=checkpoint_contract,
+        selected_records=selected_records,
+        agent=agent,
+        cfg=cfg,
         evaluation_module=evaluation_module,
         tool_contracts=tool_contracts,
     )
+    if len(recovered["entries"]) != len(selected_records):
+        raise RuntimeError("Evaluation checkpoint is not ready for finalization")
+    outputs = dict(recovered["outputs"])
+    output_rows = list(recovered["outputRows"])
+    runtime_tokenizer_evidence = recovered["runtimeEvidence"]
+    if runtime_tokenizer_evidence is None:
+        raise RuntimeError("Complete evaluation checkpoint lacks runtime evidence")
+    (
+        format_failure_count,
+        initial_format_failure_count,
+        format_recovery_count,
+    ) = _candidate_failure_counts(output_rows)
     controlled_lineage_builder = getattr(
         evaluation_module,
         "_variant_controlled_lineage",
@@ -2785,13 +3765,14 @@ def run(args: argparse.Namespace) -> int:
     run_manifest: dict[str, Any] = {
         "schemaVersion": EVALUATION_RUN_SCHEMA_VERSION,
         "status": status,
-        "evaluatorCodePath": str(Path(__file__).resolve()),
-        "evaluatorCodeSHA256": _file_sha256(Path(__file__).resolve()),
+        "evaluatorCodePath": str(evaluator_path),
+        "evaluatorCodeSHA256": _file_sha256(evaluator_path),
         "agent": agent,
         "variant": cfg["variant"],
         "configPath": str(config_path),
         "configSHA256": config_file_sha256,
         "chatTemplateContract": cfg["chatTemplateContract"],
+        **runtime_tokenizer_evidence,
         "adapterDirectory": str(adapter_dir),
         "adapterSHA256": artifact_sha256,
         "finalizedVariantManifestPath": str(finalized_path),
@@ -2816,26 +3797,14 @@ def run(args: argparse.Namespace) -> int:
         "criticalFailureCount": report["criticalFailureCount"],
         "qualityGatePassed": quality_gate_passed,
         **expected_source_fields,
-        "generation": {
-            "doSample": False,
-            "numBeams": 1,
-            "repetitionPenalty": GENERATION_REPETITION_PENALTY,
-            "thinkingEnabled": False,
-            "maxNewTokens": int(args.max_new_tokens),
-            "maxSequenceLength": int(cfg["max_seq_length"]),
-            "seed": int(cfg["seed"]),
-            "outputModeContract": _evaluation_output_mode_contract(
-                selected_records,
-                agent=agent,
-                tool_contracts=tool_contracts,
-            ),
-        },
+        "generation": generation_evidence,
     }
     run_manifest["runManifestSHA256"] = _canonical_sha256(run_manifest)
 
     _atomic_write_bytes(candidate_path, candidate_bytes)
     _atomic_write_bytes(report_path, report_bytes)
     _atomic_write_bytes(run_manifest_path, _json_bytes(run_manifest))
+    _remove_evaluation_checkpoint(checkpoint_path)
     print(f"Wrote candidate outputs: {candidate_path}")
     print(f"Wrote scored report: {report_path}")
     print(f"Wrote evaluation run manifest: {run_manifest_path}")

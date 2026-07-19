@@ -18,6 +18,7 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     EVALUATION_SCHEMA_VERSION,
     _score_metric,
     build_contamination_report,
+    canonical_sha256,
     declarative_metrics_from_expected,
     evaluation_output_mode,
     mouth_final_text_is_complete,
@@ -47,12 +48,17 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES,
     FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
     FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX,
+    FLEET_VALIDATION_SAMPLING_SCHEMA_VERSION,
     FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY,
     FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL,
     FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC,
     NON_CORTEX_MINIMUM_EFFECTIVE_DPO_STEPS,
     NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS,
     NON_CORTEX_MAX_TRAINING_EPOCHS,
+    PUBLIC_ADAPTER_CORPUS_PREFIX,
+    PUBLIC_CORPUS_ASSISTANT_TARGET_TOKEN_SHARE_HARD_MAX,
+    PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION,
+    PUBLIC_CORPUS_SOURCE_PROXY_SELECTION_SHARE_HARD_MAX,
     FineTuningDatasetConfig,
     MIMICRY_CONTRACT_TRAIN_RECORDS_PER_CASE,
     MIMICRY_CRITICAL_CONTRACT_CASES,
@@ -73,11 +79,16 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _bind_fleet_dpo_contract,
     _bind_fleet_sft_contract,
     _bind_cortex_dpo_route_contract,
+    _bound_fleet_validation_sft_records,
     _canonicalize_cortex_sft_output,
+    _canonical_messages_key,
+    _cap_public_corpus_token_share,
     _cortex_failure_repair_sft_records,
     _fleet_slot_contract,
+    _finalize_fleet_optimizer_lane,
     _limit_supplemental_sft_records,
     _limit_fleet_supplemental_dpo_records,
+    _public_corpus_loss_share_contract,
     _fleet_source_role,
     _manifest_valid_executor_payload,
     _mimicry_critical_contract_scenarios,
@@ -174,6 +185,41 @@ def test_per_agent_directories_are_produced(tmp_path: Path, compiled_fine_tuning
             variant_dir = agent_dir / "experiments" / variant
             assert (variant_dir / "variant_manifest.json").exists()
             assert (variant_dir / "contamination_report.json").exists()
+
+
+def test_all_optimized_training_lanes_have_canonical_source_classification(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+
+    for agent in AGENTS:
+        optimized = fine_tuning[agent].experiment_variants[
+            "internal_plus_public_optimized"
+        ]
+        for lane in ("train_sft", "val_sft", "train_dpo", "val_dpo"):
+            for record in optimized[lane]:
+                metadata = record.get("metadata")
+                assert isinstance(metadata, dict), f"{agent}/{lane} metadata"
+                assert metadata.get("agent") == agent
+                source_family = metadata.get("sourceFamily")
+                assert isinstance(source_family, str), (
+                    f"{agent}/{lane} sourceFamily type"
+                )
+                assert source_family
+                assert source_family == source_family.strip()
+                task_type = metadata.get("taskType")
+                assert isinstance(task_type, str), f"{agent}/{lane} taskType type"
+                assert task_type
+                assert task_type == task_type.strip()
+
+                public_corpus = metadata.get("publicCorpus")
+                has_public_lineage = (
+                    isinstance(public_corpus, dict) and bool(public_corpus)
+                )
+                assert ("publicCorpus" in metadata) == has_public_lineage
+                assert source_family.startswith(
+                    PUBLIC_ADAPTER_CORPUS_PREFIX
+                ) == has_public_lineage
 
 
 def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_fine_tuning: tuple) -> None:
@@ -322,8 +368,9 @@ def test_sft_records_do_not_train_null_assistant_outputs(compiled_fine_tuning: t
 def test_sft_messages_are_unique_and_source_stratified(compiled_fine_tuning: tuple) -> None:
     _, _, fine_tuning = compiled_fine_tuning
     for agent in AGENTS:
-        train = fine_tuning[agent].train_sft
-        val = fine_tuning[agent].val_sft
+        dataset = fine_tuning[agent]
+        train = dataset.train_sft
+        val = dataset.val_sft
         train_keys = {json.dumps(record["messages"], ensure_ascii=False, sort_keys=True) for record in train}
         val_keys = {json.dumps(record["messages"], ensure_ascii=False, sort_keys=True) for record in val}
         assert len(train_keys) == len(train)
@@ -334,9 +381,40 @@ def test_sft_messages_are_unique_and_source_stratified(compiled_fine_tuning: tup
             record["metadata"]["sourceFamily"]
             for record in train + val
         }
+        constraints = dataset.dataset_card["constraints"]
+        fleet_optimizer_only = (
+            agent == "fleet"
+            and constraints.get("fleetLossShareEnforcementScope")
+            == "optimizer_train_only"
+            and constraints.get("fleetValidationLossSharePolicy")
+            == "observed_not_enforced"
+        )
+        registry = constraints.get("fleetSourceRoleRegistry") or {}
+        supplemental_pairs = {
+            (entry["sourceFamily"], entry["taskType"])
+            for entry in registry.get("registeredPairs", [])
+            if entry.get("category") == "supplemental_static"
+        }
         for source in all_sources:
             source_records = [record for record in train + val if record["metadata"]["sourceFamily"] == source]
             if len(source_records) >= 2 and not source.startswith("public_adapter_corpus_"):
+                validation_only_static = (
+                    fleet_optimizer_only
+                    and not any(
+                        record["metadata"]["sourceFamily"] == source
+                        for record in train
+                    )
+                    and all(
+                        (
+                            record["metadata"]["sourceFamily"],
+                            record["metadata"]["taskType"],
+                        )
+                        in supplemental_pairs
+                        for record in source_records
+                    )
+                )
+                if validation_only_static:
+                    continue
                 assert any(record["metadata"]["sourceFamily"] == source for record in train)
                 assert any(record["metadata"]["sourceFamily"] == source for record in val)
 
@@ -405,6 +483,10 @@ def test_dataset_cards_account_for_materialized_sft(compiled_fine_tuning: tuple)
         assert dataset.dataset_card["availableSFTRecords"] == len(records)
         assert "sourceDirty" in dataset.dataset_card
         assert "worktreeFingerprint" in dataset.dataset_card
+        if agent == "fleet":
+            assert dataset.dataset_card["constraints"][
+                "fleetOrchestrationEvaluationRequired"
+            ] is False
 
 
 def test_sft_records_fit_configured_sequence_budget(compiled_fine_tuning: tuple) -> None:
@@ -521,12 +603,27 @@ def test_public_adapter_corpus_is_loaded_and_group_split_without_cross_routing(
         assert public_card["snapshotIntegrity"]["recordsSHA256"] == snapshot["recordsSHA256"]
         assert public_card["snapshotIntegrity"]["sourceManifestSHA256"] == snapshot["sourceManifestSHA256"]
         assert public_card["selectionContract"]["policyVersions"] == [snapshot["selectionPolicyVersion"]]
+        expected_dpo_target_mode = (
+            "dpo_chosen" if agent == "fleet" else "all_assistant"
+        )
+        assert public_card["selectionContract"][
+            "laneTargetTokenProxyModes"
+        ] == {
+            "train_sft": "all_assistant",
+            "val_sft": "all_assistant",
+            "train_dpo": expected_dpo_target_mode,
+            "val_dpo": expected_dpo_target_mode,
+        }
         assert len(public_card["selectionContract"]["sha256"]) == 64
         assert sum(public_card["recordCounts"].values()) == len(selected_public)
         for lane, selected_count in public_card["recordCounts"].items():
             available_count = public_card["availableRecordCounts"][lane]
             assert selected_count <= available_count
-            assert public_card["rejectedByTokenCap"][lane] == available_count - selected_count
+            assert (
+                public_card["rejectedByTokenCap"][lane]
+                + public_card["rejectedByValidationSampling"][lane]
+                == available_count - selected_count
+            )
         assert sum(public_card["availableSourceCounts"].values()) == sum(
             public_card["availableRecordCounts"].values()
         )
@@ -6800,13 +6897,17 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
     proxy_selection_token_cap = constraints[
         "maxFleetSupplementalAssistantTokenProxySelectionShare"
     ]
+    assert constraints["fleetLossShareEnforcementScope"] == (
+        "optimizer_train_only"
+    )
+    assert constraints["fleetValidationLossSharePolicy"] == (
+        "observed_not_enforced"
+    )
     assert configured_char_cap == pytest.approx(0.25)
     assert configured_token_cap == pytest.approx(0.25)
     assert proxy_selection_token_cap == pytest.approx(0.15)
     assert configured_char_cap <= FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX
     assert configured_token_cap <= FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX
-    assert char_share <= configured_char_cap
-    assert token_share <= proxy_selection_token_cap
     assert quality["assistantTargetCharCount"] == total_chars
     assert quality["supplementalAssistantTargetCharCount"] == supplemental_chars
     assert quality["supplementalAssistantTargetCharShare"] == pytest.approx(
@@ -6899,6 +7000,7 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
     source_proxy = loss_share_contract["sourceSelectionProxy"]
     assert source_proxy["status"] == "safety_budget_not_exact_token_count"
     assert source_proxy["maximumSupplementalStaticShareBasisPoints"] == 1_500
+    assert source_proxy["maximumPublicBehavioralShareBasisPoints"] == 3_000
     assert source_proxy["contract"] == quality["sourceTokenProxyContract"]
     assert loss_share_contract["failurePolicy"] == "abort_before_optimizer"
     assert loss_share_contract["rowMetadataContract"] == {
@@ -6917,12 +7019,104 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
         "baseModelID": fleet.unsloth_config["baseModelID"],
         "baseModelRevision": fleet.unsloth_config["baseModelRevision"],
         "tokenizerSHA256": fleet.unsloth_config["baseModelTokenizerDigest"],
+        "tokenizerClosureSHA256": fleet.unsloth_config[
+            "baseModelTokenizerClosureSHA256"
+        ],
     }
     assert all(
         "fleetLossShareContract" not in fine_tuning[agent].unsloth_config
         for agent in AGENTS
         if agent != "fleet"
     )
+
+    def assert_optimizer_proxy_caps(
+        lane_records: list[dict],
+        *,
+        lane: str,
+    ) -> None:
+        def target_proxy(record: dict) -> int:
+            if lane == "sft":
+                return _source_token_proxy_count(
+                    record["messages"][2]["content"]
+                )
+            return _source_token_proxy_count(record["chosen"]["content"])
+
+        def target_chars(record: dict) -> int:
+            if lane == "sft":
+                return len(record["messages"][2]["content"])
+            return len(record["chosen"]["content"])
+
+        total = sum(target_proxy(record) for record in lane_records)
+        supplemental = sum(
+            target_proxy(record)
+            for record in lane_records
+            if _fleet_source_role(record)
+            == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+        )
+        public = sum(
+            target_proxy(record)
+            for record in lane_records
+            if _fleet_source_role(record) == FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL
+        )
+        supplemental_by_family: dict[str, int] = {}
+        total_chars = sum(target_chars(record) for record in lane_records)
+        supplemental_chars = sum(
+            target_chars(record)
+            for record in lane_records
+            if _fleet_source_role(record)
+            == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+        )
+        for record in lane_records:
+            if (
+                _fleet_source_role(record)
+                != FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+            ):
+                continue
+            source_family = record["metadata"]["sourceFamily"]
+            supplemental_by_family[source_family] = (
+                supplemental_by_family.get(source_family, 0)
+                + target_proxy(record)
+            )
+
+        assert total > 0
+        assert supplemental_chars * 10_000 <= total_chars * 2_500
+        assert supplemental * 10_000 <= total * 1_500
+        assert public * 10_000 <= total * 3_000
+        assert all(
+            family_tokens * 10_000 <= total * 500
+            for family_tokens in supplemental_by_family.values()
+        )
+
+    assert_optimizer_proxy_caps(fleet.train_sft, lane="sft")
+    assert_optimizer_proxy_caps(fleet.train_dpo, lane="dpo")
+    optimizer_sft_lanes = [
+        fleet.train_sft,
+        *(
+            variant["train_sft"]
+            for variant in fleet.experiment_variants.values()
+        ),
+    ]
+    available_cross_model_tasks = {
+        record["metadata"]["taskType"]
+        for record in records
+        if record["metadata"]["sourceFamily"] == "cross_model_training"
+    }
+    if available_cross_model_tasks:
+        assert (
+            FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES
+            <= available_cross_model_tasks
+        )
+        for optimizer_sft in optimizer_sft_lanes:
+            assert FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES <= {
+                record["metadata"]["taskType"]
+                for record in optimizer_sft
+                if record["metadata"]["sourceFamily"]
+                == "cross_model_training"
+            }
+    for variant in fleet.experiment_variants.values():
+        assert_optimizer_proxy_caps(variant["train_sft"], lane="sft")
+        assert_optimizer_proxy_caps(variant["train_dpo"], lane="dpo")
+
     for record in [*records, *fleet.train_dpo, *fleet.val_dpo]:
         metadata = record.get("metadata")
         assert isinstance(metadata, dict)
@@ -6962,17 +7156,6 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
     assert quality["fleetSupplementalDPOChosenTargetTokenProxyShare"] == pytest.approx(
         supplemental_chosen_tokens / chosen_tokens if chosen_tokens else 0.0
     )
-    assert (
-        quality["fleetSupplementalDPOChosenTargetCharShare"]
-        <= constraints["maxFleetSupplementalDPOChosenCharShare"]
-    )
-    assert (
-        quality["fleetSupplementalDPOChosenTargetTokenProxyShare"]
-        <= constraints[
-            "maxFleetSupplementalDPOChosenTokenProxySelectionShare"
-        ]
-    )
-
     task_types = {
         record["metadata"].get("taskType") for record in records
     }
@@ -6981,6 +7164,67 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
         "ultra_specific_fleet_delegation",
         "ultra_specific_tool_boundary_awareness",
     } <= task_types
+
+
+def test_every_agent_config_binds_public_corpus_exact_loss_share_contract() -> None:
+    config = FineTuningDatasetConfig(max_public_corpus_token_share=0.90)
+    expected = _public_corpus_loss_share_contract(config)
+
+    assert expected["schemaVersion"] == (
+        PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION
+    )
+    assert expected["enforcementRequired"] is True
+    assert expected["enforcementPhase"] == "post_tokenizer_load_pre_optimizer"
+    assert expected["requiredLanes"] == ["sft", "dpo"]
+    assert expected["authoritativeCapEncoding"] == "integer_basis_points"
+    assert expected["basisPointDenominator"] == 10_000
+    assert expected["capBasisPoints"] == {
+        "requested": int(
+            PUBLIC_CORPUS_ASSISTANT_TARGET_TOKEN_SHARE_HARD_MAX * 10_000
+        ),
+        "hard": 3_500,
+    }
+    assert expected["sourceSelectionProxy"] == {
+        "status": "safety_budget_not_exact_token_count",
+        "maximumPublicShareBasisPoints": int(
+            PUBLIC_CORPUS_SOURCE_PROXY_SELECTION_SHARE_HARD_MAX * 10_000
+        ),
+        "contract": {
+            "schemaVersion": "lumen.source-token-proxy/1.0.0",
+            "status": "source_side_selection_proxy_not_exact_token_count",
+            "strategy": "max_whitespace_terms_utf8_byte_ceiling",
+            "maxCharsPerToken": 4,
+            "exactPinnedTokenizerAuthoritative": True,
+            "authoritativeEnforcementPhase": (
+                "post_tokenizer_load_pre_optimizer"
+            ),
+        },
+    }
+    assert expected["rowMetadataContract"] == {
+        "publicSourceFamilyPrefix": "public_adapter_corpus_",
+        "publicCorpusField": "publicCorpus",
+        "classificationRule": "prefix_and_nonempty_lineage_required",
+        "mismatch": "hard_fail",
+    }
+    assert expected["exactTokenEvidenceContract"]["lanes"] == {
+        "sft": {
+            "denominatorTokenCount": "assistantTargetTokenCount",
+            "publicNumeratorTokenCount": "publicAssistantTargetTokenCount",
+        },
+        "dpo": {
+            "denominatorTokenCount": "chosenTargetTokenCount",
+            "publicNumeratorTokenCount": "publicChosenTargetTokenCount",
+        },
+    }
+
+    for agent in AGENTS:
+        generated = _agent_unsloth_config(
+            agent,
+            config,
+            sft_train_record_count=256,
+            dpo_train_record_count=64,
+        )
+        assert generated["publicCorpusLossShareContract"] == expected
 
 
 def test_fleet_supplemental_share_configuration_cannot_exceed_hard_max() -> None:
@@ -7327,6 +7571,550 @@ def test_fleet_dpo_static_chosen_loss_is_bounded_by_char_and_token_share() -> No
     )
 
 
+def test_fleet_optimizer_finalization_converges_coupled_public_and_static_caps() -> None:
+    def sft(
+        index: int,
+        *,
+        source_family: str,
+        task_type: str,
+        target_words: int,
+        public: bool = False,
+    ) -> dict:
+        metadata: dict = {
+            "agent": "fleet",
+            "sourceFamily": source_family,
+            "taskType": task_type,
+        }
+        if public:
+            metadata["publicCorpus"] = {
+                "sourceRepository": "example/fleet-public",
+                "sourceRevision": "a" * 40,
+                "sourceGroupID": f"public-group-{index}",
+                "stratum": "delegation",
+                "selectionScore": {"overall": float(index)},
+            }
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": f"Fleet optimizer item {index}"},
+                {
+                    "role": "assistant",
+                    "content": " ".join(
+                        f"target_{index}_{offset}"
+                        for offset in range(target_words)
+                    ),
+                },
+            ],
+            "metadata": metadata,
+        }
+
+    primary = [
+        sft(
+            index,
+            source_family="adapter_ultra_specific",
+            task_type="fleet_contract_delegation",
+            target_words=100,
+        )
+        for index in range(10)
+    ]
+    supplemental = [
+        sft(
+            100 + index,
+            source_family="codebase_home_sft",
+            task_type="codebase_home_grounding",
+            target_words=50,
+        )
+        for index in range(10)
+    ]
+    public = [
+        sft(
+            200 + index,
+            source_family="public_adapter_corpus_test",
+            task_type="public_capability_delegation",
+            target_words=100,
+            public=True,
+        )
+        for index in range(10)
+    ]
+    config = FineTuningDatasetConfig(max_public_corpus_token_share=0.35)
+    records = [*primary, *supplemental, *public]
+
+    finalized = _finalize_fleet_optimizer_lane(
+        records,
+        lane="sft",
+        config=config,
+    )
+    repeated = _finalize_fleet_optimizer_lane(
+        list(reversed(finalized)),
+        lane="sft",
+        config=config,
+    )
+
+    assert finalized == repeated
+    assert len(finalized) < len(records)
+    total = sum(
+        _source_token_proxy_count(record["messages"][2]["content"])
+        for record in finalized
+    )
+    supplemental_total = sum(
+        _source_token_proxy_count(record["messages"][2]["content"])
+        for record in finalized
+        if _fleet_source_role(record) == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+    )
+    public_total = sum(
+        _source_token_proxy_count(record["messages"][2]["content"])
+        for record in finalized
+        if _fleet_source_role(record) == FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL
+    )
+    assert supplemental_total * 10_000 <= total * 1_500
+    assert supplemental_total * 10_000 <= total * 500
+    assert public_total * 10_000 <= total * 3_000
+
+
+def test_fleet_optimizer_finalization_repairs_post_split_concentration_only() -> None:
+    def sft(
+        index: int,
+        *,
+        supplemental: bool,
+        required_split: str,
+    ) -> dict:
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": f"Fleet split item {index}"},
+                {
+                    "role": "assistant",
+                    "content": " ".join(
+                        f"split_{index}_{offset}" for offset in range(100)
+                    ),
+                },
+            ],
+            "metadata": {
+                "agent": "fleet",
+                "sourceFamily": (
+                    "codebase_home_sft"
+                    if supplemental
+                    else "adapter_ultra_specific"
+                ),
+                "taskType": (
+                    "codebase_home_grounding"
+                    if supplemental
+                    else "fleet_contract_delegation"
+                ),
+                "requiredSplit": required_split,
+            },
+        }
+
+    train_primary = [
+        sft(index, supplemental=False, required_split="train")
+        for index in range(10)
+    ]
+    train_supplemental = [
+        sft(100 + index, supplemental=True, required_split="train")
+        for index in range(2)
+    ]
+    validation_primary = [
+        sft(200 + index, supplemental=False, required_split="validation")
+        for index in range(20)
+    ]
+    combined = [*train_primary, *train_supplemental, *validation_primary]
+
+    def proxy(records: list[dict], *, supplemental_only: bool = False) -> int:
+        return sum(
+            _source_token_proxy_count(record["messages"][2]["content"])
+            for record in records
+            if not supplemental_only
+            or _fleet_source_role(record)
+            == FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC
+        )
+
+    combined_total = proxy(combined)
+    combined_supplemental = proxy(combined, supplemental_only=True)
+    assert combined_supplemental * 10_000 <= combined_total * 1_500
+
+    train, validation = _stable_source_stratified_split(
+        combined,
+        FineTuningDatasetConfig(),
+        agent="fleet",
+    )
+    prefinal_total = proxy(train)
+    prefinal_supplemental = proxy(train, supplemental_only=True)
+    assert prefinal_supplemental * 10_000 > prefinal_total * 1_500
+    validation_snapshot = copy.deepcopy(validation)
+
+    finalized = _finalize_fleet_optimizer_lane(
+        train,
+        lane="sft",
+        config=FineTuningDatasetConfig(),
+    )
+    finalized_total = proxy(finalized)
+    finalized_supplemental = proxy(finalized, supplemental_only=True)
+    assert finalized_supplemental * 10_000 <= finalized_total * 1_500
+    assert finalized_supplemental * 10_000 <= finalized_total * 500
+    assert validation == validation_snapshot
+
+
+def test_fleet_sft_validation_is_bounded_stratified_and_preserves_assignments() -> None:
+    def sft(
+        index: int,
+        *,
+        source_family: str,
+        task_type: str,
+        required_split: str | None = None,
+    ) -> dict:
+        metadata = {
+            "agent": "fleet",
+            "sourceFamily": source_family,
+            "taskType": task_type,
+        }
+        if required_split is not None:
+            metadata["requiredSplit"] = required_split
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": f"Validation request {index}"},
+                {
+                    "role": "assistant",
+                    "content": json.dumps(
+                        {"knownSlots": ["cortex", "executor"], "case": index},
+                        sort_keys=True,
+                    ),
+                },
+            ],
+            "metadata": metadata,
+        }
+
+    records = [
+        sft(
+            index,
+            source_family=source_family,
+            task_type=task_type,
+            required_split=(
+                "validation" if index in {0, 3} else None
+            ),
+        )
+        for index, (source_family, task_type) in enumerate(
+            [
+                ("adapter_ultra_specific", "fleet_contract_delegation"),
+                ("cross_model_training", "fleet_peer_source_knowledge"),
+                ("codebase_home_chunk_sft", "codebase_source_chunk_grounding"),
+            ]
+            * 10
+        )
+    ]
+    config = FineTuningDatasetConfig(max_fleet_validation_sft_records=8)
+
+    bounded = _bound_fleet_validation_sft_records(
+        records,
+        config=config,
+        required_reference_records=records,
+    )
+    repeated = _bound_fleet_validation_sft_records(
+        list(reversed(records)),
+        config=config,
+        required_reference_records=list(reversed(records)),
+    )
+    idempotent = _bound_fleet_validation_sft_records(
+        bounded,
+        config=config,
+        required_reference_records=records,
+    )
+
+    assert bounded == repeated == idempotent
+    assert len(bounded) == 8
+    assert {
+        record["messages"][1]["content"]
+        for record in bounded
+        if record["metadata"].get("requiredSplit") == "validation"
+    } == {"Validation request 0", "Validation request 3"}
+    selected_strata = {
+        (record["metadata"]["sourceFamily"], record["metadata"]["taskType"])
+        for record in bounded
+    }
+    assert len(selected_strata) == 3
+
+    public_records = []
+    public_intents = {
+        "calendar_set",
+        "email_sendemail",
+        "weather_query",
+        "web_search",
+    }
+    for intent_index, intent in enumerate(sorted(public_intents)):
+        for example_index in range(4):
+            record = sft(
+                300 + intent_index * 10 + example_index,
+                source_family="public_adapter_corpus_massive",
+                task_type="public_capability_delegation",
+            )
+            record["metadata"]["publicCorpus"] = {
+                "sourceRepository": "mteb/massive_intent",
+                "sourceRevision": "fixture-revision",
+                "stratum": intent,
+            }
+            public_records.append(record)
+    public_config = replace(config, max_fleet_validation_sft_records=4)
+    public_bounded = _bound_fleet_validation_sft_records(
+        public_records,
+        config=public_config,
+    )
+    assert {
+        record["metadata"]["publicCorpus"]["stratum"]
+        for record in public_bounded
+    } == public_intents
+
+    metadata_churned = copy.deepcopy(public_records)
+    for index, record in enumerate(metadata_churned):
+        record["metadata"].update(
+            {
+                "manifestCommit": f"commit-{index}",
+                "sourceIntegrity": {"workingTreeDigest": f"digest-{index}"},
+                "worktreeFingerprint": f"fingerprint-{index}",
+            }
+        )
+    churned_bounded = _bound_fleet_validation_sft_records(
+        metadata_churned,
+        config=public_config,
+    )
+    assert {
+        _canonical_messages_key(record) for record in public_bounded
+    } == {
+        _canonical_messages_key(record) for record in churned_bounded
+    }
+
+    missing_required = [
+        record
+        for record in records
+        if record["metadata"].get("requiredSplit") != "validation"
+    ]
+    with pytest.raises(ValueError, match="dropped explicitly assigned"):
+        _bound_fleet_validation_sft_records(
+            missing_required,
+            config=config,
+            required_reference_records=records,
+        )
+    for invalid_limit in (False, 0, -1, 1.5):
+        with pytest.raises(ValueError, match="positive integer"):
+            _bound_fleet_validation_sft_records(
+                records,
+                config=replace(
+                    config,
+                    max_fleet_validation_sft_records=invalid_limit,
+                ),
+            )
+
+    too_many_required = [
+        sft(
+            100 + index,
+            source_family="adapter_ultra_specific",
+            task_type="fleet_contract_delegation",
+            required_split="validation",
+        )
+        for index in range(3)
+    ]
+    with pytest.raises(ValueError, match="assignments exceed"):
+        _bound_fleet_validation_sft_records(
+            too_many_required,
+            config=replace(config, max_fleet_validation_sft_records=2),
+        )
+
+    train_assigned = sft(
+        200,
+        source_family="adapter_ultra_specific",
+        task_type="fleet_contract_delegation",
+        required_split="train",
+    )
+    with pytest.raises(ValueError, match="train-assigned"):
+        _bound_fleet_validation_sft_records(
+            [train_assigned],
+            config=config,
+        )
+
+    with pytest.raises(ValueError, match="every source/task stratum"):
+        _bound_fleet_validation_sft_records(
+            records,
+            config=replace(config, max_fleet_validation_sft_records=3),
+        )
+
+
+def test_fleet_real_sft_validation_bound_is_attested_for_every_variant(
+    compiled_fine_tuning: tuple,
+) -> None:
+    _, _, fine_tuning = compiled_fine_tuning
+    fleet = fine_tuning["fleet"]
+    policy = fleet.dataset_card["constraints"][
+        "fleetValidationSamplingPolicy"
+    ]
+
+    assert policy["schemaVersion"] == FLEET_VALIDATION_SAMPLING_SCHEMA_VERSION
+    assert policy["status"] == "bounded_stratified_observation"
+    assert policy["lane"] == "sft_validation"
+    assert policy["maximumRecords"] == 128
+    assert policy["selectedRecordCount"] == len(fleet.val_sft)
+    assert policy["candidateBeforePublicSelectionRecordCount"] >= (
+        policy["samplingInputRecordCount"]
+    )
+    assert policy["samplingInputRecordCount"] >= policy["selectedRecordCount"]
+    assert policy["rejectedByPublicSelectionCount"] == (
+        policy["candidateBeforePublicSelectionRecordCount"]
+        - policy["samplingInputRecordCount"]
+    )
+    assert policy["rejectedByValidationSamplingCount"] == (
+        policy["samplingInputRecordCount"] - policy["selectedRecordCount"]
+    )
+    assert policy["explicitValidationAssignmentsPreserved"] is True
+    assert policy["allSamplingInputStrataPreserved"] is True
+    assert policy["optimizerLossShareCapsApplied"] is False
+    assert len(policy["selectedCohortSHA256"]) == 64
+    assert policy["samplingInputStratumCount"] == policy[
+        "selectedStratumCount"
+    ]
+    if policy["samplingInputRecordCount"] > policy["maximumRecords"]:
+        assert policy["selectedRecordCount"] == policy["maximumRecords"]
+    assert len(fleet.val_sft) <= policy["maximumRecords"]
+    required_validation_keys = {
+        _canonical_messages_key(record)
+        for record in fleet.val_sft
+        if record["metadata"].get("requiredSplit") == "validation"
+    }
+    for variant in fleet.experiment_variants.values():
+        assert len(variant["val_sft"]) <= policy["maximumRecords"]
+        assert required_validation_keys <= {
+            _canonical_messages_key(record) for record in variant["val_sft"]
+        }
+        assert {
+            _canonical_rendered_prompt_key(record, lane="sft")
+            for record in variant["train_sft"]
+        }.isdisjoint(
+            {
+                _canonical_rendered_prompt_key(record, lane="sft")
+                for record in variant["val_sft"]
+            }
+        )
+        variant_policy = variant["variant_manifest"][
+            "validationSamplingPolicy"
+        ]
+        assert variant_policy["selectedRecordCount"] == len(
+            variant["val_sft"]
+        )
+        if (
+            variant_policy["samplingInputRecordCount"]
+            > variant_policy["maximumRecords"]
+        ):
+            assert len(variant["val_sft"]) == variant_policy[
+                "maximumRecords"
+            ]
+        assert variant_policy["selectedCohortSHA256"] == canonical_sha256(
+            sorted(
+                _canonical_messages_key(record)
+                for record in variant["val_sft"]
+            )
+        )
+
+
+def test_fleet_dpo_public_cap_uses_chosen_loss_not_rejected_length() -> None:
+    def completion(label: str, words: int) -> str:
+        return " ".join(f"{label}_{index}" for index in range(words))
+
+    primary = {
+        "prompt": [
+            {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+            {"role": "user", "content": "Use the native Fleet contract."},
+        ],
+        "chosen": {"role": "assistant", "content": completion("primary", 1)},
+        "rejected": {
+            "role": "assistant",
+            "content": completion("primary_rejected", 1_000),
+        },
+        "metadata": {
+            "agent": "fleet",
+            "sourceFamily": "adapter_ultra_specific",
+            "taskType": "fleet_contract_delegation",
+        },
+    }
+    public = {
+        "prompt": [
+            {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+            {"role": "user", "content": "Use a public Fleet example."},
+        ],
+        "chosen": {
+            "role": "assistant",
+            "content": completion("public", 100),
+        },
+        "rejected": {
+            "role": "assistant",
+            "content": completion("public_rejected", 1),
+        },
+        "metadata": {
+            "agent": "fleet",
+            "sourceFamily": "public_adapter_corpus_test",
+            "taskType": "public_capability_delegation",
+            "publicCorpus": {
+                "sourceRepository": "example/fleet-public",
+                "sourceRevision": "a" * 40,
+                "sourceGroupID": "dpo-public-group",
+                "stratum": "delegation",
+                "selectionScore": {"overall": 1.0},
+            },
+        },
+    }
+
+    finalized = _finalize_fleet_optimizer_lane(
+        [primary, public],
+        lane="dpo",
+        config=FineTuningDatasetConfig(max_public_corpus_token_share=0.35),
+    )
+
+    assert finalized == [primary]
+
+    prompt_heavy_primary = {
+        **primary,
+        "prompt": [
+            {
+                "role": "system",
+                "content": completion("primary_prompt", 1_000),
+            },
+            {"role": "user", "content": "Use the native Fleet contract."},
+        ],
+        "chosen": {
+            "role": "assistant",
+            "content": completion("primary_chosen", 100),
+        },
+        "rejected": {
+            "role": "assistant",
+            "content": completion("primary_rejected", 1),
+        },
+    }
+    rejected_heavy_public = {
+        **public,
+        "chosen": {
+            "role": "assistant",
+            "content": completion("public_chosen", 1),
+        },
+        "rejected": {
+            "role": "assistant",
+            "content": completion("public_rejected", 100),
+        },
+    }
+    all_assistant_prefilter = _cap_public_corpus_token_share(
+        [prompt_heavy_primary, rejected_heavy_public],
+        0.35,
+    )
+    chosen_prefilter = _cap_public_corpus_token_share(
+        [prompt_heavy_primary, rejected_heavy_public],
+        0.35,
+        target_mode="dpo_chosen",
+    )
+
+    assert rejected_heavy_public not in all_assistant_prefilter
+    assert rejected_heavy_public in chosen_prefilter
+    assert _finalize_fleet_optimizer_lane(
+        chosen_prefilter,
+        lane="dpo",
+        config=FineTuningDatasetConfig(max_public_corpus_token_share=0.35),
+    ) == chosen_prefilter
+
+
 def test_fleet_curriculum_materializes_exact_slot_and_boundary_contracts(
     compiled_fine_tuning: tuple,
 ) -> None:
@@ -7570,6 +8358,47 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
         agent: len(fine_tuning[agent].eval) for agent in expected_counts
     } == expected_counts
     assert sum(expected_counts.values()) == 603
+    fleet = fine_tuning["fleet"]
+    assert fleet.dataset_card["constraints"][
+        "fleetOrchestrationEvaluationRequired"
+    ] is True
+    validation_codes = {
+        failure.code
+        for failure in validate_agent_fine_tuning_datasets(
+            manifest,
+            fine_tuning,
+        )
+    }
+    assert "fleet_orchestration_eval_coverage_missing" not in validation_codes
+    assert "fleet_orchestration_eval_requirement_missing" not in validation_codes
+    fleet_optimizer_sft_lanes = [
+        fleet.train_sft,
+        *(
+            variant["train_sft"]
+            for variant in fleet.experiment_variants.values()
+        ),
+    ]
+    for optimizer_sft in fleet_optimizer_sft_lanes:
+        assert FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES <= {
+            record["metadata"]["taskType"]
+            for record in optimizer_sft
+            if record["metadata"]["sourceFamily"] == "cross_model_training"
+        }
+    assert {
+        record["metadata"]["taskType"]
+        for record in fleet.val_sft
+        if record["metadata"]["sourceFamily"] == "cross_model_training"
+    } & FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES
+    baseline_hash = fleet.experiment_variants[
+        "internal_plus_public_baseline"
+    ]["variant_manifest"]["trainingCorpusSHA256"]
+    optimized_hash = fleet.experiment_variants[
+        "internal_plus_public_optimized"
+    ]["variant_manifest"]["trainingCorpusSHA256"]
+    assert baseline_hash != optimized_hash
+    assert fleet.experiment_manifest["comparisonEligibility"]["status"] == (
+        "eligible"
+    )
     for agent, expected_count in expected_counts.items():
         records = fine_tuning[agent].eval
         assert len(records) == expected_count
@@ -7838,14 +8667,25 @@ def test_codebase_home_records_are_supplemental_for_fleet_and_excluded_from_rem(
     assert datasets["codebase_home_sft"]
     assert datasets["codebase_home_chunks"]
     assert datasets["codebase_home_chunk_sft"]
-    fleet_records = fine_tuning["fleet"].train_sft + fine_tuning["fleet"].val_sft
-    fleet_codebase = [
+    fleet_train = fine_tuning["fleet"].train_sft
+    fleet_validation = fine_tuning["fleet"].val_sft
+    fleet_codebase_train = [
         record
-        for record in fleet_records
+        for record in fleet_train
         if record["metadata"]["sourceFamily"] in {"codebase_home_sft", "codebase_home_chunk_sft"}
     ]
-    assert fleet_codebase
-    assert len(fleet_codebase) / len(fleet_records) <= 0.25
+    fleet_codebase_validation = [
+        record
+        for record in fleet_validation
+        if record["metadata"]["sourceFamily"]
+        in {"codebase_home_sft", "codebase_home_chunk_sft"}
+    ]
+    assert fleet_codebase_train
+    assert fleet_codebase_validation
+    assert len(fleet_codebase_train) / len(fleet_train) <= 0.25
+    assert fine_tuning["fleet"].dataset_card["constraints"][
+        "fleetValidationLossSharePolicy"
+    ] == "observed_not_enforced"
 
     rem_records = fine_tuning["rem"].train_sft + fine_tuning["rem"].val_sft
     assert not any(record["metadata"]["sourceFamily"].startswith("codebase_home") for record in rem_records)
@@ -8770,6 +9610,12 @@ def test_sft_split_groups_equivalent_prompts_and_rejects_conflicting_targets() -
         _canonical_rendered_prompt_key(record, lane="sft") == duplicate_key
         for record in validation
     ) == 1  # identical prompt/target copies are safely deduplicated
+    retained = next(
+        record
+        for record in validation
+        if _canonical_rendered_prompt_key(record, lane="sft") == duplicate_key
+    )
+    assert retained["metadata"]["requiredSplit"] == "validation"
 
     contradictory = record("source_d", '{"value":2}', None)
     with pytest.raises(ValueError, match="conflicting assistant targets"):

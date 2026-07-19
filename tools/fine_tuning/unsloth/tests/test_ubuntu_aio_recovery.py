@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import copy
+import hashlib
+import os
 import shlex
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -29,6 +33,297 @@ def _launcher_function(name: str) -> str:
         if lines[index].strip() == "}"
     )
     return "\n".join(lines[start : end + 1])
+
+
+def test_incomplete_preparation_accepts_only_private_snapshot_copy_state(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    training = run_root / "training"
+    training.mkdir(parents=True)
+    run_root.chmod(0o700)
+
+    tokenizer = training / "global_tokenizer_snapshot"
+    tokenizer.mkdir(mode=0o700)
+    partial_tokenizer = tokenizer / "tokenizer.json"
+    partial_tokenizer.write_bytes(b"partial")
+    partial_tokenizer.chmod(0o600)
+
+    runtime_staging = training / ".base_model_runtime_snapshot.a1b2c3d4"
+    runtime_staging.mkdir(mode=0o700)
+    partial_shard = runtime_staging / "model-00001-of-00002.safetensors"
+    partial_shard.write_bytes(b"partial")
+    partial_shard.chmod(0o644)
+
+    ubuntu_pipeline._assert_incomplete_preparation_has_no_progress(
+        run_root,
+        agents=("cortex",),
+    )
+
+    checkpoint = training / "cortex" / "checkpoint-1"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "adapter_model.safetensors").write_bytes(b"progress")
+    with pytest.raises(RuntimeError, match="training progress"):
+        ubuntu_pipeline._assert_incomplete_preparation_has_no_progress(
+            run_root,
+            agents=("cortex",),
+        )
+
+
+def test_phase_runtime_evidence_is_reconstructed_and_rejects_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_snapshot = tmp_path / "runtime"
+    runtime_snapshot.mkdir()
+    ubuntu_pipeline.write_object(
+        runtime_snapshot / "config.json",
+        {"max_position_embeddings": 128},
+    )
+    ubuntu_pipeline.write_object(
+        runtime_snapshot / "generation_config.json",
+        {"max_length": 20},
+    )
+    tokenizer_snapshot = tmp_path / "tokenizer"
+    tokenizer_snapshot.mkdir()
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    tokenizer_files: list[dict[str, Any]] = []
+    for name, payload in (
+        ("tokenizer.json", b"tokenizer"),
+        ("tokenizer_config.json", b"tokenizer config"),
+    ):
+        (adapter_dir / name).write_bytes(payload)
+        tokenizer_files.append(
+            {
+                "path": name,
+                "sizeBytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    tokenizer_verification = {
+        "snapshotPath": str(tokenizer_snapshot),
+        "snapshotVerificationSHA256": "1" * 64,
+    }
+    runtime_verification = {
+        "snapshotPath": str(runtime_snapshot),
+        "snapshotVerificationSHA256": "2" * 64,
+    }
+    generation_file = {
+        "path": "generation_config.json",
+        "sizeBytes": 1,
+        "sha256": "3" * 64,
+        "huggingFaceBlobID": "4" * 40,
+    }
+    config = {
+        "baseModelID": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": "5" * 40,
+        "baseModelIndexDigest": "6" * 64,
+        "baseModelIndexShardBindingSHA256": "7" * 64,
+        "baseModelArtifactDigest": "8" * 64,
+        "baseModelTokenizerDigest": tokenizer_files[0]["sha256"],
+        "baseModelTokenizerFiles": tokenizer_files,
+        "baseModelTokenizerClosureSHA256": "9" * 64,
+        "baseModelGenerationConfigFile": generation_file,
+        "baseModelTokenizerSnapshotPath": str(tokenizer_snapshot),
+        "baseModelTokenizerSnapshotVerification": tokenizer_verification,
+        "baseModelRuntimeSnapshotPath": str(runtime_snapshot),
+        "baseModelRuntimeSnapshotVerification": runtime_verification,
+        "max_seq_length": 64,
+    }
+    source_generation_payload = {"max_length": 20, "do_sample": False}
+    runtime_generation_payload = {
+        **source_generation_payload,
+        "max_length": 128,
+    }
+
+    class FakeGenerationConfig:
+        @classmethod
+        def from_pretrained(
+            cls,
+            path: str,
+            *,
+            local_files_only: bool,
+        ) -> "FakeGenerationConfig":
+            assert path == str(runtime_snapshot)
+            assert local_files_only is True
+            return cls()
+
+        def to_dict(self) -> dict[str, Any]:
+            return dict(source_generation_payload)
+
+    transformers = ModuleType("transformers")
+    transformers.GenerationConfig = FakeGenerationConfig
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    model_unsigned = {
+        "schemaVersion": "lumen.runtime-model-binding/1.3.0",
+        "baseModelID": config["baseModelID"],
+        "baseModelRevision": config["baseModelRevision"],
+        "baseModelIndexDigest": config["baseModelIndexDigest"],
+        "baseModelIndexShardBindingSHA256": config[
+            "baseModelIndexShardBindingSHA256"
+        ],
+        "baseModelArtifactDigest": config["baseModelArtifactDigest"],
+        "baseModelTokenizerClosureSHA256": config[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelGenerationConfigFile": generation_file,
+        "runtimeSnapshotVerificationSHA256": runtime_verification[
+            "snapshotVerificationSHA256"
+        ],
+        "runtimeSnapshotPath": str(runtime_snapshot),
+        "modelConfigSHA256": "a" * 64,
+        "modelConfigVerificationStatus": (
+            "attested_runtime_observation_not_independently_reconstructed"
+        ),
+        "sourceGenerationConfigSHA256": ubuntu_pipeline.canonical_sha256(
+            source_generation_payload
+        ),
+        "generationConfigSHA256": ubuntu_pipeline.canonical_sha256(
+            runtime_generation_payload
+        ),
+        "generationConfigSource": "verified_private_generation_config_file",
+        "allowedGenerationConfigTransformations": {
+            "maxLength": {
+                "source": "verified_runtime_model.config.max_position_embeddings",
+                "sourceValue": 128,
+                "originalValue": 20,
+                "runtimeValue": 128,
+            }
+        },
+        "runtimeLoadMaterialization": {"fixture": "verified"},
+        "localFilesOnly": True,
+    }
+    runtime_model_binding = {
+        **model_unsigned,
+        "runtimeModelBindingSHA256": ubuntu_pipeline.canonical_sha256(
+            model_unsigned
+        ),
+    }
+    tokenizer_unsigned = {
+        "schemaVersion": "lumen.runtime-tokenizer-binding/1.1.0",
+        "baseModelID": config["baseModelID"],
+        "baseModelRevision": config["baseModelRevision"],
+        "baseModelTokenizerClosureSHA256": config[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "runtimeSnapshotVerificationSHA256": runtime_verification[
+            "snapshotVerificationSHA256"
+        ],
+        "runtimeSnapshotPath": str(runtime_snapshot),
+        "backendContractSHA256": "c" * 64,
+        "allowedRuntimeTransformations": {
+            "modelMaxLength": 128,
+            "paddingSide": "left",
+            "truncationSide": "right",
+        },
+    }
+    runtime_tokenizer_binding = {
+        **tokenizer_unsigned,
+        "runtimeTokenizerBindingSHA256": ubuntu_pipeline.canonical_sha256(
+            tokenizer_unsigned
+        ),
+    }
+    peft_unsigned = {
+        "schemaVersion": "lumen.peft-base-model-identity/1.0.0",
+        "baseModelID": config["baseModelID"],
+        "baseModelRevision": config["baseModelRevision"],
+        "adapterNames": ["default"],
+        "privateRuntimePathPersisted": False,
+    }
+    peft_evidence = {
+        **peft_unsigned,
+        "peftBaseModelIdentitySHA256": ubuntu_pipeline.canonical_sha256(
+            peft_unsigned
+        ),
+    }
+    adapter_unsigned = {
+        "schemaVersion": "lumen.adapter-base-tokenizer-binding/1.0.0",
+        "baseModelTokenizerClosureSHA256": config[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "runtimeSnapshotVerificationSHA256": runtime_verification[
+            "snapshotVerificationSHA256"
+        ],
+        "files": tokenizer_files,
+        "transformation": "exact_byte_subset_no_derived_tokenizer",
+    }
+    adapter_evidence = {
+        **adapter_unsigned,
+        "adapterTokenizerBindingSHA256": ubuntu_pipeline.canonical_sha256(
+            adapter_unsigned
+        ),
+    }
+    report = {
+        "baseModelTokenizerDigest": config["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": tokenizer_files,
+        "baseModelTokenizerClosureSHA256": config[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelGenerationConfigFile": generation_file,
+        "baseModelTokenizerSnapshotPath": str(tokenizer_snapshot),
+        "baseModelTokenizerSnapshotVerification": tokenizer_verification,
+        "baseModelRuntimeSnapshotPath": str(runtime_snapshot),
+        "baseModelRuntimeSnapshotVerification": runtime_verification,
+        "runtimeModelBinding": runtime_model_binding,
+        "runtimeTokenizerBinding": runtime_tokenizer_binding,
+        "peftBaseModelIdentity": peft_evidence,
+        "adapterTokenizerBinding": adapter_evidence,
+    }
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_private_tokenizer_snapshot_binding",
+        lambda _config: tokenizer_verification,
+    )
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_private_base_model_runtime_snapshot_binding",
+        lambda _config: runtime_verification,
+    )
+    from tools.fine_tuning.unsloth import runtime_binding_smoke_gate
+
+    monkeypatch.setattr(
+        runtime_binding_smoke_gate,
+        "verify_runtime_load_materialization_evidence",
+        lambda value, _config, _bound_config_payload=None: dict(value),
+    )
+
+    ubuntu_pipeline._verify_phase_runtime_evidence(
+        config=config,
+        report=report,
+        adapter_dir=adapter_dir,
+    )
+
+    mutated = copy.deepcopy(report)
+    mutated_transformations = mutated["runtimeTokenizerBinding"][
+        "allowedRuntimeTransformations"
+    ]
+    mutated_transformations["modelMaxLength"] = 64
+    mutated_unsigned = dict(mutated["runtimeTokenizerBinding"])
+    mutated_unsigned.pop("runtimeTokenizerBindingSHA256")
+    mutated["runtimeTokenizerBinding"]["runtimeTokenizerBindingSHA256"] = (
+        ubuntu_pipeline.canonical_sha256(mutated_unsigned)
+    )
+    with pytest.raises(RuntimeError, match="Runtime tokenizer binding drifted"):
+        ubuntu_pipeline._verify_phase_runtime_evidence(
+            config=config,
+            report=mutated,
+            adapter_dir=adapter_dir,
+        )
+
+    mutated = copy.deepcopy(report)
+    mutated["peftBaseModelIdentity"]["adapterNames"] = ["other"]
+    mutated_unsigned = dict(mutated["peftBaseModelIdentity"])
+    mutated_unsigned.pop("peftBaseModelIdentitySHA256")
+    mutated["peftBaseModelIdentity"]["peftBaseModelIdentitySHA256"] = (
+        ubuntu_pipeline.canonical_sha256(mutated_unsigned)
+    )
+    with pytest.raises(RuntimeError, match="PEFT base-model identity"):
+        ubuntu_pipeline._verify_phase_runtime_evidence(
+            config=config,
+            report=mutated,
+            adapter_dir=adapter_dir,
+        )
 
 
 def test_verify_evaluation_replays_against_verified_preference(
@@ -107,6 +402,8 @@ def _mock_gguf_install_lineage(
             "tensorEquivalenceStatus": (
                 ubuntu_pipeline.GGUF_TENSOR_EQUIVALENCE_STATUS
             ),
+            "runtimeModelBindingSHA256": "e" * 64,
+            "runtimeTokenizerBindingSHA256": "f" * 64,
         }
 
     monkeypatch.setattr(
@@ -180,6 +477,8 @@ def test_install_gguf_file_verifies_then_atomically_promotes_and_cleans_staging(
         "adapterGGUFTensorEquivalenceStatus": (
             ubuntu_pipeline.GGUF_TENSOR_EQUIVALENCE_STATUS
         ),
+        "adapterGGUFRuntimeModelBindingSHA256": "e" * 64,
+        "adapterGGUFRuntimeTokenizerBindingSHA256": "f" * 64,
     }
 
 
@@ -221,7 +520,23 @@ def test_launcher_resumes_evaluation_and_gguf_without_completed_summary() -> Non
     assert 'log "verified existing frozen evaluation: $agent"' in launcher
     assert 'clean_agent_evaluation "$agent"' in launcher
     assert launcher.count('clean_agent_posttraining_artifacts "$agent"') == 2
-    assert "replacing invalid or partial evaluation outputs" in launcher
+    assert "--verify-checkpoint-only" in launcher
+    assert "preserving verified interrupted evaluation checkpoint" in launcher
+    assert "classify-completed-evaluation" in launcher
+    assert "preserving verified terminal evaluation evidence" in launcher
+    assert "preserving it instead of deleting progress" in launcher
+    evaluate_function = _launcher_function("evaluate_agent")
+    completed_classifier = evaluate_function.index(
+        "classify-completed-evaluation"
+    )
+    checkpoint_verifier = evaluate_function.index("--verify-checkpoint-only")
+    normal_evaluation = evaluate_function.rindex(
+        "tools.fine_tuning.unsloth.evaluate_adapter"
+    )
+    assert completed_classifier < checkpoint_verifier < normal_evaluation
+    assert 'clean_agent_evaluation "$agent"' not in evaluate_function
+    assert '>> "$classification_log" 2>&1' in evaluate_function
+    assert '>> "$checkpoint_log" 2>&1' in evaluate_function
     assert "verify-gguf-file" in launcher
     assert "install-gguf-file" in launcher
     assert "write-gguf-conversion-receipt" in launcher
@@ -236,6 +551,100 @@ def test_launcher_resumes_evaluation_and_gguf_without_completed_summary() -> Non
     assert 'tee -a "$RUN_ROOT/logs/evaluate_$agent.log"' in launcher
     assert "GGUF conversion attempt started:" in launcher
     assert 'tee -a "$RUN_ROOT/logs/convert_$agent.log"' in launcher
+
+
+@pytest.mark.parametrize(
+    ("classifier_exit", "checkpoint_exit", "expected_exit", "resumes"),
+    (
+        (0, 0, 99, False),
+        (70, 70, 99, False),
+        (137, 137, 99, False),
+        (1, 70, 99, False),
+        (1, 137, 99, False),
+        (1, 0, 0, True),
+    ),
+)
+def test_launcher_preserves_evaluation_for_terminal_operational_and_signal_states(
+    tmp_path: Path,
+    classifier_exit: int,
+    checkpoint_exit: int,
+    expected_exit: int,
+    resumes: bool,
+) -> None:
+    run_root = tmp_path / "run"
+    evaluation_dir = run_root / "evaluation" / "cortex"
+    evaluation_dir.mkdir(parents=True)
+    (run_root / "logs").mkdir()
+    sentinel = evaluation_dir / "sentinel"
+    sentinel.write_bytes(b"irreplaceable evaluation progress")
+    call_log = tmp_path / "calls.log"
+    verify_count = tmp_path / "verify-count"
+    verify_count.write_text("0\n", encoding="utf-8")
+    fake_python = tmp_path / "fake-python"
+    fake_python.write_text(
+        """#!/usr/bin/env bash
+set -u
+printf '%s\\n' "$*" >> "$CALL_LOG"
+case " $* " in
+  *" classify-completed-evaluation "*) exit "$CLASSIFIER_EXIT" ;;
+  *" verify-evaluation "*)
+    count="$(cat "$VERIFY_COUNT_FILE")"
+    printf '%s\\n' "$((count + 1))" > "$VERIFY_COUNT_FILE"
+    if [[ "$count" == "0" ]]; then exit 1; fi
+    exit 0
+    ;;
+  *" --verify-checkpoint-only "*) exit "$CHECKPOINT_EXIT" ;;
+  *" tools.fine_tuning.unsloth.evaluate_adapter "*)
+    printf '%s\\n' normal-evaluation >> "$CALL_LOG"
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o700)
+    harness = "\n".join(
+        (
+            "set -euo pipefail",
+            f"ROOT={shlex.quote(str(REPO_ROOT))}",
+            f"RUN_ROOT={shlex.quote(str(run_root))}",
+            f"TRAIN_PY={shlex.quote(str(fake_python))}",
+            "RESUME=1",
+            "EVAL_MAX_EXAMPLES=",
+            "log() { printf '%s\\n' \"$*\"; }",
+            "die() { printf '%s\\n' \"$*\" >&2; exit 99; }",
+            (
+                "clean_agent_evaluation() { printf '%s\\n' cleanup "
+                '>> "$CALL_LOG"; rm -rf -- "$RUN_ROOT/evaluation/$1"; }'
+            ),
+            _launcher_function("verify_evaluation"),
+            _launcher_function("evaluate_agent"),
+            "evaluate_agent cortex",
+        )
+    )
+    env = {
+        **os.environ,
+        "CALL_LOG": str(call_log),
+        "VERIFY_COUNT_FILE": str(verify_count),
+        "CLASSIFIER_EXIT": str(classifier_exit),
+        "CHECKPOINT_EXIT": str(checkpoint_exit),
+    }
+
+    result = subprocess.run(
+        ["bash", "-c", harness],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == expected_exit, result.stderr
+    assert sentinel.read_bytes() == b"irreplaceable evaluation progress"
+    calls = call_log.read_text(encoding="utf-8")
+    assert "cleanup" not in calls
+    assert ("normal-evaluation" in calls) is resumes
 
 
 def test_launcher_qualifies_each_agent_before_starting_the_next() -> None:
@@ -323,7 +732,7 @@ def test_conversion_receipt_rejects_self_consistent_stale_adapter_lineage(
     monkeypatch.setattr(
         ubuntu_pipeline,
         "_gguf_conversion_receipt_payload",
-        lambda _run_root, _agent, _artifact_path: current,
+        lambda _run_root, _agent, _artifact_path, **_kwargs: current,
     )
 
     with pytest.raises(RuntimeError, match="current lineage"):
@@ -349,6 +758,11 @@ def test_conversion_receipt_is_written_durably_inside_private_staging(
     artifact = staging_dir / "lumen-cortex-lora.gguf"
     artifact.write_bytes(b"converted")
     artifact.chmod(0o600)
+    snapshot_proof = (
+        staging_dir / ubuntu_pipeline.GGUF_BASE_SNAPSHOT_VERIFICATION_FILENAME
+    )
+    ubuntu_pipeline.write_object(snapshot_proof, {})
+    snapshot_proof.chmod(0o600)
     expected = _conversion_receipt("cortex", "c")
     monkeypatch.setattr(
         ubuntu_pipeline,
@@ -368,7 +782,7 @@ def test_conversion_receipt_is_written_durably_inside_private_staging(
     monkeypatch.setattr(
         ubuntu_pipeline,
         "_gguf_conversion_receipt_payload",
-        lambda _run_root, _agent, _artifact_path: expected,
+        lambda _run_root, _agent, _artifact_path, **_kwargs: expected,
     )
 
     result = ubuntu_pipeline.write_gguf_conversion_receipt(

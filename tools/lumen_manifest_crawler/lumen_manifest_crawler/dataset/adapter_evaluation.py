@@ -20,11 +20,11 @@ from lumen_manifest_crawler.dataset.public_adapter_eval_registry import (
 
 
 EVALUATION_SCHEMA_VERSION = "lumen.adapter-eval/1.1.0"
-EVALUATION_REPORT_SCHEMA_VERSION = "lumen.adapter-eval-report/1.2.0"
+EVALUATION_REPORT_SCHEMA_VERSION = "lumen.adapter-eval-report/1.3.0"
 CONTAMINATION_SCHEMA_VERSION = "lumen.adapter-contamination/1.3.0"
-EXPERIMENT_SCHEMA_VERSION = "lumen.adapter-experiment/1.0.0"
-VARIANT_SCHEMA_VERSION = "lumen.adapter-experiment-variant/1.0.0"
-PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.0.0"
+EXPERIMENT_SCHEMA_VERSION = "lumen.adapter-experiment/1.2.0"
+VARIANT_SCHEMA_VERSION = "lumen.adapter-experiment-variant/1.2.0"
+PROMOTION_SCHEMA_VERSION = "lumen.adapter-promotion/1.1.0"
 EVALUATION_CANDIDATE_HASH_SCHEMA_VERSION = "lumen.eval-candidate-hash/1.0.0"
 _CANDIDATE_JSON_MAX_NESTING_DEPTH = 128
 _CANDIDATE_JSON_NESTING_ERROR = "json_nesting_too_deep"
@@ -135,6 +135,44 @@ DEFAULT_BASE_MODEL_WEIGHT_SHARDS: list[dict[str, Any]] = [
 ]
 DEFAULT_BASE_MODEL_ARTIFACT_DIGEST = "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218"
 DEFAULT_BASE_MODEL_TOKENIZER_DIGEST = "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+BASE_MODEL_TOKENIZER_CLOSURE_SCHEMA_VERSION = (
+    "lumen.base-model-tokenizer-closure/1.0.0"
+)
+DEFAULT_BASE_MODEL_TOKENIZER_FILES: list[dict[str, Any]] = [
+    {
+        "path": "config.json",
+        "sizeBytes": 726,
+        "sha256": "1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197",
+        "huggingFaceBlobID": "044a86ecf7cb32238f3fae4184e55d354787edec",
+    },
+    {
+        "path": "merges.txt",
+        "sizeBytes": 1_671_853,
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+        "huggingFaceBlobID": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7",
+    },
+    {
+        "path": "tokenizer.json",
+        "sizeBytes": 11_422_654,
+        "sha256": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+        "huggingFaceBlobID": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    },
+    {
+        "path": "tokenizer_config.json",
+        "sizeBytes": 9_732,
+        "sha256": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+        "huggingFaceBlobID": "417d038a63fa3de29cfde265caedae14d1a58d92",
+    },
+    {
+        "path": "vocab.json",
+        "sizeBytes": 2_776_833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+        "huggingFaceBlobID": "4783fe10ac3adce15ac8f358ef5462739852c569",
+    },
+]
+DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256 = (
+    "ef6d799ce1ba7094fc40f8d5bf011d6ff3c549598ed1b06dbe46207ae9c1d13b"
+)
 # These names were parsed from model.safetensors.index.json at the pinned
 # DEFAULT_BASE_MODEL_REVISION. Keep them independent of the shard contract so
 # manifest generation detects drift between the verified index and that contract.
@@ -207,7 +245,7 @@ DEFAULT_TRAINING_DEPENDENCY_LOCK: dict[str, Any] = (
     _TRAINING_LINEAGE.build_training_dependency_lock(_REQUIREMENTS_PATH)
 )
 DEFAULT_TRAINING_ENVIRONMENT_LOCK: dict[str, Any] = {
-    "schemaVersion": "lumen.adapter-training-environment-lock/1.0.0",
+    "schemaVersion": "lumen.adapter-training-environment-lock/1.1.0",
     "pythonVersion": "3.10",
     "cudaVersion": "12.8",
     "packageVersions": dict(DEFAULT_TRAINING_DEPENDENCY_LOCK["packageVersions"]),
@@ -218,6 +256,9 @@ DEFAULT_TRAINING_ENVIRONMENT_LOCK: dict[str, Any] = {
     ],
     "requirementsSHA256": DEFAULT_TRAINING_DEPENDENCY_LOCK["requirementsSHA256"],
     "baseTokenizerSHA256": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    "baseTokenizerClosureSHA256": (
+        DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+    ),
     "containerImageDigestPolicy": "operator_declared_manual_runtime_verification",
 }
 
@@ -336,6 +377,8 @@ SFT_PARENT_CONTROLLED_FIELDS = (
     "baseModelArtifactDigest",
     "baseModelWeightShards",
     "baseModelTokenizerDigest",
+    "baseModelTokenizerFiles",
+    "baseModelTokenizerClosureSHA256",
     "trainingEnvironmentLockSHA256",
     "trainingDependencyLockSHA256",
     "requirementsSHA256",
@@ -437,6 +480,75 @@ def base_model_artifact_digest(value: Sequence[Mapping[str, Any]]) -> str:
     return canonical_sha256(canonical_base_model_weight_shards(value))
 
 
+def canonical_base_model_tokenizer_closure(
+    *,
+    base_model_id: str,
+    base_model_revision: str,
+    files: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Validate the complete tokenizer/config file closure for one revision."""
+
+    required_paths = (
+        "config.json",
+        "merges.txt",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json",
+    )
+    if (
+        not isinstance(base_model_id, str)
+        or not base_model_id
+        or re.fullmatch(r"[0-9a-f]{40}", base_model_revision) is None
+    ):
+        raise ValueError(
+            "base-model tokenizer closure requires an ID and full revision"
+        )
+    normalized: list[dict[str, Any]] = []
+    for item in files:
+        if not isinstance(item, Mapping) or set(item) != {
+            "path",
+            "sizeBytes",
+            "sha256",
+            "huggingFaceBlobID",
+        }:
+            raise ValueError(
+                "base-model tokenizer files have an invalid schema"
+            )
+        path = item.get("path")
+        size = item.get("sizeBytes")
+        digest = item.get("sha256")
+        blob_id = item.get("huggingFaceBlobID")
+        if (
+            not isinstance(path, str)
+            or path not in required_paths
+            or type(size) is not int
+            or size <= 0
+            or not _is_sha256(digest)
+            or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", str(blob_id or ""))
+            is None
+        ):
+            raise ValueError("base-model tokenizer file binding is invalid")
+        normalized.append(
+            {
+                "path": path,
+                "sizeBytes": size,
+                "sha256": digest,
+                "huggingFaceBlobID": blob_id,
+            }
+        )
+    normalized.sort(key=lambda item: item["path"])
+    if [item["path"] for item in normalized] != list(required_paths):
+        raise ValueError(
+            "base-model tokenizer closure must bind the exact required files"
+        )
+    return {
+        "schemaVersion": BASE_MODEL_TOKENIZER_CLOSURE_SCHEMA_VERSION,
+        "baseModelID": base_model_id,
+        "baseModelRevision": base_model_revision,
+        "files": normalized,
+    }
+
+
 def _index_referenced_shard_names(index_bytes: bytes) -> tuple[str, ...]:
     try:
         parsed = json.loads(index_bytes.decode("utf-8"))
@@ -536,6 +648,44 @@ def _valid_base_model_weight_shards(value: Any, artifact_digest: Any) -> bool:
         return base_model_artifact_digest(value) == artifact_digest
     except (AttributeError, TypeError, ValueError):
         return False
+
+
+def _valid_base_model_tokenizer_closure(
+    manifest: Mapping[str, Any],
+) -> bool:
+    files = manifest.get("baseModelTokenizerFiles")
+    if not isinstance(files, Sequence) or isinstance(files, (str, bytes)):
+        return False
+    try:
+        closure = canonical_base_model_tokenizer_closure(
+            base_model_id=manifest.get("baseModelID"),
+            base_model_revision=manifest.get("baseModelRevision"),
+            files=files,
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+    tokenizer_json = next(
+        item for item in closure["files"]
+        if item["path"] == "tokenizer.json"
+    )
+    valid = (
+        canonical_sha256(closure)
+        == manifest.get("baseModelTokenizerClosureSHA256")
+        and tokenizer_json["sha256"]
+        == manifest.get("baseModelTokenizerDigest")
+    )
+    if not valid:
+        return False
+    if (
+        manifest.get("baseModelID") == DEFAULT_BASE_MODEL_ID
+        and manifest.get("baseModelRevision") == DEFAULT_BASE_MODEL_REVISION
+    ):
+        return (
+            closure["files"] == DEFAULT_BASE_MODEL_TOKENIZER_FILES
+            and manifest.get("baseModelTokenizerClosureSHA256")
+            == DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+        )
+    return True
 
 
 def _valid_base_model_index_shard_binding(manifest: Mapping[str, Any]) -> bool:
@@ -5067,6 +5217,8 @@ def build_experiment_variant_manifest(
     base_model_artifact_digest: str | None = None,
     base_model_weight_shards: Sequence[Mapping[str, Any]] | None = None,
     base_model_tokenizer_digest: str | None = None,
+    base_model_tokenizer_files: Sequence[Mapping[str, Any]] | None = None,
+    base_model_tokenizer_closure_sha256: str | None = None,
     base_model_index_bytes: bytes | None = None,
     training_environment_lock: Mapping[str, Any] | None = None,
     validation_dpo_records: Sequence[Mapping[str, Any]] = (),
@@ -5080,6 +5232,8 @@ def build_experiment_variant_manifest(
         base_model_artifact_digest,
         base_model_weight_shards,
         base_model_tokenizer_digest,
+        base_model_tokenizer_files,
+        base_model_tokenizer_closure_sha256,
     )
     if base_model_id == DEFAULT_BASE_MODEL_ID:
         base_model_revision = base_model_revision or DEFAULT_BASE_MODEL_REVISION
@@ -5094,6 +5248,13 @@ def build_experiment_variant_manifest(
         )
         base_model_tokenizer_digest = (
             base_model_tokenizer_digest or DEFAULT_BASE_MODEL_TOKENIZER_DIGEST
+        )
+        base_model_tokenizer_files = (
+            base_model_tokenizer_files or DEFAULT_BASE_MODEL_TOKENIZER_FILES
+        )
+        base_model_tokenizer_closure_sha256 = (
+            base_model_tokenizer_closure_sha256
+            or DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
         )
     elif any(value is None for value in supplied_provenance):
         raise ValueError("Non-default base models require explicit immutable provenance")
@@ -5139,9 +5300,62 @@ def build_experiment_variant_manifest(
     )
     if not _is_sha256(base_model_tokenizer_digest):
         raise ValueError("base_model_tokenizer_digest must be a lowercase SHA-256 digest")
+    tokenizer_closure = canonical_base_model_tokenizer_closure(
+        base_model_id=base_model_id,
+        base_model_revision=base_model_revision,
+        files=base_model_tokenizer_files or (),
+    )
+    if (
+        canonical_sha256(tokenizer_closure)
+        != base_model_tokenizer_closure_sha256
+    ):
+        raise ValueError(
+            "base_model_tokenizer_closure_sha256 must match the tokenizer files"
+        )
+    tokenizer_json = next(
+        item for item in tokenizer_closure["files"]
+        if item["path"] == "tokenizer.json"
+    )
+    if tokenizer_json["sha256"] != base_model_tokenizer_digest:
+        raise ValueError(
+            "base_model_tokenizer_digest must match the tokenizer closure"
+        )
+    if base_model_id == DEFAULT_BASE_MODEL_ID and (
+        base_model_revision != DEFAULT_BASE_MODEL_REVISION
+        or tokenizer_closure["files"] != DEFAULT_BASE_MODEL_TOKENIZER_FILES
+        or base_model_tokenizer_closure_sha256
+        != DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+    ):
+        raise ValueError(
+            "The pinned Qwen base model requires the exact verified tokenizer closure"
+        )
+    if (
+        training_config.get(
+            "baseModelTokenizerFiles",
+            tokenizer_closure["files"],
+        )
+        != tokenizer_closure["files"]
+        or training_config.get(
+            "baseModelTokenizerClosureSHA256",
+            base_model_tokenizer_closure_sha256,
+        )
+        != base_model_tokenizer_closure_sha256
+    ):
+        raise ValueError(
+            "training config tokenizer closure drifted from base-model lineage"
+        )
     environment_lock = dict(training_environment_lock or default_training_environment_lock())
-    if environment_lock.get("baseTokenizerSHA256") != base_model_tokenizer_digest:
-        raise ValueError("training_environment_lock must match the base-model tokenizer digest")
+    if (
+        environment_lock.get("schemaVersion")
+        != "lumen.adapter-training-environment-lock/1.1.0"
+        or environment_lock.get("baseTokenizerSHA256")
+        != base_model_tokenizer_digest
+        or environment_lock.get("baseTokenizerClosureSHA256")
+        != base_model_tokenizer_closure_sha256
+    ):
+        raise ValueError(
+            "training_environment_lock must match the complete base-model tokenizer closure"
+        )
     default_lineage = default_training_lineage_contract()
     training_code_manifest = dict(
         training_config.get("trainingCodeManifest")
@@ -5268,6 +5482,10 @@ def build_experiment_variant_manifest(
         "baseModelArtifactDigest": base_model_artifact_digest,
         "baseModelWeightShards": canonical_weight_shards["shards"],
         "baseModelTokenizerDigest": base_model_tokenizer_digest,
+        "baseModelTokenizerFiles": tokenizer_closure["files"],
+        "baseModelTokenizerClosureSHA256": (
+            base_model_tokenizer_closure_sha256
+        ),
         "trainingEnvironmentLock": environment_lock,
         "trainingEnvironmentLockSHA256": environment_lock_sha256,
         "trainingEnvironment": None,
@@ -5346,6 +5564,8 @@ def build_experiment_manifest(
         "baseModelArtifactDigest",
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
+        "baseModelTokenizerFiles",
+        "baseModelTokenizerClosureSHA256",
         "trainingEnvironmentLockSHA256",
         "trainingCodeSHA256",
         "trainingCodeSHA256ByPhase",
@@ -5375,6 +5595,10 @@ def build_experiment_manifest(
             "baseModelArtifactDigest": ordered[0]["baseModelArtifactDigest"],
             "baseModelWeightShards": ordered[0]["baseModelWeightShards"],
             "baseModelTokenizerDigest": ordered[0]["baseModelTokenizerDigest"],
+            "baseModelTokenizerFiles": ordered[0]["baseModelTokenizerFiles"],
+            "baseModelTokenizerClosureSHA256": ordered[0][
+                "baseModelTokenizerClosureSHA256"
+            ],
             "trainingEnvironmentLockSHA256": ordered[0]["trainingEnvironmentLockSHA256"],
             "trainingCodeSHA256": ordered[0]["trainingCodeSHA256"],
             "trainingCodeSHA256ByPhase": ordered[0]["trainingCodeSHA256ByPhase"],
@@ -5833,6 +6057,8 @@ def decide_adapter_promotion(
             "baseModelArtifactDigest",
             "baseModelWeightShards",
             "baseModelTokenizerDigest",
+            "baseModelTokenizerFiles",
+            "baseModelTokenizerClosureSHA256",
             "trainingEnvironmentLockSHA256",
             "trainingEnvironmentSHA256",
             "trainingCodeSHA256",
@@ -6309,6 +6535,7 @@ def _valid_variant_manifest(
             manifest.get("baseModelArtifactDigest"),
         )
         and _is_sha256(manifest.get("baseModelTokenizerDigest"))
+        and _valid_base_model_tokenizer_closure(manifest)
         and (
             manifest.get("baseModelID") == DEFAULT_BASE_MODEL_ID
             or (
@@ -6327,8 +6554,14 @@ def _valid_variant_manifest(
             )
         )
         and isinstance(manifest.get("trainingEnvironmentLock"), Mapping)
+        and manifest["trainingEnvironmentLock"].get("schemaVersion")
+        == "lumen.adapter-training-environment-lock/1.1.0"
         and manifest["trainingEnvironmentLock"].get("baseTokenizerSHA256")
         == manifest.get("baseModelTokenizerDigest")
+        and manifest["trainingEnvironmentLock"].get(
+            "baseTokenizerClosureSHA256"
+        )
+        == manifest.get("baseModelTokenizerClosureSHA256")
         and canonical_sha256(dict(manifest["trainingEnvironmentLock"]))
         == manifest.get("trainingEnvironmentLockSHA256")
         and _valid_training_code_lineage(manifest)
@@ -6608,6 +6841,8 @@ def _variant_controlled_lineage(manifest: Mapping[str, Any]) -> dict[str, Any]:
             "baseModelArtifactDigest",
             "baseModelWeightShards",
             "baseModelTokenizerDigest",
+            "baseModelTokenizerFiles",
+            "baseModelTokenizerClosureSHA256",
             "trainingEnvironmentLockSHA256",
             "trainingEnvironmentSHA256",
             "trainingCodeSHA256",

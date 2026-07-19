@@ -35,6 +35,42 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
 )
 
 
+def _custom_tokenizer_closure(
+    *,
+    base_model_id: str,
+    base_model_revision: str,
+    tokenizer_digest: str,
+) -> tuple[list[dict[str, object]], str]:
+    files = json.loads(
+        json.dumps(adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_FILES)
+    )
+    tokenizer_json = next(
+        item for item in files if item["path"] == "tokenizer.json"
+    )
+    tokenizer_json["sha256"] = tokenizer_digest
+    tokenizer_json["huggingFaceBlobID"] = tokenizer_digest
+    closure = adapter_evaluation.canonical_base_model_tokenizer_closure(
+        base_model_id=base_model_id,
+        base_model_revision=base_model_revision,
+        files=files,
+    )
+    return files, canonical_sha256(closure)
+
+
+def test_default_training_environment_lock_binds_tokenizer_closure() -> None:
+    lock = adapter_evaluation.default_training_environment_lock()
+
+    assert lock["schemaVersion"] == (
+        "lumen.adapter-training-environment-lock/1.1.0"
+    )
+    assert lock["baseTokenizerSHA256"] == (
+        adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_DIGEST
+    )
+    assert lock["baseTokenizerClosureSHA256"] == (
+        adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+    )
+
+
 def _minimum_step_fixture_records() -> dict[str, list[dict[str, object]]]:
     """Keep sparse manifest tests honest under the fail-closed step policy."""
 
@@ -288,6 +324,10 @@ def _sft_parent_lineage(
         "baseModelArtifactDigest": manifest["baseModelArtifactDigest"],
         "baseModelWeightShards": manifest["baseModelWeightShards"],
         "baseModelTokenizerDigest": manifest["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": manifest["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": manifest[
+            "baseModelTokenizerClosureSHA256"
+        ],
         "trainingEnvironmentLockSHA256": manifest[
             "trainingEnvironmentLockSHA256"
         ],
@@ -4974,6 +5014,12 @@ def test_experiment_manifest_requires_all_controlled_variants_and_marks_dpo_untr
     assert experiment["controlledVariables"]["baseModelArtifactDigest"] == "f0fcc7921091130524a2c1ab3d063a02dcc7327e6970279e3742c86de1737218"
     assert experiment["controlledVariables"]["baseModelWeightShards"] == adapter_evaluation.DEFAULT_BASE_MODEL_WEIGHT_SHARDS
     assert experiment["controlledVariables"]["baseModelTokenizerDigest"] == "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    assert experiment["controlledVariables"]["baseModelTokenizerFiles"] == (
+        adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_FILES
+    )
+    assert experiment["controlledVariables"][
+        "baseModelTokenizerClosureSHA256"
+    ] == adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
     for field in (
         "trainingCodeSHA256",
         "trainingCodeSHA256ByPhase",
@@ -5173,6 +5219,10 @@ def test_non_default_base_model_requires_non_default_explicit_provenance() -> No
             base_model_artifact_digest=adapter_evaluation.DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
             base_model_weight_shards=adapter_evaluation.DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
             base_model_tokenizer_digest=adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+            base_model_tokenizer_files=adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_FILES,
+            base_model_tokenizer_closure_sha256=(
+                adapter_evaluation.DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+            ),
         )
 
     default_manifest = build_experiment_variant_manifest(
@@ -5203,6 +5253,16 @@ def test_non_default_base_model_requires_non_default_explicit_provenance() -> No
     custom_index_digest = hashlib.sha256(custom_index_bytes).hexdigest()
     environment_lock = adapter_evaluation.default_training_environment_lock()
     environment_lock["baseTokenizerSHA256"] = custom_tokenizer_digest
+    custom_tokenizer_files, custom_tokenizer_closure_sha256 = (
+        _custom_tokenizer_closure(
+            base_model_id="example/other-model",
+            base_model_revision="b" * 40,
+            tokenizer_digest=custom_tokenizer_digest,
+        )
+    )
+    environment_lock["baseTokenizerClosureSHA256"] = (
+        custom_tokenizer_closure_sha256
+    )
     custom = build_experiment_variant_manifest(
         **kwargs,
         base_model_revision="b" * 40,
@@ -5212,6 +5272,10 @@ def test_non_default_base_model_requires_non_default_explicit_provenance() -> No
         ),
         base_model_weight_shards=custom_weight_shards,
         base_model_tokenizer_digest=custom_tokenizer_digest,
+        base_model_tokenizer_files=custom_tokenizer_files,
+        base_model_tokenizer_closure_sha256=(
+            custom_tokenizer_closure_sha256
+        ),
         base_model_index_bytes=custom_index_bytes,
         training_environment_lock=environment_lock,
     )
@@ -5220,6 +5284,77 @@ def test_non_default_base_model_requires_non_default_explicit_provenance() -> No
     assert custom["baseModelRevision"] == "b" * 40
     assert custom["trainingEnvironmentLock"] == environment_lock
     assert custom["baseModelIndexReferencedShardNames"] == ["weights.safetensors"]
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ("config.json", "merges.txt", "tokenizer_config.json", "vocab.json"),
+)
+def test_default_tokenizer_closure_rejects_self_rehashed_non_tokenizer_drift(
+    filename: str,
+) -> None:
+    manifest = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    tampered = json.loads(json.dumps(manifest))
+    tampered.pop("variantManifestSHA256")
+    file_record = next(
+        item
+        for item in tampered["baseModelTokenizerFiles"]
+        if item["path"] == filename
+    )
+    file_record["sha256"] = "f" * 64
+    closure = adapter_evaluation.canonical_base_model_tokenizer_closure(
+        base_model_id=tampered["baseModelID"],
+        base_model_revision=tampered["baseModelRevision"],
+        files=tampered["baseModelTokenizerFiles"],
+    )
+    tampered["baseModelTokenizerClosureSHA256"] = canonical_sha256(closure)
+    tampered["variantManifestSHA256"] = canonical_sha256(tampered)
+
+    assert adapter_evaluation._valid_variant_manifest(
+        tampered,
+        agent="executor",
+        expected_variant="internal_only",
+    ) is False
+
+
+def test_default_tokenizer_closure_rejects_unexpected_hub_blob_identity() -> None:
+    manifest = build_experiment_variant_manifest(
+        agent="executor",
+        variant="internal_only",
+        base_model_id=adapter_evaluation.DEFAULT_BASE_MODEL_ID,
+        seed=42,
+        training_config={"epochs": 1},
+        train_sft=[],
+        validation_sft=[],
+        dpo_records=[],
+        evaluation_records=[],
+    )
+    tampered = json.loads(json.dumps(manifest))
+    tampered.pop("variantManifestSHA256")
+    tampered["baseModelTokenizerFiles"][0]["huggingFaceBlobID"] = "f" * 40
+    closure = adapter_evaluation.canonical_base_model_tokenizer_closure(
+        base_model_id=tampered["baseModelID"],
+        base_model_revision=tampered["baseModelRevision"],
+        files=tampered["baseModelTokenizerFiles"],
+    )
+    tampered["baseModelTokenizerClosureSHA256"] = canonical_sha256(closure)
+    tampered["variantManifestSHA256"] = canonical_sha256(tampered)
+
+    assert adapter_evaluation._valid_variant_manifest(
+        tampered,
+        agent="executor",
+        expected_variant="internal_only",
+    ) is False
 
 
 def test_variant_manifest_rejects_index_whose_shards_differ_from_contract() -> None:
@@ -5231,6 +5366,16 @@ def test_variant_manifest_rejects_index_whose_shards_differ_from_contract() -> N
     shards = [{"filename": "weights.safetensors", "size": 7, "sha256": "d" * 64}]
     environment_lock = adapter_evaluation.default_training_environment_lock()
     environment_lock["baseTokenizerSHA256"] = "e" * 64
+    custom_tokenizer_files, custom_tokenizer_closure_sha256 = (
+        _custom_tokenizer_closure(
+            base_model_id="example/other-model",
+            base_model_revision="b" * 40,
+            tokenizer_digest="e" * 64,
+        )
+    )
+    environment_lock["baseTokenizerClosureSHA256"] = (
+        custom_tokenizer_closure_sha256
+    )
 
     with pytest.raises(ValueError, match="index shard set does not match"):
         build_experiment_variant_manifest(
@@ -5242,6 +5387,10 @@ def test_variant_manifest_rejects_index_whose_shards_differ_from_contract() -> N
             base_model_artifact_digest=adapter_evaluation.base_model_artifact_digest(shards),
             base_model_weight_shards=shards,
             base_model_tokenizer_digest="e" * 64,
+            base_model_tokenizer_files=custom_tokenizer_files,
+            base_model_tokenizer_closure_sha256=(
+                custom_tokenizer_closure_sha256
+            ),
             base_model_index_bytes=index_bytes,
             training_environment_lock=environment_lock,
             seed=42,
