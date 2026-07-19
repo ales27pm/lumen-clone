@@ -266,9 +266,14 @@ def test_global_comparison_precedes_expensive_trainer_construction() -> None:
     assert sft_source.index("_verify_prepared_global_tokenizer_preflight(") < (
         sft_source.index("FastLanguageModel.get_peft_model(")
     )
-    assert dpo_source.index("_verify_prepared_global_tokenizer_preflight(") < (
-        dpo_source.index("_load_sft_policy(")
+    dpo_global_boundary = dpo_source.index(
+        "_verify_prepared_global_tokenizer_preflight("
     )
+    dpo_policy_load = dpo_source.index("_load_sft_policy(")
+    assert dpo_global_boundary < dpo_policy_load
+    dpo_global_call = dpo_source[dpo_global_boundary:dpo_policy_load]
+    assert 'phase="preference"' in dpo_global_call
+    assert "phase=preference_trainer" not in dpo_global_call
 
 
 def _qualified_upload_summary() -> dict[str, Any]:

@@ -2931,7 +2931,7 @@ def main() -> None:
         _verify_prepared_global_tokenizer_preflight(
             cfg,
             cfg_path=cfg_path,
-            phase=preference_trainer,
+            phase="preference",
             bound_preflight=token_length_preflight_evidence,
         )
     model = _load_sft_policy(
