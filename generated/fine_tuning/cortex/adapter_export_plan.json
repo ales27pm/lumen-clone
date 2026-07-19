@@ -66,7 +66,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "2730ec29638e973f21874c2f897c0f469196a9e0a4d42a78506a7a56d640f2b3"
+        "reportSHA256": "c4ddd22aa6e5fac61c1415db983b1b31d4f75302d15f998bd342b8ea13c1c6c2"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -74,7 +74,7 @@
       "recordCount": 507,
       "schemaVersion": "lumen.adapter-eval/1.1.0"
     },
-    "manifestCommit": "404667f5d718d91e97f62c27fd1ad39e60bd6313",
+    "manifestCommit": "4540017839fb708efd6d550eca46e85c03e03191",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 822,
@@ -99,9 +99,9 @@
       "public_adapter_corpus_toolace_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "404667f5d718d91e97f62c27fd1ad39e60bd6313",
+      "baseCommit": "4540017839fb708efd6d550eca46e85c03e03191",
       "dirtyState": false,
-      "workingTreeDigest": "dec594e60eb9089984d884d48bfb8e19e464ffd29ac0d5fcdb4d01b02fee0722"
+      "workingTreeDigest": "e77185a39e199d8417dd5eaacd0be327d41aece12e4c217512c0b5bd7b4520cf"
     },
     "taskTypes": [
       "codebase_home_grounding",
@@ -175,7 +175,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "819c30be60708767bae247992736d10d7418d1c4086ebe4ddcc93d80528dfba8",
+    "experimentManifestSHA256": "28f0fa8d2a1ce850216f201a209e0c2cdb359ce5bb3f817ea4c19baf943d6ead",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -234,12 +234,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
-  "trainingCodeBundleSHA256": "93c37e0991076e91a8ad962c1e067340cc545e7bacfa462ab6affe3f69bf4521",
-  "trainingCodeSHA256": "346be367792dc2c4342c714307818bb95cddeccd5ab97d4ec49bbcedc8a40525",
+  "trainingCodeBundleSHA256": "908ded950fce12c82643d8846a191d4bc289dfdc7378cae95ed6a862d73b5e85",
+  "trainingCodeSHA256": "9802ce5763c519b40d5131dd8365f1beb968d75994b5966c532309dadd2298d9",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "98811f206899d3a0d98d43c4c825616147f7bf71ef2565d54fa14b07dcd13581",
-    "orpo": "52b4bd97c93ccc53f4a1bf3ed9bd8f8466503fd721dcc056fdb4b7f1766deedb",
-    "sft": "346be367792dc2c4342c714307818bb95cddeccd5ab97d4ec49bbcedc8a40525"
+    "dpo": "dc40e1c1fd529a70be3eceef98464188a2f5569bcf05e61beb9be3a06599fcd5",
+    "orpo": "232e8a5e54dc120616483e091ba7fa30a2135203eccc4712672f0f307fd7c64b",
+    "sft": "9802ce5763c519b40d5131dd8365f1beb968d75994b5966c532309dadd2298d9"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
