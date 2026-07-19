@@ -1,8 +1,8 @@
 {
   "agent": "executor",
   "comparisonEligibility": {
-    "baselineTrainingCorpusSHA256": "e82867c84296711b495610e21a8070dd08fb68b759b20216700d2ce9f327a648",
-    "optimizedTrainingCorpusSHA256": "d23ac7e7444d12c6831dcceef36cc33dcbdd6bff1ad8b5cc0ec7536a8d45a53e",
+    "baselineTrainingCorpusSHA256": "98fedc77a93c691061a61966b15005819a91667f878306cb767fba7d30649632",
+    "optimizedTrainingCorpusSHA256": "cfe29ff684e33937a874c031ca3a0e162355e04129186c0ce3d81c46b77be983",
     "promotionEligible": true,
     "promotionProhibited": false,
     "publicRecordCount": 462,
@@ -69,18 +69,18 @@
     "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
     "requirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
     "seed": 42,
-    "trainingCodeBundleSHA256": "f11358382f56f2d7cfe1f6200bee5f0bc68cbbb4b144b29d146802d69df46d08",
-    "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8",
+    "trainingCodeBundleSHA256": "8899abe45c12d8dc84b2b28d72403ddfe35af3cd5c9c47e841773ce5ac3705e6",
+    "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609",
     "trainingCodeSHA256ByPhase": {
-      "dpo": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52",
-      "orpo": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069",
-      "sft": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+      "dpo": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93",
+      "orpo": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6",
+      "sft": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
     },
-    "trainingConfigSHA256": "41a1c27788345349ca1ab5e447e23712d017ae81c7477e65ec3a4403641d651a",
+    "trainingConfigSHA256": "ff9fa954de07d458b9d042c7b12b60fb77c1397a126057a75cec6be74e1e6fc8",
     "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139",
     "trainingEnvironmentLockSHA256": "3844ddcb45334ec7b78bcacaf4ba221218d85cde56ae02943a9ba970f939cb33"
   },
-  "experimentManifestSHA256": "8b639f056a8cb01a39d814552d852d6e0c9efc6c46c649dc9b943002cde57003",
+  "experimentManifestSHA256": "dd30e7770368e092e6e40c670ef59b0d24b37ce644f8c1778c16afa2d3cc0914",
   "promotionContract": {
     "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
     "maximumContaminationMatches": 0,
@@ -179,8 +179,8 @@
         "matchCount": 0,
         "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
         "publicEvaluationRowCount": 1040,
-        "reportSHA256": "2716eb71e6a3b1e57bcb655e1461b3ac9e0eff1d0eb7d4a58a5da30fb68d62a0",
-        "trainingRecordsSHA256": "314adfbee34c3036d0a3943d651d09fbce4d27b963c49d2a5061a325324a096f"
+        "reportSHA256": "3af9e6a7268ede9eea81ea95954b46c02156789e338bbd69a5ed447ee7740e32",
+        "trainingRecordsSHA256": "492a18746bf8a7089732d14e7170cbf4ad4309a6fee3f9cb6bf00238dcb9197a"
       },
       "controlledTrainingConfig": {
         "agent": "executor",
@@ -383,7 +383,7 @@
         "sequence_budget_policy": "utf8_byte_proxy_configured_chars_per_token",
         "sequence_char_budget": 16384,
         "sft_minimum_sequence_margin_tokens": 128,
-        "trainingCodeBundleSHA256": "f11358382f56f2d7cfe1f6200bee5f0bc68cbbb4b144b29d146802d69df46d08",
+        "trainingCodeBundleSHA256": "8899abe45c12d8dc84b2b28d72403ddfe35af3cd5c9c47e841773ce5ac3705e6",
         "trainingCodeManifest": {
           "closurePolicy": {
             "coverDeployedRoot": true,
@@ -673,8 +673,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -694,7 +694,7 @@
           ],
           "phase": "sft",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         },
         "trainingCodeManifestsByPhase": {
           "dpo": {
@@ -986,8 +986,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -1007,7 +1007,7 @@
             ],
             "phase": "dpo",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52"
+            "trainingCodeSHA256": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93"
           },
           "orpo": {
             "closurePolicy": {
@@ -1298,8 +1298,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -1319,7 +1319,7 @@
             ],
             "phase": "orpo",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069"
+            "trainingCodeSHA256": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6"
           },
           "sft": {
             "closurePolicy": {
@@ -1610,8 +1610,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -1631,14 +1631,14 @@
             ],
             "phase": "sft",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+            "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
           }
         },
-        "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8",
+        "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609",
         "trainingCodeSHA256ByPhase": {
-          "dpo": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52",
-          "orpo": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069",
-          "sft": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "dpo": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93",
+          "orpo": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6",
+          "sft": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         },
         "trainingDependencyLock": {
           "cudaVersion": "12.8",
@@ -1715,7 +1715,7 @@
         },
         "trainSFT": {
           "count": 261,
-          "sha256": "aecef50dc14530ee82b43f12802126b77848fbf5b5c340b1a0c982551d09ba88"
+          "sha256": "236a3bd9c85bf19b707c00a88fbf9b84b407a1e0d88b377547a967ccd02fb457"
         },
         "validationDPO": {
           "count": 3,
@@ -1723,7 +1723,7 @@
         },
         "validationSFT": {
           "count": 26,
-          "sha256": "7984d64399799ed2024d6a98d0bf9ae9f31b78059d191248f957ae08c3deef1b"
+          "sha256": "e718a55b8347b593e552b31b4490cf69049155477232cce3229af23e02697ac4"
         }
       },
       "dpoTraining": {
@@ -1757,7 +1757,7 @@
       "runtimeSourceRevision": null,
       "schemaVersion": "lumen.adapter-experiment-variant/1.2.0",
       "seed": 42,
-      "trainingCodeBundleSHA256": "f11358382f56f2d7cfe1f6200bee5f0bc68cbbb4b144b29d146802d69df46d08",
+      "trainingCodeBundleSHA256": "8899abe45c12d8dc84b2b28d72403ddfe35af3cd5c9c47e841773ce5ac3705e6",
       "trainingCodeManifest": {
         "closurePolicy": {
           "coverDeployedRoot": true,
@@ -2047,8 +2047,8 @@
           },
           {
             "path": "lumen_training/train_dpo.py",
-            "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-            "sizeBytes": 124136
+            "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+            "sizeBytes": 124130
           },
           {
             "path": "lumen_training/train_sft.py",
@@ -2068,7 +2068,7 @@
         ],
         "phase": "sft",
         "schemaVersion": "lumen.training-code-manifest/2.0.0",
-        "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+        "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
       },
       "trainingCodeManifestsByPhase": {
         "dpo": {
@@ -2360,8 +2360,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -2381,7 +2381,7 @@
           ],
           "phase": "dpo",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52"
+          "trainingCodeSHA256": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93"
         },
         "orpo": {
           "closurePolicy": {
@@ -2672,8 +2672,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -2693,7 +2693,7 @@
           ],
           "phase": "orpo",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069"
+          "trainingCodeSHA256": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6"
         },
         "sft": {
           "closurePolicy": {
@@ -2984,8 +2984,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -3005,17 +3005,17 @@
           ],
           "phase": "sft",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         }
       },
-      "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8",
+      "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52",
-        "orpo": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069",
-        "sft": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+        "dpo": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93",
+        "orpo": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6",
+        "sft": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
       },
-      "trainingConfigSHA256": "41a1c27788345349ca1ab5e447e23712d017ae81c7477e65ec3a4403641d651a",
-      "trainingCorpusSHA256": "314adfbee34c3036d0a3943d651d09fbce4d27b963c49d2a5061a325324a096f",
+      "trainingConfigSHA256": "ff9fa954de07d458b9d042c7b12b60fb77c1397a126057a75cec6be74e1e6fc8",
+      "trainingCorpusSHA256": "492a18746bf8a7089732d14e7170cbf4ad4309a6fee3f9cb6bf00238dcb9197a",
       "trainingDependencyLock": {
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -3085,7 +3085,7 @@
       "trainingEnvironmentLockSHA256": "3844ddcb45334ec7b78bcacaf4ba221218d85cde56ae02943a9ba970f939cb33",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_only",
-      "variantManifestSHA256": "1206a1f06ce64169c286ff71a92a3188a4a45b8b85328834a23684b8d5dab6c5",
+      "variantManifestSHA256": "e591d6b591000a340e61fe2e06138dac57ba89077a2165f685a496ac57eb1f96",
       "zeroGPUDurationSeconds": null,
       "zeroGPUSize": null
     },
@@ -3152,8 +3152,8 @@
         }
       ],
       "comparisonEligibility": {
-        "baselineTrainingCorpusSHA256": "e82867c84296711b495610e21a8070dd08fb68b759b20216700d2ce9f327a648",
-        "optimizedTrainingCorpusSHA256": "d23ac7e7444d12c6831dcceef36cc33dcbdd6bff1ad8b5cc0ec7536a8d45a53e",
+        "baselineTrainingCorpusSHA256": "98fedc77a93c691061a61966b15005819a91667f878306cb767fba7d30649632",
+        "optimizedTrainingCorpusSHA256": "cfe29ff684e33937a874c031ca3a0e162355e04129186c0ce3d81c46b77be983",
         "promotionEligible": true,
         "promotionProhibited": false,
         "publicRecordCount": 462,
@@ -3166,8 +3166,8 @@
         "matchCount": 0,
         "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
         "publicEvaluationRowCount": 1040,
-        "reportSHA256": "b40f33c07121d03d777a17de31074d82046b560258eb50d26921b9d77cca0a1f",
-        "trainingRecordsSHA256": "e82867c84296711b495610e21a8070dd08fb68b759b20216700d2ce9f327a648"
+        "reportSHA256": "219d203cd227d4ad1c321d77d06296e0773d6f8bc92a6b5111b877100c034256",
+        "trainingRecordsSHA256": "98fedc77a93c691061a61966b15005819a91667f878306cb767fba7d30649632"
       },
       "controlledTrainingConfig": {
         "agent": "executor",
@@ -3370,7 +3370,7 @@
         "sequence_budget_policy": "utf8_byte_proxy_configured_chars_per_token",
         "sequence_char_budget": 16384,
         "sft_minimum_sequence_margin_tokens": 128,
-        "trainingCodeBundleSHA256": "f11358382f56f2d7cfe1f6200bee5f0bc68cbbb4b144b29d146802d69df46d08",
+        "trainingCodeBundleSHA256": "8899abe45c12d8dc84b2b28d72403ddfe35af3cd5c9c47e841773ce5ac3705e6",
         "trainingCodeManifest": {
           "closurePolicy": {
             "coverDeployedRoot": true,
@@ -3660,8 +3660,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -3681,7 +3681,7 @@
           ],
           "phase": "sft",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         },
         "trainingCodeManifestsByPhase": {
           "dpo": {
@@ -3973,8 +3973,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -3994,7 +3994,7 @@
             ],
             "phase": "dpo",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52"
+            "trainingCodeSHA256": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93"
           },
           "orpo": {
             "closurePolicy": {
@@ -4285,8 +4285,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -4306,7 +4306,7 @@
             ],
             "phase": "orpo",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069"
+            "trainingCodeSHA256": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6"
           },
           "sft": {
             "closurePolicy": {
@@ -4597,8 +4597,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -4618,14 +4618,14 @@
             ],
             "phase": "sft",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+            "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
           }
         },
-        "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8",
+        "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609",
         "trainingCodeSHA256ByPhase": {
-          "dpo": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52",
-          "orpo": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069",
-          "sft": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "dpo": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93",
+          "orpo": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6",
+          "sft": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         },
         "trainingDependencyLock": {
           "cudaVersion": "12.8",
@@ -4702,7 +4702,7 @@
         },
         "trainSFT": {
           "count": 358,
-          "sha256": "f8fa31d64699c827f4257b45a5bd42fa4db24aff24c74ddebf3eeedcffb0edbc"
+          "sha256": "5abb08d6c712e4ea82f8dbb9d91fb94dee18610fae04ebe9c5e6fe9f30852441"
         },
         "validationDPO": {
           "count": 3,
@@ -4710,7 +4710,7 @@
         },
         "validationSFT": {
           "count": 34,
-          "sha256": "08bf6529b679b0aea60fe196eb29e62efe3b93972cdffaa445de3dd07347732b"
+          "sha256": "5f8022cf3e22e72457987eb215c1cc2253a4d50481f74fcff2de2e74edd8a079"
         }
       },
       "dpoTraining": {
@@ -4746,7 +4746,7 @@
       "runtimeSourceRevision": null,
       "schemaVersion": "lumen.adapter-experiment-variant/1.2.0",
       "seed": 42,
-      "trainingCodeBundleSHA256": "f11358382f56f2d7cfe1f6200bee5f0bc68cbbb4b144b29d146802d69df46d08",
+      "trainingCodeBundleSHA256": "8899abe45c12d8dc84b2b28d72403ddfe35af3cd5c9c47e841773ce5ac3705e6",
       "trainingCodeManifest": {
         "closurePolicy": {
           "coverDeployedRoot": true,
@@ -5036,8 +5036,8 @@
           },
           {
             "path": "lumen_training/train_dpo.py",
-            "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-            "sizeBytes": 124136
+            "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+            "sizeBytes": 124130
           },
           {
             "path": "lumen_training/train_sft.py",
@@ -5057,7 +5057,7 @@
         ],
         "phase": "sft",
         "schemaVersion": "lumen.training-code-manifest/2.0.0",
-        "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+        "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
       },
       "trainingCodeManifestsByPhase": {
         "dpo": {
@@ -5349,8 +5349,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -5370,7 +5370,7 @@
           ],
           "phase": "dpo",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52"
+          "trainingCodeSHA256": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93"
         },
         "orpo": {
           "closurePolicy": {
@@ -5661,8 +5661,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -5682,7 +5682,7 @@
           ],
           "phase": "orpo",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069"
+          "trainingCodeSHA256": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6"
         },
         "sft": {
           "closurePolicy": {
@@ -5973,8 +5973,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -5994,17 +5994,17 @@
           ],
           "phase": "sft",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         }
       },
-      "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8",
+      "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52",
-        "orpo": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069",
-        "sft": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+        "dpo": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93",
+        "orpo": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6",
+        "sft": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
       },
-      "trainingConfigSHA256": "41a1c27788345349ca1ab5e447e23712d017ae81c7477e65ec3a4403641d651a",
-      "trainingCorpusSHA256": "e82867c84296711b495610e21a8070dd08fb68b759b20216700d2ce9f327a648",
+      "trainingConfigSHA256": "ff9fa954de07d458b9d042c7b12b60fb77c1397a126057a75cec6be74e1e6fc8",
+      "trainingCorpusSHA256": "98fedc77a93c691061a61966b15005819a91667f878306cb767fba7d30649632",
       "trainingDependencyLock": {
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -6074,7 +6074,7 @@
       "trainingEnvironmentLockSHA256": "3844ddcb45334ec7b78bcacaf4ba221218d85cde56ae02943a9ba970f939cb33",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_plus_public_baseline",
-      "variantManifestSHA256": "cf9ff26f7090f14329fe5d27bccef890d07250f1ad50da8100a16928c3ffe10a",
+      "variantManifestSHA256": "bfd6eff3c6dd0e9b83b997df397bd0a9b5eaffa60d3970b058518e1ace1034c3",
       "zeroGPUDurationSeconds": null,
       "zeroGPUSize": null
     },
@@ -6141,8 +6141,8 @@
         }
       ],
       "comparisonEligibility": {
-        "baselineTrainingCorpusSHA256": "e82867c84296711b495610e21a8070dd08fb68b759b20216700d2ce9f327a648",
-        "optimizedTrainingCorpusSHA256": "d23ac7e7444d12c6831dcceef36cc33dcbdd6bff1ad8b5cc0ec7536a8d45a53e",
+        "baselineTrainingCorpusSHA256": "98fedc77a93c691061a61966b15005819a91667f878306cb767fba7d30649632",
+        "optimizedTrainingCorpusSHA256": "cfe29ff684e33937a874c031ca3a0e162355e04129186c0ce3d81c46b77be983",
         "promotionEligible": true,
         "promotionProhibited": false,
         "publicRecordCount": 462,
@@ -6155,8 +6155,8 @@
         "matchCount": 0,
         "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
         "publicEvaluationRowCount": 1040,
-        "reportSHA256": "3256049d4fa81f2e23fcac94138cd5caf45d9c177570e196bfb7d06fc94fd14b",
-        "trainingRecordsSHA256": "d23ac7e7444d12c6831dcceef36cc33dcbdd6bff1ad8b5cc0ec7536a8d45a53e"
+        "reportSHA256": "fe97fa11a7f0671fd5d1271e1d1fd725d28e3a594a5a55cfe3439c43c9901411",
+        "trainingRecordsSHA256": "cfe29ff684e33937a874c031ca3a0e162355e04129186c0ce3d81c46b77be983"
       },
       "controlledTrainingConfig": {
         "agent": "executor",
@@ -6359,7 +6359,7 @@
         "sequence_budget_policy": "utf8_byte_proxy_configured_chars_per_token",
         "sequence_char_budget": 16384,
         "sft_minimum_sequence_margin_tokens": 128,
-        "trainingCodeBundleSHA256": "f11358382f56f2d7cfe1f6200bee5f0bc68cbbb4b144b29d146802d69df46d08",
+        "trainingCodeBundleSHA256": "8899abe45c12d8dc84b2b28d72403ddfe35af3cd5c9c47e841773ce5ac3705e6",
         "trainingCodeManifest": {
           "closurePolicy": {
             "coverDeployedRoot": true,
@@ -6649,8 +6649,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -6670,7 +6670,7 @@
           ],
           "phase": "sft",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         },
         "trainingCodeManifestsByPhase": {
           "dpo": {
@@ -6962,8 +6962,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -6983,7 +6983,7 @@
             ],
             "phase": "dpo",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52"
+            "trainingCodeSHA256": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93"
           },
           "orpo": {
             "closurePolicy": {
@@ -7274,8 +7274,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -7295,7 +7295,7 @@
             ],
             "phase": "orpo",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069"
+            "trainingCodeSHA256": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6"
           },
           "sft": {
             "closurePolicy": {
@@ -7586,8 +7586,8 @@
               },
               {
                 "path": "lumen_training/train_dpo.py",
-                "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-                "sizeBytes": 124136
+                "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+                "sizeBytes": 124130
               },
               {
                 "path": "lumen_training/train_sft.py",
@@ -7607,14 +7607,14 @@
             ],
             "phase": "sft",
             "schemaVersion": "lumen.training-code-manifest/2.0.0",
-            "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+            "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
           }
         },
-        "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8",
+        "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609",
         "trainingCodeSHA256ByPhase": {
-          "dpo": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52",
-          "orpo": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069",
-          "sft": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "dpo": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93",
+          "orpo": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6",
+          "sft": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         },
         "trainingDependencyLock": {
           "cudaVersion": "12.8",
@@ -7691,7 +7691,7 @@
         },
         "trainSFT": {
           "count": 344,
-          "sha256": "81e3d7cc607d14465808c51eca30d50f5e2a03e5bdb304d6225deb7e13615b53"
+          "sha256": "18aa7f2172ba38166a5fe7aac775751f3f565d6df56a7a4a4392827dab1b62a6"
         },
         "validationDPO": {
           "count": 3,
@@ -7699,7 +7699,7 @@
         },
         "validationSFT": {
           "count": 34,
-          "sha256": "c071dce6f16ac3e7fc9bb43b213c8c3961b9fd5727b48382480dbc5b689b17cf"
+          "sha256": "a730c95f79ab0b7821fd15e905370bdac1cdb415d57a8eabbd9bd22fcdac7785"
         }
       },
       "dpoTraining": {
@@ -7735,7 +7735,7 @@
       "runtimeSourceRevision": null,
       "schemaVersion": "lumen.adapter-experiment-variant/1.2.0",
       "seed": 42,
-      "trainingCodeBundleSHA256": "f11358382f56f2d7cfe1f6200bee5f0bc68cbbb4b144b29d146802d69df46d08",
+      "trainingCodeBundleSHA256": "8899abe45c12d8dc84b2b28d72403ddfe35af3cd5c9c47e841773ce5ac3705e6",
       "trainingCodeManifest": {
         "closurePolicy": {
           "coverDeployedRoot": true,
@@ -8025,8 +8025,8 @@
           },
           {
             "path": "lumen_training/train_dpo.py",
-            "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-            "sizeBytes": 124136
+            "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+            "sizeBytes": 124130
           },
           {
             "path": "lumen_training/train_sft.py",
@@ -8046,7 +8046,7 @@
         ],
         "phase": "sft",
         "schemaVersion": "lumen.training-code-manifest/2.0.0",
-        "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+        "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
       },
       "trainingCodeManifestsByPhase": {
         "dpo": {
@@ -8338,8 +8338,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -8359,7 +8359,7 @@
           ],
           "phase": "dpo",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52"
+          "trainingCodeSHA256": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93"
         },
         "orpo": {
           "closurePolicy": {
@@ -8650,8 +8650,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -8671,7 +8671,7 @@
           ],
           "phase": "orpo",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069"
+          "trainingCodeSHA256": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6"
         },
         "sft": {
           "closurePolicy": {
@@ -8962,8 +8962,8 @@
             },
             {
               "path": "lumen_training/train_dpo.py",
-              "sha256": "9767caf1dd562a0bb1655557c40dca3334a6dc421d7fffd6d73a8f4839a6867d",
-              "sizeBytes": 124136
+              "sha256": "4edc23b57260ca5cfd50c3d2148e17ae30908fb8dccd017e09171a99b0d39bff",
+              "sizeBytes": 124130
             },
             {
               "path": "lumen_training/train_sft.py",
@@ -8983,17 +8983,17 @@
           ],
           "phase": "sft",
           "schemaVersion": "lumen.training-code-manifest/2.0.0",
-          "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+          "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
         }
       },
-      "trainingCodeSHA256": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8",
+      "trainingCodeSHA256": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "f2db920c4054fd874eaef99c9be585e109600126fdb74f523bbf87abad13ae52",
-        "orpo": "9ea2d66b9899ba0787ac769b29556c3d53a1e5dd7e906f01a68a36fc759ad069",
-        "sft": "8fedff568e017f67087caac0cfd72105af73b85359125900b68a4d000d1b75d8"
+        "dpo": "a566df41b7c27c879b44a0be87d2205ce50f9a16d58df385c577def575490c93",
+        "orpo": "e483f4f4f7afc99af5a21ab5ebca82cd8c25ef0252ecf9bcc178b5667bbe09e6",
+        "sft": "961715548e3a83a33976a52a9620136f151b071077676e3d763fc692ac1db609"
       },
-      "trainingConfigSHA256": "41a1c27788345349ca1ab5e447e23712d017ae81c7477e65ec3a4403641d651a",
-      "trainingCorpusSHA256": "d23ac7e7444d12c6831dcceef36cc33dcbdd6bff1ad8b5cc0ec7536a8d45a53e",
+      "trainingConfigSHA256": "ff9fa954de07d458b9d042c7b12b60fb77c1397a126057a75cec6be74e1e6fc8",
+      "trainingCorpusSHA256": "cfe29ff684e33937a874c031ca3a0e162355e04129186c0ce3d81c46b77be983",
       "trainingDependencyLock": {
         "cudaVersion": "12.8",
         "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -9063,7 +9063,7 @@
       "trainingEnvironmentLockSHA256": "3844ddcb45334ec7b78bcacaf4ba221218d85cde56ae02943a9ba970f939cb33",
       "trainingEnvironmentSHA256": null,
       "variant": "internal_plus_public_optimized",
-      "variantManifestSHA256": "d53d3ec755be1cb27134a1fcfe46a655e1b27db4ba9b077f37f0582cc4615893",
+      "variantManifestSHA256": "35180b40404df1b8ad99691b21911efbe2fbf28a1ccfe70fe675ce97b843af01",
       "zeroGPUDurationSeconds": null,
       "zeroGPUSize": null
     }
