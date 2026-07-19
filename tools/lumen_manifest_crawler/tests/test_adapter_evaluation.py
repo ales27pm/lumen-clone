@@ -26,8 +26,10 @@ from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning
 from lumen_manifest_crawler.dataset.fine_tuning import (
     EXECUTOR_RUNTIME_SYSTEM_PROMPT,
     STRUCTURED_OUTPUT_INSTRUCTION,
+    _augment_records,
     _bind_executor_eval_contract,
     _bind_mouth_eval_contract,
+    _build_agent_eval_records,
     _exclude_evaluation_segment_matches,
     _required_eval_templates,
     _ultra_specific_eval_templates,
@@ -6974,7 +6976,7 @@ def test_all_persisted_variant_artifacts_are_self_consistent() -> None:
     assert validated == 18
 
 
-def test_native_fleet_orchestration_evals_flow_into_executable_fine_tuning_contracts() -> None:
+def test_native_fleet_orchestration_evals_flow_into_executable_evaluation_contracts() -> None:
     manifest = AgentBehaviorManifest.model_validate(
         {
             "fleet": {
@@ -7000,14 +7002,21 @@ def test_native_fleet_orchestration_evals_flow_into_executable_fine_tuning_contr
         }
     )
     artifacts = generate_fleet_artifacts(manifest)
-    datasets = compile_agent_fine_tuning_datasets(
-        manifest,
+    augmented_records = _augment_records(
         _minimum_step_fixture_records(),
-        fleet_artifacts=artifacts,
+        artifacts,
     )
+    fleet_eval = [
+        upgrade_evaluation_record(record)
+        for record in _build_agent_eval_records(
+            manifest,
+            augmented_records,
+            {tool.id for tool in manifest.tools},
+        )["fleet"]
+    ]
     orchestration = [
         record
-        for record in datasets["fleet"].eval
+        for record in fleet_eval
         if (record.get("metadata") or {}).get("evalType") == "fleet_orchestration_event_graph_eval"
     ]
 
@@ -7026,8 +7035,13 @@ def test_native_fleet_orchestration_evals_flow_into_executable_fine_tuning_contr
                     ],
                 },
             }
-        ]
-    assert datasets["fleet"].contamination_report["contaminated"] is False
+    ]
+    contamination = build_contamination_report(
+        augmented_records["cross_model_training"],
+        fleet_eval,
+    )
+    assert contamination["matchCount"] == 0
+    assert contamination["contaminated"] is False
 
 
 def test_frozen_evaluation_segments_are_removed_from_sft_and_dpo_training() -> None:

@@ -8427,7 +8427,7 @@ def _pipeline_validated_fleet_loss_share_contract(
         label="Fleet loss-share contract",
     )
     if (
-        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.3.0"
+        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.4.0"
         or contract.get("enforcementRequired") is not True
         or contract.get("enforcementPhase")
         != "post_tokenizer_load_pre_optimizer"
@@ -8472,9 +8472,30 @@ def _pipeline_validated_fleet_loss_share_contract(
             "status",
             "maximumPublicBehavioralShareBasisPoints",
             "maximumSupplementalStaticShareBasisPoints",
+            "optimizerFamilySafetyBand",
             "contract",
         },
         label="Fleet source-selection proxy",
+    )
+    source_family_safety_band = _pipeline_exact_mapping(
+        source_selection_proxy.get("optimizerFamilySafetyBand"),
+        {
+            "schemaVersion",
+            "lane",
+            "basis",
+            "sourceFamily",
+            "taskType",
+            "minimumBasisPoints",
+            "maximumBasisPoints",
+            "selectionPolicy",
+            "authoritativeExactBandBasisPoints",
+        },
+        label="Fleet optimizer-family source-proxy safety band",
+    )
+    authoritative_exact_band = _pipeline_exact_mapping(
+        source_family_safety_band.get("authoritativeExactBandBasisPoints"),
+        {"minimum", "maximum"},
+        label="Fleet authoritative optimizer-family band reference",
     )
     source_proxy_contract = _pipeline_exact_mapping(
         source_selection_proxy.get("contract"),
@@ -8497,6 +8518,27 @@ def _pipeline_validated_fleet_loss_share_contract(
         != 3_000
         or source_selection_proxy.get("maximumSupplementalStaticShareBasisPoints")
         != 1_500
+        or type(source_family_safety_band.get("minimumBasisPoints")) is not int
+        or type(source_family_safety_band.get("maximumBasisPoints")) is not int
+        or type(authoritative_exact_band.get("minimum")) is not int
+        or type(authoritative_exact_band.get("maximum")) is not int
+        or source_family_safety_band
+        != {
+            "schemaVersion": (
+                "lumen.fleet-optimizer-family-source-proxy/1.0.0"
+            ),
+            "lane": "sft",
+            "basis": "assistant_target_source_token_proxy_count",
+            "sourceFamily": "fleet_orchestration_native",
+            "taskType": "fleet_orchestration_event_graph",
+            "minimumBasisPoints": 5_300,
+            "maximumBasisPoints": 6_210,
+            "selectionPolicy": (
+                "retain_non_public_then_bound_public_behavioral"
+            ),
+            "authoritativeExactBandBasisPoints": authoritative_exact_band,
+        }
+        or authoritative_exact_band != {"minimum": 5_000, "maximum": 6_000}
         or source_proxy_contract.get("schemaVersion")
         != "lumen.source-token-proxy/1.0.0"
         or source_proxy_contract.get("status")

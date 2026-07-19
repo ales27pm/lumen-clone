@@ -10,6 +10,7 @@ from collections import Counter
 from dataclasses import replace
 from itertools import combinations
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,6 +18,7 @@ from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
     EVALUATION_SCHEMA_VERSION,
+    FLEET_TOOL_OWNERSHIP_OUTPUT_CONTRACT,
     _score_metric,
     build_contamination_report,
     canonical_sha256,
@@ -45,6 +47,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     CRITICAL_CONTRACT_VALIDATION_RECORDS_PER_CASE,
     EXECUTOR_RUNTIME_SYSTEM_PROMPT,
     FLEET_BALANCED_CONTRACT_TASK_TYPES,
+    FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES,
     FLEET_DELEGATION_OUTPUT_CONTRACT,
     FLEET_DELEGATION_PROMPTS_PER_OWNER,
     FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER,
@@ -55,9 +58,12 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
     FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS,
+    FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS,
+    FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
     FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
     FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION,
+    FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION,
     FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES,
     FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
     FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX,
@@ -97,6 +103,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _bind_cortex_dpo_route_contract,
     _bound_fleet_validation_sft_records,
     _canonicalize_cortex_sft_output,
+    _comprehensive_fleet_tool_ownership_sft_anchors,
     _canonical_messages_key,
     _cap_public_corpus_token_share,
     _cortex_failure_repair_sft_records,
@@ -7065,6 +7072,26 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
     assert source_proxy["status"] == "safety_budget_not_exact_token_count"
     assert source_proxy["maximumSupplementalStaticShareBasisPoints"] == 1_500
     assert source_proxy["maximumPublicBehavioralShareBasisPoints"] == 3_000
+    assert source_proxy["optimizerFamilySafetyBand"] == {
+        "schemaVersion": FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION,
+        "lane": "sft",
+        "basis": "assistant_target_source_token_proxy_count",
+        "sourceFamily": FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+        "taskType": FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+        "minimumBasisPoints": (
+            FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS
+        ),
+        "maximumBasisPoints": (
+            FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS
+        ),
+        "selectionPolicy": (
+            "retain_non_public_then_bound_public_behavioral"
+        ),
+        "authoritativeExactBandBasisPoints": {
+            "minimum": FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS,
+            "maximum": FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS,
+        },
+    }
     assert source_proxy["contract"] == quality["sourceTokenProxyContract"]
     assert loss_share_contract["failurePolicy"] == "abort_before_optimizer"
     assert loss_share_contract["rowMetadataContract"] == {
@@ -7735,6 +7762,137 @@ def test_fleet_optimizer_finalization_converges_coupled_public_and_static_caps()
     assert public_total * 10_000 <= total * 3_000
 
 
+def test_fleet_sft_finalization_balances_native_proxy_by_pruning_public_only() -> None:
+    def sft(
+        index: int,
+        *,
+        source_family: str,
+        task_type: str,
+        target_words: int,
+        public: bool = False,
+    ) -> dict:
+        metadata: dict[str, Any] = {
+            "agent": "fleet",
+            "manifestCommit": "a" * 40,
+            "sourceFamily": source_family,
+            "taskType": task_type,
+        }
+        if public:
+            metadata["publicCorpus"] = {
+                "sourceRepository": "example/fleet-public",
+                "sourceRevision": "a" * 40,
+                "sourceGroupID": f"native-balance-group-{index}",
+                "stratum": "delegation",
+                "selectionScore": {"overall": float(index)},
+            }
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": f"Native balance item {index}"},
+                {
+                    "role": "assistant",
+                    "content": " ".join("x" for _ in range(target_words)),
+                },
+            ],
+            "metadata": metadata,
+        }
+
+    native = sft(
+        1,
+        source_family=FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+        task_type=FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+        target_words=560,
+    )
+    internal = sft(
+        2,
+        source_family=ULTRA_SPECIFIC_SOURCE_FAMILY,
+        task_type="fleet_contract_delegation",
+        target_words=400,
+    )
+    public = [
+        sft(
+            100 + index,
+            source_family="public_adapter_corpus_test",
+            task_type="public_capability_delegation",
+            target_words=20,
+            public=True,
+        )
+        for index in range(10)
+    ]
+    finalized = _finalize_fleet_optimizer_lane(
+        [native, internal, *public],
+        lane="sft",
+        config=FineTuningDatasetConfig(max_public_corpus_token_share=0.35),
+    )
+    repeated = _finalize_fleet_optimizer_lane(
+        list(reversed(finalized)),
+        lane="sft",
+        config=FineTuningDatasetConfig(max_public_corpus_token_share=0.35),
+    )
+    assert finalized == repeated
+    assert native in finalized
+    assert internal in finalized
+    assert 0 < sum(record in finalized for record in public) < len(public)
+    total = sum(
+        _source_token_proxy_count(record["messages"][-1]["content"])
+        for record in finalized
+    )
+    native_tokens = _source_token_proxy_count(
+        native["messages"][-1]["content"]
+    )
+    assert native_tokens * 10_000 >= total * (
+        FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS
+    )
+    assert native_tokens * 10_000 <= total * (
+        FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="source-proxy share exceeds its safety maximum",
+    ):
+        _finalize_fleet_optimizer_lane(
+            [
+                sft(
+                    500,
+                    source_family=FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+                    task_type=FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+                    target_words=700,
+                ),
+                sft(
+                    501,
+                    source_family=ULTRA_SPECIFIC_SOURCE_FAMILY,
+                    task_type="fleet_contract_delegation",
+                    target_words=300,
+                ),
+            ],
+            lane="sft",
+            config=FineTuningDatasetConfig(),
+        )
+
+    missing_commit = copy.deepcopy([native, internal])
+    missing_commit[1]["metadata"].pop("manifestCommit")
+    mixed_commits = copy.deepcopy([native, internal])
+    mixed_commits[1]["metadata"]["manifestCommit"] = "b" * 40
+    malformed_commit = copy.deepcopy([native, internal])
+    for record in malformed_commit:
+        record["metadata"]["manifestCommit"] = "not-a-commit"
+    for invalid_lineage in (
+        missing_commit,
+        mixed_commits,
+        malformed_commit,
+    ):
+        with pytest.raises(
+            ValueError,
+            match="canonical 40-character lowercase hexadecimal manifestCommit",
+        ):
+            _finalize_fleet_optimizer_lane(
+                invalid_lineage,
+                lane="sft",
+                config=FineTuningDatasetConfig(),
+            )
+
+
 def test_fleet_optimizer_finalization_repairs_post_split_concentration_only() -> None:
     def sft(
         index: int,
@@ -8179,6 +8337,117 @@ def test_fleet_dpo_public_cap_uses_chosen_loss_not_rejected_length() -> None:
     ) == chosen_prefilter
 
 
+def test_comprehensive_fleet_tool_ownership_sft_covers_every_non_holdout_tool(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    anchors = _comprehensive_fleet_tool_ownership_sft_anchors(
+        manifest,
+        list(manifest.tools),
+    )
+    expected_tool_ids = {
+        tool.id for tool in manifest.tools if tool.id != "maps.search"
+    }
+    assert len(anchors) == (
+        len(expected_tool_ids)
+        * FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES
+    )
+    assert Counter(
+        record["metadata"]["targetToolID"] for record in anchors
+    ) == Counter(
+        {
+            tool_id: FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES
+            for tool_id in expected_tool_ids
+        }
+    )
+    assert len(
+        {
+            _canonical_rendered_prompt_key(record, lane="sft")
+            for record in anchors
+        }
+    ) == len(anchors)
+    bound_anchors = _bind_fleet_sft_contract(manifest, anchors)
+    assert len(bound_anchors) == len(anchors)
+    for record in bound_anchors:
+        user = record["messages"][-2]["content"]
+        assert user.endswith(
+            f"\n\n{FLEET_TOOL_OWNERSHIP_OUTPUT_CONTRACT}"
+        )
+        assert user.count(FLEET_TOOL_OWNERSHIP_OUTPUT_CONTRACT) == 1
+    expected_prompt_keys = {
+        _canonical_rendered_prompt_key(record, lane="sft")
+        for record in bound_anchors
+    }
+    fleet = fine_tuning["fleet"]
+    compiled_lanes = {
+        "root": fleet.train_sft,
+        **{
+            name: variant["train_sft"]
+            for name, variant in fleet.experiment_variants.items()
+        },
+    }
+    for lane_name, lane_records in compiled_lanes.items():
+        compiled_anchors = [
+            record
+            for record in lane_records
+            if record["metadata"].get("curriculumMode")
+            == "comprehensive_tool_ownership_sft_matrix"
+        ]
+        assert len(compiled_anchors) == len(bound_anchors), lane_name
+        assert {
+            _canonical_rendered_prompt_key(record, lane="sft")
+            for record in compiled_anchors
+        } == expected_prompt_keys, lane_name
+    executor_slot_id = next(
+        slot.id for slot in manifest.fleet.slots if slot.role == "tool_executor"
+    )
+    planning_slot_id = next(
+        slot.id for slot in manifest.fleet.slots if slot.role == "orchestrator"
+    )
+    response_slot_id = next(
+        slot.id for slot in manifest.fleet.slots if slot.role == "user_response"
+    )
+    for record in anchors:
+        metadata = record["metadata"]
+        payload = json.loads(record["messages"][-1]["content"])
+        tool_id = metadata["targetToolID"]
+        assert metadata["requiredSplit"] == "train"
+        assert metadata["sourceFamily"] == ULTRA_SPECIFIC_SOURCE_FAMILY
+        assert metadata["taskType"] == "fleet_contract_tool_ownership"
+        assert metadata["toolIDs"] == [tool_id]
+        assert set(metadata["toolContracts"]) == {tool_id}
+        assert payload == {
+            "executionOwnerSlotID": executor_slot_id,
+            "planningOwnerSlotID": planning_slot_id,
+            "responseOwnerSlotID": response_slot_id,
+            "toolID": tool_id,
+        }
+        assert "knownSlots" not in record["messages"][-1]["content"]
+        assert "knownSlotIDs" not in record["messages"][-1]["content"]
+
+
+def test_comprehensive_fleet_tool_ownership_requires_authoritative_owners() -> None:
+    manifest = AgentBehaviorManifest.model_validate(
+        {
+            "sourceIntegrity": {"baseCommit": "a" * 40},
+            "fleet": {
+                "slots": [
+                    {"id": "rem", "role": "idle_reflection"},
+                    {"id": "embedding", "role": "embedding"},
+                ]
+            },
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "manifested semantic owners: cortex, executor, mouth"
+        ),
+    ):
+        _comprehensive_fleet_tool_ownership_sft_anchors(manifest, [])
+
+
 def test_fleet_curriculum_materializes_exact_slot_and_boundary_contracts(
     compiled_fine_tuning: tuple,
 ) -> None:
@@ -8538,19 +8807,47 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
     }
     assert "fleet_orchestration_eval_coverage_missing" not in validation_codes
     assert "fleet_orchestration_eval_requirement_missing" not in validation_codes
-    fleet_optimizer_sft_lanes = [
-        fleet.train_sft,
-        *(
-            variant["train_sft"]
-            for variant in fleet.experiment_variants.values()
-        ),
-    ]
-    for optimizer_sft in fleet_optimizer_sft_lanes:
+    fleet_optimizer_sft_lanes = {
+        "root": fleet.train_sft,
+        **{
+            name: variant["train_sft"]
+            for name, variant in fleet.experiment_variants.items()
+        },
+    }
+    assert set(fleet_optimizer_sft_lanes) == {
+        "root",
+        "internal_only",
+        "internal_plus_public_baseline",
+        "internal_plus_public_optimized",
+    }
+    for lane_name, optimizer_sft in fleet_optimizer_sft_lanes.items():
         assert FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES <= {
             record["metadata"]["taskType"]
             for record in optimizer_sft
             if record["metadata"]["sourceFamily"] == "cross_model_training"
         }
+        total = sum(
+            _source_token_proxy_count(record["messages"][-1]["content"])
+            for record in optimizer_sft
+        )
+        native = sum(
+            _source_token_proxy_count(record["messages"][-1]["content"])
+            for record in optimizer_sft
+            if record["metadata"].get("sourceFamily")
+            == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+            and record["metadata"].get("taskType")
+            == FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE
+        )
+        assert total > 0, lane_name
+        assert native > 0, lane_name
+        assert native * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR >= (
+            total
+            * FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS
+        ), lane_name
+        assert native * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR <= (
+            total
+            * FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS
+        ), lane_name
     assert {
         record["metadata"]["taskType"]
         for record in fleet.val_sft
