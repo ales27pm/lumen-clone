@@ -711,7 +711,7 @@ def test_gate_rejects_a_prepared_config_change_on_resume(
         gate.run_gate(run_root, ("cortex",))
 
 
-def test_aio_launcher_orders_real_smoke_after_prepare_only_before_converter_and_training() -> None:
+def test_aio_launcher_orders_real_smoke_before_prepare_only_converter_and_training() -> None:
     launcher = (
         REPO_ROOT / "scripts" / "ubuntu_train_lumen_adapters_aio.sh"
     ).read_text(encoding="utf-8")
@@ -722,7 +722,7 @@ def test_aio_launcher_orders_real_smoke_after_prepare_only_before_converter_and_
     converter = launcher.index('CONVERTER_REPO=""')
     training = launcher.index('for agent in "${AGENTS[@]}"; do')
 
-    assert prepare_only < smoke < converter < training
+    assert smoke < prepare_only < converter < training
     invocation = launcher[smoke : launcher.index(")\n", smoke)]
     assert "--run-root" in invocation
     assert "--agents" in invocation

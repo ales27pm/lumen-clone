@@ -2294,6 +2294,7 @@ def _runtime_lineage(
     config["resolvedTrainingEnvironment"] = None
     config["resolvedTrainingEnvironmentSHA256"] = None
     config["resolvedTrainingEnvironmentScanAudit"] = None
+    config["resolvedTrainingEnvironmentCacheAttestation"] = None
     config["spaceConfigurationSHA256"] = None
     config["zeroGPUSize"] = None
     config["zeroGPUDurationSeconds"] = None
@@ -3475,6 +3476,10 @@ def prepare_run(
         config["runExecutionPlan"] = prepared_execution_plan
         config.update(runtime_source)
         config.update(integrity_fields)
+        # A ZeroGPU cache HMAC is an ephemeral remote authorization artifact,
+        # never local Ubuntu runtime lineage. Persist an explicit null so the
+        # exact loader contract is complete without reusing remote authority.
+        config["resolvedTrainingEnvironmentCacheAttestation"] = None
         for key in (
             "resolvedTrainingEnvironment",
             "resolvedTrainingEnvironmentSHA256",
@@ -11970,6 +11975,12 @@ def main() -> None:
                     run_root=resolved_run_root,
                     agents=agents,
                 )
+                runtime_binding_smoke = (
+                    _verified_runtime_binding_smoke_summary_evidence(
+                        resolved_run_root,
+                        agents,
+                    )
+                )
                 input_closure.verify_unchanged()
                 input_closure_sha256 = input_closure.inventory_sha256
                 input_closure_entry_count = len(input_closure.inventory)
@@ -11990,6 +12001,9 @@ def main() -> None:
                 "observedAccelerator": prepared["observedAccelerator"],
                 "globalPreflightSHA256": global_preflight[
                     "globalPreflightSHA256"
+                ],
+                "runtimeBindingSmokeGateSHA256": runtime_binding_smoke[
+                    "runtimeBindingSmokeGateSHA256"
                 ],
                 "tokenizerClosureSHA256": global_preflight[
                     "tokenizerClosure"

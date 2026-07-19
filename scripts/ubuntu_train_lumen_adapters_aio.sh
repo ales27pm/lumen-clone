@@ -384,12 +384,6 @@ log "running one tokenizer-only preflight across all requested agents"
     --agents "$AGENTS_CSV"
 )
 
-if [[ "$PREPARE_ONLY" == "1" ]]; then
-  log "prepared run manifest: $RUN_ROOT/aio_run_manifest.json"
-  log "global tokenizer preflight audit: $RUN_ROOT/training/global_tokenizer_preflight.json"
-  exit 0
-fi
-
 # Exercise the exact private model/tokenizer view through the real pinned
 # Unsloth loader before fetching converter code or creating PEFT/trainer state.
 # The helper groups agents only when every runtime-load input is identical and
@@ -402,6 +396,12 @@ log "running the real Unsloth runtime-binding smoke gate"
     --agents "$AGENTS_CSV"
 )
 log "runtime-binding smoke audit: $RUN_ROOT/training/runtime_binding_smoke.json"
+
+if [[ "$PREPARE_ONLY" == "1" ]]; then
+  log "prepared run manifest: $RUN_ROOT/aio_run_manifest.json"
+  log "global tokenizer preflight audit: $RUN_ROOT/training/global_tokenizer_preflight.json"
+  exit 0
+fi
 
 CONVERTER_REPO=""
 CONVERTER_STAGING=""
