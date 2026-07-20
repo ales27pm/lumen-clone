@@ -679,6 +679,23 @@ def _executor_optimization_config(
     }
 
 
+def test_fleet_variant_optimizer_policy_matches_shared_epoch_contract() -> None:
+    expected = expected_optimization_step_policy(
+        agent="fleet",
+        sft_train_record_count=512,
+        dpo_train_record_count=348,
+    )
+    observed = ubuntu_pipeline._expected_variant_optimization_policy(
+        agent="fleet",
+        sft_train_record_count=512,
+        dpo_train_record_count=348,
+    )
+
+    assert observed == expected
+    assert observed["sft"]["baseEpochs"] == 6
+    assert observed["dpo"]["baseEpochs"] == 2
+
+
 def test_variant_optimizer_overlay_is_exact_and_type_safe() -> None:
     base = _executor_optimization_config(sft_count=128, dpo_count=32)
     controlled = _executor_optimization_config(sft_count=96, dpo_count=16)

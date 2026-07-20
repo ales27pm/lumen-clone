@@ -3871,6 +3871,16 @@ def _score_orchestration_graph(metric: Mapping[str, Any], parsed: Any) -> dict[s
         return _metric_result(
             "orchestration_graph", False, event_schema_reason
         )
+    if contract.get("requiresCanonicalDerivation") is True:
+        expected_event_ids = [
+            f"{graph['scenarioID']}::event::{index:02d}"
+            for index in range(1, len(events) + 1)
+        ]
+        candidate_event_ids = [str(event["id"]) for event in events]
+        if candidate_event_ids != expected_event_ids:
+            return _metric_result(
+                "orchestration_graph", False, "event_id_grammar_mismatch"
+            )
 
     known_slots = set(expected_known_slots)
     delegated = _string_values(

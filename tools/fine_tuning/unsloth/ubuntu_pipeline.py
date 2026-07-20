@@ -2040,14 +2040,18 @@ def _expected_variant_optimization_policy(
     high_reasoning = agent in {"cortex", "executor", "rem"}
     base_epochs = {
         "sft": (
-            3
-            if agent in {"cortex", "fleet"}
+            6
+            if agent == "fleet"
+            else 3
+            if agent == "cortex"
             else 2
             if high_reasoning
             else 1
         ),
         "dpo": (
-            1
+            2
+            if agent == "fleet"
+            else 1
             if agent == "cortex"
             else 2
             if high_reasoning

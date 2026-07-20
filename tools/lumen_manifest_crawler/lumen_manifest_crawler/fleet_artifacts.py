@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,7 +20,18 @@ ORCHESTRATION_DERIVATION_SCHEMA_VERSION = (
 )
 ORCHESTRATION_EVENT_ID_GRAMMAR = "<scenarioID>::event::<one-based two-digit order>"
 ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT = "behavior-conditioned"
-ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS = 4
+ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS = 8
+ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS = 5
+ORCHESTRATION_ATOMIC_MUTATION_KINDS = (
+    "aggregation_owner_type",
+    "event_type_vocabulary",
+    "event_omission",
+    "event_order",
+    "event_id_grammar",
+    "dependency_endpoint_reference",
+    "event_payload_schema",
+    "delegated_slot_contract",
+)
 ORCHESTRATION_OUTPUT_INTERFACE = (
     "Canonical output interface: the top-level keys are exactly `decision`, "
     "`dependencies`, `events`, `graphSchemaVersion`, `knownSlotIDs`, and "
@@ -347,7 +359,11 @@ def _orchestration_policy_conditions(
         for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
             conditions[key] = True
     elif training_variant == "core":
-        pass
+        # The optimizer-visible core example teaches the same canonical
+        # behavior topology as the frozen evaluation contract. Its request
+        # facts and identifiers remain independently generated below.
+        for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
+            conditions[key] = True
     elif training_variant is None:
         for key in _HOLDOUT_POLICY_CONDITION_BY_BEHAVIOR.get(behavior, ()):
             conditions[key] = True
@@ -1320,8 +1336,9 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             **_native_orchestration_metadata(manifest, scenario["id"]),
             "behaviorClass": scenario["behaviorClass"],
             "trainingMatrixVariant": scenario["trainingMatrixVariant"],
-            # Core and four independent behavior-conditioned instances are
-            # optimizer-visible. The combined wrapper remains validation-only:
+            # Core and five independent behavior-conditioned instances are
+            # SFT optimizer-visible; all eight conditioned instances remain
+            # DPO-visible. The combined wrapper remains validation-only:
             # its extra stages and suffixed decision
             # literals must not outweigh the canonical behavior topology.
             # Frozen facts, prompts, IDs, and exact graphs remain unseen.
@@ -1341,6 +1358,8 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             "canonicalDerivationSHA256": canonical_sha256(derivation),
         }
         atomic_mutation = scenario.get("atomicPreferenceMutation")
+        sft_optimizer_visible = scenario.get("sftOptimizerVisible", True) is True
+        metadata["sftOptimizerVisible"] = sft_optimizer_visible
         if isinstance(atomic_mutation, str):
             metadata["atomicPreferenceMutation"] = atomic_mutation
             metadata["behaviorConditionedInstanceIndex"] = scenario[
@@ -1349,42 +1368,103 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             metadata["topologyCoverageMode"] = (
                 "trained_policy_topology_unseen_frozen_instance"
             )
-        records.append({
-            "id": _record_id("orchestration-sft", scenario["id"]),
-            "schemaVersion": "2.1.0",
-            "recordType": "sft",
-            "sourceFamily": "fleet_orchestration_native",
-            "agentRole": "fleet",
-            "taskType": "fleet_orchestration_event_graph",
-            "messages": [
-                *base_prompt,
-                {
-                    "role": "assistant",
-                    "content": json.dumps(scenario["graph"], ensure_ascii=False, sort_keys=True),
-                },
-            ],
-            "metadata": metadata,
-        })
+        if sft_optimizer_visible:
+            records.append({
+                "id": _record_id("orchestration-sft", scenario["id"]),
+                "schemaVersion": "2.1.0",
+                "recordType": "sft",
+                "sourceFamily": "fleet_orchestration_native",
+                "agentRole": "fleet",
+                "taskType": "fleet_orchestration_event_graph",
+                "messages": [
+                    *base_prompt,
+                    {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            scenario["graph"],
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                    },
+                ],
+                "metadata": metadata,
+            })
         rejected_graph = scenario.get("rejectedGraph")
         if isinstance(rejected_graph, dict):
+            preference_scenario = _orchestration_preference_scenario(scenario)
+            preference_derivation = preference_scenario[
+                "canonicalDerivation"
+            ]
+            if (
+                _derive_orchestration_graph_from_contract(
+                    preference_derivation
+                )
+                != preference_scenario["graph"]
+            ):
+                raise ValueError(
+                    "Fleet preference derivation does not uniquely rebuild graph: "
+                    f"{preference_scenario['id']}"
+                )
+            preference_prompt = [
+                base_prompt[0],
+                {
+                    "role": "user",
+                    "content": _orchestration_training_prompt(
+                        preference_scenario,
+                        preference_derivation,
+                    ),
+                },
+            ]
+            preference_metadata = {
+                **metadata,
+                **_native_orchestration_metadata(
+                    manifest,
+                    preference_scenario["id"],
+                ),
+                "trainingTopologySHA256": canonical_sha256(
+                    _orchestration_topology_contract(
+                        preference_scenario["graph"]
+                    )
+                ),
+                "canonicalDerivationSHA256": canonical_sha256(
+                    preference_derivation
+                ),
+                "preferenceSourceScenarioID": scenario["id"],
+                "sftAnchorScenarioID": (
+                    scenario["id"]
+                    if sft_optimizer_visible
+                    else scenario["behaviorClass"]
+                ),
+            }
             records.append({
-                "id": _record_id("orchestration-dpo", scenario["id"]),
+                "id": _record_id(
+                    "orchestration-dpo",
+                    preference_scenario["id"],
+                ),
                 "schemaVersion": "2.1.0",
                 "recordType": "dpo",
                 "sourceFamily": "fleet_orchestration_native",
                 "agentRole": "fleet",
                 "taskType": "fleet_orchestration_event_graph_preference",
-                "prompt": base_prompt,
+                "prompt": preference_prompt,
                 "chosen": {
                     "role": "assistant",
-                    "content": json.dumps(scenario["graph"], ensure_ascii=False, sort_keys=True),
+                    "content": json.dumps(
+                        preference_scenario["graph"],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
                 },
                 "rejected": {
                     "role": "assistant",
-                    "content": json.dumps(rejected_graph, ensure_ascii=False, sort_keys=True),
+                    "content": json.dumps(
+                        preference_scenario["rejectedGraph"],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
                 },
                 "metadata": {
-                    **metadata,
+                    **preference_metadata,
                     "preferenceType": "manifest_grounded_orchestration",
                     "lesson": scenario["preferenceLesson"],
                 },
@@ -1402,6 +1482,243 @@ def _orchestration_training_prompt(
         scenario,
         derivation or _orchestration_derivation_contract(scenario),
     )
+
+
+_PREFERENCE_PRESERVED_FACT_KEYS = {
+    "approvalState",
+    "availableResultSlots",
+    "permissionKey",
+    "permissionState",
+    "requestSituation",
+    "toolIdentifier",
+    "trustedEvidenceStatus",
+    "workOwnerSlot",
+}
+
+_PREFERENCE_NATURAL_FACT_QUALIFIERS = (
+    "active",
+    "authorized",
+    "available",
+    "bounded",
+    "confirmed",
+    "current",
+    "grounded",
+    "observed",
+    "ready",
+    "registered",
+    "resolved",
+    "reviewed",
+    "selected",
+    "trusted",
+    "validated",
+    "verified",
+)
+
+
+def _preference_natural_fact_alias(source: str) -> str:
+    """Map one training literal into a varied, lane-neutral fact identity."""
+
+    digest = canonical_sha256(
+        {
+            "schemaVersion": "lumen.fleet-preference-natural-fact/1.0.0",
+            "source": source,
+        }
+    )
+    qualifier = _PREFERENCE_NATURAL_FACT_QUALIFIERS[
+        int(digest[:8], 16) % len(_PREFERENCE_NATURAL_FACT_QUALIFIERS)
+    ]
+    cleaned = re.sub(
+        r"(?:--)?behavior-conditioned--instance-[0-9]+",
+        "",
+        source,
+    )
+    cleaned = re.sub(r"^train(?:[-_]?[0-9]+)?[-_]?", "", cleaned)
+    cleaned = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", cleaned)
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", cleaned).strip("-").casefold()
+    return f"{qualifier}-{slug or 'request-fact'}-{digest[:6]}"
+
+
+def _preference_training_facts(
+    source: Any,
+    *,
+    known_slots: set[str],
+    key: str | None = None,
+) -> Any:
+    if isinstance(source, dict):
+        return {
+            child_key: _preference_training_facts(
+                child,
+                known_slots=known_slots,
+                key=child_key,
+            )
+            for child_key, child in source.items()
+        }
+    if isinstance(source, list):
+        return [
+            _preference_training_facts(
+                child,
+                known_slots=known_slots,
+                key=key,
+            )
+            for child in source
+        ]
+    if (
+        isinstance(source, str)
+        and key not in _PREFERENCE_PRESERVED_FACT_KEYS
+        and source not in known_slots
+    ):
+        return _preference_natural_fact_alias(source)
+    return source
+
+
+def _preference_graph_replacements(
+    source: Any,
+    rebound: Any,
+    *,
+    key: str | None = None,
+) -> dict[str, str]:
+    """Bind exact chosen fact changes into a structurally different negative."""
+
+    if isinstance(source, dict) and isinstance(rebound, dict):
+        replacements: dict[str, str] = {}
+        for child_key in source.keys() & rebound.keys():
+            if child_key in {
+                "fromEventID",
+                "id",
+                "scenarioID",
+                "toEventID",
+            }:
+                continue
+            replacements.update(
+                _preference_graph_replacements(
+                    source[child_key],
+                    rebound[child_key],
+                    key=child_key,
+                )
+            )
+        return replacements
+    if isinstance(source, list) and isinstance(rebound, list):
+        replacements = {}
+        if len(source) != len(rebound):
+            return replacements
+        for left, right in zip(source, rebound, strict=True):
+            replacements.update(
+                _preference_graph_replacements(left, right, key=key)
+            )
+        return replacements
+    if (
+        isinstance(source, str)
+        and isinstance(rebound, str)
+        and source != rebound
+    ):
+        return {source: rebound}
+    return {}
+
+
+def _replace_prompt_string_values(
+    prompt: str,
+    replacements: dict[str, str],
+) -> str:
+    """Replace original prompt literals once without rewriting inserted values."""
+
+    selected = {
+        source: target
+        for source, target in replacements.items()
+        if source and source != target
+    }
+    if not selected:
+        return prompt
+    pattern = re.compile(
+        "|".join(
+            re.escape(source)
+            for source in sorted(selected, key=lambda value: (-len(value), value))
+        )
+    )
+    return pattern.sub(lambda match: selected[match.group(0)], prompt)
+
+
+def _orchestration_preference_scenario(
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a DPO-only prompt/answer instance disjoint from every SFT anchor."""
+
+    scenario = json.loads(json.dumps(source, ensure_ascii=False))
+    source_id = str(source["id"])
+    # Wrapper derivations intentionally bind an exact matrix identity. Their
+    # DPO instance remains disjoint through independently rebound facts while
+    # core/conditioned instances can also use a separate scenario identity.
+    preference_id = (
+        source_id
+        if scenario.get("trainingMatrixVariant")
+        in {"normalized-intake", "policy-audited", "normalization-policy-audited"}
+        else _preference_natural_fact_alias(source_id)
+    )
+    chosen = scenario["graph"]
+    preference_derivation = json.loads(
+        json.dumps(scenario["canonicalDerivation"], ensure_ascii=False)
+    )
+    preference_derivation["scenarioID"] = preference_id
+    facts = preference_derivation.get("facts")
+    if not isinstance(facts, dict):
+        raise ValueError("Fleet preference derivation facts are missing")
+    preference_derivation["facts"] = _preference_training_facts(
+        facts,
+        known_slots=set(chosen["knownSlotIDs"]),
+    )
+    preference_graph = _derive_orchestration_graph_from_contract(
+        preference_derivation
+    )
+    replacements = _preference_graph_replacements(
+        chosen,
+        preference_graph,
+    )
+
+    atomic_mutation = scenario.get("atomicPreferenceMutation")
+    if isinstance(atomic_mutation, str):
+        try:
+            mutation_index = ORCHESTRATION_ATOMIC_MUTATION_KINDS.index(
+                atomic_mutation
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"Unknown Fleet atomic preference mutation: {atomic_mutation}"
+            ) from exc
+        preference_rejected = _atomic_orchestration_rejection(
+            preference_graph,
+            mutation_index=mutation_index,
+        )
+    else:
+        preference_rejected = _replace_exact_string_values(
+            scenario["rejectedGraph"],
+            replacements,
+        )
+        preference_rejected["scenarioID"] = preference_id
+        preference_rejected = _canonicalize_orchestration_event_ids(
+            preference_rejected
+        )
+
+    preference_prompt = _replace_prompt_string_values(
+        str(scenario["prompt"]),
+        {
+            **replacements,
+            source_id: preference_id,
+        },
+    )
+
+    scenario.update(
+        {
+            "id": preference_id,
+            "prompt": preference_prompt,
+            "graph": preference_graph,
+            "rejectedGraph": preference_rejected,
+            "canonicalDerivation": preference_derivation,
+            "evalConstraints": _replace_exact_string_values(
+                scenario["evalConstraints"],
+                replacements,
+            ),
+        }
+    )
+    return scenario
 
 
 def _orchestration_scenarios(manifest: AgentBehaviorManifest) -> list[dict[str, Any]]:  # NOSONAR
@@ -1747,10 +2064,14 @@ def _orchestration_training_scenarios(
 
     matrix: list[dict[str, Any]] = []
     for behavior_index, scenario in enumerate(_orchestration_scenarios(manifest)):
-        scenario["canonicalDerivation"] = (
-            _training_orchestration_derivation_contract(scenario)
+        matrix.append(
+            _orchestration_training_variant(
+                manifest,
+                scenario,
+                variant="core",
+                boundary_value_index=0,
+            )
         )
-        matrix.append(scenario)
         for replica_index in range(ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS):
             matrix.append(
                 _orchestration_training_variant(
@@ -1787,17 +2108,22 @@ def _orchestration_training_variant(
 ) -> dict[str, Any]:
     scenario = json.loads(json.dumps(source, ensure_ascii=False))
     behavior_class = str(source["behaviorClass"])
+    is_core = variant == "core"
     replica_suffix = (
         f"--instance-{replica_index + 1:02d}"
         if replica_index is not None
         else ""
     )
-    scenario_id = f"{behavior_class}--{variant}{replica_suffix}"
+    scenario_id = (
+        behavior_class
+        if is_core
+        else f"{behavior_class}--{variant}{replica_suffix}"
+    )
     event_namespace = f"train-{behavior_class}-{variant}{replica_suffix}"
     request_id = (
         None
         if (
-            variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+            variant in {"core", ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT}
             and behavior_class == "context-handoff"
         )
         else f"{event_namespace}-request"
@@ -1815,6 +2141,16 @@ def _orchestration_training_variant(
     )
     if replacements:
         scenario = _replace_exact_string_values(scenario, replacements)
+    if variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT:
+        if replica_index is None:
+            raise ValueError(
+                "Behavior-conditioned Fleet instances require a replica index"
+            )
+        scenario = _vary_behavior_conditioned_training_facts(
+            scenario,
+            behavior=behavior_class,
+            replica_index=replica_index,
+        )
     scenario["id"] = scenario_id
     scenario["behaviorClass"] = behavior_class
     scenario["trainingMatrixVariant"] = variant
@@ -1823,11 +2159,21 @@ def _orchestration_training_variant(
         instance_binding = (
             f"Use matrix instance `{scenario_id}`, request identifier `{request_id}`."
         )
+    scenario_prompt = str(scenario["prompt"])
+    if variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT:
+        if replica_index is None:
+            raise ValueError(
+                "Behavior-conditioned Fleet prompt requires a replica index"
+            )
+        scenario_prompt = _behavior_conditioned_training_prompt(
+            scenario_prompt,
+            replica_index=replica_index,
+        )
     scenario["prompt"] = (
-        f"{scenario['prompt']} {instance_binding} "
+        f"{scenario_prompt} {instance_binding} "
         + (
-            "Apply only the enabled behavior-class conditions; normalization and policy audit are disabled."
-            if variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+            "Apply the enabled canonical behavior-class conditions; normalization and policy audit are disabled."
+            if variant in {"core", ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT}
             else (
                 "Normalize the request before applying the behavior-class policy."
                 if variant == "normalized-intake"
@@ -1851,12 +2197,19 @@ def _orchestration_training_variant(
         conditions=policy_conditions,
         request_id=request_id,
     )
+    conditioned_facts = scenario.pop("_conditionedSemanticFacts", None)
+    if isinstance(conditioned_facts, dict):
+        derivation_facts["behaviorInstanceFacts"] = conditioned_facts
     scenario["graph"] = _orchestration_training_variant_graph(
         scenario["graph"],
         scenario_id=scenario_id,
         event_namespace=event_namespace,
         request_id=request_id,
-        variant=variant,
+        variant=(
+            ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+            if is_core
+            else variant
+        ),
     )
     scenario["graph"] = _apply_training_policy_condition_support(
         scenario["graph"],
@@ -1875,11 +2228,14 @@ def _orchestration_training_variant(
             mutation_index=atomic_mutation_index,
         )
         scenario["behaviorConditionedInstanceIndex"] = replica_index + 1
+        scenario["sftOptimizerVisible"] = (
+            replica_index < ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS
+        )
         scenario["atomicPreferenceMutation"] = (
             _atomic_orchestration_mutation_kind(atomic_mutation_index)
         )
         scenario["preferenceLesson"] = (
-            "Prefer the exact behavior-conditioned schema over a one-leaf contract mutation."
+            "Prefer the exact behavior-conditioned schema over one atomic contract mutation."
         )
     elif isinstance(scenario.get("rejectedGraph"), dict):
         scenario["rejectedGraph"] = _orchestration_training_variant_graph(
@@ -1887,7 +2243,11 @@ def _orchestration_training_variant(
             scenario_id=scenario_id,
             event_namespace=f"{event_namespace}-negative",
             request_id=request_id,
-            variant=variant,
+            variant=(
+                ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+                if is_core
+                else variant
+            ),
         )
     scenario["canonicalDerivation"] = (
         _training_orchestration_derivation_contract(
@@ -1895,6 +2255,259 @@ def _orchestration_training_variant(
             facts=derivation_facts,
         )
     )
+    return scenario
+
+
+_BEHAVIOR_CONDITIONED_PROMPT_FRAMES = (
+    "Resolve this concrete Fleet state under the canonical policy: {request}",
+    "Given this operational state, derive the minimal Fleet graph: {request}",
+    "Apply the Fleet contract to the following situation: {request}",
+    "Construct the canonical orchestration outcome for this case: {request}",
+    "Use the manifest policy to resolve this request state: {request}",
+    "Derive the bounded Fleet event graph for this scenario: {request}",
+    "From these trusted conditions, produce the canonical Fleet route: {request}",
+    "Evaluate this Fleet situation and emit only its minimal policy graph: {request}",
+)
+
+_BEHAVIOR_CONDITIONED_REQUEST_SITUATIONS = {
+    "no-delegation": (
+        "current_document_already_answers",
+        "trusted_cache_entry_is_complete",
+        "verified_session_fact_is_sufficient",
+        "fresh_local_index_contains_answer",
+        "current_tool_observation_is_complete",
+        "validated_user_context_resolves_request",
+        "trusted_memory_record_is_sufficient",
+        "current_manifest_fact_answers_directly",
+    ),
+    "sequential-dependencies": (
+        "account_lookup_requires_grounded_reply",
+        "calendar_read_requires_planned_execution",
+        "file_query_requires_verified_observation",
+        "contact_search_requires_tool_grounding",
+        "mail_lookup_requires_ordered_handoff",
+        "reminder_read_requires_observation_check",
+        "location_query_requires_verified_result",
+        "document_metadata_requires_grounded_render",
+    ),
+    "parallel-dependencies": (
+        "tool_result_and_tone_profile_are_independent",
+        "factual_lookup_and_locale_style_can_run_together",
+        "execution_and_voice_analysis_are_parallelizable",
+        "data_retrieval_and_register_selection_are_independent",
+        "tool_observation_and_language_style_can_fan_out",
+        "action_result_and_tone_evidence_can_run_concurrently",
+        "grounding_and_style_profile_are_separate_branches",
+        "execution_evidence_and_response_style_can_be_joined",
+    ),
+    "context-handoff": (
+        "approved_calendar_action_needs_minimal_context",
+        "approved_file_action_needs_bounded_arguments",
+        "approved_contact_action_excludes_transcript",
+        "approved_mail_action_excludes_peer_state",
+        "approved_reminder_action_excludes_reasoning",
+        "approved_location_action_uses_validated_fields",
+        "approved_document_action_uses_least_context",
+        "approved_tool_action_preserves_private_boundaries",
+    ),
+    "duplicate-suppression": (
+        "two_branches_request_same_calendar_read",
+        "two_branches_request_same_file_fetch",
+        "two_branches_request_same_contact_lookup",
+        "two_branches_request_same_reminder_read",
+        "two_branches_request_same_mail_lookup",
+        "two_branches_request_same_location_query",
+        "two_branches_request_same_document_fetch",
+        "two_branches_request_same_tool_observation",
+    ),
+    "aggregation-owner": (
+        "tool_and_style_results_are_ready",
+        "observation_and_locale_profile_are_ready",
+        "execution_and_tone_results_are_verified",
+        "factual_and_register_inputs_are_available",
+        "tool_evidence_and_voice_guidance_are_ready",
+        "grounded_result_and_style_contract_are_ready",
+        "observation_and_language_preference_are_ready",
+        "executor_and_mimicry_outputs_are_ready",
+    ),
+    "approval-boundary": (
+        "destructive_action_has_no_user_approval",
+        "external_write_is_waiting_for_consent",
+        "account_mutation_lacks_confirmation",
+        "message_send_requires_explicit_approval",
+        "calendar_change_is_not_yet_approved",
+        "file_mutation_is_waiting_for_consent",
+        "contact_change_lacks_user_confirmation",
+        "sensitive_action_must_pause_for_approval",
+    ),
+    "unavailable-boundary": (
+        "required_permission_is_denied",
+        "capability_access_is_unavailable",
+        "tool_permission_preflight_failed",
+        "protected_resource_access_is_denied",
+        "required_service_permission_is_missing",
+        "local_capability_cannot_be_accessed",
+        "permission_state_blocks_execution",
+        "requested_capability_is_not_available",
+    ),
+    "nonexistent-slot-negative": (
+        "requested_target_is_absent_from_directory",
+        "named_router_slot_is_not_manifested",
+        "requested_peer_identifier_is_unknown",
+        "target_component_is_outside_fleet_contract",
+        "requested_worker_is_not_in_slot_snapshot",
+        "named_specialist_has_no_manifest_entry",
+        "target_slot_fails_directory_membership",
+        "requested_delegate_is_not_a_known_slot",
+    ),
+}
+
+_SEQUENTIAL_CONTEXT_VARIANTS = (
+    (("taskIntent", "capabilityDirectory"), ("authorizedPlan", "argumentSchema"), ("verifiedObservation", "responsePolicy")),
+    (("goalStatement", "toolAvailability"), ("validatedSteps", "toolContract"), ("groundedResult", "userVisibleState")),
+    (("requestedOutcome", "routingConstraints"), ("approvedAction", "typedArguments"), ("trustedToolResult", "renderPolicy")),
+    (("actionObjective", "manifestCapabilities"), ("executionPlan", "permissionDecision"), ("validatedObservation", "answerContract")),
+    (("userGoal", "enabledToolSet"), ("boundedPlan", "approvalDecision"), ("groundingEvidence", "responseStyle")),
+    (("taskBrief", "executionBoundaries"), ("approvedProcedure", "inputSchema"), ("toolEvidence", "presentationPolicy")),
+    (("requestSummary", "availableOperations"), ("validatedOperation", "parameterContract"), ("observedOutcome", "responseBoundary")),
+    (("desiredResult", "routingPolicy"), ("authorizedAction", "toolSchema"), ("trustedOutcome", "userResponsePolicy")),
+)
+
+_PARALLEL_CONTEXT_VARIANTS = (
+    (("taskIntent", "capabilityDirectory"), ("authorizedToolTask", "toolBoundary"), ("toneEvidence", "localePreference"), ("joinedObservation", "styleContract")),
+    (("goalStatement", "slotAvailability"), ("validatedExecution", "argumentSchema"), ("voiceSignals", "languagePreference"), ("verifiedResult", "renderPolicy")),
+    (("requestedOutcome", "routingConstraints"), ("approvedAction", "toolContract"), ("registerEvidence", "localeProfile"), ("groundedObservation", "responseStyle")),
+    (("actionObjective", "manifestCapabilities"), ("executionPlan", "permissionDecision"), ("toneProfile", "languageChoice"), ("validatedToolResult", "styleGuide")),
+    (("userGoal", "enabledSlotSet"), ("boundedToolPlan", "approvalDecision"), ("voicePattern", "localeRule"), ("trustedEvidence", "presentationContract")),
+    (("taskBrief", "parallelBoundaries"), ("approvedProcedure", "inputSchema"), ("styleEvidence", "languageRule"), ("toolOutcome", "renderBoundary")),
+    (("requestSummary", "availablePeers"), ("validatedOperation", "parameterContract"), ("toneSignals", "localeContract"), ("observedOutcome", "responsePolicy")),
+    (("desiredResult", "fanoutPolicy"), ("authorizedAction", "toolSchema"), ("registerSignals", "languageProfile"), ("trustedOutcome", "adaptiveStyle")),
+)
+
+_HANDOFF_CONTEXT_VARIANTS = (
+    (("validatedPlan", "manifestToolReference", "typedArguments", "permissionDecision", "approvalDecision"), ("rawConversation", "peerPrivateState", "hiddenReasoning")),
+    (("approvedAction", "canonicalToolID", "validatedParameters", "permissionState", "approvalState"), ("conversationTranscript", "peerRuntimeState", "reasoningTrace")),
+    (("authorizedPlan", "manifestOperation", "boundedArguments", "permissionResult", "consentResult"), ("chatHistory", "peerMemorySnapshot", "chainOfThought")),
+    (("validatedAction", "toolDirectoryEntry", "typedInputs", "permissionCheck", "approvalCheck"), ("rawUserThread", "privatePeerContext", "internalDeliberation")),
+    (("approvedProcedure", "manifestToolID", "validatedFields", "permissionVerdict", "approvalVerdict"), ("fullTranscript", "peerHiddenState", "reasoningTokens")),
+    (("authorizedOperation", "toolContractID", "boundedInputs", "permissionOutcome", "consentOutcome"), ("conversationArchive", "peerRuntimeSnapshot", "internalReasoningTrace")),
+    (("validatedProcedure", "manifestCapabilityID", "typedFields", "permissionAuthorization", "approvalAuthorization"), ("rawDialogue", "peerPrivateMemory", "hiddenScratchpad")),
+    (("approvedToolPlan", "canonicalCapability", "validatedArguments", "permissionDecision", "approvalDecision"), ("conversationTranscript", "peerRuntimeSnapshot", "internalReasoningTrace")),
+)
+
+_DUPLICATE_WORK_KEYS = (
+    "train-calendar-read",
+    "train-file-fetch",
+    "train-contact-lookup",
+    "train-reminder-read",
+    "train-mail-lookup",
+    "train-location-query",
+    "train-document-fetch",
+    "train-tool-observation",
+)
+
+_AGGREGATION_CONTEXT_VARIANTS = (
+    ("verifiedToolEvidence", "toneProfile"),
+    ("groundedObservation", "localeStyle"),
+    ("validatedResult", "voiceContract"),
+    ("trustedToolOutcome", "registerGuide"),
+    ("verifiedExecution", "languageStyle"),
+    ("groundingEvidence", "responseVoice"),
+    ("observedResult", "presentationStyle"),
+    ("trustedObservation", "adaptiveStyleGuide"),
+)
+
+
+def _behavior_conditioned_training_prompt(
+    request: str,
+    *,
+    replica_index: int,
+) -> str:
+    return _BEHAVIOR_CONDITIONED_PROMPT_FRAMES[
+        replica_index % len(_BEHAVIOR_CONDITIONED_PROMPT_FRAMES)
+    ].format(request=request)
+
+
+def _vary_behavior_conditioned_training_facts(
+    source: dict[str, Any],
+    *,
+    behavior: str,
+    replica_index: int,
+) -> dict[str, Any]:
+    """Vary real request facts without changing the canonical graph topology."""
+
+    scenario = json.loads(json.dumps(source, ensure_ascii=False))
+    index = replica_index % ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS
+    situations = _BEHAVIOR_CONDITIONED_REQUEST_SITUATIONS.get(behavior)
+    if situations is None or len(situations) != ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS:
+        raise ValueError(f"Fleet behavior lacks semantic fact variants: {behavior}")
+    scenario["_conditionedSemanticFacts"] = {
+        "requestSituation": situations[index],
+    }
+    graph = scenario["graph"]
+
+    if behavior == "no-delegation":
+        _one_event(graph, "trusted_context_verified")["evidenceStatus"] = (
+            "complete" if index % 2 == 0 else "sufficient"
+        )
+    elif behavior == "sequential-dependencies":
+        contexts = _SEQUENTIAL_CONTEXT_VARIANTS[index]
+        for slot_id, context_keys in zip(
+            ("cortex", "executor", "mouth"),
+            contexts,
+            strict=True,
+        ):
+            _delegation_to(graph, slot_id)["contextKeys"] = list(context_keys)
+    elif behavior == "parallel-dependencies":
+        contexts = _PARALLEL_CONTEXT_VARIANTS[index]
+        for slot_id, context_keys in zip(
+            ("cortex", "executor", "mimicry", "mouth"),
+            contexts,
+            strict=True,
+        ):
+            _delegation_to(graph, slot_id)["contextKeys"] = list(context_keys)
+    elif behavior == "context-handoff":
+        allowed, excluded = _HANDOFF_CONTEXT_VARIANTS[index]
+        handoff = _delegation_to(graph, "executor")
+        handoff["contextKeys"] = list(allowed)
+        handoff["excludes"] = list(excluded)
+    elif behavior == "duplicate-suppression":
+        old_key = _one_event(graph, "delegate")["workKey"]
+        scenario = _replace_exact_string_values(
+            scenario,
+            {str(old_key): _DUPLICATE_WORK_KEYS[index]},
+        )
+    elif behavior == "aggregation-owner":
+        _delegation_to(graph, "mouth")["contextKeys"] = list(
+            _AGGREGATION_CONTEXT_VARIANTS[index]
+        )
+    elif behavior == "nonexistent-slot-negative":
+        old_slot = _one_event(graph, "request_received")["requestedSlotID"]
+        scenario = _replace_exact_string_values(
+            scenario,
+            {str(old_slot): f"train_unlisted_router_slot_{index + 1:02d}"},
+        )
+    elif behavior not in {"approval-boundary", "unavailable-boundary"}:
+        raise ValueError(f"Unknown Fleet semantic fact behavior: {behavior}")
+    # Context-key vocabulary is semantic, not an identity token. Bind it to
+    # this training instance so no frozen context literal is copied while the
+    # field meaning and list shape remain stable.
+    for event in scenario["graph"]["events"]:
+        for key in ("allowedContextKeys", "contextKeys", "excludes"):
+            values = event.get(key)
+            if isinstance(values, list):
+                event[key] = [
+                    f"train{index + 1}{value[:1].upper()}{value[1:]}"
+                    for value in values
+                ]
+    if behavior == "context-handoff":
+        handoff = _delegation_to(scenario["graph"], "executor")
+        scenario["evalConstraints"]["requiredContextKeys"] = list(
+            handoff["contextKeys"]
+        )
+        scenario["evalConstraints"]["forbiddenContextKeys"] = list(
+            handoff["excludes"]
+        )
     return scenario
 
 
@@ -1927,7 +2540,11 @@ def _training_boundary_replacements(
         return {}
     if not eligible:
         return {}
-    selected = eligible[min(boundary_value_index, len(eligible) - 1)]
+    # The frozen evaluation intentionally selects the final eligible tool.
+    # Cycle through the remaining real tools so additional replicas change
+    # boundary facts without leaking the holdout tool identity.
+    training_eligible = eligible[:-1] if len(eligible) > 1 else eligible
+    selected = training_eligible[boundary_value_index % len(training_eligible)]
     replacements = {old_tool_id: selected.id}
     old_permission_key = next(
         (
@@ -2114,13 +2731,13 @@ def _atomic_orchestration_rejection(
     *,
     mutation_index: int,
 ) -> dict[str, Any]:
-    """Return a scorer-invalid graph differing in exactly one JSON leaf."""
+    """Return a scorer-invalid graph changing one isolated contract dimension."""
 
     graph = json.loads(json.dumps(source, ensure_ascii=False))
-    mutation = mutation_index % 4
-    if mutation == 0:
+    mutation_kind = _atomic_orchestration_mutation_kind(mutation_index)
+    if mutation_kind == "aggregation_owner_type":
         graph["decision"]["aggregationOwnerSlotID"] = "null"
-    elif mutation == 1:
+    elif mutation_kind == "event_type_vocabulary":
         mutable_events = [
             event
             for event in graph["events"]
@@ -2129,26 +2746,294 @@ def _atomic_orchestration_rejection(
         if not mutable_events:
             raise ValueError("Atomic Fleet rejection lacks a behavior event")
         mutable_events[0]["type"] = "invented_event_alias"
-    elif mutation == 2:
-        graph["decision"]["strategy"] = "invented_strategy"
-    else:
-        graph["decision"]["stopReason"] = "invented_stop_reason"
-    differences = _orchestration_scalar_leaf_differences(source, graph)
-    if len(differences) != 1:
-        raise ValueError(
-            "Atomic Fleet rejection must change exactly one scalar leaf: "
-            f"observed={differences}"
+    elif mutation_kind == "event_omission":
+        graph = _atomic_event_omission_rejection(graph)
+    elif mutation_kind == "event_order":
+        first, second = _atomic_event_order_indices(graph["events"])
+        first_id = graph["events"][first]["id"]
+        second_id = graph["events"][second]["id"]
+        first_body = dict(graph["events"][second])
+        second_body = dict(graph["events"][first])
+        first_body["id"] = first_id
+        second_body["id"] = second_id
+        graph["events"][first] = first_body
+        graph["events"][second] = second_body
+    elif mutation_kind == "event_id_grammar":
+        source_id = graph["events"][0]["id"]
+        replacement_id = "noncanonical_event_id"
+        if any(
+            event.get("id") == replacement_id
+            for event in graph["events"][1:]
+        ):
+            raise ValueError("Fleet chosen graph already uses the invalid event ID")
+        graph["events"][0]["id"] = replacement_id
+        for dependency in graph["dependencies"]:
+            for endpoint in ("fromEventID", "toEventID"):
+                if dependency.get(endpoint) == source_id:
+                    dependency[endpoint] = replacement_id
+    elif mutation_kind == "dependency_endpoint_reference":
+        dependency = graph["dependencies"][-1]
+        replacement_endpoint = graph["events"][0]["id"]
+        dependency["toEventID"] = replacement_endpoint
+    elif mutation_kind == "event_payload_schema":
+        payload_event = next(
+            (
+                event
+                for event in graph["events"]
+                if event.get("type") in _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS
+            ),
+            None,
         )
+        if payload_event is None:
+            raise ValueError("Atomic Fleet rejection lacks a payload event")
+        required_key = _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS[
+            str(payload_event["type"])
+        ]
+        if required_key not in payload_event:
+            raise ValueError(
+                "Atomic Fleet rejection payload is missing its chosen field"
+            )
+        payload_event.pop(required_key)
+    elif mutation_kind == "delegated_slot_contract":
+        delegated = graph["decision"]["delegatedSlotIDs"]
+        if not isinstance(delegated, list):
+            raise ValueError("Atomic Fleet rejection has invalid chosen delegation")
+        if delegated:
+            delegated[0] = "invented_shadow_slot"
+        else:
+            graph["decision"]["delegatedSlotIDs"] = ["invented_shadow_slot"]
+    else:  # pragma: no cover - guarded by _atomic_orchestration_mutation_kind
+        raise ValueError(f"Unknown Fleet atomic mutation: {mutation_kind}")
+    _validate_atomic_orchestration_rejection(
+        source,
+        graph,
+        mutation_kind=mutation_kind,
+    )
     return graph
 
 
+_ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS = {
+    "trusted_context_snapshot_loaded": "contextSnapshotID",
+    "delegate": "targetSlotID",
+    "context_boundary_checked": "allowedContextKeys",
+    "work_candidate_identified": "branchID",
+    "result_available": "sourceSlotID",
+    "approval_policy_evaluated": "policySnapshotID",
+    "permission_state_checked": "permissionCheckID",
+    "slot_directory_snapshot_loaded": "directorySnapshotID",
+}
+
+
+def _atomic_event_omission_index(events: Any) -> int:
+    """Choose a behavior event whose removal preserves delegation ordering."""
+
+    if not isinstance(events, list):
+        raise ValueError("Fleet chosen events are malformed")
+    for index, event in enumerate(events):
+        if (
+            isinstance(event, dict)
+            and event.get("type")
+            not in {"request_received", "delegate", "stop"}
+        ):
+            return index
+    raise ValueError("Fleet chosen graph lacks an omittable behavior event")
+
+
+def _atomic_event_omission_rejection(
+    graph: dict[str, Any],
+) -> dict[str, Any]:
+    """Remove one event while preserving graph closure and canonical identities."""
+
+    events = graph.get("events")
+    dependencies = graph.get("dependencies")
+    if not isinstance(events, list) or not isinstance(dependencies, list):
+        raise ValueError("Fleet chosen graph lacks events or dependencies")
+    omission_index = _atomic_event_omission_index(events)
+    omitted = events[omission_index]
+    omitted_id = omitted.get("id") if isinstance(omitted, dict) else None
+    if not isinstance(omitted_id, str):
+        raise ValueError("Fleet chosen omission event lacks an identity")
+    predecessors = [
+        dependency["fromEventID"]
+        for dependency in dependencies
+        if isinstance(dependency, dict)
+        and dependency.get("toEventID") == omitted_id
+        and isinstance(dependency.get("fromEventID"), str)
+    ]
+    successors = [
+        dependency["toEventID"]
+        for dependency in dependencies
+        if isinstance(dependency, dict)
+        and dependency.get("fromEventID") == omitted_id
+        and isinstance(dependency.get("toEventID"), str)
+    ]
+    if not predecessors or not successors:
+        raise ValueError("Fleet chosen omission event is not an interior graph node")
+    retained = [
+        dependency
+        for dependency in dependencies
+        if isinstance(dependency, dict)
+        and dependency.get("fromEventID") != omitted_id
+        and dependency.get("toEventID") != omitted_id
+    ]
+    retained_edges = {
+        (dependency["fromEventID"], dependency["toEventID"])
+        for dependency in retained
+    }
+    for predecessor in predecessors:
+        for successor in successors:
+            edge = (predecessor, successor)
+            if predecessor != successor and edge not in retained_edges:
+                retained.append(
+                    _orchestration_dependency(predecessor, successor)
+                )
+                retained_edges.add(edge)
+    graph["events"].pop(omission_index)
+    graph["dependencies"] = retained
+    return _canonicalize_orchestration_event_ids(graph)
+
+
+def _atomic_event_order_indices(events: Any) -> tuple[int, int]:
+    """Choose an adjacent event swap that preserves delegation ordering."""
+
+    if not isinstance(events, list) or not all(
+        isinstance(event, dict) for event in events
+    ):
+        raise ValueError("Fleet chosen events are malformed")
+    delegated = _delegated_slots_from_events(events)
+    for first in range(1, len(events) - 2):
+        second = first + 1
+        if events[first].get("type") == events[second].get("type"):
+            continue
+        reordered = list(events)
+        reordered[first], reordered[second] = (
+            reordered[second],
+            reordered[first],
+        )
+        if _delegated_slots_from_events(reordered) == delegated:
+            return first, second
+    raise ValueError("Fleet chosen graph lacks a safe adjacent event-order swap")
+
+
+def _validate_atomic_orchestration_rejection(
+    chosen: dict[str, Any],
+    rejected: dict[str, Any],
+    *,
+    mutation_kind: str,
+) -> None:
+    """Type-check one mutation and prove every other graph value is unchanged."""
+
+    if mutation_kind not in ORCHESTRATION_ATOMIC_MUTATION_KINDS:
+        raise ValueError(f"Unknown Fleet atomic mutation: {mutation_kind}")
+    expected = json.loads(json.dumps(chosen, ensure_ascii=False))
+    if mutation_kind == "aggregation_owner_type":
+        owner = expected.get("decision", {}).get("aggregationOwnerSlotID")
+        if owner is not None and not isinstance(owner, str):
+            raise ValueError("Fleet chosen aggregation owner is malformed")
+        expected["decision"]["aggregationOwnerSlotID"] = "null"
+    elif mutation_kind == "event_type_vocabulary":
+        mutable_events = [
+            event
+            for event in expected.get("events", [])
+            if isinstance(event, dict)
+            and event.get("type") not in {"request_received", "stop"}
+        ]
+        if not mutable_events or not isinstance(mutable_events[0].get("type"), str):
+            raise ValueError("Fleet chosen behavior event is malformed")
+        mutable_events[0]["type"] = "invented_event_alias"
+    elif mutation_kind == "event_omission":
+        expected = _atomic_event_omission_rejection(expected)
+    elif mutation_kind == "event_order":
+        events = expected.get("events")
+        first, second = _atomic_event_order_indices(events)
+        first_id = events[first]["id"]
+        second_id = events[second]["id"]
+        first_body = dict(events[second])
+        second_body = dict(events[first])
+        first_body["id"] = first_id
+        second_body["id"] = second_id
+        events[first] = first_body
+        events[second] = second_body
+    elif mutation_kind == "event_id_grammar":
+        events = expected.get("events")
+        if not isinstance(events, list) or not events or not isinstance(
+            events[0].get("id") if isinstance(events[0], dict) else None,
+            str,
+        ):
+            raise ValueError("Fleet chosen event identity is malformed")
+        source_id = events[0]["id"]
+        replacement_id = "noncanonical_event_id"
+        if any(event.get("id") == replacement_id for event in events[1:]):
+            raise ValueError("Fleet chosen graph already uses the invalid event ID")
+        events[0]["id"] = replacement_id
+        for dependency in expected.get("dependencies", []):
+            if not isinstance(dependency, dict):
+                raise ValueError("Fleet chosen dependency is malformed")
+            for endpoint in ("fromEventID", "toEventID"):
+                if dependency.get(endpoint) == source_id:
+                    dependency[endpoint] = replacement_id
+    elif mutation_kind == "dependency_endpoint_reference":
+        dependencies = expected.get("dependencies")
+        events = expected.get("events")
+        if (
+            not isinstance(dependencies, list)
+            or not dependencies
+            or not isinstance(dependencies[-1], dict)
+            or not isinstance(events, list)
+            or len(events) < 2
+            or not all(isinstance(event, dict) for event in events)
+        ):
+            raise ValueError("Fleet chosen dependency is malformed")
+        terminal_event = events[-1]
+        replacement_endpoint = events[0].get("id")
+        if (
+            terminal_event.get("type") != "stop"
+            or dependencies[-1].get("toEventID") != terminal_event.get("id")
+            or not isinstance(replacement_endpoint, str)
+            or replacement_endpoint == terminal_event.get("id")
+        ):
+            raise ValueError("Fleet chosen dependency endpoint is malformed")
+        dependencies[-1]["toEventID"] = replacement_endpoint
+    elif mutation_kind == "event_payload_schema":
+        payload_event = next(
+            (
+                event
+                for event in expected.get("events", [])
+                if isinstance(event, dict)
+                and event.get("type") in _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS
+            ),
+            None,
+        )
+        if payload_event is None:
+            raise ValueError("Fleet chosen payload event is malformed")
+        required_key = _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS[
+            str(payload_event["type"])
+        ]
+        if required_key not in payload_event:
+            raise ValueError("Fleet chosen payload field is missing")
+        payload_event.pop(required_key)
+    else:
+        delegated = expected.get("decision", {}).get("delegatedSlotIDs")
+        if not isinstance(delegated, list) or not all(
+            isinstance(slot, str) for slot in delegated
+        ):
+            raise ValueError("Fleet chosen delegation directory is malformed")
+        if delegated:
+            delegated[0] = "invented_shadow_slot"
+        else:
+            expected["decision"]["delegatedSlotIDs"] = [
+                "invented_shadow_slot"
+            ]
+    if rejected != expected:
+        raise ValueError(
+            "Fleet atomic rejection changes more than its typed contract dimension"
+        )
+
+
 def _atomic_orchestration_mutation_kind(mutation_index: int) -> str:
-    return (
-        "aggregation_owner_type",
-        "event_type_vocabulary",
-        "decision_strategy_literal",
-        "decision_stop_reason_literal",
-    )[mutation_index % 4]
+    return ORCHESTRATION_ATOMIC_MUTATION_KINDS[
+        mutation_index % len(ORCHESTRATION_ATOMIC_MUTATION_KINDS)
+    ]
 
 
 def _orchestration_scalar_leaf_differences(
@@ -3382,8 +4267,12 @@ def _assert_orchestration_holdouts_disjoint(
             != {
                 "aggregation_owner_type",
                 "event_type_vocabulary",
-                "decision_strategy_literal",
-                "decision_stop_reason_literal",
+                "event_omission",
+                "event_order",
+                "event_id_grammar",
+                "dependency_endpoint_reference",
+                "event_payload_schema",
+                "delegated_slot_contract",
             }
         ):
             raise ValueError(
