@@ -6990,6 +6990,24 @@ def test_fleet_dpo_contract_rejects_zero_signal_after_canonicalization(
     assert _bind_fleet_dpo_contract(manifest, [source]) == []
 
 
+def test_sparse_fleet_directory_preference_remains_semantic() -> None:
+    manifest = AgentBehaviorManifest()
+    directory_pair = next(
+        record
+        for record in _synthetic_dpo_pairs(manifest, set())["fleet"]
+        if record["metadata"]["preferenceType"] == "slot_id_directory"
+    )
+
+    bound = _bind_fleet_dpo_contract(manifest, [directory_pair])
+
+    assert len(bound) == 1
+    chosen = _strict_json_loads(bound[0]["chosen"]["content"])
+    rejected = _strict_json_loads(bound[0]["rejected"]["content"])
+    assert chosen == {"knownSlots": []}
+    assert rejected == {"knownSlots": ["invented_shadow_slot"]}
+    assert chosen != rejected
+
+
 def test_fleet_role_prompt_artifacts_are_not_response_targets(
     compiled_fine_tuning: tuple,
 ) -> None:

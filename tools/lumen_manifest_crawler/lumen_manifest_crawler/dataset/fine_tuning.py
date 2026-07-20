@@ -12638,9 +12638,17 @@ def _synthetic_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[str])
                 "fleet",
                 "Return the complete set of manifested runtime slot IDs.",
                 json.dumps({"knownSlots": fleet_slot_ids}, ensure_ascii=False, sort_keys=True),
-                json.dumps({"knownSlots": []}, ensure_ascii=False, sort_keys=True),
+                json.dumps(
+                    {
+                        "knownSlots": (
+                            [] if fleet_slot_ids else [unknown_slot]
+                        )
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
                 "slot_id_directory",
-                "rejected claims ignorance of manifest-known components",
+                "rejected omits manifest-known components or invents a slot",
             ),
         ],
     }
