@@ -498,6 +498,41 @@ def test_pipeline_json_readers_reject_duplicate_object_keys(
         ubuntu_pipeline.read_jsonl(jsonl_path)
 
 
+def test_evaluation_verifier_binds_fleet_neutral_repetition_penalty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_path = _write_evaluation_evidence(
+        tmp_path,
+        monkeypatch=monkeypatch,
+        agent="fleet",
+        status="quality_gate_failed",
+        quality_gate_passed=False,
+    )
+    manifest = ubuntu_pipeline.read_object(run_path)
+    assert manifest["generation"]["repetitionPenalty"] == 1.0
+    final_phase = _evaluation_final_phase(manifest)
+    verified = ubuntu_pipeline._verify_evaluation_outputs(
+        tmp_path,
+        "fleet",
+        final_phase=final_phase,
+        require_passing_status=False,
+    )
+    assert verified["status"] == "quality_gate_failed"
+
+    manifest["generation"]["repetitionPenalty"] = 1.1
+    manifest.pop("runManifestSHA256", None)
+    manifest["runManifestSHA256"] = ubuntu_pipeline.canonical_sha256(manifest)
+    ubuntu_pipeline.write_object(run_path, manifest)
+    with pytest.raises(RuntimeError):
+        ubuntu_pipeline._verify_evaluation_outputs(
+            tmp_path,
+            "fleet",
+            final_phase=final_phase,
+            require_passing_status=False,
+        )
+
+
 @pytest.mark.parametrize(
     "field",
     [
@@ -1217,7 +1252,9 @@ def _write_evaluation_evidence(
     generation = {
         "doSample": False,
         "numBeams": 1,
-        "repetitionPenalty": evaluate_adapter.GENERATION_REPETITION_PENALTY,
+        "repetitionPenalty": (
+            evaluate_adapter._generation_repetition_penalty(agent)
+        ),
         "thinkingEnabled": False,
         "maxNewTokens": 8,
         "maxSequenceLength": 64,

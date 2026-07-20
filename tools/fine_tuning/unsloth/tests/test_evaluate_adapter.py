@@ -1417,6 +1417,7 @@ def test_generation_is_deterministic_thinking_off_and_sequence_bounded() -> None
             model,
             tokenizer,
             _record("eval-one")["messages"],
+            agent="executor",
             max_seq_length=7,
             max_new_tokens=1024,
             torch_module=SimpleNamespace(inference_mode=nullcontext),
@@ -1433,10 +1434,33 @@ def test_generation_is_deterministic_thinking_off_and_sequence_bounded() -> None
     assert kwargs["num_beams"] == 1
     assert (
         kwargs["repetition_penalty"]
-        == evaluate_adapter.GENERATION_REPETITION_PENALTY
+        == evaluate_adapter._generation_repetition_penalty("executor")
     )
     assert kwargs["max_new_tokens"] == 3
     assert kwargs["pad_token_id"] == tokenizer.eos_token_id
+
+
+@pytest.mark.parametrize(
+    ("agent", "expected"),
+    (
+        ("cortex", 1.1),
+        ("executor", 1.1),
+        ("mouth", 1.1),
+        ("mimicry", 1.1),
+        ("rem", 1.1),
+        ("fleet", 1.0),
+    ),
+)
+def test_generation_repetition_penalty_is_agent_bound(
+    agent: str,
+    expected: float,
+) -> None:
+    assert evaluate_adapter._generation_repetition_penalty(agent) == expected
+
+
+def test_generation_repetition_penalty_rejects_unknown_agent() -> None:
+    with pytest.raises(ValueError, match="Unsupported evaluation agent"):
+        evaluate_adapter._generation_repetition_penalty("unknown")
 
 
 def test_generation_rejects_model_output_outside_recorded_token_bounds() -> None:
@@ -1446,6 +1470,7 @@ def test_generation_rejects_model_output_outside_recorded_token_bounds() -> None
             _FakeModel(),
             tokenizer,
             _record("eval-one")["messages"],
+            agent="executor",
             max_seq_length=6,
             max_new_tokens=1024,
             torch_module=SimpleNamespace(inference_mode=nullcontext),
@@ -1461,6 +1486,7 @@ def test_generation_rejects_model_output_outside_recorded_token_bounds() -> None
             _ShortModel(),
             _FakeTokenizer(["unused"]),
             _record("eval-one")["messages"],
+            agent="executor",
             max_seq_length=16,
             max_new_tokens=8,
             torch_module=SimpleNamespace(inference_mode=nullcontext),
@@ -1475,6 +1501,7 @@ def test_generation_preserves_exact_decoded_whitespace_for_evidence() -> None:
         model,
         tokenizer,
         _record("eval-one")["messages"],
+        agent="executor",
         max_seq_length=16,
         max_new_tokens=8,
         torch_module=SimpleNamespace(inference_mode=nullcontext),
@@ -3039,6 +3066,9 @@ def test_evaluation_checkpoint_contract_binds_all_resume_inputs(
     generation = {
         "doSample": False,
         "maxNewTokens": 8,
+        "repetitionPenalty": (
+            evaluate_adapter._generation_repetition_penalty("executor")
+        ),
         "seed": 7,
     }
     plan = ubuntu_pipeline.execution_plan(
@@ -3084,6 +3114,7 @@ def test_evaluation_checkpoint_contract_binds_all_resume_inputs(
         {"behavior_manifest_sha256": "f" * 64},
         {"selected_records": list(reversed(records))},
         {"generation": {**generation, "maxNewTokens": 9}},
+        {"generation": {**generation, "repetitionPenalty": 1.0}},
         {
             "evaluation_plan": ubuntu_pipeline.execution_plan(
                 evaluation_scope="smoke",
@@ -3110,16 +3141,17 @@ def test_evaluation_checkpoint_contract_binds_all_resume_inputs(
     )
 
 
-def test_strict_json_retry_is_bounded_raw_and_evidenced() -> None:
+@pytest.mark.parametrize("agent", ("executor", "fleet"))
+def test_strict_json_retry_is_bounded_raw_and_evidenced(agent: str) -> None:
     model = _FakeModel()
     tokenizer = _FakeTokenizer(["```json\n{}\n```", '{"status":"ready"}'])
-    record = _record("eval-one")
+    record = _record("eval-one", agent=agent)
     original_messages = json.loads(json.dumps(record["messages"]))
 
     outputs, rows, failures, initial_failures, recoveries = (
         evaluate_adapter.evaluate_records(
             [record],
-            agent="executor",
+            agent=agent,
             model=model,
             tokenizer=tokenizer,
             max_seq_length=64,
@@ -3179,7 +3211,7 @@ def test_strict_json_retry_is_bounded_raw_and_evidenced() -> None:
     assert all(kwargs["num_beams"] == 1 for kwargs in model.generation_kwargs)
     assert all(
         kwargs["repetition_penalty"]
-        == evaluate_adapter.GENERATION_REPETITION_PENALTY
+        == evaluate_adapter._generation_repetition_penalty(agent)
         for kwargs in model.generation_kwargs
     )
 

@@ -8467,7 +8467,7 @@ def _pipeline_validated_fleet_loss_share_contract(
         label="Fleet loss-share contract",
     )
     if (
-        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.5.0"
+        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.6.0"
         or contract.get("enforcementRequired") is not True
         or contract.get("enforcementPhase")
         != "post_tokenizer_load_pre_optimizer"
@@ -8565,14 +8565,14 @@ def _pipeline_validated_fleet_loss_share_contract(
         or source_family_safety_band
         != {
             "schemaVersion": (
-                "lumen.fleet-optimizer-family-source-proxy/1.0.0"
+                "lumen.fleet-optimizer-family-source-proxy/1.1.0"
             ),
             "lane": "sft",
             "basis": "assistant_target_source_token_proxy_count",
             "sourceFamily": "fleet_orchestration_native",
             "taskType": "fleet_orchestration_event_graph",
-            "minimumBasisPoints": 5_300,
-            "maximumBasisPoints": 6_210,
+            "minimumBasisPoints": 5_000,
+            "maximumBasisPoints": 5_800,
             "selectionPolicy": (
                 "retain_non_public_then_bound_public_behavioral"
             ),
@@ -11009,7 +11009,7 @@ def _verify_evaluation_outputs(
             and generation.get("numBeams") == 1
             and type(generation.get("repetitionPenalty")) is float
             and generation.get("repetitionPenalty")
-            == evaluate_adapter.GENERATION_REPETITION_PENALTY
+            == evaluate_adapter._generation_repetition_penalty(agent)
             and generation.get("thinkingEnabled") is False
         )
     )

@@ -54,6 +54,7 @@ from lumen_manifest_crawler.fleet_artifacts import (
     _atomic_event_completeness_rejection,
     _atomic_event_order_indices,
     _fact_derived_noncanonical_event_id,
+    _is_opaque_orchestration_training_fact_id,
     _natural_noncanonical_event_type_alias,
     _orchestration_scalar_leaf_differences,
     _orchestration_training_scenario_id,
@@ -78,7 +79,7 @@ FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = (
 )
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_TOKEN_SHARE_HARD_MAX = 0.10
 FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR = 10_000
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.5.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.6.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
     "lumen.fleet-loss-share-evidence/1.3.0"
 )
@@ -96,7 +97,7 @@ FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION = (
     "lumen.fleet-optimizer-family-share/1.0.0"
 )
 FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION = (
-    "lumen.fleet-optimizer-family-source-proxy/1.0.0"
+    "lumen.fleet-optimizer-family-source-proxy/1.1.0"
 )
 FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY = "fleet_orchestration_native"
 FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE = (
@@ -107,8 +108,8 @@ FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE = (
 )
 FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS = 5_000
 FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS = 6_000
-FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS = 5_300
-FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS = 6_210
+FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS = 5_000
+FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS = 5_800
 FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS = 1_800
 FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS = 2_200
 PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = (
@@ -1999,7 +2000,7 @@ def _fleet_native_prompt_request_identifier(user_prompt: str) -> str | None:
     return (
         request_identifier
         if isinstance(request_identifier, str)
-        and re.fullmatch(r"fact-[0-9a-f]{16}", request_identifier)
+        and _is_opaque_orchestration_training_fact_id(request_identifier)
         else None
     )
 
@@ -2245,6 +2246,27 @@ def _assert_fleet_native_orchestration_training_coverage(
         )
     ):
         return
+    native_scenario_ids = [
+        record.get("metadata", {}).get("scenarioID")
+        for grouped in (
+            train_sft_by_behavior,
+            train_dpo_by_behavior,
+            val_sft_by_behavior,
+            val_dpo_by_behavior,
+        )
+        for records in grouped.values()
+        for record in records
+    ]
+    if (
+        any(
+            not isinstance(scenario_id, str) or not scenario_id
+            for scenario_id in native_scenario_ids
+        )
+        or len(set(native_scenario_ids)) != len(native_scenario_ids)
+    ):
+        raise ValueError(
+            "Fleet native orchestration scenario identity collision"
+        )
     if tuple(FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT) != (
         ORCHESTRATION_ATOMIC_MUTATION_KINDS
     ):
