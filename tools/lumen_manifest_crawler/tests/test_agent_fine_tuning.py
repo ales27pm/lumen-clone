@@ -56,12 +56,14 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
+    FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT,
     FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
     FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+    FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER,
     FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION,
     FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION,
     FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES,
@@ -108,6 +110,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _cap_public_corpus_token_share,
     _cortex_failure_repair_sft_records,
     _fleet_delegation_tasks,
+    _fleet_observed_mouth_confusion_tasks,
     _fleet_slot_contract,
     _finalize_fleet_optimizer_lane,
     _limit_supplemental_sft_records,
@@ -119,6 +122,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _required_eval_templates,
     _rem_critical_contract_scenarios,
     _routed_intent_for_tool,
+    _valid_fleet_native_preference_mutation,
     _canonical_rendered_prompt_key,
     _stable_dpo_split,
     _stable_source_stratified_split,
@@ -6800,8 +6804,16 @@ def test_fleet_complete_training_corpus_is_strict_json_only(
         assert isinstance(payload, dict)
     for record in dpo:
         assert STRUCTURED_OUTPUT_INSTRUCTION in record["prompt"][0]["content"]
-        payload = _strict_json_loads(record["chosen"]["content"])
-        assert isinstance(payload, dict)
+        for completion in ("chosen", "rejected"):
+            content = record[completion]["content"]
+            payload = _strict_json_loads(content)
+            assert isinstance(payload, dict)
+            assert content == json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
 
     private_state_pairs = [
         record
@@ -6816,6 +6828,54 @@ def test_fleet_complete_training_corpus_is_strict_json_only(
         assert rejected["privateStateAccessible"] is True
         assert chosen["requestedSlot"] in chosen["knownSlots"]
         assert rejected["requestedSlot"] == chosen["requestedSlot"]
+
+
+def test_fleet_native_dpo_mutations_survive_canonical_binding(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    source_records = [
+        record
+        for record in generate_fleet_artifacts(manifest).cross_model_training
+        if record.get("recordType") == "dpo"
+        and record.get("sourceFamily")
+        == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+        and record["metadata"].get("trainingMatrixVariant")
+        == "behavior-conditioned"
+    ]
+    records = _bind_fleet_dpo_contract(manifest, source_records)
+
+    assert len(records) == len(source_records)
+    assert records
+    assert {
+        record["metadata"]["atomicPreferenceMutation"]
+        for record in records
+    } == set(FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT)
+    for record in records:
+        for completion in ("chosen", "rejected"):
+            content = record[completion]["content"]
+            payload = _strict_json_loads(content)
+            assert content == json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        chosen = _strict_json_loads(record["chosen"]["content"])
+        rejected = _strict_json_loads(record["rejected"]["content"])
+        mutation = record["metadata"]["atomicPreferenceMutation"]
+        assert _valid_fleet_native_preference_mutation(
+            chosen,
+            rejected,
+            mutation,
+        )
+        tampered_rejected = json.loads(json.dumps(rejected, ensure_ascii=False))
+        tampered_rejected["scenarioID"] = f"{rejected['scenarioID']}--tampered"
+        assert not _valid_fleet_native_preference_mutation(
+            chosen,
+            tampered_rejected,
+            mutation,
+        )
 
 
 def test_fleet_private_state_preference_is_reframed_as_json(
@@ -6859,6 +6919,75 @@ def test_fleet_private_state_preference_is_reframed_as_json(
     }
     assert rejected["privateStateAccessible"] is True
     assert rejected["claimedState"] == "fabricated_internal_state"
+
+
+@pytest.mark.parametrize(
+    ("completion", "invalid_content"),
+    (
+        ("chosen", '["executor"]'),
+        (
+            "rejected",
+            '{"knownSlots":["fleet"],"knownSlots":["executor"]}',
+        ),
+        ("rejected", '["executor"]'),
+        ("rejected", '{"delegateTo":NaN}'),
+    ),
+)
+def test_fleet_dpo_contract_rejects_non_strict_completion_json(
+    compiled_fine_tuning: tuple,
+    completion: str,
+    invalid_content: str,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    source = {
+        "prompt": [
+            {"role": "system", "content": "Legacy Fleet prompt."},
+            {"role": "user", "content": "Select the manifested owner."},
+        ],
+        "chosen": {
+            "role": "assistant",
+            "content": '{ "knownSlots": ["fleet", "executor"] }',
+        },
+        "rejected": {
+            "role": "assistant",
+            "content": '{"knownSlots":["fleet"]}',
+        },
+        "metadata": {
+            "agent": "fleet",
+            "preferenceType": "fleet_contract_known_slots",
+            "taskType": "fleet_contract_known_slots",
+        },
+    }
+    source[completion]["content"] = invalid_content
+
+    assert _bind_fleet_dpo_contract(manifest, [source]) == []
+
+
+def test_fleet_dpo_contract_rejects_zero_signal_after_canonicalization(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, _ = compiled_fine_tuning
+    source = {
+        "prompt": [
+            {"role": "system", "content": "Legacy Fleet prompt."},
+            {"role": "user", "content": "Select the manifested owner."},
+        ],
+        "chosen": {
+            "role": "assistant",
+            "content": '{ "owner": "executor", "known": true }',
+        },
+        "rejected": {
+            "role": "assistant",
+            "content": '{"known":true,"owner":"executor"}',
+        },
+        "metadata": {
+            "agent": "fleet",
+            "preferenceType": "fleet_contract_known_slots",
+            "taskType": "fleet_contract_known_slots",
+        },
+    }
+
+    assert _bind_fleet_dpo_contract(manifest, [source]) == []
 
 
 def test_fleet_role_prompt_artifacts_are_not_response_targets(
@@ -8529,7 +8658,7 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
     )
     assert train_counts == Counter(
         {
-            "fleet_contract_delegation": 88,
+            "fleet_contract_delegation": 216,
             "fleet_contract_known_slots": 21,
             "fleet_contract_tool_boundary": 21,
         }
@@ -8546,6 +8675,33 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
         * fleet.unsloth_config["gradient_accumulation_steps"]
         * 4
     )
+    optimizer_dpo_lanes = {
+        "root": fleet.train_dpo,
+        **{
+            name: variant["train_dpo"]
+            for name, variant in fleet.experiment_variants.items()
+        },
+    }
+    for records in optimizer_dpo_lanes.values():
+        native_count = sum(
+            1
+            for record in records
+            if record["metadata"].get("sourceFamily")
+            == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+            and record["metadata"].get("taskType")
+            == FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE
+        )
+        if native_count:
+            assert (
+                native_count * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+                >= len(records)
+                * FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS
+            )
+            assert (
+                native_count * FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+                <= len(records)
+                * FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS
+            )
     assert fleet.contamination_report["contaminated"] is False
     assert fleet.contamination_report["matchCount"] == 0
 
@@ -8571,6 +8727,27 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
             for prompt in prompts
         }
     ) == len(delegation_tasks) * FLEET_DELEGATION_PROMPTS_PER_OWNER
+    mouth_confusion_tasks = _fleet_observed_mouth_confusion_tasks()
+    assert set(mouth_confusion_tasks) == {"embedding", "executor"}
+    assert {
+        owner: len(prompts)
+        for owner, prompts in mouth_confusion_tasks.items()
+    } == {
+        owner: FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER
+        for owner in mouth_confusion_tasks
+    }
+    assert not (
+        {
+            prompt
+            for prompts in delegation_tasks.values()
+            for prompt in prompts
+        }
+        & {
+            prompt
+            for prompts in mouth_confusion_tasks.values()
+            for prompt in prompts
+        }
+    )
 
     _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
     delegation_by_split = {
@@ -8603,8 +8780,10 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
             for owner in delegation_tasks
         }
         if split == "train":
-            expected_counts[slot_ids_by_agent["embedding"]] += 8
-            expected_counts[slot_ids_by_agent["executor"]] += 8
+            for owner in ("embedding", "executor"):
+                expected_counts[slot_ids_by_agent[owner]] += (
+                    8 + FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER
+                )
         assert owner_counts == Counter(expected_counts)
 
     for owner in delegation_tasks:
@@ -8628,12 +8807,17 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
         contrast_modes = Counter(
             record["metadata"]["contrastMode"] for record in owner_train
         )
-        assert contrast_modes["balanced_rotation"] == 12
+        assert contrast_modes["balanced_rotation"] == 32
         assert contrast_modes["observed_mimicry_confusion"] == (
             7 if owner in {"embedding", "executor"} else 0
         )
         assert contrast_modes["independent_semantic_confusion"] == (
             1 if owner in {"embedding", "executor"} else 0
+        )
+        assert contrast_modes["observed_mouth_confusion"] == (
+            FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER
+            if owner in {"embedding", "executor"}
+            else 0
         )
         for record in owner_train:
             mode = record["metadata"]["contrastMode"]
@@ -8649,6 +8833,9 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
                     "independent wrong semantic owner"
                     in record["metadata"]["reason"]
                 )
+            elif mode == "observed_mouth_confusion":
+                assert rejected_slot == slot_ids_by_agent["mouth"]
+                assert "observed Mouth" in record["metadata"]["reason"]
 
     records = [
         record
@@ -8818,8 +9005,8 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
     assert len(optimized_fleet["train_sft"]) == (
         optimized_fleet_policy["trainRecordCount"]
     )
-    assert fleet_sft_policy["baseEpochs"] == 3
-    assert fleet_sft_policy["selectedEpochs"] >= 3
+    assert fleet_sft_policy["baseEpochs"] == 6
+    assert fleet_sft_policy["selectedEpochs"] >= 6
     assert fleet_sft_policy["projectedEffectiveSteps"] >= 100
     assert fleet.dataset_card["constraints"][
         "fleetOrchestrationEvaluationRequired"
@@ -9281,24 +9468,42 @@ def test_compiled_fleet_anchors_survive_with_dpo_parity_and_clean_evaluation(
         "fleet_contract_delegation",
     }
     _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
-    delegation_owner_slots = {
-        slot_ids_by_agent[owner] for owner in _fleet_delegation_tasks()
-    }
-    for split, records, expected_per_owner in (
-        ("train", fleet.train_sft, 11),
-        ("validation", fleet.val_sft, 3),
+    delegation_owners = set(_fleet_delegation_tasks())
+    for split, records, expected_counts in (
+        (
+            "train",
+            fleet.train_sft,
+            {
+                slot_ids_by_agent[owner]: (
+                    FLEET_DELEGATION_PROMPTS_PER_OWNER
+                    - FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER
+                    - 1
+                    + (
+                        FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER
+                        if owner in {"embedding", "executor"}
+                        else 0
+                    )
+                )
+                for owner in delegation_owners
+            },
+        ),
+        (
+            "validation",
+            fleet.val_sft,
+            {
+                slot_ids_by_agent[owner]: (
+                    FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER + 1
+                )
+                for owner in delegation_owners
+            },
+        ),
     ):
         owner_counts = Counter(
             json.loads(record["messages"][-1]["content"])["delegateTo"]
             for record in records
             if record["metadata"].get("taskType") in delegation_task_types
         )
-        assert owner_counts == Counter(
-            {
-                slot_id: expected_per_owner
-                for slot_id in delegation_owner_slots
-            }
-        ), split
+        assert owner_counts == Counter(expected_counts), split
 
     for key, source_anchor in source_by_prompt.items():
         compiled_assistant = next(
@@ -9618,8 +9823,10 @@ def test_fleet_uses_memory_safe_microbatches_without_changing_optimizer_exposure
         fleet["gradient_accumulation_steps"]
     )
     assert NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS["fleet"] == 24
-    assert policy["sft"]["baseEpochs"] == 3
-    assert policy["sft"]["selectedEpochs"] >= 3
+    assert policy["sft"]["baseEpochs"] == 6
+    assert policy["sft"]["selectedEpochs"] >= 6
+    assert policy["dpo"]["baseEpochs"] == 2
+    assert policy["dpo"]["selectedEpochs"] >= 2
     assert fleet["num_train_epochs"] == policy["sft"]["selectedEpochs"]
     for lane in ("sft", "dpo"):
         lane_policy = policy[lane]
