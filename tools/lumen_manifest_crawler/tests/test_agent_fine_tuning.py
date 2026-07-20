@@ -53,6 +53,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER,
     FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR,
     FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION,
+    FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION,
     FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
@@ -69,6 +70,10 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES,
     FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
     FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX,
+    FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT,
+    FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM,
+    FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA_VERSION,
+    FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_EVIDENCE_SCHEMA_VERSION,
     FLEET_VALIDATION_SAMPLING_SCHEMA_VERSION,
     FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY,
     FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL,
@@ -110,7 +115,9 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _cap_public_corpus_token_share,
     _cortex_failure_repair_sft_records,
     _fleet_delegation_tasks,
+    _fleet_native_prompt_request_identifier,
     _fleet_observed_mouth_confusion_tasks,
+    _first_role_content,
     _fleet_slot_contract,
     _finalize_fleet_optimizer_lane,
     _limit_supplemental_sft_records,
@@ -6804,6 +6811,10 @@ def test_fleet_complete_training_corpus_is_strict_json_only(
         assert isinstance(payload, dict)
     for record in dpo:
         assert STRUCTURED_OUTPUT_INSTRUCTION in record["prompt"][0]["content"]
+        is_native_orchestration = (
+            record["metadata"].get("sourceFamily")
+            == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+        )
         for completion in ("chosen", "rejected"):
             content = record[completion]["content"]
             payload = _strict_json_loads(content)
@@ -6811,9 +6822,18 @@ def test_fleet_complete_training_corpus_is_strict_json_only(
             assert content == json.dumps(
                 payload,
                 ensure_ascii=False,
-                sort_keys=True,
+                sort_keys=not is_native_orchestration,
                 separators=(",", ":"),
             )
+            if is_native_orchestration:
+                assert list(payload) == [
+                    "graphSchemaVersion",
+                    "scenarioID",
+                    "knownSlotIDs",
+                    "events",
+                    "dependencies",
+                    "decision",
+                ]
 
     private_state_pairs = [
         record
@@ -6852,13 +6872,17 @@ def test_fleet_native_dpo_mutations_survive_canonical_binding(
         for record in records
     } == set(FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT)
     for record in records:
+        request_identifier = _fleet_native_prompt_request_identifier(
+            _first_role_content(record["prompt"], "user")
+        )
+        assert request_identifier is not None
         for completion in ("chosen", "rejected"):
             content = record[completion]["content"]
             payload = _strict_json_loads(content)
             assert content == json.dumps(
                 payload,
                 ensure_ascii=False,
-                sort_keys=True,
+                sort_keys=False,
                 separators=(",", ":"),
             )
         chosen = _strict_json_loads(record["chosen"]["content"])
@@ -6868,6 +6892,7 @@ def test_fleet_native_dpo_mutations_survive_canonical_binding(
             chosen,
             rejected,
             mutation,
+            event_id_fact=request_identifier,
         )
         tampered_rejected = json.loads(json.dumps(rejected, ensure_ascii=False))
         tampered_rejected["scenarioID"] = f"{rejected['scenarioID']}--tampered"
@@ -6875,6 +6900,7 @@ def test_fleet_native_dpo_mutations_survive_canonical_binding(
             chosen,
             tampered_rejected,
             mutation,
+            event_id_fact=request_identifier,
         )
 
 
@@ -7142,6 +7168,9 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
     }
     evidence_contract = loss_share_contract["exactTokenEvidenceContract"]
     assert evidence_contract["required"] is True
+    assert evidence_contract["schemaVersion"] == (
+        FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION
+    )
     assert evidence_contract["statusAtGeneration"] == (
         "pending_exact_tokenizer_preflight"
     )
@@ -7151,6 +7180,39 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
         "denominatorTokenCount*capBasisPoints"
     )
     assert set(evidence_contract["lanes"]) == {"sft", "dpo"}
+    assert loss_share_contract["sftOptimizerWindowScheduleContract"] == {
+        "schemaVersion": (
+            FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA_VERSION
+        ),
+        "evidenceSchemaVersion": (
+            FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_EVIDENCE_SCHEMA_VERSION
+        ),
+        "lane": "sft",
+        "split": "train",
+        "enforcementRequired": True,
+        "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "basis": (
+            "mean_of_floor_per_optimizer_window_native_assistant_target_"
+            "token_share_basis_points"
+        ),
+        "basisPointDenominator": FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR,
+        "minimumBasisPoints": (
+            FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS
+        ),
+        "maximumBasisPoints": (
+            FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS
+        ),
+        "algorithm": FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM,
+        "candidateSearchCount": FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT,
+        "permutationPolicy": "each_source_row_exactly_once_per_epoch",
+        "packing": False,
+        "distributedSamplingPolicy": "single_process_only",
+        "resumePolicy": (
+            "trainer_set_epoch_with_monotonic_sampler_guard_through_"
+            "skip_first_batches"
+        ),
+        "failurePolicy": "abort_before_optimizer",
+    }
     assert loss_share_contract["dpoTokenizationPolicy"] == {
         "trainerImplementation": "trl.DPOTrainer.tokenize_row",
         "trlVersion": "0.24.0",
@@ -9023,8 +9085,8 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
     assert len(optimized_fleet["train_sft"]) == (
         optimized_fleet_policy["trainRecordCount"]
     )
-    assert fleet_sft_policy["baseEpochs"] == 6
-    assert fleet_sft_policy["selectedEpochs"] >= 6
+    assert fleet_sft_policy["baseEpochs"] == 3
+    assert fleet_sft_policy["selectedEpochs"] >= 3
     assert fleet_sft_policy["projectedEffectiveSteps"] >= 100
     assert fleet.dataset_card["constraints"][
         "fleetOrchestrationEvaluationRequired"
@@ -9841,10 +9903,10 @@ def test_fleet_uses_memory_safe_microbatches_without_changing_optimizer_exposure
         fleet["gradient_accumulation_steps"]
     )
     assert NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS["fleet"] == 24
-    assert policy["sft"]["baseEpochs"] == 6
-    assert policy["sft"]["selectedEpochs"] >= 6
-    assert policy["dpo"]["baseEpochs"] == 2
-    assert policy["dpo"]["selectedEpochs"] >= 2
+    assert policy["sft"]["baseEpochs"] == 3
+    assert policy["sft"]["selectedEpochs"] >= 3
+    assert policy["dpo"]["baseEpochs"] == 1
+    assert policy["dpo"]["selectedEpochs"] >= 1
     assert fleet["num_train_epochs"] == policy["sft"]["selectedEpochs"]
     for lane in ("sft", "dpo"):
         lane_policy = policy[lane]

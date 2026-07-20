@@ -692,8 +692,8 @@ def test_fleet_variant_optimizer_policy_matches_shared_epoch_contract() -> None:
     )
 
     assert observed == expected
-    assert observed["sft"]["baseEpochs"] == 6
-    assert observed["dpo"]["baseEpochs"] == 2
+    assert observed["sft"]["baseEpochs"] == 3
+    assert observed["dpo"]["baseEpochs"] == 1
 
 
 def test_variant_optimizer_overlay_is_exact_and_type_safe() -> None:

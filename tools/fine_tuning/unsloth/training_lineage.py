@@ -14,6 +14,7 @@ import stat
 import sys
 import tempfile
 import time
+import types
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
@@ -170,6 +171,92 @@ def canonical_sha256(value: Any) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _canonical_python_code_constant(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"type": "none"}
+    if value is Ellipsis:
+        return {"type": "ellipsis"}
+    if value is NotImplemented:
+        return {"type": "not_implemented"}
+    if type(value) is bool:
+        return {"type": "bool", "value": value}
+    if type(value) is int:
+        return {"type": "int", "value": str(value)}
+    if type(value) is float:
+        return {"type": "float", "value": value.hex()}
+    if type(value) is complex:
+        return {
+            "type": "complex",
+            "real": value.real.hex(),
+            "imag": value.imag.hex(),
+        }
+    if isinstance(value, str):
+        return {"type": "str", "value": value}
+    if isinstance(value, bytes):
+        return {"type": "bytes", "valueHex": value.hex()}
+    if isinstance(value, tuple):
+        return {
+            "type": "tuple",
+            "items": [
+                _canonical_python_code_constant(item) for item in value
+            ],
+        }
+    if isinstance(value, frozenset):
+        items = [
+            _canonical_python_code_constant(item) for item in value
+        ]
+        items.sort(
+            key=lambda item: json.dumps(
+                item,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        return {"type": "frozenset", "items": items}
+    if isinstance(value, types.CodeType):
+        return {"type": "code", "value": _canonical_python_code_payload(value)}
+    raise ValueError(
+        "Python code object contains an unsupported constant type: "
+        f"{type(value).__module__}.{type(value).__name__}"
+    )
+
+
+def _canonical_python_code_payload(code: types.CodeType) -> dict[str, Any]:
+    if not isinstance(code, types.CodeType):
+        raise ValueError("Python callable identity requires a code object")
+    return {
+        "schemaVersion": "lumen.python-code-object/1.0.0",
+        "pythonMajorMinor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "argCount": code.co_argcount,
+        "positionalOnlyArgCount": code.co_posonlyargcount,
+        "keywordOnlyArgCount": code.co_kwonlyargcount,
+        "localCount": code.co_nlocals,
+        "stackSize": code.co_stacksize,
+        "flags": code.co_flags,
+        "bytecodeHex": code.co_code.hex(),
+        "constants": [
+            _canonical_python_code_constant(value) for value in code.co_consts
+        ],
+        "names": list(code.co_names),
+        "variableNames": list(code.co_varnames),
+        "filename": code.co_filename,
+        "name": code.co_name,
+        "qualname": getattr(code, "co_qualname", code.co_name),
+        "firstLineNumber": code.co_firstlineno,
+        "lineTableHex": getattr(code, "co_linetable", b"").hex(),
+        "exceptionTableHex": getattr(code, "co_exceptiontable", b"").hex(),
+        "freeVariables": list(code.co_freevars),
+        "cellVariables": list(code.co_cellvars),
+    }
+
+
+def canonical_python_code_sha256(code: types.CodeType) -> str:
+    """Return a reference-stable digest for an exact Python code object."""
+
+    return canonical_sha256(_canonical_python_code_payload(code))
 
 
 def file_sha256(path: Path) -> str:
@@ -2143,6 +2230,128 @@ def _installed_distribution_entry(
         "installedContentSHA256": canonical_sha256(files),
     }
     return {**payload, "distributionSHA256": canonical_sha256(payload)}
+
+
+def installed_distribution_python_callable_identity(
+    *,
+    distribution_name: str,
+    source_logical_path: str,
+    callable_name: str,
+    resolved_environment: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Reconstruct one installed Python callable without importing its package.
+
+    The complete distribution is first revalidated against its installed
+    ``RECORD`` manifest and the run's resolved-environment closure. Compiling
+    the exact installed source path preserves ``co_filename``, so the canonical
+    code-object digest is directly comparable with the live imported callable.
+    This is intentionally import-free for CUDA-gated packages such as Unsloth.
+    """
+
+    normalized_distribution_name = _normalized_distribution_name(
+        distribution_name
+    )
+    logical_path = PurePosixPath(source_logical_path)
+    if (
+        not source_logical_path
+        or logical_path.is_absolute()
+        or any(part in {"", ".", ".."} for part in logical_path.parts)
+        or logical_path.suffix != ".py"
+        or source_logical_path != logical_path.as_posix()
+        or not isinstance(callable_name, str)
+        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", callable_name) is None
+    ):
+        raise ValueError("Installed Python callable identity is malformed")
+
+    environment_digest = verify_resolved_training_environment(
+        resolved_environment
+    )
+    resolved_entries = resolved_environment["distributions"]
+    expected_entries = [
+        entry
+        for entry in resolved_entries
+        if entry.get("name") == normalized_distribution_name
+    ]
+    if len(expected_entries) != 1:
+        raise ValueError(
+            "Resolved environment lacks the installed callable distribution"
+        )
+
+    try:
+        distribution = importlib_metadata.distribution(distribution_name)
+    except importlib_metadata.PackageNotFoundError as exc:
+        raise ValueError(
+            "Installed Python callable distribution is unavailable"
+        ) from exc
+    installed_entry = _installed_distribution_entry(distribution)
+    if installed_entry != dict(expected_entries[0]):
+        raise ValueError(
+            "Installed callable distribution drifted from the resolved environment"
+        )
+
+    declared_files = distribution.files
+    matches = [
+        item
+        for item in (declared_files or ())
+        if PurePosixPath(str(item).replace("\\", "/")) == logical_path
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Installed callable source is missing or duplicated in RECORD"
+        )
+    source_candidate = Path(distribution.locate_file(matches[0]))
+    if source_candidate.is_symlink() or not source_candidate.is_file():
+        raise ValueError("Installed callable source is not a regular file")
+    source_path = source_candidate.resolve()
+    source_bytes = source_path.read_bytes()
+    source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+
+    try:
+        module_code = compile(
+            source_bytes,
+            str(source_path),
+            "exec",
+            dont_inherit=True,
+            optimize=-1,
+        )
+    except (SyntaxError, ValueError) as exc:
+        raise ValueError("Installed callable source cannot be compiled") from exc
+    pending = [module_code]
+    matches_code: list[types.CodeType] = []
+    while pending:
+        code = pending.pop()
+        if code.co_name == callable_name:
+            matches_code.append(code)
+        pending.extend(
+            value for value in code.co_consts if isinstance(value, types.CodeType)
+        )
+    if len(matches_code) != 1:
+        raise ValueError(
+            "Installed callable source has a missing or ambiguous code object"
+        )
+    callable_code = matches_code[0]
+    unsigned = {
+        "schemaVersion": "lumen.installed-python-callable-identity/1.0.0",
+        "resolvedTrainingEnvironmentSHA256": environment_digest,
+        "distributionName": installed_entry["name"],
+        "distributionVersion": installed_entry["version"],
+        "distributionSHA256": installed_entry["distributionSHA256"],
+        "sourceLogicalPath": source_logical_path,
+        "sourceFileSize": len(source_bytes),
+        "sourceFileSHA256": source_sha256,
+        "callableName": callable_name,
+        "callableQualname": getattr(
+            callable_code,
+            "co_qualname",
+            callable_code.co_name,
+        ),
+        "callableFirstLineNumber": callable_code.co_firstlineno,
+        "codeSHA256": canonical_python_code_sha256(callable_code),
+    }
+    return {
+        **unsigned,
+        "installedCallableIdentitySHA256": canonical_sha256(unsigned),
+    }
 
 
 def build_resolved_training_environment(

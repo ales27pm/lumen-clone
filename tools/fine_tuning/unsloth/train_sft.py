@@ -37,7 +37,9 @@ try:
     from .training_lineage import (
         build_resolved_training_environment,
         build_resolved_training_environment_snapshot,
+        canonical_python_code_sha256,
         canonical_controlled_package_version,
+        installed_distribution_python_callable_identity,
         installed_controlled_package_versions,
         repository_training_code_bundle,
         RUN_RESUME_LINEAGE_SCHEMA,
@@ -60,7 +62,9 @@ except ImportError:
     from training_lineage import (
         build_resolved_training_environment,
         build_resolved_training_environment_snapshot,
+        canonical_python_code_sha256,
         canonical_controlled_package_version,
+        installed_distribution_python_callable_identity,
         installed_controlled_package_versions,
         repository_training_code_bundle,
         RUN_RESUME_LINEAGE_SCHEMA,
@@ -224,7 +228,7 @@ SFT_CHECKPOINT_REQUIRED_FILES = frozenset(
         "training_args.bin",
     }
 )
-SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA = "lumen.sft_token_length_preflight/1.3.0"
+SFT_TOKEN_LENGTH_PREFLIGHT_SCHEMA = "lumen.sft_token_length_preflight/1.4.0"
 SFT_TOKENIZATION_TRANSCRIPT_SCHEMA = "lumen.sft-tokenization-transcript/1.0.0"
 RUNTIME_MODEL_BINDING_SCHEMA = "lumen.runtime-model-binding/1.3.0"
 RUNTIME_TOKENIZER_BINDING_SCHEMA = "lumen.runtime-tokenizer-binding/1.1.0"
@@ -239,8 +243,29 @@ ADAPTER_DERIVED_TOKENIZER_FILES = frozenset(
         "vocab.json",
     }
 )
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.4.0"
-FLEET_LOSS_SHARE_EVIDENCE_SCHEMA = "lumen.fleet-loss-share-evidence/1.2.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.5.0"
+FLEET_LOSS_SHARE_EVIDENCE_SCHEMA = "lumen.fleet-loss-share-evidence/1.3.0"
+FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA = (
+    "lumen.fleet-sft-optimizer-window-schedule-contract/1.0.0"
+)
+FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_SCHEMA = (
+    "lumen.fleet-sft-optimizer-window-schedule/1.0.0"
+)
+FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
+    "sha256_epoch_stratified_native_round_robin/1.0.0"
+)
+FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT = 256
+FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA = (
+    "lumen.fleet-sft-runtime-loss-normalization/1.1.0"
+)
+FLEET_SFT_TRAINER_CLASS = "__main__._FleetSFTTrainer"
+FLEET_SFT_MODEL_CLASS = "peft.peft_model.PeftModelForCausalLM"
+FLEET_SFT_BASE_MODEL_CLASS = (
+    "transformers.models.qwen3.modeling_qwen3.Qwen3ForCausalLM"
+)
+FLEET_SFT_GET_BATCH_SAMPLES_MODULE = "unsloth_zoo.loss_utils"
+FLEET_SFT_GET_BATCH_SAMPLES_NAME = "_unsloth_get_batch_samples"
+FLEET_SFT_GET_BATCH_SAMPLES_SOURCE = "unsloth_zoo/loss_utils.py"
 FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA = (
     "lumen.fleet-optimizer-family-share/1.0.0"
 )
@@ -774,6 +799,28 @@ def tokenize_assistant_only_row(
     }
 
 
+def _shifted_sft_target_token_count(
+    tokenized: Mapping[str, Any],
+) -> int:
+    """Count the exact causal-LM targets consumed after the one-token shift."""
+
+    labels = tokenized.get("labels")
+    attention_mask = tokenized.get("attention_mask")
+    if (
+        not isinstance(labels, list)
+        or not isinstance(attention_mask, list)
+        or len(labels) != len(attention_mask)
+        or any(type(label) is not int for label in labels)
+        or any(type(mask) is not int for mask in attention_mask)
+    ):
+        raise RuntimeError("SFT target-token accounting received malformed labels")
+    return sum(
+        1
+        for label, attended in zip(labels[1:], attention_mask[1:])
+        if label != -100 and attended != 0
+    )
+
+
 def _sft_nearest_rank(values: list[int], percentile: int) -> int:
     if not values:
         raise ValueError("SFT token-length statistics require at least one value")
@@ -873,9 +920,7 @@ def _preflight_sft_token_lengths(
                 max_seq_length=None,
             )
             total_tokens = len(tokenized["input_ids"])
-            assistant_tokens = sum(
-                1 for label in tokenized["labels"] if label != -100
-            )
+            assistant_tokens = _shifted_sft_target_token_count(tokenized)
             row_transcript = {
                 "schemaVersion": SFT_TOKENIZATION_TRANSCRIPT_SCHEMA,
                 "split": split,
@@ -1439,6 +1484,83 @@ def _build_public_corpus_loss_share_evidence(
     }
 
 
+def _validated_fleet_sft_optimizer_window_schedule_contract(
+    value: Any,
+    *,
+    sft_family_band: Mapping[str, Any],
+) -> dict[str, Any]:
+    schedule_contract = _require_exact_mapping_keys(
+        value,
+        {
+            "schemaVersion",
+            "evidenceSchemaVersion",
+            "lane",
+            "split",
+            "enforcementRequired",
+            "enforcementPhase",
+            "basis",
+            "basisPointDenominator",
+            "minimumBasisPoints",
+            "maximumBasisPoints",
+            "algorithm",
+            "candidateSearchCount",
+            "permutationPolicy",
+            "packing",
+            "distributedSamplingPolicy",
+            "resumePolicy",
+            "failurePolicy",
+        },
+        label="Fleet SFT optimizer-window schedule contract",
+    )
+    expected = {
+        "schemaVersion": (
+            FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA
+        ),
+        "evidenceSchemaVersion": (
+            FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_SCHEMA
+        ),
+        "lane": "sft",
+        "split": "train",
+        "enforcementRequired": True,
+        "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "basis": (
+            "mean_of_floor_per_optimizer_window_native_assistant_target_"
+            "token_share_basis_points"
+        ),
+        "basisPointDenominator": (
+            FLEET_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+        ),
+        "minimumBasisPoints": 5_000,
+        "maximumBasisPoints": 6_000,
+        "algorithm": FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM,
+        "candidateSearchCount": (
+            FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT
+        ),
+        "permutationPolicy": "each_source_row_exactly_once_per_epoch",
+        "packing": False,
+        "distributedSamplingPolicy": "single_process_only",
+        "resumePolicy": (
+            "trainer_set_epoch_with_monotonic_sampler_guard_through_"
+            "skip_first_batches"
+        ),
+        "failurePolicy": "abort_before_optimizer",
+    }
+    if dict(schedule_contract) != expected:
+        raise RuntimeError(
+            "Fleet SFT optimizer-window schedule contract drifted"
+        )
+    if (
+        schedule_contract["minimumBasisPoints"]
+        != sft_family_band.get("minimumBasisPoints")
+        or schedule_contract["maximumBasisPoints"]
+        != sft_family_band.get("maximumBasisPoints")
+    ):
+        raise RuntimeError(
+            "Fleet SFT optimizer-window band differs from family-share band"
+        )
+    return dict(schedule_contract)
+
+
 def _validated_fleet_loss_share_contract(
     value: Any,
     *,
@@ -1468,6 +1590,7 @@ def _validated_fleet_loss_share_contract(
             "exactTokenEvidenceContract",
             "failurePolicy",
             "optimizerFamilyShareBands",
+            "sftOptimizerWindowScheduleContract",
             "rowMetadataContract",
             "sourceSelectionProxy",
             "sourceRoleRegistry",
@@ -1685,6 +1808,11 @@ def _validated_fleet_loss_share_contract(
             raise RuntimeError(
                 f"Fleet {expected_lane} optimizer-family share band drifted"
             )
+
+    _validated_fleet_sft_optimizer_window_schedule_contract(
+        contract.get("sftOptimizerWindowScheduleContract"),
+        sft_family_band=family_lanes["sft"],
+    )
 
     accounting = _require_exact_mapping_keys(
         contract.get("tokenAccounting"),
@@ -1938,6 +2066,1098 @@ def _fleet_optimizer_family_band_passes(
     )
 
 
+def _fleet_sft_schedule_controls(
+    config: Mapping[str, Any] | None,
+) -> tuple[int, int, int, int]:
+    if not isinstance(config, Mapping):
+        raise RuntimeError(
+            "Fleet SFT optimizer-window scheduling requires training config"
+        )
+    seed = config.get("seed")
+    batch_size = config.get("batch_size")
+    gradient_accumulation_steps = config.get(
+        "gradient_accumulation_steps"
+    )
+    configured_epochs = config.get("num_train_epochs")
+    if type(seed) is not int:
+        raise RuntimeError("Fleet SFT schedule requires an integer seed")
+    if type(batch_size) is not int or batch_size <= 0:
+        raise RuntimeError(
+            "Fleet SFT schedule requires a positive integer batch size"
+        )
+    if (
+        type(gradient_accumulation_steps) is not int
+        or gradient_accumulation_steps <= 0
+    ):
+        raise RuntimeError(
+            "Fleet SFT schedule requires positive integer gradient accumulation"
+        )
+    if type(configured_epochs) is not int or configured_epochs <= 0:
+        raise RuntimeError(
+            "Fleet SFT schedule requires a positive integer epoch count"
+        )
+    if config.get("packing", False) is not False:
+        raise RuntimeError("Fleet SFT optimizer-window scheduling forbids packing")
+    return seed, batch_size, gradient_accumulation_steps, configured_epochs
+
+
+def _fleet_sft_schedule_rank(
+    *,
+    seed: int,
+    role: str,
+    index: int,
+    source_row_sha256: str,
+) -> str:
+    return _canonical_sha256(
+        {
+            "algorithm": FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM,
+            "seed": seed,
+            "role": role,
+            "index": index,
+            "sourceRowSHA256": source_row_sha256,
+        }
+    )
+
+
+def _fleet_sft_cycle_take(
+    values: list[int],
+    *,
+    count: int,
+    epoch_index: int,
+    candidate_index: int,
+) -> list[int]:
+    if not values or count <= 0:
+        return []
+    offset = (epoch_index * count + candidate_index) % len(values)
+    return [values[(offset + index) % len(values)] for index in range(count)]
+
+
+def _fleet_sft_epoch_order(
+    *,
+    row_token_evidence: list[Mapping[str, Any]],
+    native_indices: list[int],
+    non_native_indices: list[int],
+    optimizer_window_record_capacity: int,
+    seed: int,
+    epoch_index: int,
+    candidate_index: int,
+) -> list[int]:
+    record_count = len(row_token_evidence)
+    native_samples = _fleet_sft_cycle_take(
+        native_indices,
+        count=len(native_indices),
+        epoch_index=epoch_index,
+        candidate_index=candidate_index,
+    )
+    non_native_samples = _fleet_sft_cycle_take(
+        non_native_indices,
+        count=len(non_native_indices),
+        epoch_index=epoch_index,
+        candidate_index=candidate_index,
+    )
+    window_sizes = [
+        min(optimizer_window_record_capacity, record_count - start)
+        for start in range(0, record_count, optimizer_window_record_capacity)
+    ]
+    window_order = sorted(
+        range(len(window_sizes)),
+        key=lambda window_index: (
+            _canonical_sha256(
+                {
+                    "algorithm": (
+                        FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM
+                    ),
+                    "seed": seed,
+                    "epochIndex": epoch_index,
+                    "candidateIndex": candidate_index,
+                    "role": "optimizer_window",
+                    "windowIndex": window_index,
+                }
+            ),
+            window_index,
+        ),
+    )
+    windows: list[list[int]] = [[] for _ in window_sizes]
+
+    cursor = 0
+    for row_index in native_samples:
+        for _ in window_order:
+            window_index = window_order[cursor % len(window_order)]
+            cursor += 1
+            if len(windows[window_index]) < window_sizes[window_index]:
+                windows[window_index].append(row_index)
+                break
+        else:  # pragma: no cover - guarded by exact schedule geometry
+            raise RuntimeError("Fleet SFT native schedule exceeded window capacity")
+
+    non_native_cursor = 0
+    for window_index in window_order:
+        remaining = window_sizes[window_index] - len(windows[window_index])
+        windows[window_index].extend(
+            non_native_samples[
+                non_native_cursor : non_native_cursor + remaining
+            ]
+        )
+        non_native_cursor += remaining
+    if non_native_cursor != len(non_native_samples):
+        raise RuntimeError("Fleet SFT non-native schedule did not fill all windows")
+
+    for window_index, window in enumerate(windows):
+        ranked_occurrences = sorted(
+            enumerate(window),
+            key=lambda item: (
+                _canonical_sha256(
+                    {
+                        "algorithm": (
+                            FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM
+                        ),
+                        "seed": seed,
+                        "epochIndex": epoch_index,
+                        "candidateIndex": candidate_index,
+                        "role": "window_record",
+                        "windowIndex": window_index,
+                        "occurrenceIndex": item[0],
+                        "rowIndex": item[1],
+                        "sourceRowSHA256": row_token_evidence[item[1]][
+                            "sourceRowSHA256"
+                        ],
+                    }
+                ),
+                item[0],
+            ),
+        )
+        windows[window_index] = [row_index for _, row_index in ranked_occurrences]
+    order = [row_index for window in windows for row_index in window]
+    if (
+        len(order) != record_count
+        or len(set(order)) != record_count
+        or set(order) != set(range(record_count))
+    ):
+        raise RuntimeError(
+            "Fleet SFT schedule is not a strict source-row permutation"
+        )
+    return order
+
+
+def _fleet_sft_epoch_window_evidence(
+    *,
+    row_token_evidence: list[Mapping[str, Any]],
+    record_indices: list[int],
+    optimizer_window_record_capacity: int,
+    native_source_family: str,
+    native_task_type: str,
+    epoch_index: int,
+    candidate_index: int,
+) -> dict[str, Any]:
+    native_source_indices = {
+        int(row["rowIndex"])
+        for row in row_token_evidence
+        if row.get("sourceFamily") == native_source_family
+        and row.get("taskType") == native_task_type
+    }
+    non_native_source_indices = set(range(len(row_token_evidence))) - (
+        native_source_indices
+    )
+    sampled_native = [
+        row_index
+        for row_index in record_indices
+        if row_index in native_source_indices
+    ]
+    sampled_non_native = [
+        row_index
+        for row_index in record_indices
+        if row_index in non_native_source_indices
+    ]
+    windows: list[dict[str, Any]] = []
+    for window_index, start in enumerate(
+        range(0, len(record_indices), optimizer_window_record_capacity)
+    ):
+        window_indices = record_indices[
+            start : start + optimizer_window_record_capacity
+        ]
+        native_target_tokens = sum(
+            int(row_token_evidence[row_index]["targetTokenCount"])
+            for row_index in window_indices
+            if row_index in native_source_indices
+        )
+        all_target_tokens = sum(
+            int(row_token_evidence[row_index]["targetTokenCount"])
+            for row_index in window_indices
+        )
+        if all_target_tokens <= 0:
+            raise RuntimeError("Fleet SFT schedule contains an empty-loss window")
+        share_basis_points = (
+            native_target_tokens * FLEET_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+        ) // all_target_tokens
+        windows.append(
+            {
+                "windowIndex": window_index,
+                "rowIndices": window_indices,
+                "recordCount": len(window_indices),
+                "nativeTargetTokenCount": native_target_tokens,
+                "assistantTargetTokenCount": all_target_tokens,
+                "nativeShareBasisPoints": share_basis_points,
+            }
+        )
+    window_share_sum = sum(
+        window["nativeShareBasisPoints"] for window in windows
+    )
+    unique_native = set(sampled_native)
+    unique_non_native = set(sampled_non_native)
+    shares = [window["nativeShareBasisPoints"] for window in windows]
+    return {
+        "epochIndex": epoch_index,
+        "candidateIndex": candidate_index,
+        "recordIndicesSHA256": _canonical_sha256(record_indices),
+        "windowEvidenceSHA256": _canonical_sha256(windows),
+        "firstOptimizerWindowRecordIndicesSHA256": _canonical_sha256(
+            windows[0]["rowIndices"]
+        ),
+        "firstOptimizerWindowTargetTokenCount": windows[0][
+            "assistantTargetTokenCount"
+        ],
+        "sampledRecordCount": len(record_indices),
+        "nativeSampleCount": len(sampled_native),
+        "nonNativeSampleCount": len(sampled_non_native),
+        "uniqueNativeSourceRecordCount": len(unique_native),
+        "uniqueNonNativeSourceRecordCount": len(unique_non_native),
+        "repeatedNativeSampleCount": len(sampled_native) - len(unique_native),
+        "repeatedNonNativeSampleCount": (
+            len(sampled_non_native) - len(unique_non_native)
+        ),
+        "omittedNativeSourceRecordCount": (
+            len(native_source_indices) - len(unique_native)
+        ),
+        "omittedNonNativeSourceRecordCount": (
+            len(non_native_source_indices) - len(unique_non_native)
+        ),
+        "optimizerWindowCount": len(windows),
+        "optimizerWindowsWithNativeSamples": sum(
+            1 for window in windows if window["nativeTargetTokenCount"] > 0
+        ),
+        "optimizerWindowsWithoutNativeSamples": sum(
+            1 for window in windows if window["nativeTargetTokenCount"] == 0
+        ),
+        "windowShareBasisPointSum": window_share_sum,
+        "windowShareBasisPointCount": len(windows),
+        "windowNormalizedNativeShareBasisPoints": (
+            window_share_sum // len(windows)
+        ),
+        "minimumWindowNativeShareBasisPoints": min(shares),
+        "maximumWindowNativeShareBasisPoints": max(shares),
+    }
+
+
+def _build_fleet_sft_optimizer_window_schedule(
+    *,
+    row_token_evidence: list[Mapping[str, Any]],
+    config: Mapping[str, Any] | None,
+    schedule_contract: Mapping[str, Any],
+    minimum_basis_points: int,
+    maximum_basis_points: int,
+) -> tuple[dict[str, Any], list[list[int]]]:
+    validated_schedule_contract = (
+        _validated_fleet_sft_optimizer_window_schedule_contract(
+            schedule_contract,
+            sft_family_band={
+                "minimumBasisPoints": minimum_basis_points,
+                "maximumBasisPoints": maximum_basis_points,
+            },
+        )
+    )
+    seed, batch_size, gradient_accumulation_steps, configured_epochs = (
+        _fleet_sft_schedule_controls(config)
+    )
+    if (
+        not isinstance(row_token_evidence, list)
+        or len(row_token_evidence) < 2
+        or type(minimum_basis_points) is not int
+        or type(maximum_basis_points) is not int
+        or not 0
+        <= minimum_basis_points
+        <= maximum_basis_points
+        <= FLEET_LOSS_SHARE_BASIS_POINT_DENOMINATOR
+    ):
+        raise RuntimeError("Fleet SFT schedule inputs are invalid")
+    for row_index, row in enumerate(row_token_evidence):
+        if (
+            not isinstance(row, Mapping)
+            or row.get("rowIndex") != row_index
+            or type(row.get("targetTokenCount")) is not int
+            or row["targetTokenCount"] <= 0
+            or not isinstance(row.get("sourceRowSHA256"), str)
+        ):
+            raise RuntimeError("Fleet SFT schedule row evidence is malformed")
+    native_indices = [
+        row_index
+        for row_index, row in enumerate(row_token_evidence)
+        if row.get("sourceFamily") == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+        and row.get("taskType")
+        == FLEET_NATIVE_ORCHESTRATION_TASK_TYPE_BY_LANE["sft"]
+    ]
+    native_index_set = set(native_indices)
+    non_native_indices = [
+        row_index
+        for row_index in range(len(row_token_evidence))
+        if row_index not in native_index_set
+    ]
+    if not native_indices or not non_native_indices:
+        raise RuntimeError(
+            "Fleet SFT schedule requires native and non-native source rows"
+        )
+    native_indices.sort(
+        key=lambda row_index: (
+            _fleet_sft_schedule_rank(
+                seed=seed,
+                role="native_source_record",
+                index=row_index,
+                source_row_sha256=str(
+                    row_token_evidence[row_index]["sourceRowSHA256"]
+                ),
+            ),
+            row_index,
+        )
+    )
+    non_native_indices.sort(
+        key=lambda row_index: (
+            _fleet_sft_schedule_rank(
+                seed=seed,
+                role="non_native_source_record",
+                index=row_index,
+                source_row_sha256=str(
+                    row_token_evidence[row_index]["sourceRowSHA256"]
+                ),
+            ),
+            row_index,
+        )
+    )
+    optimizer_window_record_capacity = (
+        batch_size * gradient_accumulation_steps
+    )
+    epoch_evidence: list[dict[str, Any]] = []
+    epoch_orders: list[list[int]] = []
+    sampled_across_epochs: set[int] = set()
+    record_count = len(row_token_evidence)
+    midpoint_basis_point_sum_factor = (
+        minimum_basis_points + maximum_basis_points
+    )
+    for epoch_index in range(configured_epochs):
+        candidates: list[
+            tuple[tuple[int, int], dict[str, Any], list[int]]
+        ] = []
+        for candidate_index in range(
+            validated_schedule_contract["candidateSearchCount"]
+        ):
+            record_indices = _fleet_sft_epoch_order(
+                row_token_evidence=row_token_evidence,
+                native_indices=native_indices,
+                non_native_indices=non_native_indices,
+                optimizer_window_record_capacity=(
+                    optimizer_window_record_capacity
+                ),
+                seed=seed,
+                epoch_index=epoch_index,
+                candidate_index=candidate_index,
+            )
+            observed = _fleet_sft_epoch_window_evidence(
+                row_token_evidence=row_token_evidence,
+                record_indices=record_indices,
+                optimizer_window_record_capacity=(
+                    optimizer_window_record_capacity
+                ),
+                native_source_family=(
+                    FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+                ),
+                native_task_type=(
+                    FLEET_NATIVE_ORCHESTRATION_TASK_TYPE_BY_LANE["sft"]
+                ),
+                epoch_index=epoch_index,
+                candidate_index=candidate_index,
+            )
+            if (
+                observed["nativeSampleCount"] != len(native_indices)
+                or observed["nonNativeSampleCount"]
+                != len(non_native_indices)
+                or observed["uniqueNativeSourceRecordCount"]
+                != len(native_indices)
+                or observed["uniqueNonNativeSourceRecordCount"]
+                != len(non_native_indices)
+                or observed["repeatedNativeSampleCount"] != 0
+                or observed["repeatedNonNativeSampleCount"] != 0
+                or observed["omittedNativeSourceRecordCount"] != 0
+                or observed["omittedNonNativeSourceRecordCount"] != 0
+            ):
+                raise RuntimeError(
+                    "Fleet SFT schedule violated strict permutation evidence"
+                )
+            share_sum = observed["windowShareBasisPointSum"]
+            share_count = observed["windowShareBasisPointCount"]
+            if not (
+                share_sum >= minimum_basis_points * share_count
+                and share_sum <= maximum_basis_points * share_count
+            ):
+                continue
+            candidates.append(
+                (
+                    (
+                        abs(
+                            2 * share_sum
+                            - midpoint_basis_point_sum_factor * share_count
+                        ),
+                        candidate_index,
+                    ),
+                    observed,
+                    record_indices,
+                )
+            )
+        if not candidates:
+            raise RuntimeError(
+                "Fleet SFT optimizer-window native share cannot satisfy the "
+                "controlled band with a strict source-row permutation"
+            )
+        _, selected_evidence, selected_order = min(
+            candidates,
+            key=lambda candidate: candidate[0],
+        )
+        epoch_evidence.append(selected_evidence)
+        epoch_orders.append(selected_order)
+        sampled_across_epochs.update(selected_order)
+
+    schedule: dict[str, Any] = {
+        "schemaVersion": validated_schedule_contract[
+            "evidenceSchemaVersion"
+        ],
+        "scheduleContractSchemaVersion": validated_schedule_contract[
+            "schemaVersion"
+        ],
+        "scheduleContractSHA256": _canonical_sha256(
+            validated_schedule_contract
+        ),
+        "status": "passed",
+        "lane": validated_schedule_contract["lane"],
+        "split": validated_schedule_contract["split"],
+        "enforcementRequired": validated_schedule_contract[
+            "enforcementRequired"
+        ],
+        "enforcementPhase": validated_schedule_contract[
+            "enforcementPhase"
+        ],
+        "basis": validated_schedule_contract["basis"],
+        "basisPointDenominator": validated_schedule_contract[
+            "basisPointDenominator"
+        ],
+        "algorithm": validated_schedule_contract["algorithm"],
+        "comparisonRule": (
+            "windowShareBasisPointSum between minimumBasisPoints*"
+            "windowShareBasisPointCount and maximumBasisPoints*"
+            "windowShareBasisPointCount inclusive"
+        ),
+        "permutationPolicy": validated_schedule_contract[
+            "permutationPolicy"
+        ],
+        "candidateSearchCount": validated_schedule_contract[
+            "candidateSearchCount"
+        ],
+        "distributedSamplingPolicy": validated_schedule_contract[
+            "distributedSamplingPolicy"
+        ],
+        "resumePolicy": validated_schedule_contract["resumePolicy"],
+        "packing": validated_schedule_contract["packing"],
+        "failurePolicy": validated_schedule_contract["failurePolicy"],
+        "seed": seed,
+        "perDeviceTrainBatchSize": batch_size,
+        "gradientAccumulationSteps": gradient_accumulation_steps,
+        "optimizerWindowRecordCapacity": optimizer_window_record_capacity,
+        "configuredEpochs": configured_epochs,
+        "datasetRecordsPerEpoch": record_count,
+        "nativeSourceRecordCount": len(native_indices),
+        "nonNativeSourceRecordCount": len(non_native_indices),
+        "minimumBasisPoints": validated_schedule_contract[
+            "minimumBasisPoints"
+        ],
+        "maximumBasisPoints": validated_schedule_contract[
+            "maximumBasisPoints"
+        ],
+        "sourceRowsSHA256": _canonical_sha256(
+            [row["sourceRowSHA256"] for row in row_token_evidence]
+        ),
+        "uniqueSourceRecordsAcrossConfiguredEpochs": len(
+            sampled_across_epochs
+        ),
+        "allSourceRecordsCoveredAcrossConfiguredEpochs": (
+            len(sampled_across_epochs) == record_count
+        ),
+        "samplerSetEpochRequired": True,
+        "epochs": epoch_evidence,
+    }
+    schedule["scheduleSHA256"] = _canonical_sha256(schedule)
+    return schedule, epoch_orders
+
+
+class _FleetEpochStratifiedSampler:
+    def __init__(self, epoch_orders: list[list[int]]) -> None:
+        expected_indices = (
+            set(range(len(epoch_orders[0]))) if epoch_orders else set()
+        )
+        if (
+            not epoch_orders
+            or not epoch_orders[0]
+            or any(len(order) != len(epoch_orders[0]) for order in epoch_orders)
+            or any(set(order) != expected_indices for order in epoch_orders)
+        ):
+            raise RuntimeError("Fleet SFT sampler received invalid epoch schedules")
+        self._epoch_orders = tuple(tuple(order) for order in epoch_orders)
+        self._epoch = 0
+        self._set_epoch_request_count = 0
+        self._accepted_epoch_transition_count = 0
+        self._idempotent_epoch_request_count = 0
+        self._suppressed_lower_epoch_reset_count = 0
+        self._last_requested_epoch: int | None = None
+        self._last_suppressed_lower_epoch: int | None = None
+
+    def __len__(self) -> int:
+        return len(self._epoch_orders[0])
+
+    def __iter__(self):
+        return iter(self._epoch_orders[self._epoch])
+
+    def set_epoch(self, epoch: int) -> None:
+        if type(epoch) is not int or not 0 <= epoch < len(self._epoch_orders):
+            raise RuntimeError("Fleet SFT sampler received an invalid epoch")
+        self._set_epoch_request_count += 1
+        self._last_requested_epoch = epoch
+        if epoch < self._epoch:
+            # Transformers selects the resumed epoch on the prepared training
+            # dataloader before Accelerate's skip_first_batches constructs a
+            # replacement DataLoaderShard. In the pinned Accelerate runtime,
+            # that replacement starts with iteration == 0 and calls
+            # set_epoch(0) on this same sampler from __iter__. Preserve the
+            # already-selected epoch; epoch progression within one Trainer
+            # invocation is monotonic.
+            self._suppressed_lower_epoch_reset_count += 1
+            self._last_suppressed_lower_epoch = epoch
+            return
+        if epoch == self._epoch:
+            self._idempotent_epoch_request_count += 1
+            return
+        self._epoch = epoch
+        self._accepted_epoch_transition_count += 1
+
+    def audit_state(self) -> dict[str, int | None]:
+        return {
+            "configuredEpochCount": len(self._epoch_orders),
+            "activeEpoch": self._epoch,
+            "setEpochRequestCount": self._set_epoch_request_count,
+            "acceptedEpochTransitionCount": (
+                self._accepted_epoch_transition_count
+            ),
+            "idempotentEpochRequestCount": (
+                self._idempotent_epoch_request_count
+            ),
+            "suppressedLowerEpochResetCount": (
+                self._suppressed_lower_epoch_reset_count
+            ),
+            "lastRequestedEpoch": self._last_requested_epoch,
+            "lastSuppressedLowerEpoch": (
+                self._last_suppressed_lower_epoch
+            ),
+        }
+
+    def _snapshot_runtime_state(self) -> dict[str, int | None]:
+        return dict(self.audit_state())
+
+    def _restore_runtime_state(
+        self,
+        snapshot: Mapping[str, Any],
+    ) -> None:
+        expected_keys = set(self.audit_state())
+        if (
+            not isinstance(snapshot, Mapping)
+            or set(snapshot) != expected_keys
+            or snapshot.get("configuredEpochCount") != len(self._epoch_orders)
+        ):
+            raise RuntimeError("Fleet SFT sampler runtime snapshot is invalid")
+        integer_fields = (
+            "activeEpoch",
+            "setEpochRequestCount",
+            "acceptedEpochTransitionCount",
+            "idempotentEpochRequestCount",
+            "suppressedLowerEpochResetCount",
+        )
+        if any(
+            type(snapshot.get(field)) is not int
+            or int(snapshot[field]) < 0
+            for field in integer_fields
+        ):
+            raise RuntimeError("Fleet SFT sampler runtime snapshot is malformed")
+        optional_epoch_fields = (
+            "lastRequestedEpoch",
+            "lastSuppressedLowerEpoch",
+        )
+        if any(
+            value is not None
+            and (
+                type(value) is not int
+                or not 0 <= value < len(self._epoch_orders)
+            )
+            for value in (snapshot.get(field) for field in optional_epoch_fields)
+        ):
+            raise RuntimeError("Fleet SFT sampler epoch snapshot is malformed")
+        if int(snapshot["activeEpoch"]) >= len(self._epoch_orders):
+            raise RuntimeError("Fleet SFT sampler active epoch snapshot is invalid")
+        self._epoch = int(snapshot["activeEpoch"])
+        self._set_epoch_request_count = int(snapshot["setEpochRequestCount"])
+        self._accepted_epoch_transition_count = int(
+            snapshot["acceptedEpochTransitionCount"]
+        )
+        self._idempotent_epoch_request_count = int(
+            snapshot["idempotentEpochRequestCount"]
+        )
+        self._suppressed_lower_epoch_reset_count = int(
+            snapshot["suppressedLowerEpochResetCount"]
+        )
+        self._last_requested_epoch = snapshot["lastRequestedEpoch"]
+        self._last_suppressed_lower_epoch = snapshot[
+            "lastSuppressedLowerEpoch"
+        ]
+        if self.audit_state() != dict(snapshot):
+            raise RuntimeError("Fleet SFT sampler runtime restoration failed")
+
+
+def _capture_fleet_runtime_rng_state() -> dict[str, Any]:
+    import torch  # type: ignore
+
+    numpy_state: Any = None
+    try:
+        import numpy as np  # type: ignore
+
+        numpy_state = np.random.get_state()
+    except ImportError:
+        pass
+    return {
+        "python": random.getstate(),
+        "numpy": numpy_state,
+        "torchCPU": torch.random.get_rng_state().clone(),
+        "torchCUDA": [state.clone() for state in torch.cuda.get_rng_state_all()],
+    }
+
+
+def _restore_fleet_runtime_rng_state(state: Mapping[str, Any]) -> None:
+    import torch  # type: ignore
+
+    if not isinstance(state, Mapping) or set(state) != {
+        "python",
+        "numpy",
+        "torchCPU",
+        "torchCUDA",
+    }:
+        raise RuntimeError("Fleet runtime RNG snapshot is invalid")
+    random.setstate(state["python"])
+    if state["numpy"] is not None:
+        try:
+            import numpy as np  # type: ignore
+        except ImportError as exc:  # pragma: no cover - pinned image includes NumPy
+            raise RuntimeError("Fleet runtime RNG restoration requires NumPy") from exc
+        np.random.set_state(state["numpy"])
+    torch.random.set_rng_state(state["torchCPU"])
+    torch.cuda.set_rng_state_all(state["torchCUDA"])
+
+
+def _fleet_runtime_rng_states_equal(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+) -> bool:
+    import torch  # type: ignore
+
+    if left.get("python") != right.get("python"):
+        return False
+    left_numpy = left.get("numpy")
+    right_numpy = right.get("numpy")
+    if (left_numpy is None) != (right_numpy is None):
+        return False
+    if left_numpy is not None:
+        import numpy as np  # type: ignore
+
+        if (
+            left_numpy[0] != right_numpy[0]
+            or not np.array_equal(left_numpy[1], right_numpy[1])
+            or left_numpy[2:] != right_numpy[2:]
+        ):
+            return False
+    if not torch.equal(left.get("torchCPU"), right.get("torchCPU")):
+        return False
+    left_cuda = left.get("torchCUDA")
+    right_cuda = right.get("torchCUDA")
+    return (
+        isinstance(left_cuda, list)
+        and isinstance(right_cuda, list)
+        and len(left_cuda) == len(right_cuda)
+        and all(torch.equal(a, b) for a, b in zip(left_cuda, right_cuda))
+    )
+
+
+def _runtime_nested_integer_rows(value: Any, *, label: str) -> list[list[int]]:
+    for operation in ("detach", "cpu", "tolist"):
+        method = getattr(value, operation, None)
+        if callable(method):
+            value = method()
+    if isinstance(value, tuple):
+        value = list(value)
+    if not isinstance(value, list) or not value:
+        raise RuntimeError(f"Fleet runtime {label} must be a non-empty tensor")
+    if all(type(item) is int for item in value):
+        return [list(value)]
+    rows: list[list[int]] = []
+    for row in value:
+        if isinstance(row, tuple):
+            row = list(row)
+        if (
+            not isinstance(row, list)
+            or not row
+            or any(type(item) is not int for item in row)
+        ):
+            raise RuntimeError(f"Fleet runtime {label} tensor shape is invalid")
+        rows.append(list(row))
+    return rows
+
+
+def _runtime_shifted_sft_target_token_count(batch: Mapping[str, Any]) -> int:
+    if not isinstance(batch, Mapping) or "labels" not in batch:
+        raise RuntimeError("Fleet runtime batch lacks labels")
+    if batch.get("packed_seq_lengths") is not None:
+        raise RuntimeError("Fleet runtime normalization forbids packed sequences")
+    labels = _runtime_nested_integer_rows(batch["labels"], label="labels")
+    raw_attention = batch.get("attention_mask")
+    attention = (
+        [[1] * len(row) for row in labels]
+        if raw_attention is None
+        else _runtime_nested_integer_rows(
+            raw_attention,
+            label="attention_mask",
+        )
+    )
+    if len(labels) != len(attention) or any(
+        len(label_row) != len(attention_row)
+        for label_row, attention_row in zip(labels, attention)
+    ):
+        raise RuntimeError("Fleet runtime labels and attention mask differ")
+    return sum(
+        1
+        for label_row, attention_row in zip(labels, attention)
+        for target, attended in zip(label_row[1:], attention_row[1:])
+        if target != -100 and attended != 0
+    )
+
+
+def _runtime_positive_scalar_integer(value: Any, *, label: str) -> int:
+    detach = getattr(value, "detach", None)
+    if callable(detach):
+        value = detach()
+    cpu = getattr(value, "cpu", None)
+    if callable(cpu):
+        value = cpu()
+    numel = getattr(value, "numel", None)
+    if callable(numel) and numel() != 1:
+        raise RuntimeError(f"{label} must be scalar")
+    item = getattr(value, "item", None)
+    if callable(item):
+        value = item()
+    if type(value) is not int or value <= 0:
+        raise RuntimeError(f"{label} must be a positive integer")
+    return value
+
+
+def _runtime_callable_code_sha256(value: Any, *, label: str) -> str:
+    function = getattr(value, "__func__", value)
+    code = getattr(function, "__code__", None)
+    if code is None:
+        raise RuntimeError(f"Fleet runtime {label} lacks inspectable code")
+    try:
+        return canonical_python_code_sha256(code)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Fleet runtime {label} code object cannot be canonicalized"
+        ) from exc
+
+
+def _attest_fleet_sft_runtime_loss_normalization(
+    trainer: Any,
+    *,
+    assistant_only_loss: bool,
+    config: Mapping[str, Any],
+    row_token_evidence: list[Mapping[str, Any]],
+    epoch_orders: list[list[int]],
+    fleet_sampler: _FleetEpochStratifiedSampler,
+) -> dict[str, Any]:
+    """Prove the pinned trainer uses one token denominator per GA window."""
+
+    _, batch_size, gradient_accumulation_steps, _ = (
+        _fleet_sft_schedule_controls(config)
+    )
+    trainer_args = getattr(trainer, "args", None)
+    accelerator = getattr(trainer, "accelerator", None)
+    get_batch_samples = getattr(trainer, "get_batch_samples", None)
+    get_batch_samples_function = getattr(
+        get_batch_samples,
+        "__func__",
+        get_batch_samples,
+    )
+    trainer_class = f"{type(trainer).__module__}.{type(trainer).__name__}"
+    if (
+        assistant_only_loss is not True
+        or trainer_class != FLEET_SFT_TRAINER_CLASS
+        or trainer_args is None
+        or type(
+            getattr(trainer_args, "gradient_accumulation_steps", None)
+        )
+        is not int
+        or trainer_args.gradient_accumulation_steps
+        != gradient_accumulation_steps
+        or type(getattr(trainer_args, "per_device_train_batch_size", None))
+        is not int
+        or trainer_args.per_device_train_batch_size != batch_size
+        or type(getattr(trainer_args, "world_size", None)) is not int
+        or trainer_args.world_size != 1
+        or getattr(trainer_args, "packing", None) is not False
+        or getattr(trainer_args, "dataloader_drop_last", None) is not False
+        or getattr(trainer_args, "loss_type", None) != "nll"
+        or getattr(trainer, "compute_loss_func", None) is not None
+        or getattr(trainer, "model_accepts_loss_kwargs", None) is not True
+        or getattr(trainer, "padding_free", None) is not True
+        or accelerator is None
+        or type(getattr(accelerator, "gradient_accumulation_steps", None))
+        is not int
+        or accelerator.gradient_accumulation_steps != 1
+        or not callable(get_batch_samples)
+        or getattr(get_batch_samples_function, "__name__", None)
+        != FLEET_SFT_GET_BATCH_SAMPLES_NAME
+        or getattr(get_batch_samples_function, "__module__", None)
+        != FLEET_SFT_GET_BATCH_SAMPLES_MODULE
+        or getattr(trainer, "optimizer", None) is not None
+        or getattr(trainer, "lr_scheduler", None) is not None
+    ):
+        raise RuntimeError(
+            "Fleet SFT runtime lacks the pinned token-normalized gradient "
+            "accumulation path"
+        )
+    model = getattr(trainer, "model", None)
+    get_base_model = getattr(model, "get_base_model", None)
+    if not callable(get_base_model):
+        raise RuntimeError("Fleet SFT runtime model is not PEFT-wrapped")
+    base_model = get_base_model()
+    base_config = getattr(base_model, "config", None)
+    model_class = f"{type(model).__module__}.{type(model).__name__}"
+    base_model_class = (
+        f"{type(base_model).__module__}.{type(base_model).__name__}"
+    )
+    if (
+        model_class != FLEET_SFT_MODEL_CLASS
+        or base_model_class != FLEET_SFT_BASE_MODEL_CLASS
+        or getattr(base_config, "model_type", None) != "qwen3"
+    ):
+        raise RuntimeError("Fleet SFT runtime base model is not pinned Qwen3")
+    if (
+        len(row_token_evidence) != len(getattr(trainer, "train_dataset", []))
+        or not epoch_orders
+        or len(epoch_orders[0]) != len(row_token_evidence)
+        or len(row_token_evidence) < batch_size * gradient_accumulation_steps
+    ):
+        raise RuntimeError("Fleet SFT runtime normalization inputs are incomplete")
+    for row_index, row in enumerate(row_token_evidence):
+        if (
+            not isinstance(row, Mapping)
+            or row.get("rowIndex") != row_index
+            or type(row.get("targetTokenCount")) is not int
+            or row["targetTokenCount"] <= 0
+        ):
+            raise RuntimeError("Fleet SFT runtime row evidence is malformed")
+
+    optimizer_window_capacity = batch_size * gradient_accumulation_steps
+    scheduled_indices = epoch_orders[0][:optimizer_window_capacity]
+    expected_micro_batch_counts = [
+        sum(
+            int(row_token_evidence[row_index]["targetTokenCount"])
+            for row_index in scheduled_indices[start : start + batch_size]
+        )
+        for start in range(0, optimizer_window_capacity, batch_size)
+    ]
+    sampler_before = fleet_sampler._snapshot_runtime_state()
+    rng_before = _capture_fleet_runtime_rng_state()
+    epoch_iterator: Any = None
+    batch_samples: list[Any] = []
+    observed_denominator: Any = None
+    restoration_verified = False
+    try:
+        train_dataloader = trainer.get_train_dataloader()
+        epoch_iterator = iter(train_dataloader)
+        batch_samples, observed_denominator = get_batch_samples(
+            epoch_iterator,
+            gradient_accumulation_steps,
+            trainer_args.device,
+        )
+    finally:
+        shutdown_workers = getattr(epoch_iterator, "_shutdown_workers", None)
+        if callable(shutdown_workers):
+            shutdown_workers()
+        fleet_sampler._restore_runtime_state(sampler_before)
+        _restore_fleet_runtime_rng_state(rng_before)
+        rng_after = _capture_fleet_runtime_rng_state()
+        restoration_verified = (
+            fleet_sampler._snapshot_runtime_state() == sampler_before
+            and _fleet_runtime_rng_states_equal(rng_before, rng_after)
+        )
+        if not restoration_verified:
+            raise RuntimeError(
+                "Fleet SFT runtime normalization probe changed training state"
+            )
+
+    if len(batch_samples) != gradient_accumulation_steps:
+        raise RuntimeError(
+            "Fleet SFT runtime probe did not materialize one full optimizer window"
+        )
+    observed_micro_batch_counts = [
+        _runtime_shifted_sft_target_token_count(batch)
+        for batch in batch_samples
+    ]
+    reconstructed_denominator = sum(observed_micro_batch_counts)
+    reported_denominator = _runtime_positive_scalar_integer(
+        observed_denominator,
+        label="Fleet SFT num_items_in_batch",
+    )
+    expected_denominator = sum(expected_micro_batch_counts)
+    if (
+        observed_micro_batch_counts != expected_micro_batch_counts
+        or reconstructed_denominator != expected_denominator
+        or reported_denominator != reconstructed_denominator
+    ):
+        raise RuntimeError(
+            "Fleet SFT runtime token denominator differs from the scheduled "
+            "shifted-label evidence"
+        )
+
+    get_batch_samples_code_sha256 = _runtime_callable_code_sha256(
+        get_batch_samples_function,
+        label="get_batch_samples",
+    )
+    try:
+        installed_callable_identity = (
+            installed_distribution_python_callable_identity(
+                distribution_name="unsloth-zoo",
+                source_logical_path=(
+                    FLEET_SFT_GET_BATCH_SAMPLES_SOURCE
+                ),
+                callable_name=FLEET_SFT_GET_BATCH_SAMPLES_NAME,
+                resolved_environment=config.get(
+                    "resolvedTrainingEnvironment"
+                ),
+            )
+        )
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Fleet SFT runtime callable identity cannot be reconstructed"
+        ) from exc
+    live_code = getattr(get_batch_samples_function, "__code__", None)
+    if (
+        live_code is None
+        or installed_callable_identity.get("codeSHA256")
+        != get_batch_samples_code_sha256
+        or installed_callable_identity.get("callableQualname")
+        != getattr(get_batch_samples_function, "__qualname__", None)
+        or installed_callable_identity.get("callableFirstLineNumber")
+        != getattr(live_code, "co_firstlineno", None)
+    ):
+        raise RuntimeError(
+            "Fleet SFT live callable drifted from the installed wheel"
+        )
+    training_code_sha256 = _require_sha256(
+        config.get("trainingCodeSHA256"),
+        name="trainingCodeSHA256",
+    )
+    resolved_environment_sha256 = _require_sha256(
+        config.get("resolvedTrainingEnvironmentSHA256"),
+        name="resolvedTrainingEnvironmentSHA256",
+    )
+    training_environment_sha256 = _require_sha256(
+        config.get("trainingEnvironmentSHA256"),
+        name="trainingEnvironmentSHA256",
+    )
+    container_image_digest = _require_sha256(
+        config.get("trainingContainerImageDigest"),
+        name="trainingContainerImageDigest",
+        prefix=True,
+    )
+    if (
+        installed_callable_identity.get(
+            "resolvedTrainingEnvironmentSHA256"
+        )
+        != resolved_environment_sha256
+    ):
+        raise RuntimeError(
+            "Fleet SFT callable identity drifted from the resolved environment"
+        )
+    unsigned = {
+        "schemaVersion": FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA,
+        "status": "passed",
+        "enforcementPhase": "post_trainer_init_pre_optimizer",
+        "countingRule": (
+            "sum_shifted_non_ignored_labels_intersect_shifted_attention_mask"
+        ),
+        "trainingCodeSHA256": training_code_sha256,
+        "resolvedTrainingEnvironmentSHA256": (
+            resolved_environment_sha256
+        ),
+        "trainingEnvironmentSHA256": training_environment_sha256,
+        "trainingContainerImageDigest": container_image_digest,
+        "trainerClass": trainer_class,
+        "modelClass": model_class,
+        "baseModelClass": base_model_class,
+        "baseModelType": "qwen3",
+        "getBatchSamples": {
+            "module": FLEET_SFT_GET_BATCH_SAMPLES_MODULE,
+            "name": FLEET_SFT_GET_BATCH_SAMPLES_NAME,
+            "installedCallableIdentity": installed_callable_identity,
+        },
+        "modelAcceptsLossKwargs": True,
+        "lossType": "nll",
+        "packing": False,
+        "paddingFree": True,
+        "worldSize": 1,
+        "perDeviceTrainBatchSize": batch_size,
+        "trainerGradientAccumulationSteps": gradient_accumulation_steps,
+        "acceleratorGradientAccumulationSteps": 1,
+        "optimizerWindowRecordCapacity": optimizer_window_capacity,
+        "optimizerWindowMicroBatchCount": len(batch_samples),
+        "scheduledRowIndicesSHA256": _canonical_sha256(scheduled_indices),
+        "expectedMicroBatchTargetTokenCounts": expected_micro_batch_counts,
+        "observedMicroBatchTargetTokenCounts": observed_micro_batch_counts,
+        "expectedTargetTokenCount": expected_denominator,
+        "reconstructedTargetTokenCount": reconstructed_denominator,
+        "reportedNumItemsInBatch": reported_denominator,
+        "samplerStateSHA256": _canonical_sha256(sampler_before),
+        "samplerStatePreserved": restoration_verified,
+        "rngStateRestored": restoration_verified,
+        "preOptimizerStateVerified": True,
+    }
+    return {
+        **unsigned,
+        "runtimeLossNormalizationSHA256": _canonical_sha256(unsigned),
+    }
+
+
+def _validate_fleet_sft_trainer_args(training_args: Any) -> None:
+    world_size = getattr(training_args, "world_size", None)
+    if (
+        type(world_size) is not int
+        or world_size != 1
+        or getattr(training_args, "ignore_data_skip", None) is not False
+        or getattr(training_args, "dataloader_drop_last", None) is not False
+    ):
+        raise RuntimeError(
+            "Fleet SFT attested scheduling requires single-process Trainer "
+            "resume semantics and dataloader_drop_last=False"
+        )
+
+
 def _build_fleet_loss_share_evidence(
     *,
     contract_value: Any,
@@ -2118,6 +3338,25 @@ def _build_fleet_loss_share_evidence(
                 sorted(supplemental_by_family.items())
             ),
         }
+        if lane == "sft" and split == "train":
+            optimizer_window_schedule, _ = (
+                _build_fleet_sft_optimizer_window_schedule(
+                    row_token_evidence=row_evidence,
+                    config=config,
+                    schedule_contract=contract[
+                        "sftOptimizerWindowScheduleContract"
+                    ],
+                    minimum_basis_points=selected_family_band[
+                        "minimumBasisPoints"
+                    ],
+                    maximum_basis_points=selected_family_band[
+                        "maximumBasisPoints"
+                    ],
+                )
+            )
+            split_evidence[split]["optimizerWindowSchedule"] = (
+                optimizer_window_schedule
+            )
 
     return {
         "schemaVersion": FLEET_LOSS_SHARE_EVIDENCE_SCHEMA,
@@ -5464,6 +6703,51 @@ def main() -> None:
         ),
         fleet_config=cfg,
     )
+    fleet_row_evidence: list[Mapping[str, Any]] | None = None
+    fleet_epoch_orders: list[list[int]] | None = None
+    fleet_sampler: _FleetEpochStratifiedSampler | None = None
+    if cfg.get("agent") == "fleet":
+        fleet_evidence = token_length_preflight.get("fleetLossShareEvidence")
+        if not isinstance(fleet_evidence, Mapping):
+            raise RuntimeError("Fleet SFT preflight is missing loss-share evidence")
+        fleet_splits = fleet_evidence.get("splits")
+        fleet_train = (
+            fleet_splits.get("train")
+            if isinstance(fleet_splits, Mapping)
+            else None
+        )
+        if not isinstance(fleet_train, Mapping):
+            raise RuntimeError("Fleet SFT preflight is missing train evidence")
+        fleet_row_evidence = fleet_train.get("rowTokenEvidence")
+        optimizer_family_band = fleet_evidence.get(
+            "optimizerFamilyShareBand"
+        )
+        fleet_contract = cfg.get("fleetLossShareContract")
+        schedule_contract = (
+            fleet_contract.get("sftOptimizerWindowScheduleContract")
+            if isinstance(fleet_contract, Mapping)
+            else None
+        )
+        if not isinstance(fleet_row_evidence, list) or not isinstance(
+            optimizer_family_band,
+            Mapping,
+        ) or not isinstance(schedule_contract, Mapping):
+            raise RuntimeError("Fleet SFT preflight schedule inputs are missing")
+        rebuilt_schedule, fleet_epoch_orders = (
+            _build_fleet_sft_optimizer_window_schedule(
+                row_token_evidence=fleet_row_evidence,
+                config=cfg,
+                schedule_contract=schedule_contract,
+                minimum_basis_points=optimizer_family_band[
+                    "minimumBasisPoints"
+                ],
+                maximum_basis_points=optimizer_family_band[
+                    "maximumBasisPoints"
+                ],
+            )
+        )
+        if fleet_train.get("optimizerWindowSchedule") != rebuilt_schedule:
+            raise RuntimeError("Fleet SFT optimizer-window schedule drifted")
     token_length_preflight_evidence = (
         _bind_sft_token_length_preflight(
             cfg,
@@ -5541,6 +6825,7 @@ def main() -> None:
         packing=bool(cfg.get("packing", False)),
         seed=seed,
         data_seed=seed,
+        dataloader_drop_last=False,
     )
     # Assistant-only rows are pre-tokenized with masked labels, so TRL should
     # treat them as an already-processed dataset instead of rebuilding masks.
@@ -5548,14 +6833,50 @@ def main() -> None:
         sft_kwargs["dataset_text_field"] = "text"
 
     training_args = SFTConfig(**sft_kwargs)
+    if fleet_epoch_orders is not None:
+        _validate_fleet_sft_trainer_args(training_args)
+        fleet_sampler = _FleetEpochStratifiedSampler(fleet_epoch_orders)
 
-    trainer = SFTTrainer(
+        class _FleetSFTTrainer(SFTTrainer):
+            def _get_train_sampler(self, train_dataset=None):
+                selected_dataset = (
+                    self.train_dataset
+                    if train_dataset is None
+                    else train_dataset
+                )
+                if len(selected_dataset) != len(fleet_sampler):
+                    raise RuntimeError(
+                        "Fleet SFT sampler and train dataset lengths differ"
+                    )
+                return fleet_sampler
+
+        trainer_class = _FleetSFTTrainer
+    else:
+        trainer_class = SFTTrainer
+
+    trainer = trainer_class(
         model=model,
         processing_class=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         args=training_args,
     )
+    fleet_runtime_loss_normalization: dict[str, Any] | None = None
+    if fleet_epoch_orders is not None:
+        if fleet_row_evidence is None or fleet_sampler is None:
+            raise RuntimeError(
+                "Fleet SFT runtime normalization lacks schedule evidence"
+            )
+        fleet_runtime_loss_normalization = (
+            _attest_fleet_sft_runtime_loss_normalization(
+                trainer,
+                assistant_only_loss=assistant_only_loss,
+                config=cfg,
+                row_token_evidence=fleet_row_evidence,
+                epoch_orders=fleet_epoch_orders,
+                fleet_sampler=fleet_sampler,
+            )
+        )
     if checkpoint_lineage_path is not None:
         trainer.add_callback(
             (
@@ -5710,6 +7031,15 @@ def main() -> None:
 
     report = {
         **manifest,
+        **(
+            {
+                "fleetRuntimeLossNormalization": (
+                    fleet_runtime_loss_normalization
+                )
+            }
+            if fleet_runtime_loss_normalization is not None
+            else {}
+        ),
         "trainingCompletion": training_completion,
         "metrics": train_result.metrics,
         "evaluation_metrics": evaluation_metrics,
