@@ -243,7 +243,7 @@ ADAPTER_DERIVED_TOKENIZER_FILES = frozenset(
         "vocab.json",
     }
 )
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.5.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.6.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA = "lumen.fleet-loss-share-evidence/1.3.0"
 FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA = (
     "lumen.fleet-sft-optimizer-window-schedule-contract/1.0.0"
@@ -1717,14 +1717,14 @@ def _validated_fleet_loss_share_contract(
         or source_family_safety_band
         != {
             "schemaVersion": (
-                "lumen.fleet-optimizer-family-source-proxy/1.0.0"
+                "lumen.fleet-optimizer-family-source-proxy/1.1.0"
             ),
             "lane": "sft",
             "basis": "assistant_target_source_token_proxy_count",
             "sourceFamily": "fleet_orchestration_native",
             "taskType": "fleet_orchestration_event_graph",
-            "minimumBasisPoints": 5_300,
-            "maximumBasisPoints": 6_210,
+            "minimumBasisPoints": 5_000,
+            "maximumBasisPoints": 5_800,
             "selectionPolicy": (
                 "retain_non_public_then_bound_public_behavioral"
             ),

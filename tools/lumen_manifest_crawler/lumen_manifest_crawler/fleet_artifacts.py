@@ -23,8 +23,11 @@ ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT = "behavior-conditioned"
 ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS = 8
 ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS = 7
 ORCHESTRATION_TRAINING_IDENTITY_SCHEMA_VERSION = (
-    "lumen.fleet-training-identity/1.0.0"
+    "lumen.fleet-training-identity/1.1.0"
 )
+ORCHESTRATION_TRAINING_SCENARIO_ID_WIDTH = 6
+ORCHESTRATION_TRAINING_FACT_ID_WIDTH = 8
+_ORCHESTRATION_TRAINING_IDENTITY_ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 ORCHESTRATION_ATOMIC_MUTATION_KINDS = (
     "decision_strategy_contract",
     "event_type_vocabulary",
@@ -70,6 +73,38 @@ class FleetArtifacts:
     markdown: str
 
 
+def _compact_orchestration_training_digest(digest: str, *, width: int) -> str:
+    """Encode a SHA-256 identity densely while retaining deterministic entropy."""
+
+    if re.fullmatch(r"[0-9a-f]{64}", digest) is None or width <= 0:
+        raise ValueError("Fleet compact identity input is invalid")
+    radix = len(_ORCHESTRATION_TRAINING_IDENTITY_ALPHABET)
+    value = int(digest, 16) % (radix**width)
+    encoded = ""
+    while value:
+        value, remainder = divmod(value, radix)
+        encoded = _ORCHESTRATION_TRAINING_IDENTITY_ALPHABET[remainder] + encoded
+    return encoded.rjust(width, _ORCHESTRATION_TRAINING_IDENTITY_ALPHABET[0])
+
+
+def _register_orchestration_training_identity(
+    *,
+    identity_registry: dict[str, str] | None,
+    identity: str,
+    digest: str,
+    identity_class: str,
+) -> str:
+    """Require compact training identities to remain injective per generation."""
+
+    if identity_registry is None:
+        return identity
+    registered_digest = identity_registry.get(identity)
+    if registered_digest is not None and registered_digest != digest:
+        raise ValueError(f"Fleet {identity_class} identity collision")
+    identity_registry[identity] = digest
+    return identity
+
+
 def _opaque_orchestration_training_identity(
     *,
     identity_class: str,
@@ -78,6 +113,7 @@ def _opaque_orchestration_training_identity(
     replica_index: int | None,
     lane: str,
     fact_kind: str | None = None,
+    identity_registry: dict[str, str] | None = None,
 ) -> str:
     """Return a deterministic identity whose visible form carries no matrix cue."""
 
@@ -98,7 +134,21 @@ def _opaque_orchestration_training_identity(
             "factKind": fact_kind,
         }
     )
-    return f"{identity_class}-{digest[:16]}"
+    width = (
+        ORCHESTRATION_TRAINING_SCENARIO_ID_WIDTH
+        if identity_class == "scenario"
+        else ORCHESTRATION_TRAINING_FACT_ID_WIDTH
+    )
+    identity = (
+        f"{identity_class}-"
+        f"{_compact_orchestration_training_digest(digest, width=width)}"
+    )
+    return _register_orchestration_training_identity(
+        identity_registry=identity_registry,
+        identity=identity,
+        digest=digest,
+        identity_class=identity_class,
+    )
 
 
 def _orchestration_training_scenario_id(
@@ -107,6 +157,7 @@ def _orchestration_training_scenario_id(
     variant: str,
     replica_index: int | None,
     lane: str = "sft",
+    identity_registry: dict[str, str] | None = None,
 ) -> str:
     return _opaque_orchestration_training_identity(
         identity_class="scenario",
@@ -114,6 +165,7 @@ def _orchestration_training_scenario_id(
         variant=variant,
         replica_index=replica_index,
         lane=lane,
+        identity_registry=identity_registry,
     )
 
 
@@ -124,6 +176,7 @@ def _orchestration_training_fact_id(
     replica_index: int | None,
     fact_kind: str,
     lane: str = "sft",
+    identity_registry: dict[str, str] | None = None,
 ) -> str:
     return _opaque_orchestration_training_identity(
         identity_class="fact",
@@ -132,11 +185,28 @@ def _orchestration_training_fact_id(
         replica_index=replica_index,
         lane=lane,
         fact_kind=fact_kind,
+        identity_registry=identity_registry,
     )
 
 
 def _is_opaque_orchestration_training_scenario_id(value: str) -> bool:
-    return re.fullmatch(r"scenario-[0-9a-f]{16}", value) is not None
+    return (
+        re.fullmatch(
+            rf"scenario-[a-z]{{{ORCHESTRATION_TRAINING_SCENARIO_ID_WIDTH}}}",
+            value,
+        )
+        is not None
+    )
+
+
+def _is_opaque_orchestration_training_fact_id(value: str) -> bool:
+    return (
+        re.fullmatch(
+            rf"fact-[a-z]{{{ORCHESTRATION_TRAINING_FACT_ID_WIDTH}}}",
+            value,
+        )
+        is not None
+    )
 
 
 def generate_fleet_artifacts(manifest: AgentBehaviorManifest) -> FleetArtifacts:
@@ -517,6 +587,7 @@ def _training_feature_facts(
     variant: str,
     replica_index: int | None,
     conditions: dict[str, bool],
+    identity_registry: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Add external identifiers needed by supported compositional conditions."""
 
@@ -528,6 +599,7 @@ def _training_feature_facts(
             variant=variant,
             replica_index=replica_index,
             fact_kind=kind,
+            identity_registry=identity_registry,
         )
 
     facts["requestIdentifier"] = fact("request")
@@ -1588,7 +1660,11 @@ def _serialize_orchestration_graph(graph: dict[str, Any]) -> str:
 
 def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for scenario in _orchestration_training_scenarios(manifest):
+    identity_registry: dict[str, str] = {}
+    for scenario in _orchestration_training_scenarios(
+        manifest,
+        identity_registry=identity_registry,
+    ):
         derivation = _orchestration_derivation_contract(scenario)
         if _derive_orchestration_graph_from_contract(derivation) != scenario["graph"]:
             raise ValueError(
@@ -1665,7 +1741,10 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             })
         rejected_graph = scenario.get("rejectedGraph")
         if isinstance(rejected_graph, dict):
-            preference_scenario = _orchestration_preference_scenario(scenario)
+            preference_scenario = _orchestration_preference_scenario(
+                scenario,
+                identity_registry=identity_registry,
+            )
             preference_derivation = preference_scenario[
                 "canonicalDerivation"
             ]
@@ -1711,6 +1790,7 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
                         behavior=str(scenario["behaviorClass"]),
                         variant="core",
                         replica_index=None,
+                        identity_registry=identity_registry,
                     )
                 ),
             }
@@ -1769,16 +1849,32 @@ _PREFERENCE_PRESERVED_FACT_KEYS = {
     "workOwnerSlot",
 }
 
-def _preference_natural_fact_alias(source: str) -> str:
+def _preference_natural_fact_alias(
+    source: str,
+    *,
+    identity_registry: dict[str, str] | None = None,
+) -> str:
     """Map one source literal into an independent opaque DPO fact identity."""
 
     digest = canonical_sha256(
         {
-            "schemaVersion": "lumen.fleet-preference-fact-identity/1.0.0",
+            "schemaVersion": "lumen.fleet-preference-fact-identity/1.1.0",
             "source": source,
         }
     )
-    return f"fact-{digest[:16]}"
+    identity = (
+        "fact-"
+        + _compact_orchestration_training_digest(
+            digest,
+            width=ORCHESTRATION_TRAINING_FACT_ID_WIDTH,
+        )
+    )
+    return _register_orchestration_training_identity(
+        identity_registry=identity_registry,
+        identity=identity,
+        digest=digest,
+        identity_class="fact",
+    )
 
 
 def _preference_training_facts(
@@ -1786,6 +1882,7 @@ def _preference_training_facts(
     *,
     known_slots: set[str],
     key: str | None = None,
+    identity_registry: dict[str, str] | None = None,
 ) -> Any:
     if isinstance(source, dict):
         return {
@@ -1793,6 +1890,7 @@ def _preference_training_facts(
                 child,
                 known_slots=known_slots,
                 key=child_key,
+                identity_registry=identity_registry,
             )
             for child_key, child in source.items()
         }
@@ -1802,6 +1900,7 @@ def _preference_training_facts(
                 child,
                 known_slots=known_slots,
                 key=key,
+                identity_registry=identity_registry,
             )
             for child in source
         ]
@@ -1810,7 +1909,10 @@ def _preference_training_facts(
         and key not in _PREFERENCE_PRESERVED_FACT_KEYS
         and source not in known_slots
     ):
-        return _preference_natural_fact_alias(source)
+        return _preference_natural_fact_alias(
+            source,
+            identity_registry=identity_registry,
+        )
     return source
 
 
@@ -1882,6 +1984,8 @@ def _replace_prompt_string_values(
 
 def _orchestration_preference_scenario(
     source: dict[str, Any],
+    *,
+    identity_registry: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build a DPO-only prompt/answer instance disjoint from every SFT anchor."""
 
@@ -1895,11 +1999,13 @@ def _orchestration_preference_scenario(
         if variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
         else None
     )
+    registry = identity_registry if identity_registry is not None else {}
     preference_id = _orchestration_training_scenario_id(
         behavior=behavior,
         variant=variant,
         replica_index=replica_index,
         lane="dpo",
+        identity_registry=registry,
     )
     chosen = scenario["graph"]
     preference_derivation = json.loads(
@@ -1913,6 +2019,7 @@ def _orchestration_preference_scenario(
     preference_derivation["facts"] = _preference_training_facts(
         facts,
         known_slots=set(chosen["knownSlotIDs"]),
+        identity_registry=registry,
     )
     preference_graph = _derive_orchestration_graph_from_contract(
         preference_derivation
@@ -2311,10 +2418,13 @@ def _orchestration_scenarios(manifest: AgentBehaviorManifest) -> list[dict[str, 
 
 def _orchestration_training_scenarios(
     manifest: AgentBehaviorManifest,
+    *,
+    identity_registry: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Expand every policy cell with fresh train identities and one held-out matrix."""
 
     matrix: list[dict[str, Any]] = []
+    registry = identity_registry if identity_registry is not None else {}
     for behavior_index, scenario in enumerate(_orchestration_scenarios(manifest)):
         matrix.append(
             _orchestration_training_variant(
@@ -2322,6 +2432,7 @@ def _orchestration_training_scenarios(
                 scenario,
                 variant="core",
                 boundary_value_index=0,
+                identity_registry=registry,
             )
         )
         for replica_index in range(ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS):
@@ -2336,6 +2447,7 @@ def _orchestration_training_scenarios(
                         behavior_index * ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS
                         + replica_index
                     ),
+                    identity_registry=registry,
                 )
             )
         matrix.append(
@@ -2344,6 +2456,7 @@ def _orchestration_training_scenarios(
                 scenario,
                 variant="normalization-policy-audited",
                 boundary_value_index=3,
+                identity_registry=registry,
             )
         )
     return matrix
@@ -2357,6 +2470,7 @@ def _orchestration_training_variant(
     boundary_value_index: int,
     replica_index: int | None = None,
     atomic_mutation_index: int | None = None,
+    identity_registry: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     scenario = json.loads(json.dumps(source, ensure_ascii=False))
     behavior_class = str(source["behaviorClass"])
@@ -2365,6 +2479,7 @@ def _orchestration_training_variant(
         behavior=behavior_class,
         variant=variant,
         replica_index=replica_index,
+        identity_registry=identity_registry,
     )
     scenario["id"] = scenario_id
     scenario["behaviorClass"] = behavior_class
@@ -2414,6 +2529,7 @@ def _orchestration_training_variant(
         variant=variant,
         replica_index=replica_index,
         conditions=policy_conditions,
+        identity_registry=identity_registry,
     )
     conditioned_facts = scenario.pop("_conditionedSemanticFacts", None)
     if isinstance(conditioned_facts, dict):
@@ -3084,10 +3200,9 @@ def _natural_noncanonical_event_type_alias(
 def _fact_derived_noncanonical_event_id(fact_id: str | None) -> str:
     """Use a supplied request fact as the wrong event namespace."""
 
-    if not isinstance(fact_id, str) or re.fullmatch(
-        r"fact-[0-9a-f]{16}",
-        fact_id,
-    ) is None:
+    if not isinstance(fact_id, str) or not (
+        _is_opaque_orchestration_training_fact_id(fact_id)
+    ):
         raise ValueError("Fleet rejection lacks an opaque request fact")
     return f"{fact_id}::event::01"
 

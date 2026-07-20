@@ -112,6 +112,7 @@ CORTEX_ROUTING_CONTEXT_VERSION = "lumen.adapter-eval-cortex-routing-context/1.0.
 STRICT_JSON_RETRY_CONTRACT_VERSION = "lumen.adapter-eval-strict-json-retry/1.4.0"
 STRICT_JSON_MAX_ATTEMPTS = 2
 GENERATION_REPETITION_PENALTY = 1.1
+FLEET_GENERATION_REPETITION_PENALTY = 1.0
 CORTEX_ROUTE_INSTRUCTION = (
     "Cortex route mode: use the manifest catalog below as exact runtime truth. "
     "The catalog is TSV: defaultIntent is the canonical intent for an ordinary "
@@ -269,6 +270,18 @@ _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE = {
     ),
 }
 SUPPORTED_AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
+
+
+def _generation_repetition_penalty(agent: str) -> float:
+    if agent not in SUPPORTED_AGENTS:
+        raise ValueError(f"Unsupported evaluation agent: {agent}")
+    return (
+        FLEET_GENERATION_REPETITION_PENALTY
+        if agent == "fleet"
+        else GENERATION_REPETITION_PENALTY
+    )
+
+
 SUPPORTED_OUTPUT_MODES = frozenset({"json", "text"})
 CORTEX_FORBIDDEN_ROUTE_FIELDS = frozenset({"rejectedToolID", "rejectedToolIDs"})
 _CORTEX_ROUTE_PREFIX_FIELDS = (
@@ -1383,6 +1396,7 @@ def generate_completion(
     tokenizer: Any,
     messages: Sequence[Mapping[str, str]],
     *,
+    agent: str,
     max_seq_length: int,
     max_new_tokens: int,
     torch_module: ModuleType | Any | None = None,
@@ -1422,7 +1436,7 @@ def generate_completion(
         "max_new_tokens": generation_budget,
         "do_sample": False,
         "num_beams": 1,
-        "repetition_penalty": GENERATION_REPETITION_PENALTY,
+        "repetition_penalty": _generation_repetition_penalty(agent),
         "use_cache": True,
     }
     eos_token_id = getattr(tokenizer, "eos_token_id", None)
@@ -2261,6 +2275,7 @@ def evaluate_records(
                 model,
                 tokenizer,
                 prompt_messages,
+                agent=agent,
                 max_seq_length=max_seq_length,
                 max_new_tokens=max_new_tokens,
                 torch_module=torch_module,
@@ -3603,7 +3618,7 @@ def run(args: argparse.Namespace) -> int:
     generation_evidence = {
         "doSample": False,
         "numBeams": 1,
-        "repetitionPenalty": GENERATION_REPETITION_PENALTY,
+        "repetitionPenalty": _generation_repetition_penalty(agent),
         "thinkingEnabled": False,
         "maxNewTokens": int(args.max_new_tokens),
         "maxSequenceLength": int(cfg["max_seq_length"]),

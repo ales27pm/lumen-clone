@@ -62,6 +62,37 @@ explicit compute dtype and sequence length, all 196 expected CUDA NF4 projection
 parameter on CUDA, and a finite fixed four-token forward through the patched Qwen/BitsAndBytes
 kernel path. Verification reconstructs the expected module and parameter inventories from the
 pinned model config instead of trusting the runtime's self-hash alone.
+
+After regenerating Fleet artifacts and before rebuilding an image or launching a pilot, run the
+required exact-token gate against a previously verified tokenizer snapshot. The source proxy is a
+construction heuristic only: dense minified event-graph JSON can tokenize differently enough that
+the proxy passes while the authoritative aggregate or optimizer-window schedule fails. This gate
+loads the snapshot through the production closure verifier and independently checks root plus every
+advertised Fleet variant, both SFT and DPO, the strict three-epoch SFT schedule, and public/Fleet
+loss-share evidence. Required mode never converts missing dependencies or a missing snapshot into a
+skip:
+
+```bash
+ROOT="$(pwd -P)"
+SNAPSHOT="$ROOT/.local/ubuntu_finetune_runs/<verified-run>/training/global_tokenizer_snapshot"
+IMAGE="sha256:<verified-local-image-id>"
+docker run --rm --network none --read-only \
+  --tmpfs /tmp:rw,nosuid,nodev,size=1g,mode=1777 \
+  -v "$ROOT:/workspace:ro" \
+  -v "$SNAPSHOT:/run/lumen-tokenizer:ro" \
+  -e PYTHONPATH=/workspace \
+  -e HF_HUB_OFFLINE=1 \
+  -e TRANSFORMERS_OFFLINE=1 \
+  -e XDG_CACHE_HOME=/tmp/cache \
+  -e LUMEN_REQUIRE_FLEET_PINNED_TOKENIZER_GATE=1 \
+  -e LUMEN_FLEET_TOKENIZER_SNAPSHOT=/run/lumen-tokenizer \
+  -w /workspace \
+  --entrypoint python \
+  "$IMAGE" \
+  -m unittest -v \
+  tools.fine_tuning.unsloth.tests.test_fleet_generated_exact_token_gate
+```
+
 ```bash
 bash scripts/ubuntu_train_lumen_full_pipeline.sh \
   --variant internal_plus_public_baseline \

@@ -638,8 +638,8 @@ def test_compiled_fleet_native_coverage_guard_rejects_replica_loss_and_mutation_
     rebound_fact = copy.deepcopy(event_id_target)
     rebound_prompt = rebound_fact["prompt"][1]["content"]
     rebound_fact["prompt"][1]["content"] = re.sub(
-        r'("requestIdentifier": ")fact-[0-9a-f]{16}("[,}])',
-        r"\1fact-0000000000000000\2",
+        r'("requestIdentifier": ")fact-[a-z]{8}("[,}])',
+        r"\1fact-aaaaaaaa\2",
         rebound_prompt,
         count=1,
     )
@@ -652,6 +652,25 @@ def test_compiled_fleet_native_coverage_guard_rejects_replica_loss_and_mutation_
                 rebound_fact if record is event_id_target else record
                 for record in fleet.train_dpo
             ],
+            val_dpo=fleet.val_dpo,
+        )
+
+    duplicate_identity = copy.deepcopy(target)
+    duplicate_identity["metadata"]["scenarioID"] = next(
+        record["metadata"]["scenarioID"]
+        for record in fleet.train_sft
+        if record is not target
+        and record["metadata"].get("sourceFamily")
+        == "fleet_orchestration_native"
+    )
+    with pytest.raises(ValueError, match="scenario identity collision"):
+        fine_tuning_module._assert_fleet_native_orchestration_training_coverage(
+            train_sft=[
+                duplicate_identity if record is target else record
+                for record in fleet.train_sft
+            ],
+            val_sft=fleet.val_sft,
+            train_dpo=fleet.train_dpo,
             val_dpo=fleet.val_dpo,
         )
 
@@ -1141,6 +1160,65 @@ def test_native_fleet_orchestration_generation_is_deterministic():
     assert first.orchestration_evals == second.orchestration_evals
 
 
+def test_compact_training_identity_encoding_is_bounded_and_deterministic():
+    compact = fleet_artifact_module._compact_orchestration_training_digest
+
+    assert compact("0" * 64, width=6) == "a" * 6
+    encoded = compact("f" * 64, width=8)
+    assert re.fullmatch(r"[a-z]{8}", encoded)
+    assert encoded == compact("f" * 64, width=8)
+    with pytest.raises(ValueError, match="compact identity input is invalid"):
+        compact("not-a-sha256", width=8)
+    with pytest.raises(ValueError, match="compact identity input is invalid"):
+        compact("0" * 64, width=0)
+
+
+def test_training_generation_rejects_compact_identity_collisions(monkeypatch):
+    manifest = generate_manifest(Path(".").resolve())
+    scenarios = fleet_artifact_module._orchestration_training_scenarios(
+        manifest
+    )
+    original = fleet_artifact_module._compact_orchestration_training_digest
+
+    def collide_scenarios(digest: str, *, width: int) -> str:
+        if width == (
+            fleet_artifact_module.ORCHESTRATION_TRAINING_SCENARIO_ID_WIDTH
+        ):
+            return "a" * width
+        return original(digest, width=width)
+
+    monkeypatch.setattr(
+        fleet_artifact_module,
+        "_compact_orchestration_training_digest",
+        collide_scenarios,
+    )
+    with pytest.raises(ValueError, match="scenario identity collision"):
+        fleet_artifact_module._orchestration_training_scenarios(manifest)
+
+    def collide_facts(digest: str, *, width: int) -> str:
+        if width == fleet_artifact_module.ORCHESTRATION_TRAINING_FACT_ID_WIDTH:
+            return "a" * width
+        return original(digest, width=width)
+
+    monkeypatch.setattr(
+        fleet_artifact_module,
+        "_compact_orchestration_training_digest",
+        collide_facts,
+    )
+    with pytest.raises(ValueError, match="fact identity collision"):
+        fleet_artifact_module._orchestration_training_scenarios(manifest)
+
+    preference_source = next(
+        scenario
+        for scenario in scenarios
+        if isinstance(scenario.get("rejectedGraph"), dict)
+    )
+    with pytest.raises(ValueError, match="fact identity collision"):
+        fleet_artifact_module._orchestration_preference_scenario(
+            preference_source
+        )
+
+
 def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
     manifest = generate_manifest(Path(".").resolve())
     artifacts = generate_fleet_artifacts(manifest)
@@ -1165,7 +1243,7 @@ def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
         preference_scenarios
     )
     assert all(
-        re.fullmatch(r"scenario-[0-9a-f]{16}", scenario_id)
+        re.fullmatch(r"scenario-[a-z]{6}", scenario_id)
         for scenario_id in all_scenario_ids
     )
     assert not any(
@@ -1182,7 +1260,7 @@ def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
             for child in value:
                 collect_fact_ids(child)
         elif isinstance(value, str) and re.fullmatch(
-            r"fact-[0-9a-f]{16}", value
+            r"fact-[a-z]{8}", value
         ):
             fact_ids.add(value)
 
@@ -1288,9 +1366,9 @@ def test_context_handoff_event_id_negative_uses_an_independent_request_fact():
     rejected = preference["rejectedGraph"]
     request = chosen["events"][0]
 
-    assert re.fullmatch(r"fact-[0-9a-f]{16}", facts["requestIdentifier"])
+    assert re.fullmatch(r"fact-[a-z]{8}", facts["requestIdentifier"])
     assert re.fullmatch(
-        r"fact-[0-9a-f]{16}", facts["approvedActionIdentifier"]
+        r"fact-[a-z]{8}", facts["approvedActionIdentifier"]
     )
     assert facts["requestIdentifier"] != facts["approvedActionIdentifier"]
     assert "requestID" not in request
