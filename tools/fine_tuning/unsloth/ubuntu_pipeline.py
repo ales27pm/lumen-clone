@@ -41,6 +41,7 @@ except ImportError:  # pragma: no cover - repository-root module execution.
 
 from tools.fine_tuning.unsloth.training_lineage import (
     DEFAULT_LLAMA_CPP_REVISION,
+    installed_distribution_python_callable_identity,
     TRAINING_VARIANT_ATTESTATION_SCHEMA,
 )
 from tools.fine_tuning.unsloth.ubuntu_source_integrity import (
@@ -52,6 +53,17 @@ from tools.fine_tuning.unsloth.ubuntu_source_integrity import (
 
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
+FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA = (
+    "lumen.fleet-sft-runtime-loss-normalization/1.1.0"
+)
+FLEET_SFT_TRAINER_CLASS = "__main__._FleetSFTTrainer"
+FLEET_SFT_MODEL_CLASS = "peft.peft_model.PeftModelForCausalLM"
+FLEET_SFT_BASE_MODEL_CLASS = (
+    "transformers.models.qwen3.modeling_qwen3.Qwen3ForCausalLM"
+)
+FLEET_SFT_GET_BATCH_SAMPLES_MODULE = "unsloth_zoo.loss_utils"
+FLEET_SFT_GET_BATCH_SAMPLES_NAME = "_unsloth_get_batch_samples"
+FLEET_SFT_GET_BATCH_SAMPLES_SOURCE = "unsloth_zoo/loss_utils.py"
 VARIANTS = (
     "internal_only",
     "internal_plus_public_baseline",
@@ -2040,7 +2052,7 @@ def _expected_variant_optimization_policy(
     high_reasoning = agent in {"cortex", "executor", "rem"}
     base_epochs = {
         "sft": (
-            6
+            3
             if agent == "fleet"
             else 3
             if agent == "cortex"
@@ -2049,7 +2061,7 @@ def _expected_variant_optimization_policy(
             else 1
         ),
         "dpo": (
-            2
+            1
             if agent == "fleet"
             else 1
             if agent == "cortex"
@@ -7408,6 +7420,9 @@ def _verify_global_tokenizer_phase_evidence(
         config=config,
         phase=phase,
         dataset_dir=dataset_dir,
+        tokenizer=tokenizer,
+        preference_renderer=preference_renderer,
+        require_exact_tokenizer_counts=True,
     )
     _verify_public_corpus_loss_share_evidence(
         value=evidence.get("publicCorpusLossShareEvidence"),
@@ -7820,6 +7835,15 @@ _FLEET_DPO_TOKENIZATION_POLICY = {
 _FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA = (
     "lumen.fleet-optimizer-family-share/1.0.0"
 )
+_FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA = (
+    "lumen.fleet-sft-optimizer-window-schedule-contract/1.0.0"
+)
+_FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_SCHEMA = (
+    "lumen.fleet-sft-optimizer-window-schedule/1.0.0"
+)
+_FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
+    "sha256_epoch_stratified_native_round_robin/1.0.0"
+)
 _FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY = "fleet_orchestration_native"
 _FLEET_NATIVE_ORCHESTRATION_TASK_TYPE_BY_LANE = {
     "sft": "fleet_orchestration_event_graph",
@@ -8149,11 +8173,22 @@ def _pipeline_exact_public_target_token_count(
             max_seq_length=None,
         )
         labels = tokenized.get("labels")
-        if not isinstance(labels, list):
+        attention_mask = tokenized.get("attention_mask")
+        if (
+            not isinstance(labels, list)
+            or not isinstance(attention_mask, list)
+            or len(labels) != len(attention_mask)
+            or any(type(label) is not int for label in labels)
+            or any(type(mask) is not int for mask in attention_mask)
+        ):
             raise RuntimeError(
-                f"Public-corpus SFT {split} row {row_index} lacks exact labels"
+                f"SFT {split} row {row_index} lacks exact shifted-label evidence"
             )
-        target_tokens = sum(1 for label in labels if label != -100)
+        target_tokens = sum(
+            1
+            for label, attended in zip(labels[1:], attention_mask[1:])
+            if label != -100 and attended != 0
+        )
     elif lane == "dpo":
         from tools.fine_tuning.unsloth import train_dpo
 
@@ -8422,6 +8457,7 @@ def _pipeline_validated_fleet_loss_share_contract(
             "exactTokenEvidenceContract",
             "failurePolicy",
             "optimizerFamilyShareBands",
+            "sftOptimizerWindowScheduleContract",
             "rowMetadataContract",
             "sourceSelectionProxy",
             "sourceRoleRegistry",
@@ -8431,7 +8467,7 @@ def _pipeline_validated_fleet_loss_share_contract(
         label="Fleet loss-share contract",
     )
     if (
-        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.4.0"
+        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.5.0"
         or contract.get("enforcementRequired") is not True
         or contract.get("enforcementPhase")
         != "post_tokenizer_load_pre_optimizer"
@@ -8618,6 +8654,68 @@ def _pipeline_validated_fleet_loss_share_contract(
             raise RuntimeError(
                 f"Fleet {expected_lane} optimizer-family share band drifted"
             )
+    schedule_contract = _pipeline_exact_mapping(
+        contract.get("sftOptimizerWindowScheduleContract"),
+        {
+            "schemaVersion",
+            "evidenceSchemaVersion",
+            "lane",
+            "split",
+            "enforcementRequired",
+            "enforcementPhase",
+            "basis",
+            "basisPointDenominator",
+            "minimumBasisPoints",
+            "maximumBasisPoints",
+            "algorithm",
+            "candidateSearchCount",
+            "permutationPolicy",
+            "packing",
+            "distributedSamplingPolicy",
+            "resumePolicy",
+            "failurePolicy",
+        },
+        label="Fleet SFT optimizer-window schedule contract",
+    )
+    expected_schedule_contract = {
+        "schemaVersion": (
+            _FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA
+        ),
+        "evidenceSchemaVersion": (
+            _FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_SCHEMA
+        ),
+        "lane": "sft",
+        "split": "train",
+        "enforcementRequired": True,
+        "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "basis": (
+            "mean_of_floor_per_optimizer_window_native_assistant_target_"
+            "token_share_basis_points"
+        ),
+        "basisPointDenominator": 10_000,
+        "minimumBasisPoints": 5_000,
+        "maximumBasisPoints": 6_000,
+        "algorithm": _FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM,
+        "candidateSearchCount": 256,
+        "permutationPolicy": "each_source_row_exactly_once_per_epoch",
+        "packing": False,
+        "distributedSamplingPolicy": "single_process_only",
+        "resumePolicy": (
+            "trainer_set_epoch_with_monotonic_sampler_guard_through_"
+            "skip_first_batches"
+        ),
+        "failurePolicy": "abort_before_optimizer",
+    }
+    if (
+        dict(schedule_contract) != expected_schedule_contract
+        or schedule_contract["minimumBasisPoints"]
+        != family_lanes["sft"]["minimumBasisPoints"]
+        or schedule_contract["maximumBasisPoints"]
+        != family_lanes["sft"]["maximumBasisPoints"]
+    ):
+        raise RuntimeError(
+            "Fleet SFT optimizer-window schedule contract drifted"
+        )
     if contract.get("tokenAccounting") != {
         "sft": "assistant_mask_non_ignored_token_count",
         "dpo": (
@@ -8670,7 +8768,7 @@ def _pipeline_validated_fleet_loss_share_contract(
     if (
         exact.get("required") is not True
         or exact.get("schemaVersion")
-        != "lumen.fleet-loss-share-evidence/1.2.0"
+        != "lumen.fleet-loss-share-evidence/1.3.0"
         or exact.get("statusAtGeneration")
         != "pending_exact_tokenizer_preflight"
         or exact.get("tokenizer") != "pinned_qwen_tokenizer"
@@ -8828,12 +8926,408 @@ def _pipeline_fleet_optimizer_family_band_passes(
     )
 
 
+def _pipeline_fleet_sft_optimizer_window_schedule(
+    *,
+    row_token_evidence: list[Mapping[str, Any]],
+    config: Mapping[str, Any],
+    schedule_contract: Mapping[str, Any],
+    minimum_basis_points: int,
+    maximum_basis_points: int,
+) -> dict[str, Any]:
+    seed = config.get("seed")
+    batch_size = config.get("batch_size")
+    gradient_accumulation_steps = config.get(
+        "gradient_accumulation_steps"
+    )
+    configured_epochs = config.get("num_train_epochs")
+    if (
+        type(seed) is not int
+        or type(batch_size) is not int
+        or batch_size <= 0
+        or type(gradient_accumulation_steps) is not int
+        or gradient_accumulation_steps <= 0
+        or type(configured_epochs) is not int
+        or configured_epochs <= 0
+        or config.get("packing", False) is not False
+        or not isinstance(row_token_evidence, list)
+        or len(row_token_evidence) < 2
+        or type(minimum_basis_points) is not int
+        or type(maximum_basis_points) is not int
+        or not 0 <= minimum_basis_points <= maximum_basis_points <= 10_000
+    ):
+        raise RuntimeError("Fleet SFT optimizer-window controls are invalid")
+    for row_index, row in enumerate(row_token_evidence):
+        if (
+            not isinstance(row, Mapping)
+            or row.get("rowIndex") != row_index
+            or type(row.get("targetTokenCount")) is not int
+            or row["targetTokenCount"] <= 0
+            or not isinstance(row.get("sourceRowSHA256"), str)
+        ):
+            raise RuntimeError(
+                "Fleet SFT optimizer-window row evidence is malformed"
+            )
+
+    def source_rank(row_index: int, *, role: str) -> str:
+        return canonical_sha256(
+            {
+                "algorithm": (
+                    _FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM
+                ),
+                "seed": seed,
+                "role": role,
+                "index": row_index,
+                "sourceRowSHA256": row_token_evidence[row_index][
+                    "sourceRowSHA256"
+                ],
+            }
+        )
+
+    native_indices = [
+        row_index
+        for row_index, row in enumerate(row_token_evidence)
+        if row.get("sourceFamily")
+        == _FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+        and row.get("taskType")
+        == _FLEET_NATIVE_ORCHESTRATION_TASK_TYPE_BY_LANE["sft"]
+    ]
+    native_set = set(native_indices)
+    non_native_indices = [
+        row_index
+        for row_index in range(len(row_token_evidence))
+        if row_index not in native_set
+    ]
+    if not native_indices or not non_native_indices:
+        raise RuntimeError(
+            "Fleet SFT optimizer-window scheduling requires both row families"
+        )
+    native_indices.sort(
+        key=lambda row_index: (
+            source_rank(row_index, role="native_source_record"),
+            row_index,
+        )
+    )
+    non_native_indices.sort(
+        key=lambda row_index: (
+            source_rank(row_index, role="non_native_source_record"),
+            row_index,
+        )
+    )
+    record_count = len(row_token_evidence)
+    optimizer_window_record_capacity = (
+        batch_size * gradient_accumulation_steps
+    )
+    window_sizes = [
+        min(optimizer_window_record_capacity, record_count - start)
+        for start in range(0, record_count, optimizer_window_record_capacity)
+    ]
+
+    def epoch_order(epoch_index: int, candidate_index: int) -> list[int]:
+        def rotated(values: list[int]) -> list[int]:
+            offset = (
+                epoch_index * len(values) + candidate_index
+            ) % len(values)
+            return [
+                values[(offset + index) % len(values)]
+                for index in range(len(values))
+            ]
+
+        native_samples = rotated(native_indices)
+        non_native_samples = rotated(non_native_indices)
+        window_order = sorted(
+            range(len(window_sizes)),
+            key=lambda window_index: (
+                canonical_sha256(
+                    {
+                        "algorithm": (
+                            _FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM
+                        ),
+                        "seed": seed,
+                        "epochIndex": epoch_index,
+                        "candidateIndex": candidate_index,
+                        "role": "optimizer_window",
+                        "windowIndex": window_index,
+                    }
+                ),
+                window_index,
+            ),
+        )
+        windows: list[list[int]] = [[] for _ in window_sizes]
+        cursor = 0
+        for row_index in native_samples:
+            for _ in window_order:
+                window_index = window_order[cursor % len(window_order)]
+                cursor += 1
+                if len(windows[window_index]) < window_sizes[window_index]:
+                    windows[window_index].append(row_index)
+                    break
+            else:  # pragma: no cover - exact geometry above makes this unreachable
+                raise RuntimeError(
+                    "Fleet SFT verifier exceeded optimizer-window capacity"
+                )
+        non_native_cursor = 0
+        for window_index in window_order:
+            remaining = window_sizes[window_index] - len(windows[window_index])
+            windows[window_index].extend(
+                non_native_samples[
+                    non_native_cursor : non_native_cursor + remaining
+                ]
+            )
+            non_native_cursor += remaining
+        if non_native_cursor != len(non_native_samples):
+            raise RuntimeError(
+                "Fleet SFT verifier did not fill optimizer windows"
+            )
+        for window_index, window in enumerate(windows):
+            ranked = sorted(
+                enumerate(window),
+                key=lambda item: (
+                    canonical_sha256(
+                        {
+                            "algorithm": (
+                                _FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM
+                            ),
+                            "seed": seed,
+                            "epochIndex": epoch_index,
+                            "candidateIndex": candidate_index,
+                            "role": "window_record",
+                            "windowIndex": window_index,
+                            "occurrenceIndex": item[0],
+                            "rowIndex": item[1],
+                            "sourceRowSHA256": row_token_evidence[item[1]][
+                                "sourceRowSHA256"
+                            ],
+                        }
+                    ),
+                    item[0],
+                ),
+            )
+            windows[window_index] = [
+                row_index for _, row_index in ranked
+            ]
+        order = [row_index for window in windows for row_index in window]
+        if (
+            len(order) != record_count
+            or len(set(order)) != record_count
+            or set(order) != set(range(record_count))
+        ):
+            raise RuntimeError(
+                "Fleet SFT verifier reconstructed a non-permutation schedule"
+            )
+        return order
+
+    def epoch_evidence(
+        record_indices: list[int],
+        *,
+        epoch_index: int,
+        candidate_index: int,
+    ) -> dict[str, Any]:
+        windows: list[dict[str, Any]] = []
+        for window_index, start in enumerate(
+            range(0, record_count, optimizer_window_record_capacity)
+        ):
+            window_indices = record_indices[
+                start : start + optimizer_window_record_capacity
+            ]
+            native_target_tokens = sum(
+                int(row_token_evidence[row_index]["targetTokenCount"])
+                for row_index in window_indices
+                if row_index in native_set
+            )
+            all_target_tokens = sum(
+                int(row_token_evidence[row_index]["targetTokenCount"])
+                for row_index in window_indices
+            )
+            if all_target_tokens <= 0:
+                raise RuntimeError(
+                    "Fleet SFT verifier reconstructed an empty-loss window"
+                )
+            windows.append(
+                {
+                    "windowIndex": window_index,
+                    "rowIndices": window_indices,
+                    "recordCount": len(window_indices),
+                    "nativeTargetTokenCount": native_target_tokens,
+                    "assistantTargetTokenCount": all_target_tokens,
+                    "nativeShareBasisPoints": (
+                        native_target_tokens * 10_000 // all_target_tokens
+                    ),
+                }
+            )
+        sampled_native = [
+            row_index for row_index in record_indices if row_index in native_set
+        ]
+        sampled_non_native = [
+            row_index
+            for row_index in record_indices
+            if row_index not in native_set
+        ]
+        unique_native = set(sampled_native)
+        unique_non_native = set(sampled_non_native)
+        share_values = [window["nativeShareBasisPoints"] for window in windows]
+        share_sum = sum(share_values)
+        return {
+            "epochIndex": epoch_index,
+            "candidateIndex": candidate_index,
+            "recordIndicesSHA256": canonical_sha256(record_indices),
+            "windowEvidenceSHA256": canonical_sha256(windows),
+            "firstOptimizerWindowRecordIndicesSHA256": canonical_sha256(
+                windows[0]["rowIndices"]
+            ),
+            "firstOptimizerWindowTargetTokenCount": windows[0][
+                "assistantTargetTokenCount"
+            ],
+            "sampledRecordCount": len(record_indices),
+            "nativeSampleCount": len(sampled_native),
+            "nonNativeSampleCount": len(sampled_non_native),
+            "uniqueNativeSourceRecordCount": len(unique_native),
+            "uniqueNonNativeSourceRecordCount": len(unique_non_native),
+            "repeatedNativeSampleCount": len(sampled_native)
+            - len(unique_native),
+            "repeatedNonNativeSampleCount": len(sampled_non_native)
+            - len(unique_non_native),
+            "omittedNativeSourceRecordCount": len(native_indices)
+            - len(unique_native),
+            "omittedNonNativeSourceRecordCount": len(non_native_indices)
+            - len(unique_non_native),
+            "optimizerWindowCount": len(windows),
+            "optimizerWindowsWithNativeSamples": sum(
+                1 for window in windows if window["nativeTargetTokenCount"] > 0
+            ),
+            "optimizerWindowsWithoutNativeSamples": sum(
+                1 for window in windows if window["nativeTargetTokenCount"] == 0
+            ),
+            "windowShareBasisPointSum": share_sum,
+            "windowShareBasisPointCount": len(windows),
+            "windowNormalizedNativeShareBasisPoints": share_sum // len(windows),
+            "minimumWindowNativeShareBasisPoints": min(share_values),
+            "maximumWindowNativeShareBasisPoints": max(share_values),
+        }
+
+    midpoint_factor = minimum_basis_points + maximum_basis_points
+    epochs: list[dict[str, Any]] = []
+    sampled_across_epochs: set[int] = set()
+    for epoch_index in range(configured_epochs):
+        candidates: list[
+            tuple[tuple[int, int], dict[str, Any], list[int]]
+        ] = []
+        for candidate_index in range(
+            int(schedule_contract["candidateSearchCount"])
+        ):
+            record_indices = epoch_order(epoch_index, candidate_index)
+            observed = epoch_evidence(
+                record_indices,
+                epoch_index=epoch_index,
+                candidate_index=candidate_index,
+            )
+            if (
+                observed["nativeSampleCount"] != len(native_indices)
+                or observed["nonNativeSampleCount"] != len(non_native_indices)
+                or observed["uniqueNativeSourceRecordCount"]
+                != len(native_indices)
+                or observed["uniqueNonNativeSourceRecordCount"]
+                != len(non_native_indices)
+                or observed["repeatedNativeSampleCount"] != 0
+                or observed["repeatedNonNativeSampleCount"] != 0
+                or observed["omittedNativeSourceRecordCount"] != 0
+                or observed["omittedNonNativeSourceRecordCount"] != 0
+            ):
+                raise RuntimeError(
+                    "Fleet SFT verifier reconstructed repeated or omitted rows"
+                )
+            share_sum = observed["windowShareBasisPointSum"]
+            share_count = observed["windowShareBasisPointCount"]
+            if not (
+                minimum_basis_points * share_count
+                <= share_sum
+                <= maximum_basis_points * share_count
+            ):
+                continue
+            candidates.append(
+                (
+                    (
+                        abs(2 * share_sum - midpoint_factor * share_count),
+                        candidate_index,
+                    ),
+                    observed,
+                    record_indices,
+                )
+            )
+        if not candidates:
+            raise RuntimeError(
+                "Fleet SFT optimizer-window schedule failed reconstruction"
+            )
+        _, selected_evidence, selected_order = min(
+            candidates,
+            key=lambda candidate: candidate[0],
+        )
+        epochs.append(selected_evidence)
+        sampled_across_epochs.update(selected_order)
+
+    schedule: dict[str, Any] = {
+        "schemaVersion": schedule_contract["evidenceSchemaVersion"],
+        "scheduleContractSchemaVersion": schedule_contract[
+            "schemaVersion"
+        ],
+        "scheduleContractSHA256": canonical_sha256(schedule_contract),
+        "status": "passed",
+        "lane": schedule_contract["lane"],
+        "split": schedule_contract["split"],
+        "enforcementRequired": schedule_contract["enforcementRequired"],
+        "enforcementPhase": schedule_contract["enforcementPhase"],
+        "basis": schedule_contract["basis"],
+        "basisPointDenominator": schedule_contract[
+            "basisPointDenominator"
+        ],
+        "algorithm": schedule_contract["algorithm"],
+        "comparisonRule": (
+            "windowShareBasisPointSum between minimumBasisPoints*"
+            "windowShareBasisPointCount and maximumBasisPoints*"
+            "windowShareBasisPointCount inclusive"
+        ),
+        "permutationPolicy": schedule_contract["permutationPolicy"],
+        "candidateSearchCount": schedule_contract["candidateSearchCount"],
+        "distributedSamplingPolicy": schedule_contract[
+            "distributedSamplingPolicy"
+        ],
+        "resumePolicy": schedule_contract["resumePolicy"],
+        "packing": schedule_contract["packing"],
+        "failurePolicy": schedule_contract["failurePolicy"],
+        "seed": seed,
+        "perDeviceTrainBatchSize": batch_size,
+        "gradientAccumulationSteps": gradient_accumulation_steps,
+        "optimizerWindowRecordCapacity": optimizer_window_record_capacity,
+        "configuredEpochs": configured_epochs,
+        "datasetRecordsPerEpoch": record_count,
+        "nativeSourceRecordCount": len(native_indices),
+        "nonNativeSourceRecordCount": len(non_native_indices),
+        "minimumBasisPoints": schedule_contract["minimumBasisPoints"],
+        "maximumBasisPoints": schedule_contract["maximumBasisPoints"],
+        "sourceRowsSHA256": canonical_sha256(
+            [row["sourceRowSHA256"] for row in row_token_evidence]
+        ),
+        "uniqueSourceRecordsAcrossConfiguredEpochs": len(
+            sampled_across_epochs
+        ),
+        "allSourceRecordsCoveredAcrossConfiguredEpochs": (
+            len(sampled_across_epochs) == record_count
+        ),
+        "samplerSetEpochRequired": True,
+        "epochs": epochs,
+    }
+    schedule["scheduleSHA256"] = canonical_sha256(schedule)
+    return schedule
+
+
 def _verify_fleet_loss_share_evidence(
     *,
     value: Any,
     config: Mapping[str, Any],
     phase: str,
     dataset_dir: Path,
+    tokenizer: Any | None = None,
+    preference_renderer: Any | None = None,
+    require_exact_tokenizer_counts: bool = False,
 ) -> dict[str, Any] | None:
     agent = config.get("agent")
     if agent != "fleet":
@@ -8868,7 +9362,7 @@ def _verify_fleet_loss_share_evidence(
     )
     if (
         evidence.get("schemaVersion")
-        != "lumen.fleet-loss-share-evidence/1.2.0"
+        != "lumen.fleet-loss-share-evidence/1.3.0"
         or evidence.get("status") != "passed"
         or evidence.get("lane") != lane
         or evidence.get("enforcementScope")
@@ -8899,6 +9393,19 @@ def _verify_fleet_loss_share_evidence(
         if lane == "sft"
         else {"train": "train_dpo.jsonl", "validation": "val_dpo.jsonl"}
     )
+    if require_exact_tokenizer_counts and tokenizer is None:
+        raise RuntimeError(
+            "Fleet verification requires the exact pinned tokenizer"
+        )
+    appended_eos_token_id = None
+    if lane == "dpo" and tokenizer is not None:
+        from tools.fine_tuning.unsloth import train_dpo
+
+        if preference_renderer is None:
+            from trl.data_utils import maybe_apply_chat_template  # type: ignore
+
+            preference_renderer = maybe_apply_chat_template
+        appended_eos_token_id = train_dpo._dpo_appended_eos_token_id(tokenizer)
     fields = _FLEET_LOSS_SHARE_FIELD_NAMES[lane]
     family_share_contract = contract["optimizerFamilyShareBands"]
     selected_family_band = family_share_contract["lanes"][lane]
@@ -8909,22 +9416,32 @@ def _verify_fleet_loss_share_evidence(
         "taskTypeByLane"
     ][lane]
     for split in ("train", "validation"):
+        split_fields = {
+            "records",
+            "capEnforcementStatus",
+            "sourceRowsSHA256",
+            "rowTokenEvidence",
+            "targetTokenCountsByCategory",
+            "optimizerFamilyBandEnforcementStatus",
+            selected_family_band["numeratorEvidenceField"],
+            selected_family_band["denominatorEvidenceField"],
+            *fields.values(),
+        }
+        if lane == "sft" and split == "train":
+            split_fields.add("optimizerWindowSchedule")
         split_evidence = _pipeline_exact_mapping(
             split_values.get(split),
-            {
-                "records",
-                "capEnforcementStatus",
-                "sourceRowsSHA256",
-                "rowTokenEvidence",
-                "targetTokenCountsByCategory",
-                "optimizerFamilyBandEnforcementStatus",
-                selected_family_band["numeratorEvidenceField"],
-                selected_family_band["denominatorEvidenceField"],
-                *fields.values(),
-            },
+            split_fields,
             label=f"Fleet {lane} {split} loss-share evidence",
         )
         source_rows = read_jsonl(dataset_dir / filenames[split])
+        if lane == "sft":
+            limit_key = (
+                "max_train_records" if split == "train" else "max_val_records"
+            )
+            limit = int(config.get(limit_key) or 0)
+            if limit > 0:
+                source_rows = source_rows[:limit]
         expected_enforcement_status = (
             "optimizer_enforced"
             if split == "train"
@@ -8964,6 +9481,20 @@ def _verify_fleet_loss_share_evidence(
                 contract=contract,
             )
             target_tokens = row_evidence.get("targetTokenCount")
+            exact_target_tokens = (
+                _pipeline_exact_public_target_token_count(
+                    source_row,
+                    lane=lane,
+                    tokenizer=tokenizer,
+                    source_path=dataset_dir / filenames[split],
+                    split=split,
+                    row_index=index,
+                    preference_renderer=preference_renderer,
+                    appended_eos_token_id=appended_eos_token_id,
+                )
+                if tokenizer is not None
+                else None
+            )
             if (
                 type(row_evidence.get("rowIndex")) is not int
                 or row_evidence.get("rowIndex") != index
@@ -8973,8 +9504,14 @@ def _verify_fleet_loss_share_evidence(
                 or row_evidence.get("category") != category
                 or type(target_tokens) is not int
                 or target_tokens <= 0
+                or (
+                    exact_target_tokens is not None
+                    and target_tokens != exact_target_tokens
+                )
             ):
-                raise RuntimeError(f"Fleet {lane} {split} row evidence drifted")
+                raise RuntimeError(
+                    f"Fleet {lane} {split} exact-token row evidence drifted"
+                )
             row_hashes.append(row_hash)
             target_by_category[category] += target_tokens
             if (
@@ -9084,6 +9621,28 @@ def _verify_fleet_loss_share_evidence(
             raise RuntimeError(
                 f"Fleet {lane} {split} optimizer-family share band failed"
             )
+        if lane == "sft" and split == "train":
+            expected_schedule = (
+                _pipeline_fleet_sft_optimizer_window_schedule(
+                    row_token_evidence=row_values,
+                    config=config,
+                    schedule_contract=contract[
+                        "sftOptimizerWindowScheduleContract"
+                    ],
+                    minimum_basis_points=selected_family_band[
+                        "minimumBasisPoints"
+                    ],
+                    maximum_basis_points=selected_family_band[
+                        "maximumBasisPoints"
+                    ],
+                )
+            )
+            if split_evidence.get("optimizerWindowSchedule") != (
+                expected_schedule
+            ):
+                raise RuntimeError(
+                    "Fleet SFT optimizer-window schedule failed reconstruction"
+                )
     return dict(evidence)
 
 
@@ -9257,6 +9816,229 @@ def _verify_training_token_length_preflight(
     return evidence
 
 
+def _verify_fleet_sft_runtime_loss_normalization(
+    *,
+    report: Mapping[str, Any],
+    config: Mapping[str, Any],
+    token_length_preflight: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Bind Fleet's live GA denominator probe to the attested first window."""
+
+    value = report.get("fleetRuntimeLossNormalization")
+    if config.get("agent") != "fleet":
+        if value is not None:
+            raise RuntimeError(
+                "Non-Fleet SFT report contains Fleet runtime normalization"
+            )
+        return None
+    evidence = _pipeline_exact_mapping(
+        value,
+        {
+            "schemaVersion",
+            "status",
+            "enforcementPhase",
+            "countingRule",
+            "trainingCodeSHA256",
+            "resolvedTrainingEnvironmentSHA256",
+            "trainingEnvironmentSHA256",
+            "trainingContainerImageDigest",
+            "trainerClass",
+            "modelClass",
+            "baseModelClass",
+            "baseModelType",
+            "getBatchSamples",
+            "modelAcceptsLossKwargs",
+            "lossType",
+            "packing",
+            "paddingFree",
+            "worldSize",
+            "perDeviceTrainBatchSize",
+            "trainerGradientAccumulationSteps",
+            "acceleratorGradientAccumulationSteps",
+            "optimizerWindowRecordCapacity",
+            "optimizerWindowMicroBatchCount",
+            "scheduledRowIndicesSHA256",
+            "expectedMicroBatchTargetTokenCounts",
+            "observedMicroBatchTargetTokenCounts",
+            "expectedTargetTokenCount",
+            "reconstructedTargetTokenCount",
+            "reportedNumItemsInBatch",
+            "samplerStateSHA256",
+            "samplerStatePreserved",
+            "rngStateRestored",
+            "preOptimizerStateVerified",
+            "runtimeLossNormalizationSHA256",
+        },
+        label="Fleet SFT runtime loss-normalization evidence",
+    )
+    get_batch_samples = _pipeline_exact_mapping(
+        evidence.get("getBatchSamples"),
+        {"module", "name", "installedCallableIdentity"},
+        label="Fleet SFT runtime get_batch_samples identity",
+    )
+    try:
+        expected_callable_identity = (
+            installed_distribution_python_callable_identity(
+                distribution_name="unsloth-zoo",
+                source_logical_path=(
+                    FLEET_SFT_GET_BATCH_SAMPLES_SOURCE
+                ),
+                callable_name=FLEET_SFT_GET_BATCH_SAMPLES_NAME,
+                resolved_environment=config.get(
+                    "resolvedTrainingEnvironment"
+                ),
+            )
+        )
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Fleet SFT installed callable identity failed verification"
+        ) from exc
+    unsigned = dict(evidence)
+    digest = unsigned.pop("runtimeLossNormalizationSHA256", None)
+    fleet_loss_share = token_length_preflight.get("fleetLossShareEvidence")
+    splits = (
+        fleet_loss_share.get("splits")
+        if isinstance(fleet_loss_share, Mapping)
+        else None
+    )
+    train_split = splits.get("train") if isinstance(splits, Mapping) else None
+    schedule = (
+        train_split.get("optimizerWindowSchedule")
+        if isinstance(train_split, Mapping)
+        else None
+    )
+    epochs = schedule.get("epochs") if isinstance(schedule, Mapping) else None
+    first_epoch = epochs[0] if isinstance(epochs, list) and epochs else None
+    expected_counts = evidence.get("expectedMicroBatchTargetTokenCounts")
+    observed_counts = evidence.get("observedMicroBatchTargetTokenCounts")
+    batch_size = config.get("batch_size")
+    gradient_accumulation_steps = config.get("gradient_accumulation_steps")
+    string_fields = (
+        evidence.get("trainerClass"),
+        evidence.get("modelClass"),
+        evidence.get("baseModelClass"),
+    )
+    if (
+        evidence.get("schemaVersion")
+        != FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA
+        or evidence.get("status") != "passed"
+        or evidence.get("enforcementPhase")
+        != "post_trainer_init_pre_optimizer"
+        or evidence.get("countingRule")
+        != (
+            "sum_shifted_non_ignored_labels_intersect_shifted_attention_mask"
+        )
+        or any(not isinstance(field, str) or not field for field in string_fields)
+        or evidence.get("trainingCodeSHA256")
+        != config.get("trainingCodeSHA256")
+        or evidence.get("resolvedTrainingEnvironmentSHA256")
+        != config.get("resolvedTrainingEnvironmentSHA256")
+        or evidence.get("trainingEnvironmentSHA256")
+        != config.get("trainingEnvironmentSHA256")
+        or evidence.get("trainingContainerImageDigest")
+        != config.get("trainingContainerImageDigest")
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(evidence.get("trainingCodeSHA256") or ""),
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(evidence.get("resolvedTrainingEnvironmentSHA256") or ""),
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(evidence.get("trainingEnvironmentSHA256") or ""),
+        )
+        is None
+        or re.fullmatch(
+            r"sha256:[0-9a-f]{64}",
+            str(evidence.get("trainingContainerImageDigest") or ""),
+        )
+        is None
+        or evidence.get("trainerClass") != FLEET_SFT_TRAINER_CLASS
+        or evidence.get("modelClass") != FLEET_SFT_MODEL_CLASS
+        or evidence.get("baseModelClass") != FLEET_SFT_BASE_MODEL_CLASS
+        or evidence.get("baseModelType") != "qwen3"
+        or get_batch_samples.get("module")
+        != FLEET_SFT_GET_BATCH_SAMPLES_MODULE
+        or get_batch_samples.get("name")
+        != FLEET_SFT_GET_BATCH_SAMPLES_NAME
+        or get_batch_samples.get("installedCallableIdentity")
+        != expected_callable_identity
+        or evidence.get("modelAcceptsLossKwargs") is not True
+        or evidence.get("lossType") != "nll"
+        or evidence.get("packing") is not False
+        or evidence.get("paddingFree") is not True
+        or type(evidence.get("worldSize")) is not int
+        or evidence.get("worldSize") != 1
+        or type(batch_size) is not int
+        or batch_size <= 0
+        or type(gradient_accumulation_steps) is not int
+        or gradient_accumulation_steps <= 0
+        or type(evidence.get("perDeviceTrainBatchSize")) is not int
+        or evidence.get("perDeviceTrainBatchSize") != batch_size
+        or type(evidence.get("trainerGradientAccumulationSteps")) is not int
+        or evidence.get("trainerGradientAccumulationSteps")
+        != gradient_accumulation_steps
+        or type(evidence.get("acceleratorGradientAccumulationSteps")) is not int
+        or evidence.get("acceleratorGradientAccumulationSteps") != 1
+        or type(evidence.get("optimizerWindowRecordCapacity")) is not int
+        or evidence.get("optimizerWindowRecordCapacity")
+        != batch_size * gradient_accumulation_steps
+        or type(evidence.get("optimizerWindowMicroBatchCount")) is not int
+        or evidence.get("optimizerWindowMicroBatchCount")
+        != gradient_accumulation_steps
+        or not isinstance(expected_counts, list)
+        or len(expected_counts) != gradient_accumulation_steps
+        or any(type(count) is not int or count <= 0 for count in expected_counts)
+        or observed_counts != expected_counts
+        or not isinstance(first_epoch, Mapping)
+        or type(train_split.get("records")) is not int
+        or train_split.get("records")
+        < batch_size * gradient_accumulation_steps
+        or schedule.get("datasetRecordsPerEpoch") != train_split.get("records")
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(evidence.get("scheduledRowIndicesSHA256") or ""),
+        )
+        is None
+        or evidence.get("scheduledRowIndicesSHA256")
+        != first_epoch.get("firstOptimizerWindowRecordIndicesSHA256")
+        or evidence.get("expectedTargetTokenCount")
+        != first_epoch.get("firstOptimizerWindowTargetTokenCount")
+        or any(
+            type(evidence.get(field)) is not int
+            or evidence.get(field) <= 0
+            for field in (
+                "expectedTargetTokenCount",
+                "reconstructedTargetTokenCount",
+                "reportedNumItemsInBatch",
+            )
+        )
+        or evidence.get("expectedTargetTokenCount") != sum(expected_counts)
+        or evidence.get("reconstructedTargetTokenCount")
+        != evidence.get("expectedTargetTokenCount")
+        or evidence.get("reportedNumItemsInBatch")
+        != evidence.get("expectedTargetTokenCount")
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(evidence.get("samplerStateSHA256") or ""),
+        )
+        is None
+        or evidence.get("samplerStatePreserved") is not True
+        or evidence.get("rngStateRestored") is not True
+        or evidence.get("preOptimizerStateVerified") is not True
+        or re.fullmatch(r"[0-9a-f]{64}", str(digest or "")) is None
+        or canonical_sha256(unsigned) != digest
+    ):
+        raise RuntimeError(
+            "Fleet SFT runtime loss-normalization evidence failed verification"
+        )
+    return dict(evidence)
+
+
 def _verify_peft_base_model_identity(
     adapter_dir: Path,
     config: Mapping[str, Any],
@@ -9353,6 +10135,13 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
         report=training_report,
         phase="sft",
     )
+    fleet_runtime_loss_normalization = (
+        _verify_fleet_sft_runtime_loss_normalization(
+            report=training_report,
+            config=config,
+            token_length_preflight=token_length_preflight,
+        )
+    )
     return {
         "phase": "sft",
         "adapterSHA256": adapter_manifest["adapterSHA256"],
@@ -9368,6 +10157,15 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
         "tokenLengthPreflightSHA256": token_length_preflight["preflightSHA256"],
         "fleetLossShareEvidence": token_length_preflight.get(
             "fleetLossShareEvidence"
+        ),
+        **(
+            {
+                "fleetRuntimeLossNormalization": (
+                    fleet_runtime_loss_normalization
+                )
+            }
+            if fleet_runtime_loss_normalization is not None
+            else {}
         ),
         "publicCorpusLossShareEvidence": token_length_preflight[
             "publicCorpusLossShareEvidence"

@@ -62,6 +62,14 @@ class _InstalledDistribution:
     def locate_file(self, filename: str) -> Path:
         return self.root / filename
 
+    @property
+    def files(self) -> list[str]:
+        return [
+            row.split(",", 1)[0]
+            for row in self.record_path.read_text(encoding="utf-8").splitlines()
+            if row and not row.split(",", 1)[0].endswith("/RECORD")
+        ]
+
 
 def _resign_resolved_environment(environment: dict[str, object]) -> None:
     distributions = environment["distributions"]
@@ -698,6 +706,125 @@ def test_resolved_environment_snapshot_records_scan_metrics_and_authenticates_ca
             resolved,
             tampered,
             key=key,
+        )
+
+
+def _rewrite_distribution_record(
+    distribution: _InstalledDistribution,
+    source_paths: list[Path],
+) -> None:
+    rows: list[str] = []
+    for path in source_paths:
+        digest = base64.urlsafe_b64encode(
+            hashlib.sha256(path.read_bytes()).digest()
+        ).decode("ascii").rstrip("=")
+        rows.append(
+            f"{path.relative_to(distribution.root).as_posix()},"
+            f"sha256={digest},{path.stat().st_size}\n"
+        )
+    rows.append(
+        f"{distribution.record_path.parent.name}/RECORD,,\n"
+    )
+    distribution.record_path.write_text("".join(rows), encoding="utf-8")
+
+
+def test_installed_python_callable_identity_reconstructs_record_bound_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="callable-package",
+        version="1.2.3",
+    )
+    init_path = tmp_path / "callable_package" / "__init__.py"
+    source_path = tmp_path / "callable_package" / "loss_utils.py"
+    source_path.write_text(
+        "def selected_callable(value):\n    return value + 1\n",
+        encoding="utf-8",
+    )
+    _rewrite_distribution_record(distribution, [init_path, source_path])
+    resolved = training_lineage.build_resolved_training_environment(
+        [distribution]
+    )
+    monkeypatch.setattr(
+        training_lineage.importlib_metadata,
+        "distribution",
+        lambda name: distribution,
+    )
+
+    identity = (
+        training_lineage.installed_distribution_python_callable_identity(
+            distribution_name="callable-package",
+            source_logical_path="callable_package/loss_utils.py",
+            callable_name="selected_callable",
+            resolved_environment=resolved,
+        )
+    )
+
+    assert identity["distributionName"] == "callable-package"
+    assert identity["distributionVersion"] == "1.2.3"
+    assert identity["sourceFileSHA256"] == hashlib.sha256(
+        source_path.read_bytes()
+    ).hexdigest()
+    assert len(identity["codeSHA256"]) == 64
+    assert len(identity["installedCallableIdentitySHA256"]) == 64
+
+    source_path.write_text(
+        "def selected_callable(value):\n    return value + 2\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="RECORD content mismatch"):
+        training_lineage.installed_distribution_python_callable_identity(
+            distribution_name="callable-package",
+            source_logical_path="callable_package/loss_utils.py",
+            callable_name="selected_callable",
+            resolved_environment=resolved,
+        )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def another_callable():\n    return 1\n",
+        (
+            "def selected_callable():\n    return 1\n\n"
+            "def outer():\n"
+            "    def selected_callable():\n"
+            "        return 2\n"
+            "    return selected_callable()\n"
+        ),
+    ],
+)
+def test_installed_python_callable_identity_rejects_missing_or_ambiguous_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="callable-package",
+        version="1.2.3",
+    )
+    init_path = tmp_path / "callable_package" / "__init__.py"
+    source_path = tmp_path / "callable_package" / "loss_utils.py"
+    source_path.write_text(source, encoding="utf-8")
+    _rewrite_distribution_record(distribution, [init_path, source_path])
+    resolved = training_lineage.build_resolved_training_environment(
+        [distribution]
+    )
+    monkeypatch.setattr(
+        training_lineage.importlib_metadata,
+        "distribution",
+        lambda name: distribution,
+    )
+
+    with pytest.raises(ValueError, match="missing or ambiguous"):
+        training_lineage.installed_distribution_python_callable_identity(
+            distribution_name="callable-package",
+            source_logical_path="callable_package/loss_utils.py",
+            callable_name="selected_callable",
+            resolved_environment=resolved,
         )
 
 

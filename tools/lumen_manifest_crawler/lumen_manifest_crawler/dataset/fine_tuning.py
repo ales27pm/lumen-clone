@@ -51,10 +51,14 @@ from lumen_manifest_crawler.fleet_artifacts import (
     _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS,
     ORCHESTRATION_ATOMIC_MUTATION_KINDS,
     ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS,
-    _atomic_event_omission_rejection,
+    _atomic_event_completeness_rejection,
     _atomic_event_order_indices,
+    _fact_derived_noncanonical_event_id,
+    _natural_noncanonical_event_type_alias,
     _orchestration_scalar_leaf_differences,
+    _orchestration_training_scenario_id,
     _orchestration_topology_contract,
+    _rotated_canonical_strategy,
 )
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 
@@ -74,10 +78,20 @@ FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = (
 )
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_TOKEN_SHARE_HARD_MAX = 0.10
 FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR = 10_000
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.4.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.5.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
-    "lumen.fleet-loss-share-evidence/1.2.0"
+    "lumen.fleet-loss-share-evidence/1.3.0"
 )
+FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA_VERSION = (
+    "lumen.fleet-sft-optimizer-window-schedule-contract/1.0.0"
+)
+FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_EVIDENCE_SCHEMA_VERSION = (
+    "lumen.fleet-sft-optimizer-window-schedule/1.0.0"
+)
+FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
+    "sha256_epoch_stratified_native_round_robin/1.0.0"
+)
+FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT = 256
 FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION = (
     "lumen.fleet-optimizer-family-share/1.0.0"
 )
@@ -164,17 +178,17 @@ FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS = frozenset(
     {"normalization-policy-audited"}
 )
 FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT = {
-    "aggregation_owner_type": (
-        "$.decision.aggregationOwnerSlotID",
-        "null",
+    "decision_strategy_contract": (
+        "$.decision.strategy",
+        "next_valid_canonical_strategy",
     ),
     "event_type_vocabulary": (
-        "$.events[1].type",
-        "invented_event_alias",
+        "$.events[first_behavior_event].type",
+        "deterministic_natural_noncanonical_alias",
     ),
-    "event_omission": (
+    "event_completeness_contract": (
         "$.events",
-        "first_non_delegation_behavior_event_removed",
+        "deterministic_interior_or_terminal_stop_omission",
     ),
     "event_order": (
         "$.events",
@@ -182,7 +196,7 @@ FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT = {
     ),
     "event_id_grammar": (
         "$.events[0].id + $.dependencies[*]",
-        "noncanonical_event_id_with_rebound_endpoints",
+        "request_fact_derived_noncanonical_event_id_with_rebound_endpoints",
     ),
     "dependency_endpoint_reference": (
         "$.dependencies[*].toEventID",
@@ -1947,56 +1961,97 @@ def _fleet_native_record_graphs(
     )
 
 
-def _fleet_native_rejected_mutation_value(
-    rejected: dict[str, Any],
-    mutation: str,
-) -> Any:
-    if mutation == "aggregation_owner_type":
-        return rejected["decision"]["aggregationOwnerSlotID"]
-    if mutation == "event_type_vocabulary":
-        return rejected["events"][1]["type"]
-    if mutation == "event_id_grammar":
-        return rejected["events"][0]["id"]
-    if mutation == "delegated_slot_contract":
-        delegated = rejected["decision"]["delegatedSlotIDs"]
-        return (
-            "invented_shadow_slot"
-            if isinstance(delegated, list)
-            and "invented_shadow_slot" in delegated
-            else None
-        )
-    raise ValueError(f"Unsupported Fleet native mutation: {mutation!r}")
+_FLEET_NATIVE_FACTS_PROMPT_PREFIX = (
+    "Trusted request/state facts (these are inputs, not output fields): "
+)
+
+
+def _fleet_native_prompt_facts(user_prompt: str) -> dict[str, Any] | None:
+    """Recover the attested derivation facts from one canonical native prompt."""
+
+    matching_lines = [
+        line
+        for line in user_prompt.splitlines()
+        if line.startswith(_FLEET_NATIVE_FACTS_PROMPT_PREFIX)
+    ]
+    if len(matching_lines) != 1:
+        return None
+    payload = matching_lines[0][len(_FLEET_NATIVE_FACTS_PROMPT_PREFIX) :]
+    try:
+        facts = _strict_json_loads(payload)
+    except (
+        json.JSONDecodeError,
+        _DuplicateJSONKeyError,
+        _NonFiniteJSONNumberError,
+        TypeError,
+        ValueError,
+        RecursionError,
+    ):
+        return None
+    return facts if isinstance(facts, dict) else None
+
+
+def _fleet_native_prompt_request_identifier(user_prompt: str) -> str | None:
+    facts = _fleet_native_prompt_facts(user_prompt)
+    request_identifier = (
+        facts.get("requestIdentifier") if isinstance(facts, dict) else None
+    )
+    return (
+        request_identifier
+        if isinstance(request_identifier, str)
+        and re.fullmatch(r"fact-[0-9a-f]{16}", request_identifier)
+        else None
+    )
 
 
 def _valid_fleet_native_preference_mutation(
     chosen: dict[str, Any],
     rejected: dict[str, Any],
     mutation: str,
+    *,
+    event_id_fact: str | None = None,
 ) -> bool:
     """Validate one isolated native preference error without weakening shape checks."""
 
     if mutation not in FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT:
         return False
     differences = _orchestration_scalar_leaf_differences(chosen, rejected)
-    if mutation in {
-        "aggregation_owner_type",
-        "event_type_vocabulary",
-    }:
-        expected_path, expected_value = (
-            FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT[mutation]
-        )
+    if mutation == "decision_strategy_contract":
         try:
-            actual_value = _fleet_native_rejected_mutation_value(
-                rejected,
-                mutation,
+            expected = json.loads(json.dumps(chosen, ensure_ascii=False))
+            expected["decision"]["strategy"] = _rotated_canonical_strategy(
+                expected["decision"].get("strategy")
             )
-        except (IndexError, KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError):
             return False
-        return differences == [expected_path] and actual_value == expected_value
+        return differences == ["$.decision.strategy"] and rejected == expected
 
-    if mutation == "event_omission":
+    if mutation == "event_type_vocabulary":
         try:
-            expected = _atomic_event_omission_rejection(
+            expected = json.loads(json.dumps(chosen, ensure_ascii=False))
+            mutable_events = [
+                event
+                for event in expected["events"]
+                if isinstance(event, dict)
+                and event.get("type") not in {"request_received", "stop"}
+            ]
+            if not mutable_events:
+                return False
+            mutable_index = expected["events"].index(mutable_events[0])
+            mutable_events[0]["type"] = _natural_noncanonical_event_type_alias(
+                expected,
+                mutable_events[0],
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+        return (
+            differences == [f"$.events[{mutable_index}].type"]
+            and rejected == expected
+        )
+
+    if mutation == "event_completeness_contract":
+        try:
+            expected = _atomic_event_completeness_rejection(
                 json.loads(json.dumps(chosen, ensure_ascii=False))
             )
         except (KeyError, TypeError, ValueError):
@@ -2024,7 +2079,9 @@ def _valid_fleet_native_preference_mutation(
         try:
             expected = json.loads(json.dumps(chosen, ensure_ascii=False))
             source_id = expected["events"][0]["id"]
-            replacement_id = "noncanonical_event_id"
+            replacement_id = _fact_derived_noncanonical_event_id(
+                event_id_fact
+            )
             if any(
                 event.get("id") == replacement_id
                 for event in expected["events"][1:]
@@ -2035,7 +2092,7 @@ def _valid_fleet_native_preference_mutation(
                 for endpoint in ("fromEventID", "toEventID"):
                     if dependency.get(endpoint) == source_id:
                         dependency[endpoint] = replacement_id
-        except (IndexError, KeyError, TypeError):
+        except (IndexError, KeyError, TypeError, ValueError):
             return False
         return (
             rejected == expected
@@ -2324,17 +2381,33 @@ def _assert_fleet_native_orchestration_training_coverage(
                     behavior_conditioned_scenario_ids.add(
                         chosen_graph["scenarioID"]
                     )
-                    if rejected_graph is not None and not (
-                        _valid_fleet_native_preference_mutation(
-                            chosen_graph,
-                            rejected_graph,
-                            mutation,
+                    if rejected_graph is not None:
+                        user_messages = (
+                            record.get("prompt", [])
+                            if "DPO" in lane
+                            else record.get("messages", [])
                         )
-                    ):
-                        raise ValueError(
-                            f"Fleet native {lane} {behavior} preference "
-                            "mutation is invalid"
+                        user_prompt = _first_role_content(
+                            user_messages
+                            if isinstance(user_messages, list)
+                            else [],
+                            "user",
                         )
+                        request_identifier = (
+                            _fleet_native_prompt_request_identifier(user_prompt)
+                        )
+                        if request_identifier is None or not (
+                            _valid_fleet_native_preference_mutation(
+                                chosen_graph,
+                                rejected_graph,
+                                mutation,
+                                event_id_fact=request_identifier,
+                            )
+                        ):
+                            raise ValueError(
+                                f"Fleet native {lane} {behavior} preference "
+                                "mutation is invalid"
+                            )
                 elif not sft_optimizer_visible:
                     raise ValueError(
                         f"Fleet native {lane} {behavior} hides a non-conditioned row"
@@ -2354,12 +2427,18 @@ def _assert_fleet_native_orchestration_training_coverage(
                             f"Fleet native {lane} {behavior} lacks preference "
                             "source-anchor identity"
                         )
-                    expected_anchor = (
-                        preference_source
-                        if sft_optimizer_visible
-                        else behavior
-                    )
-                    if sft_anchor != expected_anchor:
+                    if (
+                        sft_optimizer_visible
+                        and sft_anchor != preference_source
+                    ) or (
+                        not sft_optimizer_visible
+                        and sft_anchor
+                        != _orchestration_training_scenario_id(
+                            behavior=behavior,
+                            variant="core",
+                            replica_index=None,
+                        )
+                    ):
                         raise ValueError(
                             f"Fleet native {lane} {behavior} has an invalid "
                             "SFT anchor identity"
@@ -2433,6 +2512,23 @@ def _assert_fleet_native_orchestration_training_coverage(
         ("train", train_sft_by_behavior, train_dpo_by_behavior),
         ("validation", val_sft_by_behavior, val_dpo_by_behavior),
     ):
+        for behavior, dpo_behavior_records in sorted(dpo_grouped.items()):
+            behavior_sft_scenario_ids = {
+                record["metadata"]["scenarioID"]
+                for record in sft_grouped.get(behavior, [])
+            }
+            missing_behavior_anchors = sorted(
+                {
+                    record["metadata"]["sftAnchorScenarioID"]
+                    for record in dpo_behavior_records
+                }
+                - behavior_sft_scenario_ids
+            )
+            if missing_behavior_anchors:
+                raise ValueError(
+                    f"Fleet native {lane} DPO {behavior} anchors lack "
+                    f"same-behavior SFT rows: {missing_behavior_anchors}"
+                )
         sft_records = [
             record
             for records in sft_grouped.values()
@@ -2802,6 +2898,43 @@ def _fleet_loss_share_contract(
                     ),
                 },
             },
+        },
+        "sftOptimizerWindowScheduleContract": {
+            "schemaVersion": (
+                FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA_VERSION
+            ),
+            "evidenceSchemaVersion": (
+                FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_EVIDENCE_SCHEMA_VERSION
+            ),
+            "lane": "sft",
+            "split": "train",
+            "enforcementRequired": True,
+            "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+            "basis": (
+                "mean_of_floor_per_optimizer_window_native_assistant_target_"
+                "token_share_basis_points"
+            ),
+            "basisPointDenominator": (
+                FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR
+            ),
+            "minimumBasisPoints": (
+                FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS
+            ),
+            "maximumBasisPoints": (
+                FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS
+            ),
+            "algorithm": FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM,
+            "candidateSearchCount": (
+                FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT
+            ),
+            "permutationPolicy": "each_source_row_exactly_once_per_epoch",
+            "packing": False,
+            "distributedSamplingPolicy": "single_process_only",
+            "resumePolicy": (
+                "trainer_set_epoch_with_monotonic_sampler_guard_through_"
+                "skip_first_batches"
+            ),
+            "failurePolicy": "abort_before_optimizer",
         },
         "sourceSelectionProxy": {
             "status": "safety_budget_not_exact_token_count",
@@ -6868,6 +7001,12 @@ def _bind_fleet_dpo_contract(
         if not user:
             continue
         user = _fleet_prompt_with_short_contract(user, metadata)
+        is_native_orchestration = (
+            record.get("sourceFamily")
+            == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+            or metadata.get("sourceFamily")
+            == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+        )
         chosen_content = _to_string(chosen.get("content"))
         rejected_content = _to_string(rejected.get("content"))
         if (
@@ -6893,11 +7032,11 @@ def _bind_fleet_dpo_contract(
             )
         canonical_chosen = _canonical_strict_json_object(
             chosen_content,
-            sort_keys=True,
+            sort_keys=not is_native_orchestration,
         )
         canonical_rejected = _canonical_strict_json_object(
             rejected_content,
-            sort_keys=True,
+            sort_keys=not is_native_orchestration,
         )
         if canonical_chosen is None or canonical_rejected is None:
             continue
@@ -6906,26 +7045,24 @@ def _bind_fleet_dpo_contract(
         if chosen_content == rejected_content:
             continue
         if (
-            (
-                record.get("sourceFamily")
-                == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
-                or metadata.get("sourceFamily")
-                == FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
-            )
+            is_native_orchestration
             and metadata.get("trainingMatrixVariant")
             == "behavior-conditioned"
         ):
             mutation = metadata.get("atomicPreferenceMutation")
+            request_identifier = _fleet_native_prompt_request_identifier(user)
             chosen_graph = _strict_json_loads(chosen_content)
             rejected_graph = _strict_json_loads(rejected_content)
             if (
                 not isinstance(chosen_graph, dict)
                 or not isinstance(rejected_graph, dict)
                 or not isinstance(mutation, str)
+                or request_identifier is None
                 or not _valid_fleet_native_preference_mutation(
                     chosen_graph,
                     rejected_graph,
                     mutation,
+                    event_id_fact=request_identifier,
                 )
             ):
                 continue
@@ -15016,7 +15153,7 @@ def _adapter_optimization_step_policy(
         raise ValueError("DPO optimization requires a positive training-record count")
     high_reasoning = agent in {"cortex", "executor", "rem"}
     base_sft_epochs = (
-        6
+        3
         if agent == "fleet"
         else 3
         if agent == "cortex"
@@ -15025,7 +15162,7 @@ def _adapter_optimization_step_policy(
         else 1
     )
     base_dpo_epochs = (
-        2
+        1
         if agent == "fleet"
         else 1
         if agent == "cortex"
