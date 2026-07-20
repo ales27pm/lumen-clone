@@ -20,7 +20,7 @@ sft,embedding,fleet_whole_system_identity,1
 sft,embedding,source_code_self_knowledge,1
 sft,embedding,source_routing_knowledge,1
 sft,embedding,source_tool_registry_knowledge,1
-sft,fleet,fleet_orchestration_event_graph,63
+sft,fleet,fleet_orchestration_event_graph,81
 sft,idle_reflection,fleet_delegation,5
 sft,idle_reflection,fleet_peer_knowledge,5
 sft,idle_reflection,fleet_peer_source_knowledge,5
