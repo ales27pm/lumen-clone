@@ -14,6 +14,7 @@ import pytest
 
 from lumen_manifest_crawler.dataset.fine_tuning import (
     FineTuningDatasetConfig,
+    _assistant_target_token_count,
     _fleet_loss_share_contract,
 )
 from tools.fine_tuning.unsloth import train_dpo, train_sft, ubuntu_pipeline
@@ -85,7 +86,7 @@ def _contract() -> dict[str, Any]:
             "minimumBasisPoints": 5_000,
             "maximumBasisPoints": 6_000,
             "algorithm": (
-                "sha256_epoch_stratified_native_round_robin/1.0.0"
+                "sha256_epoch_stratified_token_aware_native_round_robin/1.1.0"
             ),
             "candidateSearchCount": 256,
             "permutationPolicy": "each_source_row_exactly_once_per_epoch",
@@ -491,6 +492,13 @@ def _stratifiable_window_specification() -> list[tuple[str, int]]:
     return [("native", 51)] * 10 + [("primary", 7)] * 70
 
 
+def _token_aware_stratifiable_window_specification() -> list[tuple[str, int]]:
+    non_native_counts = [4, 5, 6, 7, 8, 9, 10] * 10
+    return [("native", 51)] * 10 + [
+        ("primary", count) for count in non_native_counts
+    ]
+
+
 def _dpo_family_share_specification(
     native_pairs: int,
 ) -> list[tuple[str, int]]:
@@ -740,6 +748,144 @@ def test_stratified_schedule_is_deterministic_strict_epoch_permutation() -> None
         sampler.set_epoch(len(epoch_orders))
     with pytest.raises(RuntimeError, match="invalid epoch schedules"):
         train_sft._FleetEpochStratifiedSampler([[0, 0]])
+
+
+def test_stratified_schedule_uses_exact_token_aware_non_native_order() -> None:
+    row_evidence = _sft_row_token_evidence(
+        _token_aware_stratifiable_window_specification()
+    )
+    schedule, epoch_orders = (
+        train_sft._build_fleet_sft_optimizer_window_schedule(
+            row_token_evidence=row_evidence,
+            config=_config(),
+            schedule_contract=_contract()[
+                "sftOptimizerWindowScheduleContract"
+            ],
+            minimum_basis_points=5_000,
+            maximum_basis_points=6_000,
+        )
+    )
+    seed = _config()["seed"]
+    native_indices = list(range(10))
+    native_indices.sort(
+        key=lambda row_index: (
+            train_sft._fleet_sft_schedule_rank(
+                seed=seed,
+                role="native_source_record",
+                index=row_index,
+                source_row_sha256=row_evidence[row_index][
+                    "sourceRowSHA256"
+                ],
+            ),
+            row_index,
+        )
+    )
+    non_native_indices = list(range(10, len(row_evidence)))
+
+    def non_native_hash_rank(row_index: int) -> str:
+        return train_sft._fleet_sft_schedule_rank(
+            seed=seed,
+            role="non_native_source_record",
+            index=row_index,
+            source_row_sha256=row_evidence[row_index]["sourceRowSHA256"],
+        )
+
+    hash_only_non_native = sorted(
+        non_native_indices,
+        key=lambda row_index: (non_native_hash_rank(row_index), row_index),
+    )
+    token_aware_non_native = sorted(
+        non_native_indices,
+        key=lambda row_index: (
+            row_evidence[row_index]["targetTokenCount"],
+            non_native_hash_rank(row_index),
+            row_index,
+        ),
+    )
+    candidate_index = schedule["epochs"][0]["candidateIndex"]
+    expected_order = train_sft._fleet_sft_epoch_order(
+        row_token_evidence=row_evidence,
+        native_indices=native_indices,
+        non_native_indices=token_aware_non_native,
+        optimizer_window_record_capacity=8,
+        seed=seed,
+        epoch_index=0,
+        candidate_index=candidate_index,
+    )
+    hash_only_order = train_sft._fleet_sft_epoch_order(
+        row_token_evidence=row_evidence,
+        native_indices=native_indices,
+        non_native_indices=hash_only_non_native,
+        optimizer_window_record_capacity=8,
+        seed=seed,
+        epoch_index=0,
+        candidate_index=candidate_index,
+    )
+
+    assert epoch_orders[0] == expected_order
+    assert expected_order != hash_only_order
+
+
+def test_generated_optimized_proxy_rows_have_feasible_window_schedule() -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    fleet_root = repository_root / "generated/fine_tuning/fleet"
+    config = json.loads(
+        (fleet_root / "unsloth_config.json").read_text(encoding="utf-8")
+    )
+    dataset_path = (
+        fleet_root
+        / "experiments/internal_plus_public_optimized/train_sft.jsonl"
+    )
+    rows = [
+        json.loads(line)
+        for line in dataset_path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    row_evidence: list[dict[str, Any]] = []
+    for row_index, row in enumerate(rows):
+        source_family, task_type, category = (
+            train_sft._fleet_source_role_from_contract(
+                row,
+                contract=config["fleetLossShareContract"],
+            )
+        )
+        row_evidence.append(
+            {
+                "rowIndex": row_index,
+                "sourceRowSHA256": train_sft._canonical_sha256(row),
+                "sourceFamily": source_family,
+                "taskType": task_type,
+                "category": category,
+                "targetTokenCount": _assistant_target_token_count(
+                    row,
+                    max_chars_per_token=config["max_chars_per_token"],
+                ),
+            }
+        )
+
+    band = config["fleetLossShareContract"]["optimizerFamilyShareBands"][
+        "lanes"
+    ]["sft"]
+    schedule, epoch_orders = (
+        train_sft._build_fleet_sft_optimizer_window_schedule(
+            row_token_evidence=row_evidence,
+            config=config,
+            schedule_contract=config["fleetLossShareContract"][
+                "sftOptimizerWindowScheduleContract"
+            ],
+            minimum_basis_points=band["minimumBasisPoints"],
+            maximum_basis_points=band["maximumBasisPoints"],
+        )
+    )
+
+    assert len(epoch_orders) == config["num_train_epochs"]
+    assert schedule["allSourceRecordsCoveredAcrossConfiguredEpochs"] is True
+    assert all(
+        band["minimumBasisPoints"]
+        <= epoch["windowNormalizedNativeShareBasisPoints"]
+        <= band["maximumBasisPoints"]
+        for epoch in schedule["epochs"]
+    )
 
 
 def test_public_verifier_rejects_rehashed_self_consistent_false_counts(

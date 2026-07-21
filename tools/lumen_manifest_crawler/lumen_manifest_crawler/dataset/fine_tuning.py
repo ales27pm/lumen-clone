@@ -97,7 +97,7 @@ FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_EVIDENCE_SCHEMA_VERSION = (
     "lumen.fleet-sft-optimizer-window-schedule/1.0.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
-    "sha256_epoch_stratified_native_round_robin/1.0.0"
+    "sha256_epoch_stratified_token_aware_native_round_robin/1.1.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT = 256
 FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION = (

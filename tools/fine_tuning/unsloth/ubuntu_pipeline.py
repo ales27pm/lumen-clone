@@ -7842,7 +7842,7 @@ _FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_SCHEMA = (
     "lumen.fleet-sft-optimizer-window-schedule/1.0.0"
 )
 _FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
-    "sha256_epoch_stratified_native_round_robin/1.0.0"
+    "sha256_epoch_stratified_token_aware_native_round_robin/1.1.0"
 )
 _FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY = "fleet_orchestration_native"
 _FLEET_NATIVE_ORCHESTRATION_TASK_TYPE_BY_LANE = {
@@ -9009,6 +9009,7 @@ def _pipeline_fleet_sft_optimizer_window_schedule(
     )
     non_native_indices.sort(
         key=lambda row_index: (
+            int(row_token_evidence[row_index]["targetTokenCount"]),
             source_rank(row_index, role="non_native_source_record"),
             row_index,
         )
