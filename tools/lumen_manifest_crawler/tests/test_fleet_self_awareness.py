@@ -522,7 +522,7 @@ def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
             } == {"normalization-policy-audited"}
 
 
-def test_compiled_fleet_has_one_derived_core_policy_vocabulary_anchor(
+def test_compiled_fleet_has_one_policy_vocabulary_anchor_per_core_behavior(
     production_fleet_compilation,
 ) -> None:
     _, _, _, compiled = production_fleet_compilation
@@ -544,49 +544,74 @@ def test_compiled_fleet_has_one_derived_core_policy_vocabulary_anchor(
             if record["metadata"].get("taskType")
             == fine_tuning_module.FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE
         ]
-        assert len(anchors) == 1
-        anchor = anchors[0]
-        metadata = anchor["metadata"]
-        target = json.loads(anchor["messages"][-1]["content"])
-        core_graphs = [
-            json.loads(record["messages"][-1]["content"])
+        assert len(anchors) == len(expected_behaviors)
+        core_graphs = {
+            record["metadata"]["behaviorClass"]: json.loads(
+                record["messages"][-1]["content"]
+            )
             for record in records
             if record["metadata"].get("sourceFamily")
             == "fleet_orchestration_native"
             and record["metadata"].get("trainingMatrixVariant") == "core"
-        ]
-        expected_event_schemas = defaultdict(set)
-        for graph in core_graphs:
-            for event in graph["events"]:
-                expected_event_schemas[event["type"]].add(
-                    tuple(
-                        key for key in event if key not in {"id", "type"}
-                    )
-                )
-
-        assert metadata["requiredSplit"] == "train"
-        assert metadata["policyVocabularyAnchor"] is True
-        assert metadata["derivedCoreGraphCount"] == len(expected_behaviors)
-        assert set(metadata["derivedBehaviorClasses"]) == expected_behaviors
-        assert metadata["policyVocabularySHA256"] == canonical_sha256(target)
-        assert target == {
-            "decisionKeys": list(core_graphs[0]["decision"]),
-            "eventID": {
-                "namespaceKey": "scenarioID",
-                "separator": "::event::",
-                "orderEncoding": "two_digit_one_based",
-            },
-            "eventSchemas": {
-                event_type: [list(schema) for schema in sorted(schemas)]
-                for event_type, schemas in sorted(
-                    expected_event_schemas.items()
-                )
-            },
-            "graphTopLevelKeys": list(core_graphs[0]),
         }
-        assert fine_tuning_module._fleet_source_role(anchor) == (
-            fine_tuning_module.FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY
-        )
+        assert set(core_graphs) == expected_behaviors
+        assert {
+            anchor["metadata"]["behaviorClass"] for anchor in anchors
+        } == expected_behaviors
+
+        for anchor in anchors:
+            metadata = anchor["metadata"]
+            behavior = metadata["behaviorClass"]
+            graph = core_graphs[behavior]
+            target = json.loads(anchor["messages"][-1]["content"])
+            event_order_by_id = {
+                event["id"]: index
+                for index, event in enumerate(graph["events"], start=1)
+            }
+
+            assert metadata["requiredSplit"] == "train"
+            assert metadata["policyVocabularyAnchor"] is True
+            assert metadata["derivedCoreGraphCount"] == 1
+            assert metadata["derivedBehaviorClasses"] == [behavior]
+            assert metadata["policyVocabularySHA256"] == canonical_sha256(
+                target
+            )
+            assert target == {
+                "behaviorClass": behavior,
+                "graphTopLevelKeys": list(graph),
+                "decisionKeys": list(graph["decision"]),
+                "eventID": {
+                    "namespaceKey": "scenarioID",
+                    "separator": "::event::",
+                    "orderEncoding": "two_digit_one_based",
+                },
+                "eventSchemas": [
+                    {
+                        "type": event["type"],
+                        "payloadKeys": [
+                            key
+                            for key in event
+                            if key not in {"id", "type"}
+                        ],
+                    }
+                    for event in graph["events"]
+                ],
+                "dependencyOrders": [
+                    {
+                        "fromOrder": event_order_by_id[
+                            dependency["fromEventID"]
+                        ],
+                        "toOrder": event_order_by_id[
+                            dependency["toEventID"]
+                        ],
+                    }
+                    for dependency in graph["dependencies"]
+                ],
+                "decisionContract": graph["decision"],
+            }
+            assert fine_tuning_module._fleet_source_role(anchor) == (
+                fine_tuning_module.FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY
+            )
 
 
 def test_compiled_fleet_native_coverage_guard_rejects_replica_loss_and_mutation_collapse(

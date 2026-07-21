@@ -1026,21 +1026,23 @@ def compile_agent_fine_tuning_datasets(
             routing_stats[agent]["taskTypes"].add(task_type)
             routing_stats[agent]["availableSFTRecords"] += 1
 
-    fleet_policy_vocabulary_anchor = (
-        _fleet_policy_vocabulary_sft_anchor(
+    fleet_policy_vocabulary_anchors = (
+        _fleet_policy_vocabulary_sft_anchors(
             manifest,
             routed_sft["fleet"],
         )
     )
-    if fleet_policy_vocabulary_anchor is not None:
-        routed_sft["fleet"].append(fleet_policy_vocabulary_anchor)
+    if fleet_policy_vocabulary_anchors:
+        routed_sft["fleet"].extend(fleet_policy_vocabulary_anchors)
         routing_stats["fleet"]["sourceFamilies"].add(
             ULTRA_SPECIFIC_SOURCE_FAMILY
         )
         routing_stats["fleet"]["taskTypes"].add(
             FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE
         )
-        routing_stats["fleet"]["availableSFTRecords"] += 1
+        routing_stats["fleet"]["availableSFTRecords"] += len(
+            fleet_policy_vocabulary_anchors
+        )
     routed_sft["fleet"] = _bind_fleet_sft_contract(
         manifest,
         routed_sft["fleet"],
@@ -3816,17 +3818,18 @@ def _fleet_private_state_contract_payloads(
     return chosen, rejected
 
 
-def _fleet_policy_vocabulary_sft_anchor(
+def _fleet_policy_vocabulary_sft_anchors(
     manifest: AgentBehaviorManifest,
     records: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    """Derive one compact non-native anchor from the visible core graphs.
+) -> list[dict[str, Any]]:
+    """Derive one non-held-out schema anchor per visible core behavior.
 
     The native topology matrix is intentionally immutable. Its nine new core
-    SFT rows can otherwise push the internal-only source proxy just above the
-    calibrated maximum. This anchor adds useful denominator signal instead of
-    weakening that guard: it teaches the exact graph/event vocabulary that the
-    failed Fleet canary replaced with plausible aliases.
+    SFT rows tokenize densely enough to exceed the exact internal-only family
+    band. These anchors add diverse behavioral denominator signal instead of
+    weakening that guard: each teaches one behavior's exact stage vocabulary,
+    payload-key alternatives, dependency orders, and terminal decision without
+    copying a held-out scenario or runnable graph.
     """
 
     core_graphs: dict[str, dict[str, Any]] = {}
@@ -3863,81 +3866,116 @@ def _fleet_policy_vocabulary_sft_anchor(
         core_graphs[behavior] = graph
 
     if not core_graphs:
-        return None
+        return []
     if set(core_graphs) != FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS:
         raise ValueError(
             "Fleet core policy-vocabulary derivation requires all canonical "
             f"behaviors: observed={sorted(core_graphs)}"
         )
 
-    top_level_schemas = {tuple(graph) for graph in core_graphs.values()}
-    decision_schemas = {
-        tuple(graph["decision"]) for graph in core_graphs.values()
-    }
-    if len(top_level_schemas) != 1 or len(decision_schemas) != 1:
+    if (
+        len({tuple(graph) for graph in core_graphs.values()}) != 1
+        or len(
+            {
+                tuple(graph["decision"])
+                for graph in core_graphs.values()
+            }
+        )
+        != 1
+    ):
         raise ValueError(
             "Fleet core graphs disagree on their canonical policy schema"
         )
-    event_schemas: dict[str, set[tuple[str, ...]]] = {}
-    for graph in core_graphs.values():
-        for event in graph["events"]:
-            if not isinstance(event, dict) or not isinstance(
-                event.get("type"),
-                str,
+    anchors: list[dict[str, Any]] = []
+    for behavior, graph in sorted(core_graphs.items()):
+        event_schemas: list[dict[str, Any]] = []
+        event_order_by_id: dict[str, int] = {}
+        for event_order, event in enumerate(graph["events"], start=1):
+            if (
+                not isinstance(event, dict)
+                or not isinstance(event.get("id"), str)
+                or not isinstance(event.get("type"), str)
             ):
                 raise ValueError(
                     "Fleet core graph exposes an invalid canonical event"
                 )
-            event_schemas.setdefault(event["type"], set()).add(
-                tuple(key for key in event if key not in {"id", "type"})
+            event_order_by_id[event["id"]] = event_order
+            event_schemas.append(
+                {
+                    "type": event["type"],
+                    "payloadKeys": [
+                        key for key in event if key not in {"id", "type"}
+                    ],
+                }
             )
-    if not event_schemas:
-        raise ValueError("Fleet core graphs expose no canonical event types")
-
-    target = {
-        "decisionKeys": list(next(iter(decision_schemas))),
-        "eventID": {
-            "namespaceKey": "scenarioID",
-            "separator": "::event::",
-            "orderEncoding": "two_digit_one_based",
-        },
-        "eventSchemas": {
-            event_type: [list(schema) for schema in sorted(schemas)]
-            for event_type, schemas in sorted(event_schemas.items())
-        },
-        "graphTopLevelKeys": list(next(iter(top_level_schemas))),
-    }
-    return _adapter_sft_record(
-        "fleet",
-        (
-            "Return one JSON registry for canonical Fleet graphs. For each "
-            "event type, list every registered payload-key set. At generation "
-            "time select exactly one matching set; never merge alternatives, "
-            "invent aliases, or add fields. Preserve graph and decision key "
-            "order plus event identity components."
-        ),
-        target,
-        FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
-        [],
-        "boundary",
-        {
-            "requiredSplit": "train",
-            "policyVocabularyAnchor": True,
-            "derivedFromSourceFamily": (
-                FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
-            ),
-            "derivedTrainingMatrixVariant": "core",
-            "derivedBehaviorClasses": sorted(core_graphs),
-            "derivedCoreGraphCount": len(core_graphs),
-            "policyVocabularySHA256": canonical_sha256(target),
-            "specificityVector": [
-                "fleet_contract_event_graph_vocabulary",
-                "canonical_core_graphs",
-                "closed_event_type_vocabulary",
-            ],
-        },
-        manifest,
-    )
+        dependency_orders: list[dict[str, int]] = []
+        for dependency in graph["dependencies"]:
+            if not isinstance(dependency, dict):
+                raise ValueError(
+                    "Fleet core graph exposes an invalid canonical dependency"
+                )
+            try:
+                dependency_orders.append(
+                    {
+                        "fromOrder": event_order_by_id[
+                            dependency["fromEventID"]
+                        ],
+                        "toOrder": event_order_by_id[
+                            dependency["toEventID"]
+                        ],
+                    }
+                )
+            except (KeyError, TypeError) as exc:
+                raise ValueError(
+                    "Fleet core graph dependency references an unknown event"
+                ) from exc
+        target = {
+            "behaviorClass": behavior,
+            "graphTopLevelKeys": list(graph),
+            "decisionKeys": list(graph["decision"]),
+            "eventID": {
+                "namespaceKey": "scenarioID",
+                "separator": "::event::",
+                "orderEncoding": "two_digit_one_based",
+            },
+            "eventSchemas": event_schemas,
+            "dependencyOrders": dependency_orders,
+            "decisionContract": graph["decision"],
+        }
+        anchors.append(
+            _adapter_sft_record(
+                "fleet",
+                (
+                    "Return the registered schema contract for Fleet behavior "
+                    f"class {behavior}. Encode stage vocabulary, payload-key "
+                    "ownership, direct prerequisite orders, and the terminal "
+                    "decision. Do not emit scenario facts or a runnable graph."
+                ),
+                target,
+                FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
+                [],
+                "boundary",
+                {
+                    "requiredSplit": "train",
+                    "policyVocabularyAnchor": True,
+                    "behaviorClass": behavior,
+                    "derivedFromSourceFamily": (
+                        FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+                    ),
+                    "derivedTrainingMatrixVariant": "core",
+                    "derivedBehaviorClasses": [behavior],
+                    "derivedCoreGraphCount": 1,
+                    "policyVocabularySHA256": canonical_sha256(target),
+                    "specificityVector": [
+                        "fleet_contract_event_graph_vocabulary",
+                        "canonical_core_graph",
+                        behavior,
+                    ],
+                },
+                manifest,
+            )
+        )
+    return anchors
 
 
 def _bind_fleet_sft_contract(
