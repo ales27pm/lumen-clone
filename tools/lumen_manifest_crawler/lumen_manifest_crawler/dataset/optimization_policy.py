@@ -132,7 +132,7 @@ def expected_optimization_step_policy(
     high_reasoning = agent in {"cortex", "executor", "rem"}
     base_epochs = {
         "sft": (
-            3
+            4
             if agent == "fleet"
             else 3
             if agent == "cortex"

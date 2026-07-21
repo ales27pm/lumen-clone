@@ -284,7 +284,7 @@ def _config() -> dict[str, Any]:
         "seed": 42,
         "batch_size": 1,
         "gradient_accumulation_steps": 8,
-        "num_train_epochs": 3,
+        "num_train_epochs": 4,
         "packing": False,
         "base_model_name": BASE_MODEL_ID,
         "baseModelID": BASE_MODEL_ID,
@@ -718,7 +718,7 @@ def test_stratified_schedule_is_deterministic_strict_epoch_permutation() -> None
     assert schedule["seed"] == 42
     assert schedule["perDeviceTrainBatchSize"] == 1
     assert schedule["gradientAccumulationSteps"] == 8
-    assert schedule["configuredEpochs"] == 3
+    assert schedule["configuredEpochs"] == 4
     unsigned_schedule = dict(schedule)
     unsigned_schedule.pop("scheduleSHA256")
     assert schedule["scheduleSHA256"] == train_sft._canonical_sha256(

@@ -25,37 +25,39 @@ ORCHESTRATION_EVENT_ID_GRAMMAR = "<scenarioID>::event::<one-based two-digit orde
 ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT = "behavior-conditioned"
 ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS = 8
 ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS = 8
-ORCHESTRATION_CORE_TOP_LEVEL_OMISSION_BEHAVIORS = frozenset(
-    {"aggregation-owner", "sequential-dependencies"}
-)
-ORCHESTRATION_TOP_LEVEL_OMISSION_KEY = "dependencies"
+ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE = "core_failure_family_atomic"
+ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS = {
+    "parallel-dependencies": "top_level_dependencies_omission",
+    "no-delegation": "event_type_vocabulary",
+    "approval-boundary": "event_completeness_contract",
+    "unavailable-boundary": "decision_aggregation_owner_omission",
+    "context-handoff": "decision_strategy_role",
+    "aggregation-owner": "dependency_endpoint_role",
+    "nonexistent-slot-negative": "terminal_stop_reason",
+    "duplicate-suppression": "event_payload_schema",
+    "sequential-dependencies": "scenario_identity_role",
+}
+_ORCHESTRATION_TOP_LEVEL_OMISSION_KEY = "dependencies"
 ORCHESTRATION_TRAINING_IDENTITY_SCHEMA_VERSION = (
-    "lumen.fleet-training-identity/1.2.0"
+    "lumen.fleet-training-identity/1.4.0"
 )
 ORCHESTRATION_TRAINING_SCENARIO_ID_WIDTH = 6
-ORCHESTRATION_TRAINING_FACT_ID_WIDTH = 8
+ORCHESTRATION_TRAINING_FACT_ID_WIDTH = 6
+ORCHESTRATION_TRAINING_IDENTITY_PREFIX = "id-"
 _ORCHESTRATION_TRAINING_IDENTITY_ALPHABET = "abcdefghijklmnopqrstuvwxyz"
+_ORCHESTRATION_SHARED_TRAINING_IDENTITY_SURFACES = (
+    ((6,), ""),
+    ((7,), ""),
+    ((5, 3), "-"),
+    ((5, 3), "_"),
+    ((6, 4), "-"),
+    ((6, 4), "_"),
+    ((7, 6), "-"),
+    ((13, 12, 10), "_"),
+)
 _ORCHESTRATION_TRAINING_IDENTITY_SURFACES = {
-    "scenario": (
-        ((6,), ""),
-        ((7,), ""),
-        ((5, 3), "-"),
-        ((5, 3), "_"),
-        ((6, 4), "-"),
-        ((6, 4), "_"),
-        ((7, 6), "-"),
-        ((12, 10, 8), "_"),
-    ),
-    "fact": (
-        ((8,), ""),
-        ((10,), ""),
-        ((8, 5), "-"),
-        ((9, 5), "_"),
-        ((8, 6, 4), "-"),
-        ((9, 7, 4), "_"),
-        ((10, 8, 5), "-"),
-        ((14, 12, 10), "_"),
-    ),
+    "scenario": _ORCHESTRATION_SHARED_TRAINING_IDENTITY_SURFACES,
+    "fact": _ORCHESTRATION_SHARED_TRAINING_IDENTITY_SURFACES,
 }
 _ORCHESTRATION_VARIED_FACT_KINDS_BY_BEHAVIOR = {
     "no-delegation": frozenset({"trusted-evidence"}),
@@ -183,14 +185,17 @@ def _orchestration_training_identity_surface_index(
             if identity_class == "fact"
             else int(digest[:8], 16) % len(surfaces)
         )
+    # Keep the scenario identity and every behavior-critical fact on the same
+    # opaque surface for a conditioned instance. This makes one replica expose
+    # a complete long-form graph envelope without using a scenario/fact prefix
+    # or shape cue. The remaining facts stay compact so the independently
+    # enforced optimizer-token band remains bounded.
     permutation_digest = canonical_sha256(
         {
             "schemaVersion": ORCHESTRATION_TRAINING_IDENTITY_SCHEMA_VERSION,
             "surfacePermutation": True,
-            "identityClass": identity_class,
             "behaviorClass": behavior,
             "lane": lane,
-            "factKind": fact_kind,
         }
     )
     return (int(permutation_digest[:8], 16) + replica_index) % len(surfaces)
@@ -217,7 +222,7 @@ def _format_orchestration_training_identity(
     for width in segment_widths:
         segments.append(encoded[offset : offset + width])
         offset += width
-    return f"{identity_class}-" + separator.join(segments)
+    return ORCHESTRATION_TRAINING_IDENTITY_PREFIX + separator.join(segments)
 
 
 def _opaque_orchestration_training_identity(
@@ -313,7 +318,9 @@ def _is_opaque_orchestration_training_identity(
     *,
     identity_class: str,
 ) -> bool:
-    prefix = f"{identity_class}-"
+    if identity_class not in {"scenario", "fact"}:
+        raise ValueError("Unknown Fleet training identity class")
+    prefix = ORCHESTRATION_TRAINING_IDENTITY_PREFIX
     if not value.startswith(prefix):
         return False
     payload = value[len(prefix) :]
@@ -685,9 +692,7 @@ def _training_orchestration_facts(
             "sharedWorkKey": dispatch["workKey"],
         }
     if behavior == "aggregation-owner":
-        available = _events_of_type(graph, "result_available")
         return {
-            "availableResultSlots": [event["sourceSlotID"] for event in available],
             "renderContext": _delegation_to(graph, "mouth")["contextKeys"],
         }
     if behavior == "approval-boundary":
@@ -733,7 +738,13 @@ def _training_feature_facts(
             identity_registry=identity_registry,
         )
 
-    facts["requestIdentifier"] = fact("request")
+    # Context handoff follows the frozen schema: its request event is keyed by
+    # the approved action, not by an unrelated request identity.
+    if (
+        behavior != "context-handoff"
+        or conditions["requestNormalizationRequired"]
+    ):
+        facts["requestIdentifier"] = fact("request")
     if behavior == "duplicate-suppression":
         facts["sharedWorkKey"] = fact("shared-work")
     if behavior == "nonexistent-slot-negative":
@@ -1111,7 +1122,7 @@ def _derive_training_core_orchestration_graph(
             "deduplicated", [target], None, "unique_work_complete"
         )
     elif behavior == "aggregation-owner":
-        result_slots = facts["availableResultSlots"]
+        result_slots = list(facts["availableResultIdentifiersBySlot"])
         if result_slots != ["executor", "mimicry"]:
             raise ValueError("Fleet aggregation training facts have invalid result slots")
         events = [
@@ -1793,22 +1804,52 @@ def _serialize_orchestration_rejection(
     graph: dict[str, Any],
     *,
     contrast_mode: str | None,
+    failure_family_mutation: str | None = None,
 ) -> str:
-    if contrast_mode != "top_level_schema_omission":
+    if contrast_mode != ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE:
         return _serialize_orchestration_graph(graph)
-    expected_keys = {
-        "graphSchemaVersion",
-        "scenarioID",
-        "knownSlotIDs",
-        "events",
-        "decision",
-    }
-    if set(graph) != expected_keys:
-        raise ValueError(
-            "Fleet top-level omission rejection is not missing exactly "
-            f"{ORCHESTRATION_TOP_LEVEL_OMISSION_KEY!r}"
-        )
-    return json.dumps(graph, ensure_ascii=False, separators=(",", ":"))
+    if failure_family_mutation == "top_level_dependencies_omission":
+        expected_keys = {
+            "graphSchemaVersion",
+            "scenarioID",
+            "knownSlotIDs",
+            "events",
+            "decision",
+        }
+        if set(graph) != expected_keys:
+            raise ValueError(
+                "Fleet top-level omission rejection is not missing exactly "
+                f"{_ORCHESTRATION_TOP_LEVEL_OMISSION_KEY!r}"
+            )
+        canonicalizable = json.loads(json.dumps(graph, ensure_ascii=False))
+        canonicalizable[_ORCHESTRATION_TOP_LEVEL_OMISSION_KEY] = []
+        ordered = json.loads(_serialize_orchestration_graph(canonicalizable))
+        ordered.pop(_ORCHESTRATION_TOP_LEVEL_OMISSION_KEY)
+        return json.dumps(ordered, ensure_ascii=False, separators=(",", ":"))
+    if failure_family_mutation == "decision_aggregation_owner_omission":
+        decision = graph.get("decision")
+        if set(graph) != {
+            "graphSchemaVersion",
+            "scenarioID",
+            "knownSlotIDs",
+            "events",
+            "dependencies",
+            "decision",
+        } or not isinstance(decision, dict) or set(decision) != {
+            "strategy",
+            "delegatedSlotIDs",
+            "stopReason",
+        }:
+            raise ValueError(
+                "Fleet decision omission rejection is not missing exactly "
+                "'aggregationOwnerSlotID'"
+            )
+        canonicalizable = json.loads(json.dumps(graph, ensure_ascii=False))
+        canonicalizable["decision"]["aggregationOwnerSlotID"] = None
+        ordered = json.loads(_serialize_orchestration_graph(canonicalizable))
+        ordered["decision"].pop("aggregationOwnerSlotID")
+        return json.dumps(ordered, ensure_ascii=False, separators=(",", ":"))
+    return _serialize_orchestration_graph(graph)
 
 
 def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dict[str, Any]]:
@@ -1834,21 +1875,23 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             },
             {
                 "role": "user",
-                "content": _orchestration_training_prompt(scenario, derivation),
+                "content": _orchestration_training_prompt(
+                    scenario,
+                    derivation,
+                    lane="sft",
+                ),
             },
         ]
         metadata = {
             **_native_orchestration_metadata(manifest, scenario["id"]),
             "behaviorClass": scenario["behaviorClass"],
             "trainingMatrixVariant": scenario["trainingMatrixVariant"],
-            # All eight independent behavior-conditioned instances are SFT
-            # optimizer-visible and DPO-visible. The redundant generic core is
-            # preference-only; this keeps the native SFT row count fixed while closing
-            # the prior eighth conditioned DPO-without-SFT gap. The combined
-            # wrapper remains validation-only:
-            # its extra stages and suffixed decision
-            # literals must not outweigh the canonical behavior topology.
-            # Frozen facts, prompts, IDs, and exact graphs remain unseen.
+            # All eight independent behavior-conditioned instances and the
+            # canonical core are SFT optimizer-visible and DPO-visible. The
+            # core SFT lane teaches initial generation; only its paired DPO
+            # lane teaches strict retry recovery. The combined wrapper remains
+            # validation-only. Frozen facts, prompts, IDs, and exact graphs
+            # remain unseen.
             "requiredSplit": (
                 "validation"
                 if scenario["trainingMatrixVariant"] in {
@@ -1863,15 +1906,9 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
             ),
             "derivationSchemaVersion": derivation["schemaVersion"],
             "canonicalDerivationSHA256": canonical_sha256(derivation),
-            "generationPromptMode": (
-                "strict_json_retry"
-                if _orchestration_training_uses_retry_prompt(scenario)
-                else "initial_generation"
-            ),
-            **(
-                {"retryFailureCode": "invalid_json"}
-                if _orchestration_training_uses_retry_prompt(scenario)
-                else {}
+            **_orchestration_generation_prompt_metadata(
+                scenario,
+                lane="sft",
             ),
         }
         atomic_mutation = scenario.get("atomicPreferenceMutation")
@@ -1930,6 +1967,7 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
                     "content": _orchestration_training_prompt(
                         preference_scenario,
                         preference_derivation,
+                        lane="dpo",
                     ),
                 },
             ]
@@ -1946,6 +1984,10 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
                 ),
                 "canonicalDerivationSHA256": canonical_sha256(
                     preference_derivation
+                ),
+                **_orchestration_generation_prompt_metadata(
+                    preference_scenario,
+                    lane="dpo",
                 ),
                 "preferenceSourceScenarioID": scenario["id"],
                 "sftAnchorScenarioID": (
@@ -1988,6 +2030,9 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
                         contrast_mode=preference_scenario.get(
                             "preferenceContrastMode"
                         ),
+                        failure_family_mutation=preference_scenario.get(
+                            "coreFailureFamilyMutation"
+                        ),
                     ),
                 },
                 "metadata": {
@@ -1999,12 +2044,23 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
                             "preferenceContrastMode": preference_scenario[
                                 "preferenceContrastMode"
                             ],
-                            "compoundPreferenceDimensions": preference_scenario[
-                                "compoundPreferenceDimensions"
-                            ],
                         }
                         if isinstance(
                             preference_scenario.get("preferenceContrastMode"),
+                            str,
+                        )
+                        else {}
+                    ),
+                    **(
+                        {
+                            "coreFailureFamilyMutation": preference_scenario[
+                                "coreFailureFamilyMutation"
+                            ],
+                        }
+                        if isinstance(
+                            preference_scenario.get(
+                                "coreFailureFamilyMutation"
+                            ),
                             str,
                         )
                         else {}
@@ -2017,6 +2073,8 @@ def _orchestration_training_records(manifest: AgentBehaviorManifest) -> list[dic
 def _orchestration_training_prompt(
     scenario: dict[str, Any],
     derivation: dict[str, Any] | None = None,
+    *,
+    lane: str = "sft",
 ) -> str:
     """Teach canonical policy derivation from state facts, never graph copying."""
 
@@ -2024,28 +2082,43 @@ def _orchestration_training_prompt(
         scenario,
         derivation or _orchestration_derivation_contract(scenario),
     )
-    if _orchestration_training_uses_retry_prompt(scenario):
+    if _orchestration_training_uses_retry_prompt(scenario, lane=lane):
         prompt += "\n\n" + generic_strict_json_retry_instruction("invalid_json")
     return prompt
 
 
 def _orchestration_training_uses_retry_prompt(
     scenario: dict[str, Any],
+    *,
+    lane: str = "sft",
 ) -> bool:
+    if lane not in {"sft", "dpo"}:
+        raise ValueError(f"Unknown Fleet orchestration training lane: {lane}")
     variant = scenario.get("trainingMatrixVariant")
-    return variant == "core" or (
+    return (lane == "dpo" and variant == "core") or (
         variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
         and scenario.get("behaviorConditionedInstanceIndex")
         == ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS
     )
 
 
+def _orchestration_generation_prompt_metadata(
+    scenario: dict[str, Any],
+    *,
+    lane: str,
+) -> dict[str, str]:
+    if _orchestration_training_uses_retry_prompt(scenario, lane=lane):
+        return {
+            "generationPromptMode": "strict_json_retry",
+            "retryFailureCode": "invalid_json",
+        }
+    return {"generationPromptMode": "initial_generation"}
+
+
 _PREFERENCE_PRESERVED_FACT_KEYS = {
     "approvalState",
-    "availableResultSlots",
     "permissionKey",
     "permissionState",
-    "requestSituation",
     "toolIdentifier",
     "trustedEvidenceStatus",
     "workOwnerSlot",
@@ -2060,7 +2133,7 @@ def _preference_natural_fact_alias(
 
     digest = canonical_sha256(
         {
-            "schemaVersion": "lumen.fleet-preference-fact-identity/1.1.0",
+            "schemaVersion": "lumen.fleet-preference-fact-identity/1.2.0",
             "source": source,
         }
     )
@@ -2245,9 +2318,9 @@ def _orchestration_preference_scenario(
         preference_rejected = _atomic_orchestration_rejection(
             preference_graph,
             mutation_index=mutation_index,
-            event_id_fact=preference_derivation["facts"][
-                "requestIdentifier"
-            ],
+            event_id_fact=_orchestration_event_id_negative_fact(
+                preference_derivation["facts"]
+            ),
         )
     else:
         preference_rejected = _replace_exact_string_values(
@@ -2259,32 +2332,19 @@ def _orchestration_preference_scenario(
             preference_rejected
         )
         if variant == "core":
-            if behavior in ORCHESTRATION_CORE_TOP_LEVEL_OMISSION_BEHAVIORS:
-                preference_rejected = (
-                    _orchestration_top_level_schema_omission_rejection(
-                        preference_graph
-                    )
-                )
-                scenario["preferenceContrastMode"] = (
-                    "top_level_schema_omission"
-                )
-                scenario["compoundPreferenceDimensions"] = [
-                    "missing_top_level_dependencies"
-                ]
-            else:
-                preference_rejected = (
-                    _compound_orchestration_repetition_rejection(
-                        preference_rejected
-                    )
-                )
-                scenario["preferenceContrastMode"] = (
-                    "compound_schema_repetition"
-                )
-                scenario["compoundPreferenceDimensions"] = [
-                    "duplicate_known_slot",
-                    "repeated_event",
-                    "repeated_dependency",
-                ]
+            preference_rejected = _core_failure_family_rejection(
+                preference_graph,
+                behavior=behavior,
+                event_id_fact=_orchestration_event_id_negative_fact(
+                    preference_derivation["facts"]
+                ),
+            )
+            scenario["preferenceContrastMode"] = (
+                ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE
+            )
+            scenario["coreFailureFamilyMutation"] = (
+                ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS[behavior]
+            )
 
     preference_prompt = _replace_prompt_string_values(
         str(scenario["prompt"]),
@@ -2751,9 +2811,6 @@ def _orchestration_training_variant(
         conditions=policy_conditions,
         identity_registry=identity_registry,
     )
-    conditioned_facts = scenario.pop("_conditionedSemanticFacts", None)
-    if isinstance(conditioned_facts, dict):
-        derivation_facts["behaviorInstanceFacts"] = conditioned_facts
     if variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT:
         if replica_index is None:
             raise ValueError(
@@ -2804,7 +2861,7 @@ def _orchestration_training_variant(
         facts=derivation_facts,
     )
     if is_core:
-        scenario["sftOptimizerVisible"] = False
+        scenario["sftOptimizerVisible"] = True
     if variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT:
         if replica_index is None or atomic_mutation_index is None:
             raise ValueError(
@@ -2814,7 +2871,9 @@ def _orchestration_training_variant(
         scenario["rejectedGraph"] = _atomic_orchestration_rejection(
             scenario["graph"],
             mutation_index=atomic_mutation_index,
-            event_id_fact=derivation_facts["requestIdentifier"],
+            event_id_fact=_orchestration_event_id_negative_fact(
+                derivation_facts
+            ),
         )
         scenario["behaviorConditionedInstanceIndex"] = replica_index + 1
         scenario["sftOptimizerVisible"] = (
@@ -2845,17 +2904,15 @@ def _orchestration_training_variant(
             ),
         )
     if is_core:
-        # Every behavior needs one format-recovery preference in addition to
-        # its eight typed conditioned contrasts. Start every hidden,
-        # preference-only core row from the canonical graph so the bounded
-        # recovery mutation teaches only repetition control, independent of
-        # any older behavior-specific semantic negative.
+        # Every behavior receives one exact SFT core anchor and one DPO-only
+        # single-family failure contrast. The preference instance is rebound
+        # to a disjoint DPO identity later.
         scenario["rejectedGraph"] = json.loads(
             json.dumps(scenario["graph"], ensure_ascii=False)
         )
         scenario["preferenceLesson"] = (
-            "After a structural validation failure, recover the exact canonical "
-            "graph once without repetition or terminal decision aliases."
+            "Prefer the exact canonical graph over one deterministic failure "
+            "in the observed behavior contract."
         )
     scenario["canonicalDerivation"] = (
         _training_orchestration_derivation_contract(
@@ -2876,99 +2933,6 @@ _BEHAVIOR_CONDITIONED_PROMPT_FRAMES = (
     "From these trusted conditions, produce the canonical Fleet route: {request}",
     "Evaluate this Fleet situation and emit only its minimal policy graph: {request}",
 )
-
-_BEHAVIOR_CONDITIONED_REQUEST_SITUATIONS = {
-    "no-delegation": (
-        "current_document_already_answers",
-        "trusted_cache_entry_is_complete",
-        "verified_session_fact_is_sufficient",
-        "fresh_local_index_contains_answer",
-        "current_tool_observation_is_complete",
-        "validated_user_context_resolves_request",
-        "trusted_memory_record_is_sufficient",
-        "current_manifest_fact_answers_directly",
-    ),
-    "sequential-dependencies": (
-        "account_lookup_requires_grounded_reply",
-        "calendar_read_requires_planned_execution",
-        "file_query_requires_verified_observation",
-        "contact_search_requires_tool_grounding",
-        "mail_lookup_requires_ordered_handoff",
-        "reminder_read_requires_observation_check",
-        "location_query_requires_verified_result",
-        "document_metadata_requires_grounded_render",
-    ),
-    "parallel-dependencies": (
-        "tool_result_and_tone_profile_are_independent",
-        "factual_lookup_and_locale_style_can_run_together",
-        "execution_and_voice_analysis_are_parallelizable",
-        "data_retrieval_and_register_selection_are_independent",
-        "tool_observation_and_language_style_can_fan_out",
-        "action_result_and_tone_evidence_can_run_concurrently",
-        "grounding_and_style_profile_are_separate_branches",
-        "execution_evidence_and_response_style_can_be_joined",
-    ),
-    "context-handoff": (
-        "approved_calendar_action_needs_minimal_context",
-        "approved_file_action_needs_bounded_arguments",
-        "approved_contact_action_excludes_transcript",
-        "approved_mail_action_excludes_peer_state",
-        "approved_reminder_action_excludes_reasoning",
-        "approved_location_action_uses_validated_fields",
-        "approved_document_action_uses_least_context",
-        "approved_tool_action_preserves_private_boundaries",
-    ),
-    "duplicate-suppression": (
-        "two_branches_request_same_calendar_read",
-        "two_branches_request_same_file_fetch",
-        "two_branches_request_same_contact_lookup",
-        "two_branches_request_same_reminder_read",
-        "two_branches_request_same_mail_lookup",
-        "two_branches_request_same_location_query",
-        "two_branches_request_same_document_fetch",
-        "two_branches_request_same_tool_observation",
-    ),
-    "aggregation-owner": (
-        "tool_and_style_results_are_ready",
-        "observation_and_locale_profile_are_ready",
-        "execution_and_tone_results_are_verified",
-        "factual_and_register_inputs_are_available",
-        "tool_evidence_and_voice_guidance_are_ready",
-        "grounded_result_and_style_contract_are_ready",
-        "observation_and_language_preference_are_ready",
-        "executor_and_mimicry_outputs_are_ready",
-    ),
-    "approval-boundary": (
-        "destructive_action_has_no_user_approval",
-        "external_write_is_waiting_for_consent",
-        "account_mutation_lacks_confirmation",
-        "message_send_requires_explicit_approval",
-        "calendar_change_is_not_yet_approved",
-        "file_mutation_is_waiting_for_consent",
-        "contact_change_lacks_user_confirmation",
-        "sensitive_action_must_pause_for_approval",
-    ),
-    "unavailable-boundary": (
-        "required_permission_is_denied",
-        "capability_access_is_unavailable",
-        "tool_permission_preflight_failed",
-        "protected_resource_access_is_denied",
-        "required_service_permission_is_missing",
-        "local_capability_cannot_be_accessed",
-        "permission_state_blocks_execution",
-        "requested_capability_is_not_available",
-    ),
-    "nonexistent-slot-negative": (
-        "requested_target_is_absent_from_directory",
-        "named_router_slot_is_not_manifested",
-        "requested_peer_identifier_is_unknown",
-        "target_component_is_outside_fleet_contract",
-        "requested_worker_is_not_in_slot_snapshot",
-        "named_specialist_has_no_manifest_entry",
-        "target_slot_fails_directory_membership",
-        "requested_delegate_is_not_a_known_slot",
-    ),
-}
 
 _SEQUENTIAL_CONTEXT_VARIANTS = (
     (("taskIntent", "capabilityDirectory"), ("authorizedPlan", "argumentSchema"), ("verifiedObservation", "responsePolicy")),
@@ -3049,7 +3013,11 @@ def _behavior_conditioned_fact_narrative(
 ) -> str:
     """Describe supplied opaque facts in the same natural surface used at runtime."""
 
-    request_id = str(facts["requestIdentifier"])
+    request_id = (
+        str(facts["requestIdentifier"])
+        if behavior != "context-handoff"
+        else None
+    )
     if behavior == "no-delegation":
         return (
             f"Request `{request_id}` is resolved by trusted snapshot "
@@ -3120,12 +3088,6 @@ def _vary_behavior_conditioned_training_facts(
 
     scenario = json.loads(json.dumps(source, ensure_ascii=False))
     index = replica_index % ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS
-    situations = _BEHAVIOR_CONDITIONED_REQUEST_SITUATIONS.get(behavior)
-    if situations is None or len(situations) != ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS:
-        raise ValueError(f"Fleet behavior lacks semantic fact variants: {behavior}")
-    scenario["_conditionedSemanticFacts"] = {
-        "requestSituation": situations[index],
-    }
     graph = scenario["graph"]
 
     if behavior == "no-delegation":
@@ -3464,37 +3426,6 @@ def _atomic_orchestration_rejection(
     return graph
 
 
-def _compound_orchestration_repetition_rejection(
-    source: dict[str, Any],
-) -> dict[str, Any]:
-    """Add bounded retry-time repetition failures observed in generation."""
-
-    graph = json.loads(json.dumps(source, ensure_ascii=False))
-    known_slots = graph.get("knownSlotIDs")
-    events = graph.get("events")
-    dependencies = graph.get("dependencies")
-    if (
-        not isinstance(known_slots, list)
-        or not known_slots
-        or not isinstance(events, list)
-        or len(events) < 2
-        or not isinstance(dependencies, list)
-        or not dependencies
-    ):
-        raise ValueError("Fleet compound rejection lacks a complete graph surface")
-    if len(events) >= 11 or len(dependencies) >= 15:
-        raise ValueError("Fleet compound rejection exceeds the bounded mutation budget")
-    events.insert(
-        len(events) - 1,
-        json.loads(json.dumps(events[-2], ensure_ascii=False)),
-    )
-    dependencies.append(
-        json.loads(json.dumps(dependencies[-1], ensure_ascii=False))
-    )
-    known_slots.append(str(known_slots[0]))
-    return graph
-
-
 def _orchestration_top_level_schema_omission_rejection(
     source: dict[str, Any],
 ) -> dict[str, Any]:
@@ -3510,11 +3441,95 @@ def _orchestration_top_level_schema_omission_rejection(
         "decision",
     }
     if set(graph) != expected_keys or not isinstance(
-        graph.get(ORCHESTRATION_TOP_LEVEL_OMISSION_KEY),
+        graph.get(_ORCHESTRATION_TOP_LEVEL_OMISSION_KEY),
         list,
     ):
         raise ValueError("Fleet omission rejection lacks a complete graph surface")
-    graph.pop(ORCHESTRATION_TOP_LEVEL_OMISSION_KEY)
+    graph.pop(_ORCHESTRATION_TOP_LEVEL_OMISSION_KEY)
+    return graph
+
+
+def _core_failure_family_rejection(
+    source: dict[str, Any],
+    *,
+    behavior: str,
+    event_id_fact: str | None = None,
+) -> dict[str, Any]:
+    """Return one deterministic core negative in one observed failure family."""
+
+    try:
+        mutation = ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS[behavior]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unknown Fleet core failure-family behavior: {behavior}"
+        ) from exc
+
+    if mutation == "top_level_dependencies_omission":
+        return _orchestration_top_level_schema_omission_rejection(source)
+    if mutation == "event_completeness_contract":
+        graph = json.loads(json.dumps(source, ensure_ascii=False))
+        return _atomic_event_omission_rejection(graph)
+    if mutation in {
+        "event_type_vocabulary",
+        "dependency_endpoint_role",
+        "event_payload_schema",
+    }:
+        atomic_kind = {
+            "dependency_endpoint_role": "dependency_endpoint_reference",
+        }.get(mutation, mutation)
+        return _atomic_orchestration_rejection(
+            source,
+            mutation_index=ORCHESTRATION_ATOMIC_MUTATION_KINDS.index(
+                atomic_kind
+            ),
+            event_id_fact=event_id_fact,
+        )
+
+    graph = json.loads(json.dumps(source, ensure_ascii=False))
+    decision = graph.get("decision")
+    events = graph.get("events")
+    if not isinstance(decision, dict) or not isinstance(events, list):
+        raise ValueError("Fleet core rejection lacks a canonical graph surface")
+    if mutation == "decision_aggregation_owner_omission":
+        if "aggregationOwnerSlotID" not in decision:
+            raise ValueError("Fleet core decision lacks its aggregation owner field")
+        decision.pop("aggregationOwnerSlotID")
+    elif mutation == "decision_strategy_role":
+        if decision.get("strategy") != "bounded_handoff":
+            raise ValueError(
+                "Fleet context-handoff rejection lacks its canonical strategy"
+            )
+        decision["strategy"] = "context_handoff"
+    elif mutation == "terminal_stop_reason":
+        if (
+            not events
+            or not isinstance(events[-1], dict)
+            or events[-1].get("type") != "stop"
+            or not isinstance(decision.get("stopReason"), str)
+            or events[-1].get("reason") != decision.get("stopReason")
+        ):
+            raise ValueError("Fleet core rejection lacks a canonical stop event")
+        stop_reason = _natural_noncanonical_stop_reason_alias(
+            graph,
+            str(decision["stopReason"]),
+        )
+        decision["stopReason"] = stop_reason
+        events[-1]["reason"] = stop_reason
+    elif mutation == "scenario_identity_role":
+        if not isinstance(event_id_fact, str) or not (
+            _is_opaque_orchestration_training_fact_id(event_id_fact)
+        ):
+            raise ValueError(
+                "Fleet scenario-identity rejection lacks an opaque fact identity"
+            )
+        if graph.get("scenarioID") == event_id_fact:
+            raise ValueError(
+                "Fleet scenario-identity rejection fact is already the scenario"
+            )
+        graph["scenarioID"] = event_id_fact
+        graph = _canonicalize_orchestration_event_ids(graph)
+    else:  # pragma: no cover - mapping and branches are kept exhaustive above
+        raise ValueError(f"Unknown Fleet core failure-family mutation: {mutation}")
     return graph
 
 
@@ -3671,6 +3686,21 @@ def _terminal_decision_rejection(
     decision["stopReason"] = stop_reason
     events[-1]["reason"] = stop_reason
     return graph
+
+
+def _orchestration_event_id_negative_fact(
+    facts: dict[str, Any],
+) -> str:
+    """Select the frozen-schema identity used for an event-ID role negative."""
+
+    candidate = facts.get("requestIdentifier")
+    if candidate is None:
+        candidate = facts.get("approvedActionIdentifier")
+    if not isinstance(candidate, str) or not (
+        _is_opaque_orchestration_training_fact_id(candidate)
+    ):
+        raise ValueError("Fleet rejection lacks an opaque event-ID fact")
+    return candidate
 
 
 def _fact_derived_noncanonical_event_id(fact_id: str | None) -> str:

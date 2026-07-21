@@ -207,7 +207,7 @@ def _config() -> dict[str, Any]:
         "seed": 42,
         "batch_size": 1,
         "gradient_accumulation_steps": 8,
-        "num_train_epochs": 3,
+        "num_train_epochs": 4,
         "packing": False,
         "base_model_name": tokenizer["baseModelID"],
         "baseModelRevision": tokenizer["baseModelRevision"],
