@@ -522,7 +522,7 @@ def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
             } == {"normalization-policy-audited"}
 
 
-def test_compiled_fleet_has_two_positive_policy_anchors_per_core_behavior(
+def test_compiled_fleet_has_three_positive_policy_anchors_per_core_behavior(
     production_fleet_compilation,
 ) -> None:
     _, _, _, compiled = production_fleet_compilation
@@ -532,6 +532,7 @@ def test_compiled_fleet_has_two_positive_policy_anchors_per_core_behavior(
     )
     expected_anchor_kinds = {
         "graph_contract",
+        "semantic_role_binding",
         "topology_identity",
     }
 
@@ -563,11 +564,19 @@ def test_compiled_fleet_has_two_positive_policy_anchors_per_core_behavior(
         assert set(core_graphs) == expected_behaviors
         assert Counter(
             anchor["metadata"]["behaviorClass"] for anchor in anchors
-        ) == Counter({behavior: 2 for behavior in expected_behaviors})
+        ) == Counter({behavior: 3 for behavior in expected_behaviors})
         assert {
             anchor["metadata"]["policyVocabularyAnchorKind"]
             for anchor in anchors
         } == expected_anchor_kinds
+        assert {
+            behavior: {
+                anchor["metadata"]["policyVocabularyAnchorSurfaceIndex"]
+                for anchor in anchors
+                if anchor["metadata"]["behaviorClass"] == behavior
+            }
+            for behavior in expected_behaviors
+        } == {behavior: set(range(3)) for behavior in expected_behaviors}
 
         for anchor in anchors:
             metadata = anchor["metadata"]
@@ -634,8 +643,53 @@ def test_compiled_fleet_has_two_positive_policy_anchors_per_core_behavior(
                 ],
                 "terminalEventOrder": len(graph["events"]),
             }
+            payload_roles = {
+                "requestID": "request_not_scenario",
+                "targetSlotID": "delegation_target",
+                "sourceSlotID": "result_source",
+                "workKey": "persistent_work_key",
+                "contextKeys": "slot_scoped_context",
+                "requestedSlotID": "requested_slot",
+                "reason": "exact_stop_reason",
+            }
+            semantic_role_binding = {
+                "behaviorClass": behavior,
+                "scenarioIdentitySource": "supplied_scenario_id",
+                "eventBindings": [
+                    {
+                        "eventOrder": event_order,
+                        "canonicalType": event["type"],
+                        "requiredPayloadBindings": [
+                            {
+                                "key": key,
+                                "semanticRole": payload_roles[key],
+                            }
+                            for key in event
+                            if key in payload_roles
+                        ],
+                    }
+                    for event_order, event in enumerate(
+                        graph["events"],
+                        start=1,
+                    )
+                ],
+                "requiredInteriorEventTypes": [
+                    event["type"]
+                    for event in graph["events"]
+                    if event["type"] not in {"request_received", "stop"}
+                ],
+                "decisionBinding": {
+                    "strategy": graph["decision"]["strategy"],
+                    "delegatedSlotIDs": graph["decision"]["delegatedSlotIDs"],
+                    "aggregationOwnerSlotID": graph["decision"][
+                        "aggregationOwnerSlotID"
+                    ],
+                    "stopReason": graph["decision"]["stopReason"],
+                },
+            }
             expected_targets = {
                 "graph_contract": graph_contract,
+                "semantic_role_binding": semantic_role_binding,
                 "topology_identity": topology_identity,
             }
 
@@ -1705,44 +1759,275 @@ def test_conditioned_training_completion_envelopes_cover_frozen_graphs():
 
 def test_conditioned_training_varies_a_nonrequest_payload_fact_per_behavior():
     manifest = generate_manifest(Path(".").resolve())
-    signatures_by_behavior = defaultdict(set)
+    identities_by_behavior = defaultdict(set)
+    semantic_roles_by_behavior = defaultdict(set)
 
-    def collect(value, signatures):
+    def collect(value, identities, semantic_roles):
         if isinstance(value, dict):
             for key, child in value.items():
                 if key != "requestIdentifier":
-                    collect(child, signatures)
+                    collect(child, identities, semantic_roles)
         elif isinstance(value, list):
             for child in value:
-                collect(child, signatures)
+                collect(child, identities, semantic_roles)
         elif (
             isinstance(value, str)
             and fleet_artifact_module._is_orchestration_training_fact_id(
                 value
             )
         ):
-            signatures.add(re.sub(r"[a-z]", "a", value))
+            role = (
+                fleet_artifact_module._semantic_orchestration_training_fact_role(
+                    value
+                )
+            )
+            assert role is not None
+            if role != "request":
+                identities.add(value)
+                semantic_roles.add(role)
 
     for scenario in fleet_artifact_module._orchestration_training_scenarios(
         manifest
     ):
         if scenario["trainingMatrixVariant"] != "behavior-conditioned":
             continue
+        behavior = scenario["behaviorClass"]
         collect(
             scenario["canonicalDerivation"]["facts"],
-            signatures_by_behavior[scenario["behaviorClass"]],
+            identities_by_behavior[behavior],
+            semantic_roles_by_behavior[behavior],
         )
 
-    assert set(signatures_by_behavior) == set(
+    assert set(identities_by_behavior) == set(
         fleet_artifact_module._ORCHESTRATION_VARIED_FACT_KINDS_BY_BEHAVIOR
     )
-    # Every conditioned replica still contributes a distinct visible shape.
-    # Role-bearing fact prefixes can intentionally add further shapes when a
-    # behavior varies more than one external fact kind.
+    # Every conditioned replica contributes at least one distinct non-request
+    # identity. Semantic prefixes now carry the visible role; punctuation and
+    # length are no longer a meaningful uniqueness proxy.
     assert all(
-        len(signatures) >= 8
-        for signatures in signatures_by_behavior.values()
+        len(identities) >= 8
+        for identities in identities_by_behavior.values()
     )
+    required_semantic_roles = {
+        "no-delegation": {
+            "trusted-context-snapshot",
+            "trusted-evidence",
+        },
+        "sequential-dependencies": {"executor-observation"},
+        "parallel-dependencies": {
+            "parallel-executor-branch",
+            "parallel-mimicry-branch",
+            "parallel-join",
+        },
+        "context-handoff": {"approved-action", "executor-result"},
+        "duplicate-suppression": {
+            "candidate-branch-a",
+            "candidate-branch-b",
+        },
+        "aggregation-owner": {
+            "aggregation-executor-result",
+            "aggregation-mimicry-result",
+            "validated-response",
+        },
+        "approval-boundary": {
+            "approval-policy-snapshot",
+            "user-approval-request",
+        },
+        "unavailable-boundary": {"permission-check"},
+        "nonexistent-slot-negative": {
+            "requested-unlisted-slot",
+            "slot-directory-snapshot",
+            "rejection-record",
+        },
+    }
+    assert set(semantic_roles_by_behavior) == set(required_semantic_roles)
+    for behavior, required_roles in required_semantic_roles.items():
+        assert required_roles <= semantic_roles_by_behavior[behavior]
+    assert len(
+        {
+            role
+            for role in semantic_roles_by_behavior["duplicate-suppression"]
+            if role.startswith("shared-work-")
+        }
+    ) == 8
+
+
+def test_conditioned_semantic_context_survives_sft_and_dpo_rebinding():
+    manifest = generate_manifest(Path(".").resolve())
+
+    def slug(value: str) -> str:
+        separated = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", value)
+        return re.sub(r"[^a-z0-9]+", "-", separated.lower()).strip("-")
+
+    conditioned = [
+        scenario
+        for scenario in fleet_artifact_module._orchestration_training_scenarios(
+            manifest
+        )
+        if scenario["trainingMatrixVariant"] == "behavior-conditioned"
+    ]
+    assert len(conditioned) == 72
+    assert all(
+        fleet_artifact_module._is_semantic_orchestration_training_scenario_id(
+            scenario["id"]
+        )
+        for scenario in conditioned
+    )
+
+    for scenario in conditioned:
+        behavior = scenario["behaviorClass"]
+        replica_index = scenario["behaviorConditionedInstanceIndex"] - 1
+        facts = scenario["canonicalDerivation"]["facts"]
+        preference = fleet_artifact_module._orchestration_preference_scenario(
+            scenario
+        )
+        preference_facts = preference["canonicalDerivation"]["facts"]
+
+        def assert_role_rebound(sft_value: str, dpo_value: str, role: str) -> None:
+            assert (
+                fleet_artifact_module._semantic_orchestration_training_fact_role(
+                    sft_value
+                )
+                == role
+            )
+            assert (
+                fleet_artifact_module._semantic_orchestration_training_fact_role(
+                    dpo_value
+                )
+                == role
+            )
+            assert sft_value != dpo_value
+
+        assert (
+            fleet_artifact_module._is_semantic_orchestration_training_scenario_id(
+                preference["id"]
+            )
+        )
+        assert scenario["id"] != preference["id"]
+
+        def assert_all_fact_roles_rebound(sft_value, dpo_value) -> None:
+            if isinstance(sft_value, dict):
+                assert isinstance(dpo_value, dict)
+                assert set(sft_value) == set(dpo_value)
+                for key in sft_value:
+                    assert_all_fact_roles_rebound(
+                        sft_value[key],
+                        dpo_value[key],
+                    )
+                return
+            if isinstance(sft_value, list):
+                assert isinstance(dpo_value, list)
+                assert len(sft_value) == len(dpo_value)
+                for left, right in zip(sft_value, dpo_value, strict=True):
+                    assert_all_fact_roles_rebound(left, right)
+                return
+            if not isinstance(sft_value, str) or not (
+                fleet_artifact_module._is_orchestration_training_fact_id(
+                    sft_value
+                )
+            ):
+                return
+            role = (
+                fleet_artifact_module._semantic_orchestration_training_fact_role(
+                    sft_value
+                )
+            )
+            assert role is not None
+            assert_role_rebound(sft_value, dpo_value, role)
+
+        assert_all_fact_roles_rebound(facts, preference_facts)
+        if behavior != "context-handoff":
+            assert_role_rebound(
+                facts["requestIdentifier"],
+                preference_facts["requestIdentifier"],
+                "request",
+            )
+
+        if behavior in {"sequential-dependencies", "parallel-dependencies"}:
+            variants = (
+                fleet_artifact_module._SEQUENTIAL_CONTEXT_VARIANTS
+                if behavior == "sequential-dependencies"
+                else fleet_artifact_module._PARALLEL_CONTEXT_VARIANTS
+            )
+            slots = (
+                ("cortex", "executor", "mouth")
+                if behavior == "sequential-dependencies"
+                else ("cortex", "executor", "mimicry", "mouth")
+            )
+            for slot_id, source_values in zip(
+                slots,
+                variants[replica_index],
+                strict=True,
+            ):
+                expected_roles = [
+                    f"peer-context-{slot_id}-{slug(value)}"
+                    for value in source_values
+                ]
+                assert [
+                    fleet_artifact_module._semantic_orchestration_training_fact_role(
+                        value
+                    )
+                    for value in facts["peerContext"][slot_id]
+                ] == expected_roles
+                for sft_value, dpo_value, role in zip(
+                    facts["peerContext"][slot_id],
+                    preference_facts["peerContext"][slot_id],
+                    expected_roles,
+                    strict=True,
+                ):
+                    assert_role_rebound(sft_value, dpo_value, role)
+                assert fleet_artifact_module._delegation_to(
+                    scenario["graph"],
+                    slot_id,
+                )["contextKeys"] == facts["peerContext"][slot_id]
+        elif behavior == "context-handoff":
+            allowed, forbidden = fleet_artifact_module._HANDOFF_CONTEXT_VARIANTS[
+                replica_index
+            ]
+            for fact_key, source_values, role_prefix in (
+                ("allowedExecutorContext", allowed, "allowed-executor-context"),
+                (
+                    "forbiddenExecutorContext",
+                    forbidden,
+                    "forbidden-executor-context",
+                ),
+            ):
+                expected_roles = [
+                    f"{role_prefix}-{slug(value)}" for value in source_values
+                ]
+                for sft_value, dpo_value, role in zip(
+                    facts[fact_key],
+                    preference_facts[fact_key],
+                    expected_roles,
+                    strict=True,
+                ):
+                    assert_role_rebound(sft_value, dpo_value, role)
+        elif behavior == "aggregation-owner":
+            expected_roles = [
+                f"render-context-{slug(value)}"
+                for value in fleet_artifact_module._AGGREGATION_CONTEXT_VARIANTS[
+                    replica_index
+                ]
+            ]
+            for sft_value, dpo_value, role in zip(
+                facts["renderContext"],
+                preference_facts["renderContext"],
+                expected_roles,
+                strict=True,
+            ):
+                assert_role_rebound(sft_value, dpo_value, role)
+        elif behavior == "duplicate-suppression":
+            expected_role = (
+                "shared-work-"
+                + slug(
+                    fleet_artifact_module._DUPLICATE_WORK_KEYS[replica_index]
+                )
+            )
+            assert_role_rebound(
+                facts["sharedWorkKey"],
+                preference_facts["sharedWorkKey"],
+                expected_role,
+            )
 
 
 def test_compact_training_identity_encoding_is_bounded_and_deterministic():
@@ -1809,9 +2094,10 @@ def test_training_generation_rejects_compact_identity_collisions(monkeypatch):
         scenario
         for scenario in scenarios
         if isinstance(scenario.get("rejectedGraph"), dict)
-        and scenario.get("trainingMatrixVariant") == "behavior-conditioned"
-        and scenario.get("behaviorConditionedInstanceIndex") == 2
+        and scenario.get("trainingMatrixVariant")
+        == "normalization-policy-audited"
     )
+
     def collide_preference_facts(
         *, identity_class: str, digest: str, surface_index: int
     ) -> str:
