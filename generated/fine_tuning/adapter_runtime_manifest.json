@@ -66,8 +66,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "c02c46368b8641f71392fd72ed2cbb409e9b5e6ab8a4980a51318bce06bd015b",
-          "optimizedTrainingCorpusSHA256": "e94368585d4507b45ba1acad3547cb3a464343c24cb7c971376fdda72693365d",
+          "baselineTrainingCorpusSHA256": "973ff83d09379f30fafe0f448ca32ccfd66fc7f3872a3fa9c0e05275c2b3b6d5",
+          "optimizedTrainingCorpusSHA256": "d92dce319a7889f219a80138cf32e3900526f7cc4ae80c742c5c98d6aa1bcbf7",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 31,
@@ -96,7 +96,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "2b0e9426166fe04eab2468ea068ea85895c53cf313e1f78bd5eb47209d44b3dc",
+        "experimentManifestSHA256": "5d043ab4d1baa0df701cb8aced1890ed5926854436cd44184e0834cefdcd1424",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -152,7 +152,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "0ac9e2d83b4fb734507fd5338d42e980d20420387ac79bcb34c78a4f641f4814"
+            "reportSHA256": "ff6f32b1c0bd02386d86a5d3be728e3025f4af6e6510200ac19d341d2dc20c2b"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -216,12 +216,12 @@
         "status": "unqualified_missing_runtime_evidence"
       },
       "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
-      "trainingCodeBundleSHA256": "49d5b6089f5e73ad826d69fff2cf9c277d0f32da0b8392d341ac481c782de7b1",
-      "trainingCodeSHA256": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa",
+      "trainingCodeBundleSHA256": "1562c06d1ef71667ed24ee706b0d44328c6d3a6a78c310b2b4dc27be348fc97f",
+      "trainingCodeSHA256": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "7a1ec1ae627ae8b107630736d53747b2915f03c9083cfadeb62a90ed1bdd63cf",
-        "orpo": "692b8cb2e649c971f76aa6caace27fc2ff330951896ba0bd13ed63d38d250fb9",
-        "sft": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa"
+        "dpo": "a3ac394d0b423e67870e56c647ac9dee5ae635a21a288eed7dde791780acd853",
+        "orpo": "89a7f114763e0d009dba0d96e23ed87192946cc3d355d154506c33e1859d0e9f",
+        "sft": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -290,8 +290,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "3ba22f853d827e66acef62a462b1851778a75af7dd2af666661f8c4e8a34232e",
-          "optimizedTrainingCorpusSHA256": "000686ab07d23b02e85daa52bd3a881944c3a8b52020e438e3deb70ccf896d4a",
+          "baselineTrainingCorpusSHA256": "e0975f572b6ee7e308ea9e998a523fdd7cea12439a7b2d409960362a208be0b0",
+          "optimizedTrainingCorpusSHA256": "bdcac60e85732de8f29dda41f674e37d983245b4498191c6fdeb1cd845fa8008",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 462,
@@ -320,7 +320,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "723b86bd2e3b8feb483cc00b97ce287ae896e43d56e4f4b2f665df0b100a9ff3",
+        "experimentManifestSHA256": "13a25f1508b267250481186c2fe782b0b933123c04a37c9117f1e8811e6c0256",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -376,7 +376,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "211a25d99daf4dab1484d1062c2d02c90b3018461e47967dd267aa9f24942210"
+            "reportSHA256": "3a2c6335be5360d52e78caef0e9314eea33ffdb6b4bdb828b15b64c3e9284d71"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -440,12 +440,12 @@
         "status": "unqualified_missing_runtime_evidence"
       },
       "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.",
-      "trainingCodeBundleSHA256": "49d5b6089f5e73ad826d69fff2cf9c277d0f32da0b8392d341ac481c782de7b1",
-      "trainingCodeSHA256": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa",
+      "trainingCodeBundleSHA256": "1562c06d1ef71667ed24ee706b0d44328c6d3a6a78c310b2b4dc27be348fc97f",
+      "trainingCodeSHA256": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "7a1ec1ae627ae8b107630736d53747b2915f03c9083cfadeb62a90ed1bdd63cf",
-        "orpo": "692b8cb2e649c971f76aa6caace27fc2ff330951896ba0bd13ed63d38d250fb9",
-        "sft": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa"
+        "dpo": "a3ac394d0b423e67870e56c647ac9dee5ae635a21a288eed7dde791780acd853",
+        "orpo": "89a7f114763e0d009dba0d96e23ed87192946cc3d355d154506c33e1859d0e9f",
+        "sft": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -514,8 +514,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "34e84f0f81a82dbd6002eb9e4cd52ed48817a36840aff80746f1268e948ccbc3",
-          "optimizedTrainingCorpusSHA256": "479cfc716321aff59bbe78ce0407bfa6055889d77c6e54024c6e0cb0f42d0d9e",
+          "baselineTrainingCorpusSHA256": "5e99b109af6f162b76156d3438bea28bb5e959368891e47a2452fdb72dea921e",
+          "optimizedTrainingCorpusSHA256": "1312b54e1bc052025c6627257a4c7e27cccf7f5f6561e6a7f5c262b131fc2ea0",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 500,
@@ -544,7 +544,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "20a7b5f90e64e3f2ec2168af41c4503ac280b1c8b83eb76e42bb851549a94e8b",
+        "experimentManifestSHA256": "d528b2866753f9b66b856caa5c642995e062a20d68afe9da4ca745be0dfd8a59",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -600,11 +600,11 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "bd5366d47806f79192eb51d2cff4b84d5eaaa7343afe7d7545b8d698ae913bc8"
+            "reportSHA256": "e859bff1fb27c13cc3662dd3bdff4efc283178a508a52be7e962913fdb81e71a"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
-          "frozenEvaluationSHA256": "edac8c36d979bee666b2a4b91b081dd77a43902944172625b3332b488fa57f33",
+          "frozenEvaluationSHA256": "8c72763ff096a88fea61b98044fcdc6a31688c5f57b10877437cc0500fccf87e",
           "recordCount": 15,
           "schemaVersion": "lumen.adapter-eval/1.1.0"
         },
@@ -622,7 +622,7 @@
       "recordCounts": {
         "eval": 15,
         "train_dpo": 377,
-        "train_sft": 595,
+        "train_sft": 577,
         "val_dpo": 24,
         "val_sft": 128
       },
@@ -664,12 +664,12 @@
         "status": "unqualified_missing_runtime_evidence"
       },
       "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning.",
-      "trainingCodeBundleSHA256": "49d5b6089f5e73ad826d69fff2cf9c277d0f32da0b8392d341ac481c782de7b1",
-      "trainingCodeSHA256": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa",
+      "trainingCodeBundleSHA256": "1562c06d1ef71667ed24ee706b0d44328c6d3a6a78c310b2b4dc27be348fc97f",
+      "trainingCodeSHA256": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "7a1ec1ae627ae8b107630736d53747b2915f03c9083cfadeb62a90ed1bdd63cf",
-        "orpo": "692b8cb2e649c971f76aa6caace27fc2ff330951896ba0bd13ed63d38d250fb9",
-        "sft": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa"
+        "dpo": "a3ac394d0b423e67870e56c647ac9dee5ae635a21a288eed7dde791780acd853",
+        "orpo": "89a7f114763e0d009dba0d96e23ed87192946cc3d355d154506c33e1859d0e9f",
+        "sft": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -738,8 +738,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "e44602ca2eaff5cb65c856a30adfebfd67ef5b776af9a35b95c9d2f8168614ef",
-          "optimizedTrainingCorpusSHA256": "54dde1dca61f2933764066830ad468d3ee40ce4215d398ad4647fc0202569095",
+          "baselineTrainingCorpusSHA256": "837d9d072a2be6221ea0e4a1bd987fc026564f861fe7a62e9f70f4716a5b2dba",
+          "optimizedTrainingCorpusSHA256": "fd4e84bbc621457f3ee20a58df10fabcb6c11d609e70d5fdb52f03cd8b3ab20f",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 600,
@@ -768,7 +768,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "8f1021a89f41ac8f4f2ab6cbf7aa1a212085ee740664974c605803491933c8c4",
+        "experimentManifestSHA256": "7c767ef6005bf14b50a717f58ba1578ec9488015013446aefdd0df132a8eb802",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -824,7 +824,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "16933a9942b5b974e34b4a2b491c7dcb44b13bbafaa04e1efad60d14a6457b66"
+            "reportSHA256": "b56374d0af5d8ae9def7131bebae20ce3651a4af7608438b29f027c993bd6b01"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -888,12 +888,12 @@
         "status": "unqualified_missing_runtime_evidence"
       },
       "systemPrompt": "You are Mimicry, Lumen's style adaptation agent. Adapt tone within safety and privacy boundaries.",
-      "trainingCodeBundleSHA256": "49d5b6089f5e73ad826d69fff2cf9c277d0f32da0b8392d341ac481c782de7b1",
-      "trainingCodeSHA256": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa",
+      "trainingCodeBundleSHA256": "1562c06d1ef71667ed24ee706b0d44328c6d3a6a78c310b2b4dc27be348fc97f",
+      "trainingCodeSHA256": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "7a1ec1ae627ae8b107630736d53747b2915f03c9083cfadeb62a90ed1bdd63cf",
-        "orpo": "692b8cb2e649c971f76aa6caace27fc2ff330951896ba0bd13ed63d38d250fb9",
-        "sft": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa"
+        "dpo": "a3ac394d0b423e67870e56c647ac9dee5ae635a21a288eed7dde791780acd853",
+        "orpo": "89a7f114763e0d009dba0d96e23ed87192946cc3d355d154506c33e1859d0e9f",
+        "sft": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -962,8 +962,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "c66fb64c534fe433ed9d05e09154ae1955789bd579dd152e865977cdca99e9e4",
-          "optimizedTrainingCorpusSHA256": "00ef0d67c6037888fbf41460100c0c289ca5c6586c80d43535a5a65c12d322e4",
+          "baselineTrainingCorpusSHA256": "2162c36b88f9ea57d2e79633a35e15328d3d9c8679d9f348955f912e6fce860e",
+          "optimizedTrainingCorpusSHA256": "1c498b38a0b75981593f8a95f23c1309dd79c4443832d6ef11ca5af6b5243235",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 1047,
@@ -992,7 +992,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "87245dddbbf98b71dcdd6de4a427a6a1364158fc1fd0ab7b8355e15b991ccffc",
+        "experimentManifestSHA256": "e09a6fbbef7959ccb33b2a42f62dd8b2ade667bc666f100b55ec9a538aa10fc1",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -1048,7 +1048,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "3807c544b58a51a084ed10bc0fb45bfafeac2a40280c279365f549db1d553eec"
+            "reportSHA256": "c395a84816e110d793fb7fe67995a546a577b7a3d7666b6aba05bfd9b51c01cf"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -1112,12 +1112,12 @@
         "status": "unqualified_missing_runtime_evidence"
       },
       "systemPrompt": "You are Mouth, Lumen's user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
-      "trainingCodeBundleSHA256": "49d5b6089f5e73ad826d69fff2cf9c277d0f32da0b8392d341ac481c782de7b1",
-      "trainingCodeSHA256": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa",
+      "trainingCodeBundleSHA256": "1562c06d1ef71667ed24ee706b0d44328c6d3a6a78c310b2b4dc27be348fc97f",
+      "trainingCodeSHA256": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "7a1ec1ae627ae8b107630736d53747b2915f03c9083cfadeb62a90ed1bdd63cf",
-        "orpo": "692b8cb2e649c971f76aa6caace27fc2ff330951896ba0bd13ed63d38d250fb9",
-        "sft": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa"
+        "dpo": "a3ac394d0b423e67870e56c647ac9dee5ae635a21a288eed7dde791780acd853",
+        "orpo": "89a7f114763e0d009dba0d96e23ed87192946cc3d355d154506c33e1859d0e9f",
+        "sft": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     },
@@ -1186,8 +1186,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "b9cf7d5ab245c28ca02a0283bd22d573f63455644714f2052427bf79dd3987de",
-          "optimizedTrainingCorpusSHA256": "a3e019b63a82d19bb46a36b4cd0a76d616cc10e6de58f5791aca68ec8353b267",
+          "baselineTrainingCorpusSHA256": "ce4d9b9da2e109075bd6dbd71be755265add1c94819f2dfdbe88c6db01db0601",
+          "optimizedTrainingCorpusSHA256": "960abbe7917dc4312c0733201c25639b2dc51b3f56a415acbd7c1445ee76e5de",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 505,
@@ -1216,7 +1216,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "34b2a2edbd4cac37218074e8ff592e4ac9442999702dbfe8e8b0c34db7d9c514",
+        "experimentManifestSHA256": "4fd3faf14f960b4808f5c84b64e7847ef286034c2947f4283779646dbb81f68f",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -1272,7 +1272,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "c9bebaaff4ed10895f309ff9bfadb91e582b0a69fd4f191e06765b4e1a36f3db"
+            "reportSHA256": "1a0afda4d94bcc52540a9548adace4dcef088934336a3e35e6926028f4b1a223"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -1336,12 +1336,12 @@
         "status": "unqualified_missing_runtime_evidence"
       },
       "systemPrompt": "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
-      "trainingCodeBundleSHA256": "49d5b6089f5e73ad826d69fff2cf9c277d0f32da0b8392d341ac481c782de7b1",
-      "trainingCodeSHA256": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa",
+      "trainingCodeBundleSHA256": "1562c06d1ef71667ed24ee706b0d44328c6d3a6a78c310b2b4dc27be348fc97f",
+      "trainingCodeSHA256": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea",
       "trainingCodeSHA256ByPhase": {
-        "dpo": "7a1ec1ae627ae8b107630736d53747b2915f03c9083cfadeb62a90ed1bdd63cf",
-        "orpo": "692b8cb2e649c971f76aa6caace27fc2ff330951896ba0bd13ed63d38d250fb9",
-        "sft": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa"
+        "dpo": "a3ac394d0b423e67870e56c647ac9dee5ae635a21a288eed7dde791780acd853",
+        "orpo": "89a7f114763e0d009dba0d96e23ed87192946cc3d355d154506c33e1859d0e9f",
+        "sft": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea"
       },
       "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
     }
@@ -1432,12 +1432,12 @@
   ],
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "sharedRequirementsSHA256": "b3625092748f41fff2953c7d507d621f701e09763b590d9cb223ef331941dcbc",
-  "sharedTrainingCodeBundleSHA256": "49d5b6089f5e73ad826d69fff2cf9c277d0f32da0b8392d341ac481c782de7b1",
-  "sharedTrainingCodeSHA256": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa",
+  "sharedTrainingCodeBundleSHA256": "1562c06d1ef71667ed24ee706b0d44328c6d3a6a78c310b2b4dc27be348fc97f",
+  "sharedTrainingCodeSHA256": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea",
   "sharedTrainingCodeSHA256ByPhase": {
-    "dpo": "7a1ec1ae627ae8b107630736d53747b2915f03c9083cfadeb62a90ed1bdd63cf",
-    "orpo": "692b8cb2e649c971f76aa6caace27fc2ff330951896ba0bd13ed63d38d250fb9",
-    "sft": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa"
+    "dpo": "a3ac394d0b423e67870e56c647ac9dee5ae635a21a288eed7dde791780acd853",
+    "orpo": "89a7f114763e0d009dba0d96e23ed87192946cc3d355d154506c33e1859d0e9f",
+    "sft": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea"
   },
   "sharedTrainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
