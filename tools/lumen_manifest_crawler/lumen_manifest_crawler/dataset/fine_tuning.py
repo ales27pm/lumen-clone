@@ -3942,9 +3942,61 @@ def _fleet_policy_vocabulary_sft_anchors(
             "dependencyOrders": dependency_orders,
             "decisionContract": graph["decision"],
         }
-        anchors.append(
-            _adapter_sft_record(
-                "fleet",
+        terminal_rejection = _terminal_decision_rejection(graph)
+        seen_event_types: set[str] = set()
+        event_type_repairs: list[dict[str, str]] = []
+        for event in graph["events"]:
+            event_type = event["type"]
+            if event_type in seen_event_types:
+                continue
+            seen_event_types.add(event_type)
+            event_type_repairs.append(
+                {
+                    "rejectAlias": _natural_noncanonical_event_type_alias(
+                        graph,
+                        event,
+                    ),
+                    "useCanonicalType": event_type,
+                }
+            )
+        repair_target = {
+            "behaviorClass": behavior,
+            "eventTypeRepairs": event_type_repairs,
+            "terminalDecisionRepair": {
+                "rejectStrategy": terminal_rejection["decision"][
+                    "strategy"
+                ],
+                "useStrategy": graph["decision"]["strategy"],
+                "rejectStopReason": terminal_rejection["decision"][
+                    "stopReason"
+                ],
+                "useStopReason": graph["decision"]["stopReason"],
+            },
+        }
+        topology_target = {
+            "behaviorClass": behavior,
+            "scenarioIdentitySource": "supplied_scenario_id",
+            "eventIdentity": {
+                "namespaceKey": "scenarioID",
+                "separator": "::event::",
+                "orderEncoding": "two_digit_one_based",
+            },
+            "eventTypeSequence": [
+                event["type"] for event in graph["events"]
+            ],
+            "dependencyOrders": [
+                {
+                    "fromOrder": dependency["fromOrder"],
+                    "kind": "requires",
+                    "toOrder": dependency["toOrder"],
+                }
+                for dependency in dependency_orders
+            ],
+            "terminalEventOrder": len(graph["events"]),
+        }
+        anchor_specs = (
+            (
+                "graph_contract",
                 (
                     "Return the registered schema contract for Fleet behavior "
                     f"class {behavior}. Encode stage vocabulary, payload-key "
@@ -3952,29 +4004,58 @@ def _fleet_policy_vocabulary_sft_anchors(
                     "decision. Do not emit scenario facts or a runnable graph."
                 ),
                 target,
-                FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
-                [],
-                "boundary",
-                {
-                    "requiredSplit": "train",
-                    "policyVocabularyAnchor": True,
-                    "behaviorClass": behavior,
-                    "derivedFromSourceFamily": (
-                        FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
-                    ),
-                    "derivedTrainingMatrixVariant": "core",
-                    "derivedBehaviorClasses": [behavior],
-                    "derivedCoreGraphCount": 1,
-                    "policyVocabularySHA256": canonical_sha256(target),
-                    "specificityVector": [
-                        "fleet_contract_event_graph_vocabulary",
-                        "canonical_core_graph",
-                        behavior,
-                    ],
-                },
-                manifest,
-            )
+            ),
+            (
+                "vocabulary_repair",
+                (
+                    "Repair plausible but noncanonical Fleet vocabulary for "
+                    f"behavior class {behavior}. Return only the registered "
+                    "event-type and terminal-decision replacements."
+                ),
+                repair_target,
+            ),
+            (
+                "topology_identity",
+                (
+                    "Return the identity and direct-prerequisite topology "
+                    f"registry for Fleet behavior class {behavior}. Use event "
+                    "orders rather than scenario-specific identifiers."
+                ),
+                topology_target,
+            ),
         )
+        for anchor_kind, prompt, anchor_target in anchor_specs:
+            anchors.append(
+                _adapter_sft_record(
+                    "fleet",
+                    prompt,
+                    anchor_target,
+                    FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
+                    [],
+                    "boundary",
+                    {
+                        "requiredSplit": "train",
+                        "policyVocabularyAnchor": True,
+                        "policyVocabularyAnchorKind": anchor_kind,
+                        "behaviorClass": behavior,
+                        "derivedFromSourceFamily": (
+                            FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+                        ),
+                        "derivedTrainingMatrixVariant": "core",
+                        "derivedBehaviorClasses": [behavior],
+                        "derivedCoreGraphCount": 1,
+                        "policyVocabularySHA256": canonical_sha256(
+                            anchor_target
+                        ),
+                        "specificityVector": [
+                            "fleet_contract_event_graph_vocabulary",
+                            anchor_kind,
+                            behavior,
+                        ],
+                    },
+                    manifest,
+                )
+            )
     return anchors
 
 
