@@ -1,7 +1,7 @@
 recordType,agentRole,taskType,recordCount
 dpo,embedding,fleet_delegation_preference,5
 dpo,embedding,fleet_private_state_boundary,5
-dpo,fleet,fleet_orchestration_event_graph_preference,80
+dpo,fleet,fleet_orchestration_event_graph_preference,85
 dpo,idle_reflection,fleet_delegation_preference,5
 dpo,idle_reflection,fleet_private_state_boundary,5
 dpo,orchestrator,fleet_delegation_preference,5
