@@ -252,7 +252,7 @@ FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_SCHEMA = (
     "lumen.fleet-sft-optimizer-window-schedule/1.0.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
-    "sha256_epoch_stratified_native_round_robin/1.0.0"
+    "sha256_epoch_stratified_token_aware_native_round_robin/1.1.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT = 256
 FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA = (
@@ -2420,6 +2420,7 @@ def _build_fleet_sft_optimizer_window_schedule(
     )
     non_native_indices.sort(
         key=lambda row_index: (
+            int(row_token_evidence[row_index]["targetTokenCount"]),
             _fleet_sft_schedule_rank(
                 seed=seed,
                 role="non_native_source_record",
