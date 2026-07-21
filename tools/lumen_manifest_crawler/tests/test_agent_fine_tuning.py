@@ -8746,7 +8746,7 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
     )
     assert train_counts == Counter(
         {
-            "fleet_contract_delegation": 240,
+            "fleet_contract_delegation": 248,
             "fleet_contract_known_slots": 21,
             "fleet_contract_tool_boundary": 21,
         }
@@ -10033,7 +10033,7 @@ def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
         "mouth": 0.000005,
         "mimicry": 0.000005,
         "rem": 0.000005,
-        "fleet": 0.000001,
+        "fleet": 0.0000001,
     }
     expected_dpo_rpo_alphas = {
         agent: (1.0 if agent == "fleet" else None)

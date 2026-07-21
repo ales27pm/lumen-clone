@@ -149,7 +149,7 @@ FLEET_SOURCE_ROLE_REGISTRY_SCHEMA_VERSION = "lumen.fleet-source-role/1.0.0"
 FLEET_DELEGATION_REASON = "manifest_responsibility_match"
 FLEET_DELEGATION_PROMPTS_PER_OWNER = 34
 FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER = 2
-FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER = 4
+FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER = 8
 FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES = 3
 SOURCE_TOKEN_PROXY_SCHEMA_VERSION = "lumen.source-token-proxy/1.0.0"
 FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES = frozenset(
@@ -3932,6 +3932,50 @@ def _fleet_policy_vocabulary_sft_anchors(
             ],
             "terminalEventOrder": len(graph["events"]),
         }
+        payload_roles = {
+            "requestID": "request_not_scenario",
+            "targetSlotID": "delegation_target",
+            "sourceSlotID": "result_source",
+            "workKey": "persistent_work_key",
+            "contextKeys": "slot_scoped_context",
+            "requestedSlotID": "requested_slot",
+            "reason": "exact_stop_reason",
+        }
+        semantic_role_target = {
+            "behaviorClass": behavior,
+            "scenarioIdentitySource": "supplied_scenario_id",
+            "eventBindings": [
+                {
+                    "eventOrder": event_order,
+                    "canonicalType": event["type"],
+                    "requiredPayloadBindings": [
+                        {
+                            "key": key,
+                            "semanticRole": payload_roles[key],
+                        }
+                        for key in event
+                        if key in payload_roles
+                    ],
+                }
+                for event_order, event in enumerate(
+                    graph["events"],
+                    start=1,
+                )
+            ],
+            "requiredInteriorEventTypes": [
+                event["type"]
+                for event in graph["events"]
+                if event["type"] not in {"request_received", "stop"}
+            ],
+            "decisionBinding": {
+                "strategy": graph["decision"]["strategy"],
+                "delegatedSlotIDs": graph["decision"]["delegatedSlotIDs"],
+                "aggregationOwnerSlotID": graph["decision"][
+                    "aggregationOwnerSlotID"
+                ],
+                "stopReason": graph["decision"]["stopReason"],
+            },
+        }
         anchor_specs = (
             (
                 "graph_contract",
@@ -3952,8 +3996,22 @@ def _fleet_policy_vocabulary_sft_anchors(
                 ),
                 topology_target,
             ),
+            (
+                "semantic_role_binding",
+                (
+                    "Return the canonical semantic field bindings for Fleet "
+                    f"behavior class {behavior}. Bind each event order to its "
+                    "registered type and required payload roles; preserve every "
+                    "interior stage and the exact terminal decision."
+                ),
+                semantic_role_target,
+            ),
         )
-        for anchor_kind, prompt, anchor_target in anchor_specs:
+        for anchor_surface_index, (
+            anchor_kind,
+            prompt,
+            anchor_target,
+        ) in enumerate(anchor_specs):
             anchors.append(
                 _adapter_sft_record(
                     "fleet",
@@ -3966,6 +4024,9 @@ def _fleet_policy_vocabulary_sft_anchors(
                         "requiredSplit": "train",
                         "policyVocabularyAnchor": True,
                         "policyVocabularyAnchorKind": anchor_kind,
+                        "policyVocabularyAnchorSurfaceIndex": (
+                            anchor_surface_index
+                        ),
                         "behaviorClass": behavior,
                         "derivedFromSourceFamily": (
                             FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
@@ -6761,6 +6822,22 @@ def _fleet_observed_mouth_confusion_tasks() -> dict[str, tuple[str, ...]]:
                 "Choose the adapter that verifies required argument types and "
                 "produces the executable action envelope."
             ),
+            (
+                "The response writer must not serialize a native invocation; "
+                "route the approved tool payload to its strict execution owner."
+            ),
+            (
+                "Assign exact tool-argument JSON generation to the manifested "
+                "executor rather than the peer that phrases user responses."
+            ),
+            (
+                "A validated plan now needs an executable schema-bound action, "
+                "not final prose; select the owning Fleet slot."
+            ),
+            (
+                "Choose the component that turns an approved operation into typed "
+                "tool JSON before any user-facing wording is produced."
+            ),
         ),
         "embedding": (
             (
@@ -6778,6 +6855,22 @@ def _fleet_observed_mouth_confusion_tasks() -> dict[str, tuple[str, ...]]:
             (
                 "Assign semantic encoding of indexable text to the adapter that "
                 "owns numerical embeddings."
+            ),
+            (
+                "The response writer must not compute retrieval encodings; send "
+                "numeric feature construction to the embedding inference owner."
+            ),
+            (
+                "Assign photo-index vectorization to the manifested embedding "
+                "component rather than the peer that writes final prose."
+            ),
+            (
+                "Text needs a semantic vector for dense retrieval before any answer "
+                "is rendered; select the responsible Fleet slot."
+            ),
+            (
+                "Choose the component that computes numeric similarity features, "
+                "not the component that communicates results to the user."
             ),
         ),
     }
@@ -16190,15 +16283,17 @@ def _agent_unsloth_config(
         # Repeated pilots showed that held-out preference accuracy did not
         # predict Cortex free-generation quality, and the DPO phase regressed a
         # stronger SFT checkpoint. Keep Cortex at its empirical minimum.
-        # Canary33 likewise moved Fleet from 9/15 at SFT to 7/15 after DPO at
-        # 5e-6 despite 0.9167 validation preference accuracy, so keep Fleet's
-        # RPO regularization while reducing its policy step to 1e-6. The other
-        # roles retain the conservative PEFT-scale rate without changing their
-        # independently tuned SFT rate or epoch count.
+        # Canary33 moved Fleet from 9/15 at SFT to 7/15 after DPO at 5e-6.
+        # Canary34 still moved 8/15 to 7/15 at 1e-6 and changed a correct
+        # `result_received` route into the exact rejected `observation_received`
+        # alias despite 0.9167 validation preference accuracy and RPO alpha 1.
+        # Keep the preference phase at Cortex's empirical 1e-7 preservation
+        # floor while the strengthened SFT curriculum carries behavior learning.
+        # Other roles retain the conservative PEFT-scale rate.
         "dpo_learning_rate": (
             0.0000001
             if agent == "cortex"
-            else (0.000001 if agent == "fleet" else 0.000005)
+            else (0.0000001 if agent == "fleet" else 0.000005)
         ),
         "dpo_num_train_epochs": optimization_step_policy["dpo"][
             "selectedEpochs"

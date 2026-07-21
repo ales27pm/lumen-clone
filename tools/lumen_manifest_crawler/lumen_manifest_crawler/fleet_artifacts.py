@@ -39,7 +39,7 @@ ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS = {
 }
 _ORCHESTRATION_TOP_LEVEL_OMISSION_KEY = "dependencies"
 ORCHESTRATION_TRAINING_IDENTITY_SCHEMA_VERSION = (
-    "lumen.fleet-training-identity/1.5.0"
+    "lumen.fleet-training-identity/1.6.0"
 )
 ORCHESTRATION_TRAINING_SCENARIO_ID_WIDTH = 6
 ORCHESTRATION_TRAINING_FACT_ID_WIDTH = 6
@@ -78,10 +78,15 @@ _ORCHESTRATION_VARIED_FACT_KINDS_BY_BEHAVIOR = {
     "unavailable-boundary": frozenset({"permission-check", "request"}),
     "nonexistent-slot-negative": frozenset({"slot-directory-snapshot"}),
 }
-# Keep semantic morphology confined to the event-ID contrast and the longest
-# conditioned envelope. This provides two examples per behavior without
-# inflating the source-proxy denominator or the number of optimizer windows.
-_ORCHESTRATION_SEMANTIC_IDENTITY_REPLICA_INDICES = frozenset({4, 7})
+# Every conditioned graph must expose role-bearing identities. Canary34 showed
+# that two semantic replicas were not enough: the remaining opaque replicas
+# erased the training-only context vocabulary and left the model free to move
+# context keys between peers or confuse request and scenario namespaces. This
+# changes identity morphology only; the fixed row and optimizer-window counts
+# remain unchanged.
+_ORCHESTRATION_SEMANTIC_IDENTITY_REPLICA_INDICES = frozenset(
+    range(ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS)
+)
 ORCHESTRATION_ATOMIC_MUTATION_KINDS = (
     "terminal_decision_contract",
     "event_type_vocabulary",
@@ -287,7 +292,7 @@ def _uses_semantic_orchestration_training_identity(
     replica_index: int | None,
     fact_kind: str | None,
 ) -> bool:
-    """Expose role-bearing IDs in two high-value conditioned replicas."""
+    """Expose role-bearing IDs in every behavior-conditioned graph."""
 
     if identity_class not in {"scenario", "fact"}:
         raise ValueError("Unknown Fleet training identity class")
@@ -301,13 +306,12 @@ def _uses_semantic_orchestration_training_identity(
         return True
     if not fact_kind:
         raise ValueError("Fleet fact identities require an independent fact kind")
-    # Request identity is the most common wrong event-ID namespace observed in
-    # Canary33. Pair it with one behavior-critical state identity per graph so
-    # the model sees explicit scenario/fact role separation without inflating
-    # every context literal or changing the fixed training-row budget.
-    return fact_kind == "request" or fact_kind in (
-        _ORCHESTRATION_VARIED_FACT_KINDS_BY_BEHAVIOR.get(behavior) or ()
-    )
+    # Role-bearing fact identities keep the supplied semantic context visible
+    # while an independent digest suffix preserves strict train/DPO disjointness.
+    # The behavior lookup remains fail-closed even though every fact is semantic.
+    if behavior not in _ORCHESTRATION_VARIED_FACT_KINDS_BY_BEHAVIOR:
+        raise ValueError("Unknown Fleet identity behavior class")
+    return True
 
 
 def _semantic_orchestration_training_identity(
@@ -904,6 +908,22 @@ def _training_orchestration_facts(
     raise ValueError(f"Unknown Fleet training derivation behavior: {behavior}")
 
 
+def _semantic_training_fact_kind(kind: str, source_value: Any) -> str:
+    """Bind a training-only semantic value into a role-bearing fact identity."""
+
+    if not isinstance(source_value, str) or not source_value:
+        raise ValueError("Fleet semantic training fact source is invalid")
+    separated = re.sub(r"([a-z0-9])([A-Z])", r"\1-\2", source_value)
+    semantic_slug = re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        separated.lower(),
+    ).strip("-")
+    if not semantic_slug or semantic_slug.startswith("holdout"):
+        raise ValueError("Fleet semantic training fact source is unsafe")
+    return f"{kind}-{semantic_slug}"
+
+
 def _training_feature_facts(
     *,
     base_facts: dict[str, Any],
@@ -934,36 +954,55 @@ def _training_feature_facts(
     ):
         facts["requestIdentifier"] = fact("request")
     if behavior == "duplicate-suppression":
-        facts["sharedWorkKey"] = fact("shared-work")
+        facts["sharedWorkKey"] = fact(
+            _semantic_training_fact_kind(
+                "shared-work",
+                facts["sharedWorkKey"],
+            )
+        )
     if behavior == "nonexistent-slot-negative":
         facts["requestedSlotIdentifier"] = fact("requested-unlisted-slot")
     if behavior in {"sequential-dependencies", "parallel-dependencies"}:
         facts["peerContext"] = {
             slot_id: [
-                fact(f"peer-context-{slot_id}-{index}")
-                for index, _ in enumerate(context_keys, start=1)
+                fact(
+                    _semantic_training_fact_kind(
+                        f"peer-context-{slot_id}",
+                        context_key,
+                    )
+                )
+                for context_key in context_keys
             ]
             for slot_id, context_keys in facts["peerContext"].items()
         }
     if behavior == "context-handoff":
         facts["allowedExecutorContext"] = [
-            fact(f"allowed-executor-context-{index}")
-            for index, _ in enumerate(
-                facts["allowedExecutorContext"],
-                start=1,
+            fact(
+                _semantic_training_fact_kind(
+                    "allowed-executor-context",
+                    context_key,
+                )
             )
+            for context_key in facts["allowedExecutorContext"]
         ]
         facts["forbiddenExecutorContext"] = [
-            fact(f"forbidden-executor-context-{index}")
-            for index, _ in enumerate(
-                facts["forbiddenExecutorContext"],
-                start=1,
+            fact(
+                _semantic_training_fact_kind(
+                    "forbidden-executor-context",
+                    context_key,
+                )
             )
+            for context_key in facts["forbiddenExecutorContext"]
         ]
     if behavior == "aggregation-owner":
         facts["renderContext"] = [
-            fact(f"render-context-{index}")
-            for index, _ in enumerate(facts["renderContext"], start=1)
+            fact(
+                _semantic_training_fact_kind(
+                    "render-context",
+                    context_key,
+                )
+            )
+            for context_key in facts["renderContext"]
         ]
     if conditions["trustedContextSnapshotProvided"]:
         facts.update(
