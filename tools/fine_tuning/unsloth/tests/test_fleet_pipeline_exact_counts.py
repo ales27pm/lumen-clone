@@ -404,7 +404,7 @@ def _runtime_normalization_fixture() -> tuple[
     }
     unsigned = {
         "schemaVersion": (
-            "lumen.fleet-sft-runtime-loss-normalization/1.1.0"
+            "lumen.fleet-sft-runtime-loss-normalization/1.2.0"
         ),
         "status": "passed",
         "enforcementPhase": "post_trainer_init_pre_optimizer",
@@ -437,7 +437,15 @@ def _runtime_normalization_fixture() -> tuple[
         "modelAcceptsLossKwargs": True,
         "lossType": "nll",
         "packing": False,
-        "paddingFree": True,
+        "sftConfigPaddingFree": False,
+        "trainerArgsPaddingFree": False,
+        "trainerPaddingFree": False,
+        "dataCollatorPaddingFree": False,
+        "batchCollationMode": "padded_attention_mask",
+        "packedSequenceLengthsPresent": False,
+        "positionIDsPresent": False,
+        "attentionMaskPresent": True,
+        "observedMicroBatchSizes": [1] * 8,
         "worldSize": 1,
         "perDeviceTrainBatchSize": 1,
         "trainerGradientAccumulationSteps": 8,
@@ -489,6 +497,58 @@ def test_pipeline_binds_runtime_normalization_to_attested_first_window(
     assert observed == report["fleetRuntimeLossNormalization"]
 
 
+def test_pipeline_schedule_reconstruction_requires_batch_size_one() -> None:
+    config = _config()
+    config["batch_size"] = 2
+
+    with pytest.raises(RuntimeError, match="controls are invalid"):
+        ubuntu_pipeline._pipeline_fleet_sft_optimizer_window_schedule(
+            row_token_evidence=[
+                {
+                    "rowIndex": 0,
+                    "targetTokenCount": 10,
+                    "sourceRowSHA256": "a" * 64,
+                },
+                {
+                    "rowIndex": 1,
+                    "targetTokenCount": 10,
+                    "sourceRowSHA256": "b" * 64,
+                },
+            ],
+            config=config,
+            schedule_contract={},
+            minimum_basis_points=5_000,
+            maximum_basis_points=6_000,
+        )
+
+
+def test_pipeline_runtime_verifier_requires_batch_size_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_callable_identity(monkeypatch)
+    config, preflight, report = _runtime_normalization_fixture()
+    config["batch_size"] = 2
+    train_split = preflight["fleetLossShareEvidence"]["splits"]["train"]
+    train_split["records"] = 16
+    train_split["optimizerWindowSchedule"]["datasetRecordsPerEpoch"] = 16
+    evidence = report["fleetRuntimeLossNormalization"]
+    evidence["perDeviceTrainBatchSize"] = 2
+    evidence["optimizerWindowRecordCapacity"] = 16
+    evidence["observedMicroBatchSizes"] = [2] * 8
+    unsigned = dict(evidence)
+    unsigned.pop("runtimeLossNormalizationSHA256")
+    evidence["runtimeLossNormalizationSHA256"] = (
+        ubuntu_pipeline.canonical_sha256(unsigned)
+    )
+
+    with pytest.raises(RuntimeError, match="failed verification"):
+        ubuntu_pipeline._verify_fleet_sft_runtime_loss_normalization(
+            report=report,
+            config=config,
+            token_length_preflight=preflight,
+        )
+
+
 def test_pipeline_rejects_self_hashed_runtime_denominator_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -517,12 +577,21 @@ def test_pipeline_rejects_self_hashed_runtime_denominator_drift(
         (("modelClass",), "forged.Model"),
         (("resolvedTrainingEnvironmentSHA256",), "8" * 64),
         (("trainingContainerImageDigest",), f"sha256:{'7' * 64}"),
+        (("sftConfigPaddingFree",), True),
+        (("trainerArgsPaddingFree",), True),
+        (("trainerPaddingFree",), True),
+        (("dataCollatorPaddingFree",), True),
+        (("batchCollationMode",), "padding_free"),
+        (("packedSequenceLengthsPresent",), True),
+        (("positionIDsPresent",), True),
+        (("attentionMaskPresent",), False),
+        (("observedMicroBatchSizes",), [2] * 8),
     ],
 )
 def test_pipeline_rejects_self_hashed_runtime_identity_forgery(
     monkeypatch: pytest.MonkeyPatch,
     field_path: tuple[str, ...],
-    replacement: str,
+    replacement: Any,
 ) -> None:
     _patch_callable_identity(monkeypatch)
     config, preflight, report = _runtime_normalization_fixture()

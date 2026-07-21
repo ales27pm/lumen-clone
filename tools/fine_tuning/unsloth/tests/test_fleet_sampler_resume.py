@@ -82,6 +82,9 @@ def test_fleet_trainer_args_require_complete_single_process_batches() -> None:
         world_size=1,
         ignore_data_skip=False,
         dataloader_drop_last=False,
+        per_device_train_batch_size=1,
+        packing=False,
+        padding_free=False,
     )
     train_sft._validate_fleet_sft_trainer_args(valid)
 
@@ -90,6 +93,10 @@ def test_fleet_trainer_args_require_complete_single_process_batches() -> None:
         ("world_size", True),
         ("ignore_data_skip", True),
         ("dataloader_drop_last", True),
+        ("per_device_train_batch_size", 2),
+        ("per_device_train_batch_size", True),
+        ("packing", True),
+        ("padding_free", True),
     ):
         invalid = SimpleNamespace(**vars(valid))
         setattr(invalid, field, invalid_value)
@@ -105,3 +112,30 @@ def test_sft_config_explicitly_disables_drop_last() -> None:
     assert main_source.index(explicit_policy) < main_source.index(
         "SFTConfig(**sft_kwargs)"
     )
+
+
+def test_fleet_sft_batching_policy_is_fleet_only() -> None:
+    fleet_kwargs: dict[str, object] = {"packing": False}
+    non_fleet_kwargs: dict[str, object] = {"packing": False}
+
+    train_sft._apply_fleet_sft_batching_policy(fleet_kwargs, enabled=True)
+    train_sft._apply_fleet_sft_batching_policy(
+        non_fleet_kwargs,
+        enabled=False,
+    )
+
+    assert fleet_kwargs == {"packing": False, "padding_free": False}
+    assert non_fleet_kwargs == {"packing": False}
+
+
+def test_fleet_schedule_requires_one_record_per_micro_batch() -> None:
+    with pytest.raises(RuntimeError, match="batch_size=1"):
+        train_sft._fleet_sft_schedule_controls(
+            {
+                "seed": 3407,
+                "batch_size": 2,
+                "gradient_accumulation_steps": 4,
+                "num_train_epochs": 3,
+                "packing": False,
+            }
+        )

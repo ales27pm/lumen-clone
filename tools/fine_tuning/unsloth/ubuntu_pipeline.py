@@ -54,7 +54,7 @@ from tools.fine_tuning.unsloth.ubuntu_source_integrity import (
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA = (
-    "lumen.fleet-sft-runtime-loss-normalization/1.1.0"
+    "lumen.fleet-sft-runtime-loss-normalization/1.2.0"
 )
 FLEET_SFT_TRAINER_CLASS = "__main__._FleetSFTTrainer"
 FLEET_SFT_MODEL_CLASS = "peft.peft_model.PeftModelForCausalLM"
@@ -8943,7 +8943,7 @@ def _pipeline_fleet_sft_optimizer_window_schedule(
     if (
         type(seed) is not int
         or type(batch_size) is not int
-        or batch_size <= 0
+        or batch_size != 1
         or type(gradient_accumulation_steps) is not int
         or gradient_accumulation_steps <= 0
         or type(configured_epochs) is not int
@@ -9850,7 +9850,15 @@ def _verify_fleet_sft_runtime_loss_normalization(
             "modelAcceptsLossKwargs",
             "lossType",
             "packing",
-            "paddingFree",
+            "sftConfigPaddingFree",
+            "trainerArgsPaddingFree",
+            "trainerPaddingFree",
+            "dataCollatorPaddingFree",
+            "batchCollationMode",
+            "packedSequenceLengthsPresent",
+            "positionIDsPresent",
+            "attentionMaskPresent",
+            "observedMicroBatchSizes",
             "worldSize",
             "perDeviceTrainBatchSize",
             "trainerGradientAccumulationSteps",
@@ -9970,11 +9978,18 @@ def _verify_fleet_sft_runtime_loss_normalization(
         or evidence.get("modelAcceptsLossKwargs") is not True
         or evidence.get("lossType") != "nll"
         or evidence.get("packing") is not False
-        or evidence.get("paddingFree") is not True
+        or evidence.get("sftConfigPaddingFree") is not False
+        or evidence.get("trainerArgsPaddingFree") is not False
+        or evidence.get("trainerPaddingFree") is not False
+        or evidence.get("dataCollatorPaddingFree") is not False
+        or evidence.get("batchCollationMode") != "padded_attention_mask"
+        or evidence.get("packedSequenceLengthsPresent") is not False
+        or evidence.get("positionIDsPresent") is not False
+        or evidence.get("attentionMaskPresent") is not True
         or type(evidence.get("worldSize")) is not int
         or evidence.get("worldSize") != 1
         or type(batch_size) is not int
-        or batch_size <= 0
+        or batch_size != 1
         or type(gradient_accumulation_steps) is not int
         or gradient_accumulation_steps <= 0
         or type(evidence.get("perDeviceTrainBatchSize")) is not int
@@ -9990,6 +10005,13 @@ def _verify_fleet_sft_runtime_loss_normalization(
         or type(evidence.get("optimizerWindowMicroBatchCount")) is not int
         or evidence.get("optimizerWindowMicroBatchCount")
         != gradient_accumulation_steps
+        or not isinstance(evidence.get("observedMicroBatchSizes"), list)
+        or len(evidence["observedMicroBatchSizes"])
+        != gradient_accumulation_steps
+        or any(
+            type(size) is not int or size != batch_size
+            for size in evidence["observedMicroBatchSizes"]
+        )
         or not isinstance(expected_counts, list)
         or len(expected_counts) != gradient_accumulation_steps
         or any(type(count) is not int or count <= 0 for count in expected_counts)
