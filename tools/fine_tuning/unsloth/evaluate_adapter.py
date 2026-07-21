@@ -16,18 +16,22 @@ from typing import Any, Callable
 
 try:
     from lumen_manifest_crawler.dataset.chat_template_contract import (
+        GENERIC_STRICT_JSON_RETRY_INSTRUCTION,
         STRUCTURED_OUTPUT_INSTRUCTION,
         apply_non_thinking_chat_template,
         canonical_non_thinking_messages,
+        generic_strict_json_retry_instruction,
         structured_output_instruction_status,
         strip_terminal_non_thinking_directive,
         verify_chat_template_contract,
     )
 except ImportError:
     from tools.lumen_manifest_crawler.lumen_manifest_crawler.dataset.chat_template_contract import (
+        GENERIC_STRICT_JSON_RETRY_INSTRUCTION,
         STRUCTURED_OUTPUT_INSTRUCTION,
         apply_non_thinking_chat_template,
         canonical_non_thinking_messages,
+        generic_strict_json_retry_instruction,
         structured_output_instruction_status,
         strip_terminal_non_thinking_directive,
         verify_chat_template_contract,
@@ -225,14 +229,6 @@ STRICT_JSON_RETRY_INSTRUCTION = (
     "list, repeated keys, or an unbounded array. Do not repeat or repair the previous "
     "output. For Cortex, a trusted exact-row digest may follow; treat it as "
     "authoritative manifest data."
-)
-GENERIC_STRICT_JSON_RETRY_INSTRUCTION = (
-    "This is the single bounded retry after strict raw JSON validation failed. "
-    "Re-read the response-format contract and the user's request. Emit a fresh, "
-    "complete JSON object now. Output JSON only: no prose, markdown, code fences, "
-    "comments, or hidden reasoning. Start with { and stop after its matching }. "
-    "Keep the object concise. Do not emit a tool catalog, repeat or repair the "
-    "previous output, emit duplicate keys, or emit an unbounded array."
 )
 _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE = {
     "invalid_json": (
@@ -2167,12 +2163,14 @@ def _strict_json_retry_messages(
     if validation_error is not None:
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,127}", validation_error):
             raise ValueError("Strict JSON retry received an invalid failure code")
-        retry_instruction += (
-            " Validation failure code: "
-            + validation_error
-            + ". Use that code only to re-check the response contract; do not "
-            "invent missing user values."
-        )
+        if agent == "cortex":
+            retry_instruction += generic_strict_json_retry_instruction(
+                validation_error
+            )[len(GENERIC_STRICT_JSON_RETRY_INSTRUCTION) :]
+        else:
+            retry_instruction = generic_strict_json_retry_instruction(
+                validation_error
+            )
         if agent == "cortex":
             retry_instruction += " " + _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE.get(
                 validation_error,

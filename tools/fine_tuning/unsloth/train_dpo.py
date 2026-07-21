@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib
+import inspect
 import json
 import math
 import os
@@ -150,6 +151,7 @@ REQUIRED_CONFIG_KEYS = {
     "dpo_learning_rate",
     "dpo_num_train_epochs",
     "dpo_beta",
+    "dpo_rpo_alpha",
     "max_prompt_length",
     "use_logits_to_keep",
     "precompute_ref_log_probs",
@@ -172,6 +174,10 @@ CUDA_ALLOCATOR_CONFIG_ENV = "PYTORCH_CUDA_ALLOC_CONF"
 PREFERENCE_CHECKPOINT_LINEAGE_SCHEMA = (
     "lumen.preference_checkpoint_lineage/1.3.0"
 )
+RPO_RUNTIME_CAPABILITY_SCHEMA = "lumen.rpo-runtime-capability/1.0.0"
+RPO_RUNTIME_CAPABILITY_HASH_FIELD = "rpoRuntimeCapabilitySHA256"
+RPO_CONSTRUCTED_BINDING_SCHEMA = "lumen.rpo-constructed-binding/1.0.0"
+RPO_CONSTRUCTED_BINDING_HASH_FIELD = "rpoConstructedBindingSHA256"
 PREFERENCE_CHECKPOINT_DIRECTORY_SCHEMA = (
     "lumen.preference_checkpoint_directory/1.1.0"
 )
@@ -324,11 +330,36 @@ def _required_positive_number(
     return float(value)
 
 
+def _required_optional_positive_number(
+    cfg: Mapping[str, Any],
+    field: str,
+    *,
+    maximum: float,
+) -> float | None:
+    if field not in cfg:
+        raise ValueError(f"{field} is required")
+    value = cfg[field]
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) <= 0.0
+        or float(value) > maximum
+    ):
+        raise ValueError(f"{field} must be finite and in the range (0, {maximum}]")
+    return float(value)
+
+
 def _validate_preference_training_config(
     cfg: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Fail closed on every loss-affecting preference-training control."""
 
+    agent = cfg.get("agent")
+    if type(agent) is not str or agent not in AGENTS:
+        raise ValueError("agent must be one canonical Lumen adapter name")
     preference_trainer = _required_preference_trainer(cfg)
     learning_rate = _required_positive_number(
         cfg,
@@ -341,6 +372,17 @@ def _validate_preference_training_config(
         maximum=8.0,
     )
     beta = _required_positive_number(cfg, "dpo_beta", maximum=1.0)
+    rpo_alpha = _required_optional_positive_number(
+        cfg,
+        "dpo_rpo_alpha",
+        maximum=10.0,
+    )
+    expected_rpo_alpha = 1.0 if agent == "fleet" else None
+    if rpo_alpha != expected_rpo_alpha:
+        raise ValueError(
+            "dpo_rpo_alpha must be exactly 1.0 for Fleet and null for every "
+            "other canonical adapter"
+        )
 
     max_sequence_length = cfg.get("max_seq_length")
     max_prompt_length = cfg.get("max_prompt_length")
@@ -388,6 +430,7 @@ def _validate_preference_training_config(
         "learningRate": learning_rate,
         "numTrainEpochs": num_train_epochs,
         "beta": beta,
+        "rpoAlpha": rpo_alpha,
         "maxPromptLength": max_prompt_length,
         "gradientCheckpointing": gradient_checkpointing,
         "useLogitsToKeep": use_logits_to_keep,
@@ -494,6 +537,183 @@ def _verify_base_model_lineage(cfg: dict[str, Any]) -> None:
 def _canonical_sha256(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _verify_rpo_runtime_capability(
+    *,
+    dpo_config_class: Any,
+    dpo_trainer_class: Any,
+    rpo_alpha: float | None,
+) -> dict[str, Any]:
+    """Prove the exact imported trainer carries chosen-NLL through eval."""
+
+    if rpo_alpha is not None and (
+        type(rpo_alpha) is not float or rpo_alpha != 1.0
+    ):
+        raise RuntimeError("Fleet RPO runtime probe requires exact float alpha 1.0")
+    if rpo_alpha is None:
+        evidence = {
+            "schemaVersion": RPO_RUNTIME_CAPABILITY_SCHEMA,
+            "status": "not_applicable",
+            "rpoAlpha": None,
+            "configClass": None,
+            "trainerClass": None,
+            "methodSourceSHA256": {},
+        }
+        evidence[RPO_RUNTIME_CAPABILITY_HASH_FIELD] = _canonical_sha256(
+            evidence
+        )
+        return evidence
+
+    probe = dpo_config_class(
+        output_dir="/tmp/lumen-rpo-capability",
+        rpo_alpha=rpo_alpha,
+        use_cpu=True,
+        bf16=False,
+        fp16=False,
+        report_to="none",
+    )
+    if type(probe.rpo_alpha) is not float or probe.rpo_alpha != 1.0:
+        raise RuntimeError("Pinned runtime discarded Fleet rpo_alpha=1.0")
+
+    predicates = {
+        "concatenated_forward": (
+            "chosen_logits = logits[:num_examples",
+            "chosen_labels = labels[:num_examples",
+            "torch.flatten(chosen_logits, end_dim=1)",
+            "torch.flatten(chosen_labels, end_dim=1)",
+            "F.cross_entropy(",
+            'output["nll_loss"]',
+            "self.args.rpo_alpha is not None",
+        ),
+        "get_batch_loss_metrics": (
+            'losses = losses + self.args.rpo_alpha * model_output["nll_loss"]',
+            'prefix = "eval_" if train_eval == "eval" else ""',
+            'metrics[f"{prefix}nll_loss"]',
+        ),
+        "prediction_step": (
+            "get_batch_loss_metrics(",
+            'train_eval="eval"',
+            "store_metrics(",
+        ),
+        "log": (
+            "_stored_metrics[train_eval]",
+            "logs",
+        ),
+        "evaluate": (
+            "self.log(output.metrics)",
+            "return output.metrics",
+        ),
+    }
+    method_source_sha256: dict[str, str] = {}
+    for method_name, required_fragments in predicates.items():
+        try:
+            source = inspect.getsource(
+                getattr(dpo_trainer_class, method_name)
+            )
+        except (AttributeError, OSError, TypeError) as exc:
+            raise RuntimeError(
+                f"Pinned RPO runtime lacks inspectable {method_name}"
+            ) from exc
+        normalized = " ".join(source.split())
+        missing = [
+            fragment
+            for fragment in required_fragments
+            if fragment not in normalized
+        ]
+        if missing:
+            raise RuntimeError(
+                "Pinned RPO runtime lacks required chosen-NLL behavior in "
+                f"{method_name}: {missing}"
+            )
+        method_source_sha256[method_name] = hashlib.sha256(
+            source.encode("utf-8")
+        ).hexdigest()
+
+    evidence = {
+        "schemaVersion": RPO_RUNTIME_CAPABILITY_SCHEMA,
+        "status": "verified",
+        "rpoAlpha": rpo_alpha,
+        "configClass": (
+            f"{dpo_config_class.__module__}.{dpo_config_class.__qualname__}"
+        ),
+        "trainerClass": (
+            f"{dpo_trainer_class.__module__}.{dpo_trainer_class.__qualname__}"
+        ),
+        "methodSourceSHA256": method_source_sha256,
+    }
+    evidence[RPO_RUNTIME_CAPABILITY_HASH_FIELD] = _canonical_sha256(evidence)
+    return evidence
+
+
+def _valid_rpo_runtime_capability_evidence(
+    value: Any,
+    *,
+    rpo_alpha: float | None,
+) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    expected_keys = {
+        "schemaVersion",
+        "status",
+        "rpoAlpha",
+        "configClass",
+        "trainerClass",
+        "methodSourceSHA256",
+        RPO_RUNTIME_CAPABILITY_HASH_FIELD,
+    }
+    if set(value) != expected_keys:
+        return False
+    expected_digest = value.get(RPO_RUNTIME_CAPABILITY_HASH_FIELD)
+    unsigned = {
+        key: item
+        for key, item in value.items()
+        if key != RPO_RUNTIME_CAPABILITY_HASH_FIELD
+    }
+    if (
+        not isinstance(expected_digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None
+        or _canonical_sha256(unsigned) != expected_digest
+        or value.get("schemaVersion") != RPO_RUNTIME_CAPABILITY_SCHEMA
+    ):
+        return False
+    method_hashes = value.get("methodSourceSHA256")
+    if rpo_alpha is None:
+        return (
+            value.get("rpoAlpha") is None
+            and value.get("status") == "not_applicable"
+            and value.get("configClass") is None
+            and value.get("trainerClass") is None
+            and method_hashes == {}
+        )
+    config_class = value.get("configClass")
+    trainer_class = value.get("trainerClass")
+    return (
+        type(rpo_alpha) is float
+        and rpo_alpha == 1.0
+        and type(value.get("rpoAlpha")) is float
+        and value.get("rpoAlpha") == 1.0
+        and value.get("status") == "verified"
+        and isinstance(config_class, str)
+        and config_class.rsplit(".", 1)[-1]
+        in {"DPOConfig", "UnslothDPOConfig"}
+        and isinstance(trainer_class, str)
+        and trainer_class.rsplit(".", 1)[-1]
+        in {"DPOTrainer", "UnslothDPOTrainer"}
+        and isinstance(method_hashes, Mapping)
+        and set(method_hashes) == {
+            "concatenated_forward",
+            "get_batch_loss_metrics",
+            "prediction_step",
+            "log",
+            "evaluate",
+        }
+        and all(
+            isinstance(digest, str)
+            and re.fullmatch(r"[0-9a-f]{64}", digest) is not None
+            for digest in method_hashes.values()
+        )
+    )
 
 
 def _preference_checkpoint_policy(cfg: Mapping[str, Any]) -> tuple[int, int]:
@@ -1820,6 +2040,7 @@ def _build_preference_trainer(
         training_args = dpo_config_class(
             **common_config,
             beta=preference_config["beta"],
+            rpo_alpha=preference_config["rpoAlpha"],
             model_adapter_name=POLICY_ADAPTER_NAME,
             ref_adapter_name=REFERENCE_ADAPTER_NAME,
             use_logits_to_keep=use_logits_to_keep,
@@ -1836,6 +2057,133 @@ def _build_preference_trainer(
         )
         return trainer, training_args
     raise ValueError("preference_trainer must be exactly 'dpo'")
+
+
+def _verify_constructed_rpo_binding(
+    trainer: Any,
+    training_args: Any,
+    *,
+    rpo_alpha: float | None,
+) -> dict[str, Any]:
+    """Fail before optimizer work if the constructed trainer lost RPO."""
+
+    if rpo_alpha is not None and (
+        type(rpo_alpha) is not float or rpo_alpha != 1.0
+    ):
+        raise RuntimeError("Constructed Fleet RPO binding requires float alpha 1.0")
+    missing = object()
+    args_rpo_alpha = getattr(training_args, "rpo_alpha", missing)
+    trainer_args = getattr(trainer, "args", None)
+    trainer_rpo_alpha = getattr(trainer_args, "rpo_alpha", missing)
+    valid_args = (
+        args_rpo_alpha is None
+        if rpo_alpha is None
+        else type(args_rpo_alpha) is float and args_rpo_alpha == 1.0
+    )
+    valid_trainer = (
+        trainer_rpo_alpha is None
+        if rpo_alpha is None
+        else type(trainer_rpo_alpha) is float and trainer_rpo_alpha == 1.0
+    )
+    if not valid_args or not valid_trainer:
+        raise RuntimeError(
+            "Constructed preference trainer did not retain the configured "
+            "RPO alpha"
+        )
+    evidence = {
+        "schemaVersion": RPO_CONSTRUCTED_BINDING_SCHEMA,
+        "status": "verified",
+        "rpoAlpha": rpo_alpha,
+        "trainingArgsRPOAlpha": args_rpo_alpha,
+        "trainerArgsRPOAlpha": trainer_rpo_alpha,
+        "trainingArgsClass": (
+            f"{type(training_args).__module__}.{type(training_args).__qualname__}"
+        ),
+        "trainerClass": f"{type(trainer).__module__}.{type(trainer).__qualname__}",
+    }
+    evidence[RPO_CONSTRUCTED_BINDING_HASH_FIELD] = _canonical_sha256(evidence)
+    return evidence
+
+
+def _valid_constructed_rpo_binding_evidence(
+    value: Any,
+    *,
+    rpo_alpha: float | None,
+) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    expected_keys = {
+        "schemaVersion",
+        "status",
+        "rpoAlpha",
+        "trainingArgsRPOAlpha",
+        "trainerArgsRPOAlpha",
+        "trainingArgsClass",
+        "trainerClass",
+        RPO_CONSTRUCTED_BINDING_HASH_FIELD,
+    }
+    if set(value) != expected_keys:
+        return False
+    digest = value.get(RPO_CONSTRUCTED_BINDING_HASH_FIELD)
+    unsigned = {
+        key: item
+        for key, item in value.items()
+        if key != RPO_CONSTRUCTED_BINDING_HASH_FIELD
+    }
+    if (
+        not isinstance(digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        or _canonical_sha256(unsigned) != digest
+        or value.get("schemaVersion") != RPO_CONSTRUCTED_BINDING_SCHEMA
+        or value.get("status") != "verified"
+        or not isinstance(value.get("trainingArgsClass"), str)
+        or not value["trainingArgsClass"]
+        or not isinstance(value.get("trainerClass"), str)
+        or not value["trainerClass"]
+    ):
+        return False
+    if rpo_alpha is None:
+        return (
+            value.get("rpoAlpha") is None
+            and value.get("trainingArgsRPOAlpha") is None
+            and value.get("trainerArgsRPOAlpha") is None
+        )
+    return (
+        type(rpo_alpha) is float
+        and rpo_alpha == 1.0
+        and type(value.get("rpoAlpha")) is float
+        and value.get("rpoAlpha") == 1.0
+        and type(value.get("trainingArgsRPOAlpha")) is float
+        and value.get("trainingArgsRPOAlpha") == 1.0
+        and type(value.get("trainerArgsRPOAlpha")) is float
+        and value.get("trainerArgsRPOAlpha") == 1.0
+    )
+
+
+def _verified_rpo_evaluation_metrics(
+    preference_config: Mapping[str, Any],
+    evaluation_metrics: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    rpo_alpha = preference_config.get("rpoAlpha")
+    if rpo_alpha is None:
+        return None
+    if type(rpo_alpha) is not float or rpo_alpha != 1.0:
+        raise RuntimeError("Fleet RPO evaluation requires exact float alpha 1.0")
+    value = evaluation_metrics.get("eval_nll_loss")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) < 0.0
+    ):
+        raise RuntimeError(
+            "Fleet RPO evaluation did not produce finite eval_nll_loss"
+        )
+    return {
+        "rpoAlpha": rpo_alpha,
+        "metric": "eval_nll_loss",
+        "value": float(value),
+    }
 
 
 def _save_policy_adapter(
@@ -2869,6 +3217,12 @@ def main() -> None:
             "Missing dependencies for Unsloth DPO training. Install: unsloth, trl, datasets, transformers, peft, accelerate, bitsandbytes."
         ) from exc
 
+    rpo_runtime_capability = _verify_rpo_runtime_capability(
+        dpo_config_class=DPOConfig,
+        dpo_trainer_class=DPOTrainer,
+        rpo_alpha=preference_config["rpoAlpha"],
+    )
+
     # Unsloth must patch Transformers before the shared seed helper imports it.
     _seed_everything(seed)
 
@@ -2975,6 +3329,11 @@ def main() -> None:
         orpo_config_class=ORPOConfig,
         orpo_trainer_class=ORPOTrainer,
     )
+    constructed_rpo_binding = _verify_constructed_rpo_binding(
+        trainer,
+        training_args,
+        rpo_alpha=preference_config["rpoAlpha"],
+    )
     if checkpoint_lineage_path is not None:
         trainer.add_callback(
             _preference_checkpoint_callback(
@@ -3029,6 +3388,10 @@ def main() -> None:
         )
     )
     evaluation_metrics = trainer.evaluate() if val_dataset is not None else {}
+    _verified_rpo_evaluation_metrics(
+        preference_config,
+        evaluation_metrics,
+    )
     training_completion = _verified_training_completion_evidence(
         trainer,
         training_args,
@@ -3143,6 +3506,8 @@ def main() -> None:
         "variantManifestSHA256": cfg["variantManifestSHA256"],
         "config_sha256": _hash_file(cfg_path),
         "preferenceTrainingConfig": preference_config,
+        "rpoRuntimeCapability": rpo_runtime_capability,
+        "constructedRPOBinding": constructed_rpo_binding,
         "train_records": len(train_rows),
         "val_records": len(val_rows),
         "output_dir": str(output_dir),

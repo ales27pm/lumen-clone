@@ -12,6 +12,7 @@ from lumen_manifest_crawler.dataset.adapter_export import augment_unsloth_config
 from lumen_manifest_crawler.dataset.chat_template_contract import (
     STRUCTURED_OUTPUT_INSTRUCTION,
     chat_template_contract,
+    generic_strict_json_retry_instruction,
     structured_output_instruction_status,
 )
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
@@ -27,10 +28,11 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
     EVALUATION_SCHEMA_VERSION,
     EXPERIMENT_VARIANTS,
-    DEFAULT_NEAR_DUPLICATE_THRESHOLD,
     FLEET_DELEGATION_OUTPUT_CONTRACT,
     FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT,
     FLEET_TOOL_BOUNDARY_OUTPUT_CONTRACT,
+    SHORT_WINDOW_COVERAGE_THRESHOLD,
+    SHORT_WINDOW_MIN_DISTINCT_SHINGLES,
     SHORT_WINDOW_SHINGLE_SIZE,
     _fleet_prompt_with_short_contract,
     _fleet_prompt_without_short_contract_suffix,
@@ -50,16 +52,21 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
 from lumen_manifest_crawler.fleet_artifacts import (
     _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS,
     ORCHESTRATION_ATOMIC_MUTATION_KINDS,
+    ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT,
     ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS,
+    ORCHESTRATION_CORE_TOP_LEVEL_OMISSION_BEHAVIORS,
+    ORCHESTRATION_TOP_LEVEL_OMISSION_KEY,
     _atomic_event_completeness_rejection,
     _atomic_event_order_indices,
+    _compound_orchestration_repetition_rejection,
     _fact_derived_noncanonical_event_id,
     _is_opaque_orchestration_training_fact_id,
     _natural_noncanonical_event_type_alias,
     _orchestration_scalar_leaf_differences,
+    _orchestration_top_level_schema_omission_rejection,
     _orchestration_training_scenario_id,
     _orchestration_topology_contract,
-    _rotated_canonical_strategy,
+    _terminal_decision_rejection,
 )
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolManifest
 
@@ -158,6 +165,9 @@ FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS = frozenset(
         "nonexistent-slot-negative",
     }
 )
+FLEET_NATIVE_ORCHESTRATION_CORE_DPO_BEHAVIORS = (
+    FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
+)
 FLEET_NATIVE_ORCHESTRATION_FULL_MATRIX_DPO_BEHAVIORS = frozenset(
     {
         "duplicate-suppression",
@@ -175,13 +185,16 @@ FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS = frozenset(
         "behavior-conditioned",
     }
 )
+FLEET_NATIVE_ORCHESTRATION_SFT_TRAINING_VARIANTS = frozenset(
+    {"behavior-conditioned"}
+)
 FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS = frozenset(
     {"normalization-policy-audited"}
 )
 FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT = {
-    "decision_strategy_contract": (
-        "$.decision.strategy",
-        "next_valid_canonical_strategy",
+    "terminal_decision_contract": (
+        "$.decision + $.events[terminal_stop].reason",
+        "coherent_noncanonical_strategy_and_stop_reason",
     ),
     "event_type_vocabulary": (
         "$.events[first_behavior_event].type",
@@ -1187,6 +1200,11 @@ def compile_agent_fine_tuning_datasets(
                 train_dpo=train_dpo,
                 val_dpo=val_dpo,
             )
+            _assert_fleet_balanced_retry_training_coverage(
+                train_sft,
+                train_dpo,
+                manifest=manifest,
+            )
         elif agent == "executor" and _has_authoritative_manifest_revision(
             manifest
         ):
@@ -1236,6 +1254,7 @@ def compile_agent_fine_tuning_datasets(
             evaluation_records=eval_records,
             training_config=resolved_training_config,
             dataset_config=config,
+            manifest=manifest,
         )
 
         materialized_sft = train_sft + val_sft
@@ -1863,6 +1882,7 @@ def _fleet_native_graph_payload(
     lane: str,
     behavior: str,
     output_kind: str,
+    allowed_missing_top_level_key: str | None = None,
 ) -> dict[str, Any]:
     if not isinstance(content, str) or not content:
         raise ValueError(
@@ -1882,7 +1902,16 @@ def _fleet_native_graph_payload(
         "knownSlotIDs",
         "scenarioID",
     }
-    if not isinstance(graph, dict) or set(graph) != required_keys:
+    expected_keys = (
+        required_keys - {allowed_missing_top_level_key}
+        if allowed_missing_top_level_key is not None
+        else required_keys
+    )
+    if (
+        allowed_missing_top_level_key not in {None, "dependencies"}
+        or not isinstance(graph, dict)
+        or set(graph) != expected_keys
+    ):
         raise ValueError(
             f"Fleet native {lane} {behavior} has invalid {output_kind} graph schema"
         )
@@ -1899,7 +1928,10 @@ def _fleet_native_graph_payload(
     if (
         not isinstance(graph.get("events"), list)
         or not graph["events"]
-        or not isinstance(graph.get("dependencies"), list)
+        or (
+            allowed_missing_top_level_key != "dependencies"
+            and not isinstance(graph.get("dependencies"), list)
+        )
         or not isinstance(graph.get("knownSlotIDs"), list)
         or not graph["knownSlotIDs"]
         or not isinstance(graph.get("graphSchemaVersion"), str)
@@ -1946,6 +1978,17 @@ def _fleet_native_record_graphs(
 
     chosen = record.get("chosen")
     rejected = record.get("rejected")
+    metadata = (
+        record.get("metadata")
+        if isinstance(record.get("metadata"), dict)
+        else {}
+    )
+    allowed_missing_top_level_key = (
+        ORCHESTRATION_TOP_LEVEL_OMISSION_KEY
+        if metadata.get("preferenceContrastMode")
+        == "top_level_schema_omission"
+        else None
+    )
     return (
         _fleet_native_graph_payload(
             chosen.get("content") if isinstance(chosen, dict) else None,
@@ -1958,6 +2001,7 @@ def _fleet_native_record_graphs(
             lane=lane,
             behavior=behavior,
             output_kind="rejected",
+            allowed_missing_top_level_key=allowed_missing_top_level_key,
         ),
     )
 
@@ -2017,15 +2061,26 @@ def _valid_fleet_native_preference_mutation(
     if mutation not in FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT:
         return False
     differences = _orchestration_scalar_leaf_differences(chosen, rejected)
-    if mutation == "decision_strategy_contract":
+    if mutation == "terminal_decision_contract":
         try:
-            expected = json.loads(json.dumps(chosen, ensure_ascii=False))
-            expected["decision"]["strategy"] = _rotated_canonical_strategy(
-                expected["decision"].get("strategy")
-            )
+            expected = _terminal_decision_rejection(chosen)
+            terminal_index = len(chosen["events"]) - 1
         except (KeyError, TypeError, ValueError):
             return False
-        return differences == ["$.decision.strategy"] and rejected == expected
+        expected_differences = _orchestration_scalar_leaf_differences(
+            chosen,
+            expected,
+        )
+        return (
+            set(expected_differences)
+            == {
+                "$.decision.stopReason",
+                "$.decision.strategy",
+                f"$.events[{terminal_index}].reason",
+            }
+            and differences == expected_differences
+            and rejected == expected
+        )
 
     if mutation == "event_type_vocabulary":
         try:
@@ -2184,6 +2239,206 @@ def _valid_fleet_native_preference_mutation(
     return False
 
 
+def _assert_fleet_balanced_retry_training_coverage(
+    train_sft: list[dict[str, Any]],
+    train_dpo: list[dict[str, Any]],
+    *,
+    manifest: AgentBehaviorManifest,
+) -> None:
+    """Require exact finalized SFT/DPO retry parity per owner and family."""
+
+    has_contract_sft = any(
+        isinstance(record.get("metadata"), dict)
+        and record["metadata"].get("taskType")
+        in FLEET_BALANCED_CONTRACT_TASK_TYPES
+        for record in train_sft
+    )
+    has_contract_dpo = any(
+        isinstance(record.get("metadata"), dict)
+        and record["metadata"].get("taskType")
+        in FLEET_BALANCED_CONTRACT_TASK_TYPES
+        for record in train_dpo
+    )
+    if not has_contract_sft and not has_contract_dpo:
+        return
+    if not has_contract_sft or not has_contract_dpo:
+        raise ValueError(
+            "Finalized Fleet balanced contract is missing an SFT or DPO lane"
+        )
+
+    known_slot_ids, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
+    try:
+        expected_owner_slots = {
+            slot_ids_by_agent[owner] for owner in _fleet_delegation_tasks()
+        }
+    except KeyError as exc:
+        raise ValueError(
+            "Fleet retry coverage cannot resolve every manifested owner"
+        ) from exc
+    if (
+        not known_slot_ids
+        or len(known_slot_ids) != len(set(known_slot_ids))
+        or len(expected_owner_slots) != len(_fleet_delegation_tasks())
+    ):
+        raise ValueError("Fleet retry coverage has an invalid manifested slot set")
+
+    delegation_owner_slots: set[str] = set()
+    for record in train_dpo:
+        metadata = (
+            record.get("metadata")
+            if isinstance(record.get("metadata"), dict)
+            else {}
+        )
+        if metadata.get("taskType") != "fleet_contract_delegation":
+            continue
+        chosen = record.get("chosen")
+        content = chosen.get("content") if isinstance(chosen, dict) else None
+        payload = (
+            _strict_json_loads(content) if isinstance(content, str) else None
+        )
+        delegate_to = (
+            payload.get("delegateTo") if isinstance(payload, dict) else None
+        )
+        payload_known_slots = (
+            payload.get("knownSlots") if isinstance(payload, dict) else None
+        )
+        if (
+            not isinstance(delegate_to, str)
+            or delegate_to not in expected_owner_slots
+            or payload_known_slots != known_slot_ids
+        ):
+            raise ValueError(
+                "Finalized Fleet delegation preference is not bound to the "
+                "manifested slot contract"
+            )
+        delegation_owner_slots.add(delegate_to)
+    if delegation_owner_slots != expected_owner_slots:
+        raise ValueError(
+            "Finalized Fleet delegation preferences lack every manifested owner"
+        )
+    expected_scopes = {
+        ("fleet_contract_delegation", slot_id)
+        for slot_id in delegation_owner_slots
+    } | {
+        ("fleet_contract_known_slots", "contract_family"),
+        ("fleet_contract_tool_boundary", "contract_family"),
+    }
+    observed_groups: dict[tuple[str, str], set[str]] = {}
+    dpo_targets_by_group: dict[tuple[str, str, str], set[str]] = {}
+    for record in train_dpo:
+        metadata = (
+            record.get("metadata")
+            if isinstance(record.get("metadata"), dict)
+            else {}
+        )
+        task_type = str(metadata.get("taskType") or "")
+        if (
+            task_type not in FLEET_BALANCED_CONTRACT_TASK_TYPES
+            or metadata.get("generationPromptMode") != "strict_json_retry"
+        ):
+            continue
+        coverage_scope = metadata.get("retryCoverageScope")
+        if not isinstance(coverage_scope, str) or not coverage_scope:
+            raise ValueError(
+                "Finalized Fleet retry record lacks metadata.retryCoverageScope"
+            )
+        if (
+            metadata.get("requiredSplit") != "train"
+            or metadata.get("retryFailureCode") != "invalid_json"
+            or metadata.get("retryContrastMode")
+            != "strict_retry_compound_repetition"
+            or metadata.get("compoundPreferenceDimensions")
+            != ["incorrect_contract_value", "duplicate_known_slot"]
+        ):
+            raise ValueError(
+                "Finalized Fleet retry record has an invalid recovery contract"
+            )
+        scope = (task_type, coverage_scope)
+        prompt_key = _canonical_rendered_prompt_key(record, lane="dpo")
+        observed_groups.setdefault(scope, set()).add(prompt_key)
+        chosen = record.get("chosen")
+        chosen_content = (
+            chosen.get("content") if isinstance(chosen, dict) else None
+        )
+        if not isinstance(chosen_content, str) or not chosen_content:
+            raise ValueError("Finalized Fleet retry preference lacks a chosen target")
+        dpo_targets_by_group.setdefault(
+            (task_type, coverage_scope, prompt_key),
+            set(),
+        ).add(chosen_content)
+        if task_type == "fleet_contract_delegation":
+            content = (
+                chosen.get("content") if isinstance(chosen, dict) else None
+            )
+            payload = (
+                _strict_json_loads(content)
+                if isinstance(content, str)
+                else None
+            )
+            if (
+                not isinstance(payload, dict)
+                or payload.get("delegateTo") != coverage_scope
+            ):
+                raise ValueError(
+                    "Finalized Fleet retry scope disagrees with its chosen owner"
+                )
+    if set(observed_groups) != expected_scopes or any(
+        len(groups) != 1 for groups in observed_groups.values()
+    ):
+        raise ValueError(
+            "Finalized Fleet retry coverage is incomplete by manifested owner "
+            "or contract family: "
+            f"observed={sorted(observed_groups)}"
+        )
+    if any(len(targets) != 1 for targets in dpo_targets_by_group.values()):
+        raise ValueError(
+            "Finalized Fleet retry DPO group has conflicting chosen targets"
+        )
+
+    sft_targets_by_group: dict[tuple[str, str, str], set[str]] = {}
+    for record in train_sft:
+        metadata = (
+            record.get("metadata")
+            if isinstance(record.get("metadata"), dict)
+            else {}
+        )
+        task_type = str(metadata.get("taskType") or "")
+        if (
+            task_type not in FLEET_BALANCED_CONTRACT_TASK_TYPES
+            or metadata.get("generationPromptMode") != "strict_json_retry"
+        ):
+            continue
+        coverage_scope = metadata.get("retryCoverageScope")
+        if (
+            not isinstance(coverage_scope, str)
+            or not coverage_scope
+            or metadata.get("requiredSplit") != "train"
+            or metadata.get("retryFailureCode") != "invalid_json"
+            or metadata.get("sftAnchorFromPreference") is not True
+        ):
+            raise ValueError(
+                "Finalized Fleet retry SFT anchor has an invalid recovery contract"
+            )
+        prompt_key = _canonical_rendered_prompt_key(record, lane="sft")
+        assistant_target = _first_role_content(record.get("messages") or [], "assistant")
+        if not assistant_target:
+            raise ValueError("Finalized Fleet retry SFT anchor lacks a target")
+        sft_targets_by_group.setdefault(
+            (task_type, coverage_scope, prompt_key),
+            set(),
+        ).add(assistant_target)
+
+    if set(sft_targets_by_group) != set(dpo_targets_by_group):
+        raise ValueError(
+            "Finalized Fleet strict-retry SFT prompts do not exactly match DPO"
+        )
+    for group, sft_targets in sft_targets_by_group.items():
+        if len(sft_targets) != 1 or sft_targets != dpo_targets_by_group[group]:
+            raise ValueError(
+                "Finalized Fleet strict-retry SFT target does not match DPO chosen"
+            )
+
+
 def _assert_fleet_native_orchestration_training_coverage(
     *,
     train_sft: list[dict[str, Any]],
@@ -2276,12 +2531,8 @@ def _assert_fleet_native_orchestration_training_coverage(
     )
     train_sft_variants = {
         behavior: {
-            variant: (
-                ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS
-                if variant == "behavior-conditioned"
-                else 1
-            )
-            for variant in FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS
+            variant: ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS
+            for variant in FLEET_NATIVE_ORCHESTRATION_SFT_TRAINING_VARIANTS
         }
         for behavior in FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
     }
@@ -2295,7 +2546,7 @@ def _assert_fleet_native_orchestration_training_coverage(
                 )
                 for variant in FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS
             }
-            if behavior in FLEET_NATIVE_ORCHESTRATION_FULL_MATRIX_DPO_BEHAVIORS
+            if behavior in FLEET_NATIVE_ORCHESTRATION_CORE_DPO_BEHAVIORS
             else {"behavior-conditioned": behavior_conditioned_count}
         )
         for behavior in FLEET_NATIVE_ORCHESTRATION_DPO_BEHAVIORS
@@ -2430,6 +2681,52 @@ def _assert_fleet_native_orchestration_training_coverage(
                                 f"Fleet native {lane} {behavior} preference "
                                 "mutation is invalid"
                             )
+                elif "DPO" in lane and variant == "core":
+                    try:
+                        if (
+                            behavior
+                            in ORCHESTRATION_CORE_TOP_LEVEL_OMISSION_BEHAVIORS
+                        ):
+                            expected_core_rejection = (
+                                _orchestration_top_level_schema_omission_rejection(
+                                    chosen_graph
+                                )
+                            )
+                            expected_contrast_mode = (
+                                "top_level_schema_omission"
+                            )
+                            expected_dimensions = [
+                                "missing_top_level_dependencies"
+                            ]
+                        else:
+                            expected_core_rejection = (
+                                _compound_orchestration_repetition_rejection(
+                                    chosen_graph
+                                )
+                            )
+                            expected_contrast_mode = (
+                                "compound_schema_repetition"
+                            )
+                            expected_dimensions = [
+                                "duplicate_known_slot",
+                                "repeated_event",
+                                "repeated_dependency",
+                            ]
+                    except (KeyError, TypeError, ValueError):
+                        expected_core_rejection = None
+                    if (
+                        rejected_graph is None
+                        or expected_core_rejection is None
+                        or rejected_graph != expected_core_rejection
+                        or metadata.get("preferenceContrastMode")
+                        != expected_contrast_mode
+                        or metadata.get("compoundPreferenceDimensions")
+                        != expected_dimensions
+                    ):
+                        raise ValueError(
+                            f"Fleet native {lane} {behavior} core schema "
+                            "contrast is invalid"
+                        )
                 elif not sft_optimizer_visible:
                     raise ValueError(
                         f"Fleet native {lane} {behavior} hides a non-conditioned row"
@@ -2439,6 +2736,9 @@ def _assert_fleet_native_orchestration_training_coverage(
                         "preferenceSourceScenarioID"
                     )
                     sft_anchor = metadata.get("sftAnchorScenarioID")
+                    sft_anchor_binding_mode = metadata.get(
+                        "sftAnchorBindingMode"
+                    )
                     if (
                         not isinstance(preference_source, str)
                         or not preference_source
@@ -2457,13 +2757,23 @@ def _assert_fleet_native_orchestration_training_coverage(
                         and sft_anchor
                         != _orchestration_training_scenario_id(
                             behavior=behavior,
-                            variant="core",
-                            replica_index=None,
+                            variant=ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT,
+                            replica_index=0,
                         )
                     ):
                         raise ValueError(
                             f"Fleet native {lane} {behavior} has an invalid "
                             "SFT anchor identity"
+                        )
+                    expected_anchor_binding_mode = (
+                        "exact_scenario"
+                        if sft_optimizer_visible
+                        else "topology_equivalent"
+                    )
+                    if sft_anchor_binding_mode != expected_anchor_binding_mode:
+                        raise ValueError(
+                            f"Fleet native {lane} {behavior} has an invalid "
+                            "SFT anchor binding mode"
                         )
                 topology_hashes.add(actual_topology_hash)
             if variant_counts != expected_variant_counts:
@@ -3111,9 +3421,31 @@ def _fleet_native_matrix_metadata(
         )
     resolved["sftOptimizerVisible"] = sft_optimizer_visible
 
+    generation_prompt_mode = metadata.get("generationPromptMode")
+    if generation_prompt_mode not in {
+        "initial_generation",
+        "strict_json_retry",
+    }:
+        raise ValueError(
+            "Fleet native orchestration record has an invalid generation prompt mode"
+        )
+    resolved["generationPromptMode"] = generation_prompt_mode
+    retry_failure_code = metadata.get("retryFailureCode")
+    if generation_prompt_mode == "strict_json_retry":
+        if retry_failure_code != "invalid_json":
+            raise ValueError(
+                "Fleet native retry record lacks the invalid_json failure code"
+            )
+        resolved["retryFailureCode"] = retry_failure_code
+    elif retry_failure_code is not None:
+        raise ValueError(
+            "Fleet native initial-generation record has retry failure metadata"
+        )
+
     preference_keys = (
         "preferenceSourceScenarioID",
         "sftAnchorScenarioID",
+        "sftAnchorBindingMode",
     )
     has_preference_identity = any(key in metadata for key in preference_keys)
     if has_preference_identity:
@@ -3125,9 +3457,50 @@ def _fleet_native_matrix_metadata(
                     f"metadata.{key}"
                 )
             resolved[key] = value
+        expected_anchor_binding_mode = (
+            "exact_scenario"
+            if sft_optimizer_visible
+            else "topology_equivalent"
+        )
+        if resolved["sftAnchorBindingMode"] != expected_anchor_binding_mode:
+            raise ValueError(
+                "Fleet native orchestration preference has an invalid SFT "
+                "anchor binding mode"
+            )
     elif metadata.get("preferenceType") == "manifest_grounded_orchestration":
         raise ValueError(
             "Fleet native orchestration preference lacks source-anchor identity"
+        )
+    preference_contrast_mode = metadata.get("preferenceContrastMode")
+    compound_dimensions = metadata.get("compoundPreferenceDimensions")
+    if has_preference_identity and resolved["trainingMatrixVariant"] == "core":
+        behavior_class = resolved["behaviorClass"]
+        if behavior_class in ORCHESTRATION_CORE_TOP_LEVEL_OMISSION_BEHAVIORS:
+            expected_contrast_mode = "top_level_schema_omission"
+            expected_dimensions = [
+                f"missing_top_level_{ORCHESTRATION_TOP_LEVEL_OMISSION_KEY}"
+            ]
+        else:
+            expected_contrast_mode = "compound_schema_repetition"
+            expected_dimensions = [
+                "duplicate_known_slot",
+                "repeated_event",
+                "repeated_dependency",
+            ]
+        if (
+            preference_contrast_mode != expected_contrast_mode
+            or compound_dimensions != expected_dimensions
+        ):
+            raise ValueError(
+                "Fleet native orchestration preference has invalid core "
+                "contrast metadata"
+            )
+        resolved["preferenceContrastMode"] = preference_contrast_mode
+        resolved["compoundPreferenceDimensions"] = list(compound_dimensions)
+    elif preference_contrast_mode is not None or compound_dimensions is not None:
+        raise ValueError(
+            "Fleet native orchestration non-core preference has core contrast "
+            "metadata"
         )
     if resolved["trainingMatrixVariant"] != "behavior-conditioned":
         return resolved
@@ -5985,7 +6358,7 @@ def _fleet_boundary_tools(
 def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
     tasks = {
         "cortex": (
-            "Assign a fresh user intent to the peer that owns planning and persisted action routing.",
+            "Assign a fresh user intent to its manifested planning owner without inventing a peer or shadow slot.",
             "Choose the manifested destination for converting user intent into a grounded execution plan.",
             "Route pre-execution planning to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for intent planning.",
@@ -6001,7 +6374,7 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Delegate pre-tool orchestration to the fleet member that persists required actions.",
         ),
         "executor": (
-            "Assign an approved action to the peer that emits strict manifest-valid tool JSON.",
+            "Assign an approved action to its manifested strict-JSON owner without inventing a peer or shadow slot.",
             "Choose the manifested destination for exact tool arguments and approval enforcement.",
             "Route concrete tool-call construction to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for executable tool JSON.",
@@ -6017,7 +6390,7 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Route final tool-schema enforcement to the declared execution component.",
         ),
         "mouth": (
-            "Assign trusted tool observations to the peer that writes the final user-facing response.",
+            "Assign trusted observations to their manifested response owner without inventing a peer or shadow slot.",
             "Choose the manifested destination for concise grounded response text.",
             "Route post-execution communication to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for grounded final wording.",
@@ -6033,7 +6406,7 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Route the final evidence-backed response to the declared presentation owner.",
         ),
         "mimicry": (
-            "Assign fact-preserving tone adaptation to the peer that owns user style constraints.",
+            "Tone-only rewriting that must preserve every supplied fact belongs to which declared Fleet component?",
             "Choose the manifested destination for rewriting style without content drift.",
             "Route response-style analysis to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for fact-preserving style.",
@@ -6049,7 +6422,7 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Route user-style alignment to the declared fact-preserving rewrite component.",
         ),
         "rem": (
-            "Assign a repeated runtime failure to the peer that owns diagnosis and regression repair.",
+            "Assign a repeated runtime failure to its manifested repair owner without inventing a peer or shadow slot.",
             "Choose the manifested destination for memory policy and training-record repair.",
             "Route post-run failure analysis to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for regression diagnosis.",
@@ -6065,7 +6438,7 @@ def _fleet_delegation_tasks() -> dict[str, tuple[str, ...]]:
             "Route idle-time self-audit work to the declared reflection component.",
         ),
         "embedding": (
-            "Assign semantic vector generation to the manifested embedding destination.",
+            "Select the declared vector encoder for dense index construction; the destination must be one of the known Fleet slots.",
             "Choose the runtime slot that owns vector representations for memory retrieval.",
             "Route embedding computation to its canonical runtime slot.",
             "Select the runtime identifier for the peer responsible for semantic vectors.",
@@ -13673,6 +14046,25 @@ def _ultra_specific_dpo_pairs(manifest: AgentBehaviorManifest, known_tools: set[
     }
 
 
+def _compound_fleet_short_contract_rejection(
+    content: str,
+    *,
+    task_type: str,
+) -> str:
+    """Add a bounded repeated slot to an already incorrect strict-JSON choice."""
+
+    if task_type not in FLEET_BALANCED_CONTRACT_TASK_TYPES:
+        raise ValueError("Unknown Fleet short-contract task type")
+    payload = _strict_json_loads(content)
+    if not isinstance(payload, dict):
+        raise ValueError("Fleet short-contract rejection is not a JSON object")
+    known_slots = payload.get("knownSlots")
+    if not isinstance(known_slots, list) or not known_slots:
+        raise ValueError("Fleet short-contract rejection lacks known slots")
+    known_slots.append(str(known_slots[0]))
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
 def _balanced_fleet_contract_dpo_pairs(
     manifest: AgentBehaviorManifest,
 ) -> list[dict[str, Any]]:
@@ -13725,6 +14117,7 @@ def _balanced_fleet_contract_dpo_pairs(
             )
             pair["metadata"]["contrastMode"] = "balanced_rotation"
             pairs.append(pair)
+            independent_rejected_slots = {rejected_slot}
 
             # The failed frozen SFT and DPO adapters both collapsed semantic
             # vector and strict-tool requests to Mimicry. Give each of the
@@ -13789,6 +14182,52 @@ def _balanced_fleet_contract_dpo_pairs(
                 )
                 hard_pair["metadata"]["contrastMode"] = contrast_mode
                 pairs.append(hard_pair)
+                independent_rejected_slots.add(hard_negative_slot)
+
+            # Four fresh train prompts per owner receive a second manifested
+            # wrong-owner contrast. This balanced semantic lane keeps the nine
+            # native graph families below their deny-by-default DPO share cap
+            # while strengthening exact owner discrimination for every peer,
+            # including the embedding route that failed Canary30.
+            if required_split == "train" and prompt_index < 4:
+                secondary_candidates = [
+                    slot_id
+                    for slot_id in slot_ids
+                    if slot_id != target_slot_id
+                    and slot_id not in independent_rejected_slots
+                ]
+                if not secondary_candidates:
+                    raise ValueError(
+                        "Fleet balanced secondary contrast lacks an independent "
+                        "manifested owner"
+                    )
+                secondary_slot = secondary_candidates[
+                    prompt_index % len(secondary_candidates)
+                ]
+                secondary_pair = _dpo(
+                    "fleet",
+                    prompt,
+                    chosen,
+                    json.dumps(
+                        {
+                            "delegateTo": secondary_slot,
+                            "knownSlots": slot_ids,
+                            "reason": FLEET_DELEGATION_REASON,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    "fleet_contract_delegation",
+                    (
+                        "chosen preserves the exact manifested owner; rejected "
+                        "uses a second independent manifested semantic owner"
+                    ),
+                    required_split="train",
+                )
+                secondary_pair["metadata"]["contrastMode"] = (
+                    "balanced_secondary_semantic_contrast"
+                )
+                pairs.append(secondary_pair)
 
     mouth_slot_id = slot_ids_by_agent.get("mouth")
     if mouth_slot_id is not None:
@@ -13950,7 +14389,110 @@ def _balanced_fleet_contract_dpo_pairs(
                     required_split=required_split,
                 )
             )
+    def retry_candidate_identity(
+        pair: dict[str, Any],
+    ) -> tuple[tuple[str, str], tuple[str, str, str]] | None:
+        metadata = (
+            pair.get("metadata")
+            if isinstance(pair.get("metadata"), dict)
+            else {}
+        )
+        task_type = str(metadata.get("taskType") or "")
+        if (
+            metadata.get("requiredSplit") != "train"
+            or task_type not in FLEET_BALANCED_CONTRACT_TASK_TYPES
+        ):
+            return None
+        prompt = pair.get("prompt")
+        if not isinstance(prompt, list):
+            raise ValueError("Balanced Fleet preference lacks a prompt")
+        user_message = next(
+            (
+                message
+                for message in reversed(prompt)
+                if isinstance(message, dict)
+                and message.get("role") == "user"
+                and isinstance(message.get("content"), str)
+            ),
+            None,
+        )
+        if not isinstance(user_message, dict):
+            raise ValueError("Balanced Fleet preference lacks a user prompt")
+        coverage_scope = "contract_family"
+        if task_type == "fleet_contract_delegation":
+            chosen = pair.get("chosen")
+            chosen_content = (
+                chosen.get("content") if isinstance(chosen, dict) else None
+            )
+            payload = (
+                _strict_json_loads(chosen_content)
+                if isinstance(chosen_content, str)
+                else None
+            )
+            delegate_to = (
+                payload.get("delegateTo") if isinstance(payload, dict) else None
+            )
+            if not isinstance(delegate_to, str) or delegate_to not in slot_ids:
+                raise ValueError(
+                    "Balanced Fleet delegation retry lacks a manifested owner"
+                )
+            coverage_scope = delegate_to
+        scope = (task_type, coverage_scope)
+        group = (
+            task_type,
+            coverage_scope,
+            str(user_message["content"]),
+        )
+        return scope, group
+
+    # Select the second train prompt group per delegation owner, plus the first
+    # group for each non-delegation contract family. First owner surfaces are
+    # intentionally canonical and may be removed by short-window contamination
+    # controls; using the next balanced paraphrase keeps that filter intact and
+    # preserves owner-symmetric retry coverage after finalization.
+    # If a prompt has multiple independent rejected alternatives, every row in
+    # that group receives the same retry shape so DPO/SFT prompt parity cannot
+    # split.
+    retry_groups_by_scope: dict[
+        tuple[str, str], list[tuple[str, str, str]]
+    ] = {}
     for pair in pairs:
+        candidate = retry_candidate_identity(pair)
+        if candidate is None:
+            continue
+        scope, group = candidate
+        groups = retry_groups_by_scope.setdefault(scope, [])
+        if group not in groups:
+            groups.append(group)
+    selected_retry_group_by_scope = {
+        scope: groups[
+            1
+            if scope[0] == "fleet_contract_delegation" and len(groups) > 1
+            else 0
+        ]
+        for scope, groups in retry_groups_by_scope.items()
+    }
+    expected_retry_scopes = {
+        (
+            "fleet_contract_delegation",
+            slot_ids_by_agent[owner],
+        )
+        for owner in manifested_agents
+    } | {
+        ("fleet_contract_known_slots", "contract_family"),
+        ("fleet_contract_tool_boundary", "contract_family"),
+    }
+    if set(selected_retry_group_by_scope) != expected_retry_scopes:
+        raise ValueError(
+            "Balanced Fleet preferences lack retry candidates for every owner "
+            "and contract family: "
+            f"observed={sorted(selected_retry_group_by_scope)}"
+        )
+
+    retry_shaped_scopes: set[tuple[str, str]] = set()
+    retry_shaped_groups: set[tuple[str, str, str]] = set()
+    for pair in pairs:
+        retry_candidate = retry_candidate_identity(pair)
         _bind_structured_output_instruction(pair, messages_key="prompt")
         prompt = pair["prompt"]
         metadata = pair["metadata"]
@@ -13970,6 +14512,49 @@ def _balanced_fleet_contract_dpo_pairs(
         user_message["content"] = _fleet_prompt_with_short_contract(
             user_message["content"],
             metadata,
+        )
+        task_type = str(metadata.get("taskType") or "")
+        if (
+            retry_candidate is not None
+            and selected_retry_group_by_scope[retry_candidate[0]]
+            == retry_candidate[1]
+        ):
+            rejected = pair.get("rejected")
+            if not isinstance(rejected, dict) or not isinstance(
+                rejected.get("content"),
+                str,
+            ):
+                raise ValueError(
+                    "Balanced Fleet retry contrast lacks a rejected completion"
+                )
+            rejected["content"] = _compound_fleet_short_contract_rejection(
+                rejected["content"],
+                task_type=task_type,
+            )
+            user_message["content"] += (
+                "\n\n" + generic_strict_json_retry_instruction("invalid_json")
+            )
+            metadata["generationPromptMode"] = "strict_json_retry"
+            metadata["retryFailureCode"] = "invalid_json"
+            metadata["retryContrastMode"] = (
+                "strict_retry_compound_repetition"
+            )
+            metadata["compoundPreferenceDimensions"] = [
+                "incorrect_contract_value",
+                "duplicate_known_slot",
+            ]
+            metadata["retryCoverageScope"] = retry_candidate[0][1]
+            retry_shaped_scopes.add(retry_candidate[0])
+            retry_shaped_groups.add(retry_candidate[1])
+        else:
+            metadata["generationPromptMode"] = "initial_generation"
+    if retry_shaped_scopes != expected_retry_scopes or len(
+        retry_shaped_groups
+    ) != len(expected_retry_scopes):
+        raise ValueError(
+            "Balanced Fleet preferences lack one retry-shaped prompt group per "
+            "manifested owner and contract family: "
+            f"observed={sorted(retry_shaped_scopes)}"
         )
     return pairs
 
@@ -15366,6 +15951,13 @@ def _agent_unsloth_config(
             "selectedEpochs"
         ],
         "dpo_beta": 0.1,
+        # Canary30's Fleet DPO checkpoint preserved the SFT semantic score but
+        # regressed strict-JSON generation from zero terminal failures to three.
+        # TRL's RPO term adds chosen-completion NLL regularization, keeping the
+        # canonical complete response likely while the preference margin is
+        # learned. Other roles retain ordinary DPO and avoid the extra chosen-
+        # logit NLL computation through an explicit null.
+        "dpo_rpo_alpha": 1.0 if agent == "fleet" else None,
         # DPO only needs vocabulary logits for the chosen/rejected completion
         # tokens. Keeping prompt logits materializes a multi-gigabyte tensor on
         # the supported 8 GB Ubuntu training host without changing the loss.
@@ -15595,14 +16187,17 @@ def _has_short_evaluation_user_window_overlap(
         for segment in heldout_segments
     ]
     for candidate in training_windows:
-        if not candidate:
+        if len(candidate) < SHORT_WINDOW_MIN_DISTINCT_SHINGLES:
             continue
         for heldout in heldout_windows:
-            if not heldout:
+            if len(heldout) < SHORT_WINDOW_MIN_DISTINCT_SHINGLES:
+                continue
+            intersection_count = len(candidate & heldout)
+            if intersection_count < SHORT_WINDOW_MIN_DISTINCT_SHINGLES:
                 continue
             smaller_count = min(len(candidate), len(heldout))
-            overlap = len(candidate & heldout) / smaller_count
-            if overlap >= DEFAULT_NEAR_DUPLICATE_THRESHOLD:
+            overlap = intersection_count / smaller_count
+            if overlap >= SHORT_WINDOW_COVERAGE_THRESHOLD:
                 return True
     return False
 
@@ -16985,7 +17580,9 @@ def _bound_fleet_native_sft_source_proxy_share(
     if native_tokens * denominator > total_tokens * maximum:
         raise ValueError(
             "Fleet native SFT source-proxy share exceeds its safety maximum; "
-            "the internal behavioral curriculum needs more non-native signal"
+            "the internal behavioral curriculum needs more non-native signal: "
+            f"native={native_tokens} total={total_tokens} "
+            f"maximumBasisPoints={maximum} denominator={denominator}"
         )
     if not public:
         raise ValueError(
@@ -17464,6 +18061,7 @@ def _build_experiment_variants(
     evaluation_records: list[dict[str, Any]],
     training_config: dict[str, Any],
     dataset_config: FineTuningDatasetConfig,
+    manifest: AgentBehaviorManifest | None = None,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     requested_public_loss_share = _requested_public_corpus_loss_share(
         dataset_config
@@ -17546,6 +18144,10 @@ def _build_experiment_variants(
         lanes = dict(lanes_by_variant[variant])
         validation_sampling_policy: dict[str, Any] | None = None
         if agent == "fleet":
+            if manifest is None:
+                raise ValueError(
+                    "Fleet experiment variants require the behavior manifest"
+                )
             prefer_public_quality = variant != "internal_plus_public_baseline"
             lane_public_group_limits = (
                 {lane: 0 for lane in available_lanes}
@@ -17583,6 +18185,11 @@ def _build_experiment_variants(
                 val_sft=lanes["val_sft"],
                 train_dpo=lanes["train_dpo"],
                 val_dpo=lanes["val_dpo"],
+            )
+            _assert_fleet_balanced_retry_training_coverage(
+                lanes["train_sft"],
+                lanes["train_dpo"],
+                manifest=manifest,
             )
         lanes_by_variant[variant] = lanes
         training_records = [

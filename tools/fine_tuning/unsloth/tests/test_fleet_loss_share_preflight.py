@@ -1583,6 +1583,7 @@ def test_bound_preflight_verifier_checks_config_dataset_and_training_code(
         "dpo_learning_rate": 5e-6,
         "dpo_num_train_epochs": 1.0,
         "dpo_beta": 0.1,
+        "dpo_rpo_alpha": 1.0,
         "gradient_checkpointing": True,
         "use_logits_to_keep": True,
         "precompute_ref_log_probs": True,

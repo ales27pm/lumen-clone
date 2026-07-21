@@ -24,6 +24,9 @@ from lumen_manifest_crawler.dataset.optimization_policy import (
     VARIANT_SPECIFIC_TRAINING_CONFIG_FIELDS,
     invariant_training_config as _normalized_invariant_training_config,
 )
+from lumen_manifest_crawler.dataset.chat_template_contract import (
+    generic_strict_json_retry_instruction,
+)
 
 
 EVALUATION_SCHEMA_VERSION = "lumen.adapter-eval/1.1.0"
@@ -192,30 +195,68 @@ def _fleet_prompt_with_short_contract(
     user: str,
     metadata: Mapping[str, Any],
 ) -> str:
-    """Append the exact schema-only suffix once to a recognized Fleet prompt."""
+    """Append the exact schema-only suffix once to a recognized Fleet prompt.
+
+    A strict retry instruction is the terminal runtime suffix.  Preserve that
+    ordering while inserting the schema contract immediately before it; a
+    second materialization pass must remain byte-identical.
+    """
 
     suffix = _fleet_short_contract_prompt_suffix(metadata)
-    marker = f"\n\n{suffix}" if suffix is not None else None
-    if suffix is None or user == suffix or (
-        marker is not None and user.endswith(marker)
-    ):
+    if suffix is None:
         return user
-    return user.rstrip() + f"\n\n{suffix}"
+
+    def with_contract(value: str) -> str:
+        marker = f"\n\n{suffix}"
+        if value == suffix or value.endswith(marker):
+            return value
+        return value.rstrip() + marker
+
+    if metadata.get("generationPromptMode") != "strict_json_retry":
+        return with_contract(user)
+
+    retry_failure_code = metadata.get("retryFailureCode")
+    if not isinstance(retry_failure_code, str):
+        raise ValueError("Fleet strict-retry prompt lacks retryFailureCode")
+    retry_suffix = generic_strict_json_retry_instruction(retry_failure_code)
+    retry_marker = f"\n\n{retry_suffix}"
+    if not user.endswith(retry_marker):
+        raise ValueError(
+            "Fleet strict-retry metadata is not bound to the exact retry suffix"
+        )
+    base_prompt = user[: -len(retry_marker)].rstrip()
+    return with_contract(base_prompt) + retry_marker
 
 
 def _fleet_prompt_without_short_contract_suffix(
     user: str,
     metadata: Mapping[str, Any],
 ) -> str:
-    """Remove one exact compiler suffix for contamination comparison only."""
+    """Remove exact compiler-owned suffixes for contamination comparison only."""
+
+    normalized_user = user
+    if metadata.get("generationPromptMode") == "strict_json_retry":
+        retry_failure_code = metadata.get("retryFailureCode")
+        if not isinstance(retry_failure_code, str):
+            return user
+        try:
+            retry_suffix = generic_strict_json_retry_instruction(
+                retry_failure_code
+            )
+        except ValueError:
+            return user
+        retry_marker = f"\n\n{retry_suffix}"
+        if not normalized_user.endswith(retry_marker):
+            return user
+        normalized_user = normalized_user[: -len(retry_marker)].rstrip()
 
     suffix = _fleet_short_contract_prompt_suffix(metadata)
     marker = f"\n\n{suffix}" if suffix is not None else None
-    if user == suffix:
+    if normalized_user == suffix:
         return ""
-    if marker is None or not user.endswith(marker):
-        return user
-    return user[: -len(marker)].rstrip()
+    if marker is None or not normalized_user.endswith(marker):
+        return normalized_user
+    return normalized_user[: -len(marker)].rstrip()
 
 
 _MIMICRY_JSON_METRIC_TYPES = frozenset(

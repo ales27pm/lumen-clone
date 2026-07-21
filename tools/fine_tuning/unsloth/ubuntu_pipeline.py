@@ -10203,6 +10203,69 @@ def verify_sft(run_root: Path, agent: str) -> dict[str, Any]:
     }
 
 
+def _verified_rpo_chosen_nll_evidence(
+    preference_config: Mapping[str, Any],
+    training_report: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    from tools.fine_tuning.unsloth.train_dpo import (
+        _verified_rpo_evaluation_metrics,
+    )
+
+    evaluation_metrics = training_report.get("evaluation_metrics")
+    if not isinstance(evaluation_metrics, Mapping):
+        evaluation_metrics = {}
+    try:
+        return _verified_rpo_evaluation_metrics(
+            preference_config,
+            evaluation_metrics,
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "RPO preference training lacks finite eval_nll_loss evidence"
+        ) from exc
+
+
+def _verified_rpo_runtime_capability_evidence(
+    preference_config: Mapping[str, Any],
+    training_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.train_dpo import (
+        _valid_rpo_runtime_capability_evidence,
+    )
+
+    rpo_alpha = preference_config.get("rpoAlpha")
+    evidence = training_report.get("rpoRuntimeCapability")
+    if not _valid_rpo_runtime_capability_evidence(
+        evidence,
+        rpo_alpha=rpo_alpha,
+    ):
+        raise RuntimeError(
+            "Preference training lacks valid exact-runtime RPO capability "
+            "evidence"
+        )
+    return dict(evidence)
+
+
+def _verified_constructed_rpo_binding_evidence(
+    preference_config: Mapping[str, Any],
+    training_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    from tools.fine_tuning.unsloth.train_dpo import (
+        _valid_constructed_rpo_binding_evidence,
+    )
+
+    rpo_alpha = preference_config.get("rpoAlpha")
+    evidence = training_report.get("constructedRPOBinding")
+    if not _valid_constructed_rpo_binding_evidence(
+        evidence,
+        rpo_alpha=rpo_alpha,
+    ):
+        raise RuntimeError(
+            "Preference training lacks valid constructed RPO binding evidence"
+        )
+    return dict(evidence)
+
+
 def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
     from tools.fine_tuning.unsloth.adapter_artifact import verify_adapter_artifact
     from tools.fine_tuning.unsloth.train_dpo import (
@@ -10280,6 +10343,18 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
             "precision": precision,
         },
     )
+    rpo_nll_evidence = _verified_rpo_chosen_nll_evidence(
+        preference_config,
+        training_report,
+    )
+    rpo_runtime_capability = _verified_rpo_runtime_capability_evidence(
+        preference_config,
+        training_report,
+    )
+    constructed_rpo_binding = _verified_constructed_rpo_binding_evidence(
+        preference_config,
+        training_report,
+    )
     phase_runtime_evidence = _verify_phase_runtime_evidence(
         config=config,
         report=training_report,
@@ -10319,6 +10394,10 @@ def verify_preference(run_root: Path, agent: str) -> dict[str, Any]:
         "trainingReportFileSHA256": file_sha256(report_path),
         **phase_runtime_evidence,
         "trainingCompletion": training_report["trainingCompletion"],
+        "preferenceTrainingConfig": preference_config,
+        "rpoChosenNLLEvidence": rpo_nll_evidence,
+        "rpoRuntimeCapability": rpo_runtime_capability,
+        "constructedRPOBinding": constructed_rpo_binding,
         "precision": precision,
         "referenceLogProbEvidence": reference_log_prob_evidence,
         "tokenLengthPreflight": str(

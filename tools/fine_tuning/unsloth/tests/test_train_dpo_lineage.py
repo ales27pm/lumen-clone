@@ -8,6 +8,7 @@ import os
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -797,6 +798,7 @@ def test_pinned_trl_024_dpo_constructor_contract_is_fail_closed() -> None:
             self.inputs = (model, args, train_dataset, eval_dataset, processing_class)
 
     cfg = {
+        "agent": "fleet",
         "batch_size": 1,
         "gradient_accumulation_steps": 2,
         "learning_rate": 1e-5,
@@ -804,6 +806,7 @@ def test_pinned_trl_024_dpo_constructor_contract_is_fail_closed() -> None:
         "num_train_epochs": 1,
         "dpo_num_train_epochs": 0.5,
         "dpo_beta": 0.1,
+        "dpo_rpo_alpha": 1.0,
         "warmup_steps": 0,
         "max_seq_length": 512,
         "max_prompt_length": 384,
@@ -847,8 +850,18 @@ def test_pinned_trl_024_dpo_constructor_contract_is_fail_closed() -> None:
     assert dpo_args.kwargs["use_logits_to_keep"] is True
     assert dpo_args.kwargs["precompute_ref_log_probs"] is True
     assert dpo_args.kwargs["precompute_ref_batch_size"] == 1
+    assert dpo_args.kwargs["rpo_alpha"] == 1.0
     assert dpo_args.kwargs["gradient_checkpointing"] is True
     assert dpo_args.kwargs["torch_empty_cache_steps"] == 1
+
+    cfg["dpo_rpo_alpha"] = None
+    cfg["agent"] = "executor"
+    _, ordinary_dpo_args = train_dpo._build_preference_trainer(
+        cfg, preference_trainer="dpo", **common
+    )
+    assert ordinary_dpo_args.kwargs["rpo_alpha"] is None
+    cfg["dpo_rpo_alpha"] = 1.0
+    cfg["agent"] = "fleet"
 
     with pytest.raises(ValueError, match="drifted from the config"):
         train_dpo._build_preference_trainer(
@@ -882,10 +895,12 @@ def test_pinned_trl_024_dpo_constructor_contract_is_fail_closed() -> None:
 
 def _valid_preference_controls() -> dict[str, object]:
     return {
+        "agent": "executor",
         "preference_trainer": "dpo",
         "dpo_learning_rate": 5e-6,
         "dpo_num_train_epochs": 2,
         "dpo_beta": 0.1,
+        "dpo_rpo_alpha": None,
         "max_seq_length": 4096,
         "max_prompt_length": 2048,
         "batch_size": 2,
@@ -911,6 +926,11 @@ def _valid_preference_controls() -> dict[str, object]:
         ("dpo_num_train_epochs", "2", "dpo_num_train_epochs"),
         ("dpo_beta", None, "dpo_beta"),
         ("dpo_beta", -0.1, "dpo_beta"),
+        ("dpo_rpo_alpha", None, "dpo_rpo_alpha"),
+        ("dpo_rpo_alpha", True, "dpo_rpo_alpha"),
+        ("dpo_rpo_alpha", 0.0, "dpo_rpo_alpha"),
+        ("dpo_rpo_alpha", -0.1, "dpo_rpo_alpha"),
+        ("dpo_rpo_alpha", math.inf, "dpo_rpo_alpha"),
         ("max_prompt_length", 4096, "max_prompt_length"),
         ("max_prompt_length", 2048.0, "max_prompt_length"),
         ("bf16", True, "Exactly one"),
@@ -940,6 +960,7 @@ def test_preference_controls_resolve_explicit_fp16_without_sft_fallbacks() -> No
         "learningRate": 5e-6,
         "numTrainEpochs": 2.0,
         "beta": 0.1,
+        "rpoAlpha": None,
         "maxPromptLength": 2048,
         "gradientCheckpointing": True,
         "useLogitsToKeep": True,
@@ -954,6 +975,106 @@ def test_preference_controls_resolve_explicit_fp16_without_sft_fallbacks() -> No
     }
 
 
+@pytest.mark.parametrize(
+    ("agent", "rpo_alpha"),
+    (
+        ("fleet", None),
+        ("cortex", 1.0),
+        ("executor", 1.0),
+        ("mouth", 1.0),
+        ("mimicry", 1.0),
+        ("rem", 1.0),
+    ),
+)
+def test_preference_controls_bind_rpo_exactly_to_fleet(
+    agent: str,
+    rpo_alpha: float | None,
+) -> None:
+    config = _valid_preference_controls()
+    config["agent"] = agent
+    config["dpo_rpo_alpha"] = rpo_alpha
+
+    with pytest.raises(ValueError, match="exactly 1.0 for Fleet"):
+        train_dpo._validate_preference_training_config(config)
+
+    config["agent"] = "fleet"
+    config["dpo_rpo_alpha"] = 1.0
+    assert train_dpo._validate_preference_training_config(config)[
+        "rpoAlpha"
+    ] == 1.0
+
+
+def test_rpo_runtime_capability_evidence_is_hash_bound_when_not_applicable() -> None:
+    evidence = train_dpo._verify_rpo_runtime_capability(
+        dpo_config_class=object,
+        dpo_trainer_class=object,
+        rpo_alpha=None,
+    )
+    assert train_dpo._valid_rpo_runtime_capability_evidence(
+        evidence,
+        rpo_alpha=None,
+    )
+    tampered = {**evidence, "status": "verified"}
+    assert not train_dpo._valid_rpo_runtime_capability_evidence(
+        tampered,
+        rpo_alpha=None,
+    )
+
+
+def test_constructed_rpo_binding_and_finite_evaluation_are_fail_closed() -> None:
+    args = SimpleNamespace(rpo_alpha=1.0)
+    trainer = SimpleNamespace(args=args)
+    evidence = train_dpo._verify_constructed_rpo_binding(
+        trainer,
+        args,
+        rpo_alpha=1.0,
+    )
+    assert train_dpo._valid_constructed_rpo_binding_evidence(
+        evidence,
+        rpo_alpha=1.0,
+    )
+    assert train_dpo._verified_rpo_evaluation_metrics(
+        {"rpoAlpha": 1.0},
+        {"eval_nll_loss": 0.25},
+    ) == {
+        "rpoAlpha": 1.0,
+        "metric": "eval_nll_loss",
+        "value": 0.25,
+    }
+    assert train_dpo._verified_rpo_evaluation_metrics(
+        {"rpoAlpha": None},
+        {},
+    ) is None
+
+    for invalid in (None, True, 1, 0.5, float("inf")):
+        with pytest.raises(RuntimeError, match="retain the configured RPO alpha"):
+            train_dpo._verify_constructed_rpo_binding(
+                SimpleNamespace(args=SimpleNamespace(rpo_alpha=invalid)),
+                args,
+                rpo_alpha=1.0,
+            )
+        with pytest.raises(RuntimeError, match="retain the configured RPO alpha"):
+            train_dpo._verify_constructed_rpo_binding(
+                trainer,
+                SimpleNamespace(rpo_alpha=invalid),
+                rpo_alpha=1.0,
+            )
+
+    for invalid in (
+        None,
+        True,
+        "0.25",
+        -0.1,
+        float("nan"),
+        float("inf"),
+    ):
+        with pytest.raises(RuntimeError, match="finite eval_nll_loss"):
+            train_dpo._verified_rpo_evaluation_metrics(
+                {"rpoAlpha": 1.0},
+                {"eval_nll_loss": invalid},
+            )
+
+
 @pytest.mark.e2e
 def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
     trl = pytest.importorskip(
@@ -965,6 +1086,16 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
             f"Pinned constructor integration requires trl==0.24.0, found {trl.__version__}"
         )
 
+    capability = train_dpo._verify_rpo_runtime_capability(
+        dpo_config_class=trl.DPOConfig,
+        dpo_trainer_class=trl.DPOTrainer,
+        rpo_alpha=1.0,
+    )
+    assert train_dpo._valid_rpo_runtime_capability_evidence(
+        capability,
+        rpo_alpha=1.0,
+    )
+
     class DPOConstructorBinding:
         def __init__(self, **kwargs: object) -> None:
             inspect.signature(trl.DPOTrainer.__init__).bind(object(), **kwargs)
@@ -974,6 +1105,7 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
             inspect.signature(trl.ORPOTrainer.__init__).bind(object(), **kwargs)
 
     cfg = {
+        "agent": "fleet",
         "batch_size": 1,
         "gradient_accumulation_steps": 2,
         "learning_rate": 1e-5,
@@ -981,6 +1113,7 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
         "num_train_epochs": 1,
         "dpo_num_train_epochs": 0.5,
         "dpo_beta": 0.1,
+        "dpo_rpo_alpha": 1.0,
         "warmup_steps": 0,
         "max_seq_length": 512,
         "max_prompt_length": 384,
@@ -1016,9 +1149,19 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
     assert dpo_args.use_logits_to_keep is True
     assert dpo_args.precompute_ref_log_probs is True
     assert dpo_args.precompute_ref_batch_size == 1
+    assert dpo_args.rpo_alpha == 1.0
     assert dpo_args.gradient_checkpointing is True
     assert dpo_args.torch_empty_cache_steps == 1
     assert dpo_args.seed == dpo_args.data_seed == 42
+
+    cfg["dpo_rpo_alpha"] = None
+    cfg["agent"] = "executor"
+    _, ordinary_dpo_args = train_dpo._build_preference_trainer(
+        cfg,
+        preference_trainer="dpo",
+        **common,
+    )
+    assert ordinary_dpo_args.rpo_alpha is None
 
 
 def test_reference_logps_precompute_before_checkpoint_graph_initialization() -> None:
