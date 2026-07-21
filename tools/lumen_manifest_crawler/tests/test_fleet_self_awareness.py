@@ -522,7 +522,7 @@ def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
             } == {"normalization-policy-audited"}
 
 
-def test_compiled_fleet_has_one_policy_vocabulary_anchor_per_core_behavior(
+def test_compiled_fleet_has_three_policy_anchors_per_core_behavior(
     production_fleet_compilation,
 ) -> None:
     _, _, _, compiled = production_fleet_compilation
@@ -530,6 +530,11 @@ def test_compiled_fleet_has_one_policy_vocabulary_anchor_per_core_behavior(
     expected_behaviors = set(
         fine_tuning_module.FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
     )
+    expected_anchor_kinds = {
+        "graph_contract",
+        "topology_identity",
+        "vocabulary_repair",
+    }
 
     for records in (
         fleet.train_sft,
@@ -544,7 +549,9 @@ def test_compiled_fleet_has_one_policy_vocabulary_anchor_per_core_behavior(
             if record["metadata"].get("taskType")
             == fine_tuning_module.FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE
         ]
-        assert len(anchors) == len(expected_behaviors)
+        assert len(anchors) == len(expected_behaviors) * len(
+            expected_anchor_kinds
+        )
         core_graphs = {
             record["metadata"]["behaviorClass"]: json.loads(
                 record["messages"][-1]["content"]
@@ -555,9 +562,13 @@ def test_compiled_fleet_has_one_policy_vocabulary_anchor_per_core_behavior(
             and record["metadata"].get("trainingMatrixVariant") == "core"
         }
         assert set(core_graphs) == expected_behaviors
-        assert {
+        assert Counter(
             anchor["metadata"]["behaviorClass"] for anchor in anchors
-        } == expected_behaviors
+        ) == Counter({behavior: 3 for behavior in expected_behaviors})
+        assert {
+            anchor["metadata"]["policyVocabularyAnchorKind"]
+            for anchor in anchors
+        } == expected_anchor_kinds
 
         for anchor in anchors:
             metadata = anchor["metadata"]
@@ -568,15 +579,16 @@ def test_compiled_fleet_has_one_policy_vocabulary_anchor_per_core_behavior(
                 event["id"]: index
                 for index, event in enumerate(graph["events"], start=1)
             }
-
-            assert metadata["requiredSplit"] == "train"
-            assert metadata["policyVocabularyAnchor"] is True
-            assert metadata["derivedCoreGraphCount"] == 1
-            assert metadata["derivedBehaviorClasses"] == [behavior]
-            assert metadata["policyVocabularySHA256"] == canonical_sha256(
-                target
-            )
-            assert target == {
+            dependency_orders = [
+                {
+                    "fromOrder": event_order_by_id[
+                        dependency["fromEventID"]
+                    ],
+                    "toOrder": event_order_by_id[dependency["toEventID"]],
+                }
+                for dependency in graph["dependencies"]
+            ]
+            graph_contract = {
                 "behaviorClass": behavior,
                 "graphTopLevelKeys": list(graph),
                 "decisionKeys": list(graph["decision"]),
@@ -596,19 +608,80 @@ def test_compiled_fleet_has_one_policy_vocabulary_anchor_per_core_behavior(
                     }
                     for event in graph["events"]
                 ],
-                "dependencyOrders": [
-                    {
-                        "fromOrder": event_order_by_id[
-                            dependency["fromEventID"]
-                        ],
-                        "toOrder": event_order_by_id[
-                            dependency["toEventID"]
-                        ],
-                    }
-                    for dependency in graph["dependencies"]
-                ],
+                "dependencyOrders": dependency_orders,
                 "decisionContract": graph["decision"],
             }
+            seen_event_types = set()
+            event_type_repairs = []
+            for event in graph["events"]:
+                if event["type"] in seen_event_types:
+                    continue
+                seen_event_types.add(event["type"])
+                event_type_repairs.append(
+                    {
+                        "rejectAlias": (
+                            fleet_artifact_module._natural_noncanonical_event_type_alias(
+                                graph,
+                                event,
+                            )
+                        ),
+                        "useCanonicalType": event["type"],
+                    }
+                )
+            terminal_rejection = (
+                fleet_artifact_module._terminal_decision_rejection(graph)
+            )
+            vocabulary_repair = {
+                "behaviorClass": behavior,
+                "eventTypeRepairs": event_type_repairs,
+                "terminalDecisionRepair": {
+                    "rejectStrategy": terminal_rejection["decision"][
+                        "strategy"
+                    ],
+                    "useStrategy": graph["decision"]["strategy"],
+                    "rejectStopReason": terminal_rejection["decision"][
+                        "stopReason"
+                    ],
+                    "useStopReason": graph["decision"]["stopReason"],
+                },
+            }
+            topology_identity = {
+                "behaviorClass": behavior,
+                "scenarioIdentitySource": "supplied_scenario_id",
+                "eventIdentity": {
+                    "namespaceKey": "scenarioID",
+                    "separator": "::event::",
+                    "orderEncoding": "two_digit_one_based",
+                },
+                "eventTypeSequence": [
+                    event["type"] for event in graph["events"]
+                ],
+                "dependencyOrders": [
+                    {
+                        "fromOrder": dependency["fromOrder"],
+                        "kind": "requires",
+                        "toOrder": dependency["toOrder"],
+                    }
+                    for dependency in dependency_orders
+                ],
+                "terminalEventOrder": len(graph["events"]),
+            }
+            expected_targets = {
+                "graph_contract": graph_contract,
+                "topology_identity": topology_identity,
+                "vocabulary_repair": vocabulary_repair,
+            }
+
+            assert metadata["requiredSplit"] == "train"
+            assert metadata["policyVocabularyAnchor"] is True
+            assert metadata["derivedCoreGraphCount"] == 1
+            assert metadata["derivedBehaviorClasses"] == [behavior]
+            assert metadata["policyVocabularySHA256"] == canonical_sha256(
+                target
+            )
+            assert target == expected_targets[
+                metadata["policyVocabularyAnchorKind"]
+            ]
             assert fine_tuning_module._fleet_source_role(anchor) == (
                 fine_tuning_module.FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY
             )
