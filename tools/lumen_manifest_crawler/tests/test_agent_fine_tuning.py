@@ -10033,7 +10033,7 @@ def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
         "mouth": 0.000005,
         "mimicry": 0.000005,
         "rem": 0.000005,
-        "fleet": 0.000005,
+        "fleet": 0.000001,
     }
     expected_dpo_rpo_alphas = {
         agent: (1.0 if agent == "fleet" else None)

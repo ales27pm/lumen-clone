@@ -522,7 +522,7 @@ def test_compiled_fleet_native_matrices_are_optimizer_visible_per_behavior(
             } == {"normalization-policy-audited"}
 
 
-def test_compiled_fleet_has_three_policy_anchors_per_core_behavior(
+def test_compiled_fleet_has_two_positive_policy_anchors_per_core_behavior(
     production_fleet_compilation,
 ) -> None:
     _, _, _, compiled = production_fleet_compilation
@@ -533,7 +533,6 @@ def test_compiled_fleet_has_three_policy_anchors_per_core_behavior(
     expected_anchor_kinds = {
         "graph_contract",
         "topology_identity",
-        "vocabulary_repair",
     }
 
     for records in (
@@ -564,7 +563,7 @@ def test_compiled_fleet_has_three_policy_anchors_per_core_behavior(
         assert set(core_graphs) == expected_behaviors
         assert Counter(
             anchor["metadata"]["behaviorClass"] for anchor in anchors
-        ) == Counter({behavior: 3 for behavior in expected_behaviors})
+        ) == Counter({behavior: 2 for behavior in expected_behaviors})
         assert {
             anchor["metadata"]["policyVocabularyAnchorKind"]
             for anchor in anchors
@@ -611,40 +610,9 @@ def test_compiled_fleet_has_three_policy_anchors_per_core_behavior(
                 "dependencyOrders": dependency_orders,
                 "decisionContract": graph["decision"],
             }
-            seen_event_types = set()
-            event_type_repairs = []
-            for event in graph["events"]:
-                if event["type"] in seen_event_types:
-                    continue
-                seen_event_types.add(event["type"])
-                event_type_repairs.append(
-                    {
-                        "rejectAlias": (
-                            fleet_artifact_module._natural_noncanonical_event_type_alias(
-                                graph,
-                                event,
-                            )
-                        ),
-                        "useCanonicalType": event["type"],
-                    }
-                )
             terminal_rejection = (
                 fleet_artifact_module._terminal_decision_rejection(graph)
             )
-            vocabulary_repair = {
-                "behaviorClass": behavior,
-                "eventTypeRepairs": event_type_repairs,
-                "terminalDecisionRepair": {
-                    "rejectStrategy": terminal_rejection["decision"][
-                        "strategy"
-                    ],
-                    "useStrategy": graph["decision"]["strategy"],
-                    "rejectStopReason": terminal_rejection["decision"][
-                        "stopReason"
-                    ],
-                    "useStopReason": graph["decision"]["stopReason"],
-                },
-            }
             topology_identity = {
                 "behaviorClass": behavior,
                 "scenarioIdentitySource": "supplied_scenario_id",
@@ -669,8 +637,34 @@ def test_compiled_fleet_has_three_policy_anchors_per_core_behavior(
             expected_targets = {
                 "graph_contract": graph_contract,
                 "topology_identity": topology_identity,
-                "vocabulary_repair": vocabulary_repair,
             }
+
+            def string_values(value):
+                if isinstance(value, dict):
+                    return {
+                        item
+                        for nested in value.values()
+                        for item in string_values(nested)
+                    }
+                if isinstance(value, list):
+                    return {
+                        item
+                        for nested in value
+                        for item in string_values(nested)
+                    }
+                return {value} if isinstance(value, str) else set()
+
+            rejected_values = {
+                fleet_artifact_module._natural_noncanonical_event_type_alias(
+                    graph,
+                    event,
+                )
+                for event in graph["events"]
+            } | {
+                terminal_rejection["decision"]["strategy"],
+                terminal_rejection["decision"]["stopReason"],
+            }
+            assert string_values(target).isdisjoint(rejected_values)
 
             assert metadata["requiredSplit"] == "train"
             assert metadata["policyVocabularyAnchor"] is True
@@ -1094,7 +1088,7 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
             "strategy_mismatch",
         ),
         "event_type_vocabulary": (
-            "$.events[1].type",
+            None,
             "event_type_schema_unknown",
         ),
         "event_completeness_contract": (
@@ -1106,7 +1100,7 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
             "event_sequence_mismatch",
         ),
         "event_id_grammar": (
-            "$.events[0].id",
+            None,
             "event_id_grammar_mismatch",
         ),
         "dependency_endpoint_reference": (
@@ -1114,7 +1108,7 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
             "dependency_set_mismatch",
         ),
         "event_payload_schema": (
-            "$.events[1]",
+            None,
             "event_schema_invalid",
         ),
         "delegated_slot_contract": (
@@ -1160,6 +1154,9 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
     mutations_by_behavior = defaultdict(set)
     completeness_modes = set()
     event_type_aliases = []
+    payload_key_aliases = []
+    payload_omission_count = 0
+    event_id_modes = set()
     for record in atomic_records:
         mutations_by_behavior[record["metadata"]["behaviorClass"]].add(
             record["metadata"]["atomicPreferenceMutation"]
@@ -1207,6 +1204,20 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
             assert all(path.startswith("$.events[") for path in differences)
         elif expected_kind == "event_id_grammar":
             assert differences
+        elif expected_kind == "event_type_vocabulary":
+            event_index, _, _ = (
+                fleet_artifact_module._event_type_vocabulary_rejection_target(
+                    chosen
+                )
+            )
+            assert differences == [f"$.events[{event_index}].type"]
+        elif expected_kind == "event_payload_schema":
+            event_index, _, _ = (
+                fleet_artifact_module._event_payload_schema_rejection_target(
+                    chosen
+                )
+            )
+            assert differences == [f"$.events[{event_index}]"]
         elif expected_kind == "delegated_slot_contract":
             assert tuple(differences) in {
                 ("$.decision.delegatedSlotIDs",),
@@ -1235,13 +1246,16 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
                 "decision"
             ]["aggregationOwnerSlotID"]
         elif expected_kind == "event_type_vocabulary":
-            alias = rejected["events"][1]["type"]
-            assert alias == fleet_artifact_module._natural_noncanonical_event_type_alias(
-                chosen,
-                chosen["events"][1],
+            event_index, canonical_event_type, expected_alias = (
+                fleet_artifact_module._event_type_vocabulary_rejection_target(
+                    chosen
+                )
             )
-            assert alias != chosen["events"][1]["type"]
-            event_type_aliases.append((chosen["events"][1]["type"], alias))
+            alias = rejected["events"][event_index]["type"]
+            assert chosen["events"][event_index]["type"] == canonical_event_type
+            assert alias == expected_alias
+            assert alias != canonical_event_type
+            event_type_aliases.append((canonical_event_type, alias))
         elif expected_kind == "event_completeness_contract":
             expected_rejection = (
                 fleet_artifact_module._atomic_event_completeness_rejection(
@@ -1269,15 +1283,22 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
                 chosen["events"][first]["type"]
             )
         elif expected_kind == "event_id_grammar":
-            assert rejected["events"][0]["id"] == (
-                f"{event_id_fact}::event::01"
+            mode = fleet_artifact_module._event_id_grammar_contrast_mode(
+                chosen
             )
-            assert not rejected["events"][0]["id"].startswith(
-                f"{chosen['scenarioID']}::event::"
+            event_id_modes.add(mode)
+            assert rejected == (
+                fleet_artifact_module._event_id_grammar_rejection(
+                    chosen,
+                    event_id_fact=event_id_fact,
+                )
             )
-            assert fleet_artifact_module._orchestration_topology_contract(
-                rejected
-            ) == fleet_artifact_module._orchestration_topology_contract(chosen)
+            if mode not in {"duplicate_identity", "missing_identity"}:
+                assert fleet_artifact_module._orchestration_topology_contract(
+                    rejected
+                ) == fleet_artifact_module._orchestration_topology_contract(
+                    chosen
+                )
         elif expected_kind == "dependency_endpoint_reference":
             assert rejected["dependencies"][-1]["toEventID"] != (
                 chosen["dependencies"][-1]["toEventID"]
@@ -1289,7 +1310,26 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
                 chosen["events"][0]["id"]
             )
         elif expected_kind == "event_payload_schema":
-            assert set(rejected["events"][1]) < set(chosen["events"][1])
+            event_index, required_key, alias_key = (
+                fleet_artifact_module._event_payload_schema_rejection_target(
+                    chosen
+                )
+            )
+            chosen_event = chosen["events"][event_index]
+            rejected_event = rejected["events"][event_index]
+            assert required_key in chosen_event
+            assert required_key not in rejected_event
+            if alias_key is None:
+                payload_omission_count += 1
+                assert set(rejected_event) < set(chosen_event)
+            else:
+                payload_key_aliases.append((required_key, alias_key))
+                assert alias_key not in chosen_event
+                assert rejected_event[alias_key] == chosen_event[required_key]
+                assert set(chosen_event) - set(rejected_event) == {
+                    required_key
+                }
+                assert set(rejected_event) - set(chosen_event) == {alias_key}
         else:
             assert "invented_shadow_slot" in rejected["decision"][
                 "delegatedSlotIDs"
@@ -1304,24 +1344,25 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
             positions = {
                 event_id: index for index, event_id in enumerate(event_ids)
             }
-            expected_ids = [
-                f"{rejected['scenarioID']}::event::{index:02d}"
-                for index in range(1, len(event_ids) + 1)
-            ]
-            if expected_kind == "event_id_grammar":
-                assert event_ids[0] == f"{event_id_fact}::event::01"
-                assert event_ids[1:] == expected_ids[1:]
-            else:
+            if expected_kind != "event_id_grammar":
+                expected_ids = [
+                    f"{rejected['scenarioID']}::event::{index:02d}"
+                    for index in range(1, len(event_ids) + 1)
+                ]
                 assert event_ids == expected_ids
-            assert len(event_ids) == len(set(event_ids))
-            assert all(
-                dependency["kind"] == "requires"
-                and dependency["fromEventID"] in positions
-                and dependency["toEventID"] in positions
-                and positions[dependency["fromEventID"]]
-                < positions[dependency["toEventID"]]
-                for dependency in rejected["dependencies"]
-            )
+            if expected_kind != "event_id_grammar" or (
+                fleet_artifact_module._event_id_grammar_contrast_mode(chosen)
+                not in {"duplicate_identity", "missing_identity"}
+            ):
+                assert len(event_ids) == len(set(event_ids))
+                assert all(
+                    dependency["kind"] == "requires"
+                    and dependency["fromEventID"] in positions
+                    and dependency["toEventID"] in positions
+                    and positions[dependency["fromEventID"]]
+                    < positions[dependency["toEventID"]]
+                    for dependency in rejected["dependencies"]
+                )
 
         behavior_class = metadata["behaviorClass"]
         graph = scenario["graph"]
@@ -1363,6 +1404,12 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
         chosen_result = _score_orchestration_graph(metric, chosen)
         rejected_result = _score_orchestration_graph(metric, rejected)
 
+        if expected_kind == "event_id_grammar" and (
+            fleet_artifact_module._event_id_grammar_contrast_mode(chosen)
+            in {"duplicate_identity", "missing_identity"}
+        ):
+            rejected_reason = "event_id_invalid_or_duplicate"
+
         assert chosen_result["passed"] is True, behavior_class
         assert chosen_result["reason"] == "orchestration_graph_valid"
         assert rejected_result["passed"] is False, behavior_class
@@ -1370,7 +1417,31 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
 
     assert completeness_modes == {"interior_event", "terminal_stop"}
     assert len(event_type_aliases) == 9
-    assert len(set(event_type_aliases)) >= 8
+    assert set(
+        fleet_artifact_module._OBSERVED_EVENT_TYPE_ALIAS_BY_STRATEGY.values()
+    ) <= set(event_type_aliases)
+    assert Counter(payload_key_aliases) == Counter(
+        {
+            ("targetSlotID", "targetSlot"): 3,
+            ("sourceSlotID", "sourceSlot"): 1,
+            ("branchID", "branchIDs"): 1,
+        }
+    )
+    assert payload_omission_count == 4
+    assert "holdout" not in json.dumps(
+        {
+            "eventTypeAliases": (
+                fleet_artifact_module._OBSERVED_EVENT_TYPE_ALIAS_BY_STRATEGY
+            ),
+            "payloadKeyAliases": (
+                fleet_artifact_module._OBSERVED_EVENT_PAYLOAD_KEY_ALIASES
+            ),
+        },
+        sort_keys=True,
+    )
+    assert event_id_modes == set(
+        fleet_artifact_module._EVENT_ID_GRAMMAR_CONTRAST_BY_STRATEGY.values()
+    )
 
     typed_guard_record = atomic_records[0]
     typed_guard_chosen = json.loads(typed_guard_record["chosen"]["content"])
@@ -1399,47 +1470,44 @@ def test_native_fleet_orchestration_generation_is_deterministic():
     assert first.orchestration_evals == second.orchestration_evals
 
 
-def test_native_fleet_retry_prompts_match_the_runtime_contract():
+def test_native_fleet_graph_prompts_match_initial_generation_runtime_contract():
     manifest = generate_manifest(Path(".").resolve())
     native = [
         record
         for record in generate_fleet_artifacts(manifest).cross_model_training
         if record.get("sourceFamily") == "fleet_orchestration_native"
     ]
-    suffix = "\n\n" + generic_strict_json_retry_instruction("invalid_json")
-    retry_sft = [
+    retry_suffix = "\n\n" + generic_strict_json_retry_instruction(
+        "invalid_json"
+    )
+    native_sft = [
         record
         for record in native
         if record["recordType"] == "sft"
-        and record["metadata"].get("generationPromptMode")
-        == "strict_json_retry"
     ]
-    retry_dpo = [
+    native_dpo = [
         record
         for record in native
         if record["recordType"] == "dpo"
-        and record["metadata"].get("generationPromptMode")
-        == "strict_json_retry"
     ]
 
-    assert len(retry_sft) == 9
+    assert len(native_sft) == 90
     assert all(
-        record["metadata"]["trainingMatrixVariant"]
-        == "behavior-conditioned"
-        and record["metadata"]["behaviorConditionedInstanceIndex"] == 8
-        and record["metadata"]["retryFailureCode"] == "invalid_json"
-        and record["messages"][-2]["content"].endswith(suffix)
-        for record in retry_sft
+        record["metadata"]["generationPromptMode"] == "initial_generation"
+        and "retryFailureCode" not in record["metadata"]
+        and not record["messages"][-2]["content"].endswith(retry_suffix)
+        for record in native_sft
     )
-    assert len(retry_dpo) == 18
+    assert len(native_dpo) == 85
     assert all(
-        record["metadata"]["retryFailureCode"] == "invalid_json"
-        and record["prompt"][-1]["content"].endswith(suffix)
-        for record in retry_dpo
+        record["metadata"]["generationPromptMode"] == "initial_generation"
+        and "retryFailureCode" not in record["metadata"]
+        and not record["prompt"][-1]["content"].endswith(retry_suffix)
+        for record in native_dpo
     )
     assert all(
         [message["role"] for message in record["prompt"]] == ["system", "user"]
-        for record in retry_dpo
+        for record in native_dpo
     )
 
 
@@ -1544,8 +1612,7 @@ def test_core_native_metadata_binds_failure_family_to_exact_behavior():
         "trainingMatrixVariant": "core",
         "trainingTopologySHA256": "a" * 64,
         "sftOptimizerVisible": True,
-        "generationPromptMode": "strict_json_retry",
-        "retryFailureCode": "invalid_json",
+        "generationPromptMode": "initial_generation",
         "preferenceType": "manifest_grounded_orchestration",
         "preferenceSourceScenarioID": "id-abcdef",
         "sftAnchorScenarioID": "id-abcdef",
@@ -1650,7 +1717,7 @@ def test_conditioned_training_varies_a_nonrequest_payload_fact_per_behavior():
                 collect(child, signatures)
         elif (
             isinstance(value, str)
-            and fleet_artifact_module._is_opaque_orchestration_training_fact_id(
+            and fleet_artifact_module._is_orchestration_training_fact_id(
                 value
             )
         ):
@@ -1669,8 +1736,11 @@ def test_conditioned_training_varies_a_nonrequest_payload_fact_per_behavior():
     assert set(signatures_by_behavior) == set(
         fleet_artifact_module._ORCHESTRATION_VARIED_FACT_KINDS_BY_BEHAVIOR
     )
+    # Every conditioned replica still contributes a distinct visible shape.
+    # Role-bearing fact prefixes can intentionally add further shapes when a
+    # behavior varies more than one external fact kind.
     assert all(
-        len(signatures) == 8
+        len(signatures) >= 8
         for signatures in signatures_by_behavior.values()
     )
 
@@ -1739,6 +1809,8 @@ def test_training_generation_rejects_compact_identity_collisions(monkeypatch):
         scenario
         for scenario in scenarios
         if isinstance(scenario.get("rejectedGraph"), dict)
+        and scenario.get("trainingMatrixVariant") == "behavior-conditioned"
+        and scenario.get("behaviorConditionedInstanceIndex") == 2
     )
     def collide_preference_facts(
         *, identity_class: str, digest: str, surface_index: int
@@ -1762,7 +1834,7 @@ def test_training_generation_rejects_compact_identity_collisions(monkeypatch):
         )
 
 
-def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
+def test_native_training_identities_mix_opaque_and_role_bearing_shapes():
     manifest = generate_manifest(Path(".").resolve())
     artifacts = generate_fleet_artifacts(manifest)
     native = [
@@ -1786,17 +1858,33 @@ def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
         preference_scenarios
     )
     assert all(
-        fleet_artifact_module._is_opaque_orchestration_training_scenario_id(
+        fleet_artifact_module._is_orchestration_training_scenario_id(
             scenario_id
         )
         for scenario_id in all_scenario_ids
+    )
+    semantic_scenario_ids = {
+        scenario_id
+        for scenario_id in all_scenario_ids
+        if fleet_artifact_module._is_semantic_orchestration_training_scenario_id(
+            scenario_id
+        )
+    }
+    opaque_scenario_ids = all_scenario_ids - semantic_scenario_ids
+    assert semantic_scenario_ids
+    assert opaque_scenario_ids
+    assert all(
+        not fleet_artifact_module._is_semantic_orchestration_training_fact_id(
+            scenario_id
+        )
+        for scenario_id in semantic_scenario_ids
     )
     identity_prefix = (
         fleet_artifact_module.ORCHESTRATION_TRAINING_IDENTITY_PREFIX
     )
     scenario_payloads = [
         scenario_id.removeprefix(identity_prefix)
-        for scenario_id in all_scenario_ids
+        for scenario_id in opaque_scenario_ids
     ]
     assert any("-" in payload for payload in scenario_payloads)
     assert any("_" in payload for payload in scenario_payloads)
@@ -1816,7 +1904,7 @@ def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
                 collect_fact_ids(child)
         elif isinstance(
             value, str
-        ) and fleet_artifact_module._is_opaque_orchestration_training_fact_id(
+        ) and fleet_artifact_module._is_orchestration_training_fact_id(
             value
         ):
             fact_ids.add(value)
@@ -1845,8 +1933,23 @@ def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
         collect_fact_ids(derivation["facts"])
 
     assert fact_ids
+    semantic_fact_ids = {
+        fact_id
+        for fact_id in fact_ids
+        if fleet_artifact_module._is_semantic_orchestration_training_fact_id(
+            fact_id
+        )
+    }
+    opaque_fact_ids = fact_ids - semantic_fact_ids
+    assert semantic_fact_ids
+    assert opaque_fact_ids
+    assert all(
+        fleet_artifact_module._semantic_orchestration_training_fact_role(fact_id)
+        not in {None, "scenario"}
+        for fact_id in semantic_fact_ids
+    )
     fact_payloads = [
-        fact_id.removeprefix(identity_prefix) for fact_id in fact_ids
+        fact_id.removeprefix(identity_prefix) for fact_id in opaque_fact_ids
     ]
     assert any("-" in payload for payload in fact_payloads)
     assert any("_" in payload for payload in fact_payloads)
@@ -1858,24 +1961,37 @@ def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
         for fact_id in fact_ids
     )
     assert all(
-        fleet_artifact_module._is_opaque_orchestration_training_fact_id(
-            scenario_id
-        )
-        for scenario_id in all_scenario_ids
-    )
-    assert all(
-        fleet_artifact_module._is_opaque_orchestration_training_scenario_id(
+        not fleet_artifact_module._is_semantic_orchestration_training_scenario_id(
             fact_id
         )
-        for fact_id in fact_ids
+        for fact_id in semantic_fact_ids
     )
 
     def visible_shape(value: str) -> str:
         return re.sub(r"[a-z]", "x", value.removeprefix(identity_prefix))
 
     assert {
-        visible_shape(scenario_id) for scenario_id in all_scenario_ids
-    } & {visible_shape(fact_id) for fact_id in fact_ids}
+        visible_shape(scenario_id) for scenario_id in opaque_scenario_ids
+    } & {visible_shape(fact_id) for fact_id in opaque_fact_ids}
+
+    for scenario in scenarios:
+        variant = scenario["trainingMatrixVariant"]
+        replica_index = (
+            scenario.get("behaviorConditionedInstanceIndex", 0) - 1
+            if variant == "behavior-conditioned"
+            else None
+        )
+        expected_semantic = (
+            variant == "behavior-conditioned"
+            and replica_index
+            in fleet_artifact_module._ORCHESTRATION_SEMANTIC_IDENTITY_REPLICA_INDICES
+        )
+        assert (
+            fleet_artifact_module._is_semantic_orchestration_training_scenario_id(
+                scenario["id"]
+            )
+            is expected_semantic
+        )
 
     for record in native:
         content_fields = (
@@ -1948,7 +2064,7 @@ def test_native_training_identities_are_opaque_and_graph_json_is_ordered():
         )
 
 
-def test_context_handoff_event_id_negative_uses_the_approved_action_fact():
+def test_context_handoff_event_id_negative_covers_dotted_separator():
     manifest = generate_manifest(Path(".").resolve())
     source = next(
         scenario
@@ -1968,16 +2084,19 @@ def test_context_handoff_event_id_negative_uses_the_approved_action_fact():
     rejected = preference["rejectedGraph"]
     request = chosen["events"][0]
 
-    assert fleet_artifact_module._is_opaque_orchestration_training_fact_id(
+    assert fleet_artifact_module._is_orchestration_training_fact_id(
         facts["approvedActionIdentifier"]
     )
     assert "requestIdentifier" not in facts
     assert "requestID" not in request
     assert request["actionID"] == facts["approvedActionIdentifier"]
-    assert rejected["events"][0]["id"] == (
-        f"{facts['approvedActionIdentifier']}::event::01"
+    assert fleet_artifact_module._event_id_grammar_contrast_mode(chosen) == (
+        "dotted_event_separator"
     )
-    assert rejected["events"][0]["id"] != chosen["events"][0]["id"]
+    assert [event["id"] for event in rejected["events"]] == [
+        f"{chosen['scenarioID']}::event.{index:02d}"
+        for index in range(1, len(chosen["events"]) + 1)
+    ]
     fleet_artifact_module._validate_atomic_orchestration_rejection(
         chosen,
         rejected,

@@ -39,7 +39,7 @@ ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS = {
 }
 _ORCHESTRATION_TOP_LEVEL_OMISSION_KEY = "dependencies"
 ORCHESTRATION_TRAINING_IDENTITY_SCHEMA_VERSION = (
-    "lumen.fleet-training-identity/1.4.0"
+    "lumen.fleet-training-identity/1.5.0"
 )
 ORCHESTRATION_TRAINING_SCENARIO_ID_WIDTH = 6
 ORCHESTRATION_TRAINING_FACT_ID_WIDTH = 6
@@ -78,6 +78,10 @@ _ORCHESTRATION_VARIED_FACT_KINDS_BY_BEHAVIOR = {
     "unavailable-boundary": frozenset({"permission-check", "request"}),
     "nonexistent-slot-negative": frozenset({"slot-directory-snapshot"}),
 }
+# Keep semantic morphology confined to the event-ID contrast and the longest
+# conditioned envelope. This provides two examples per behavior without
+# inflating the source-proxy denominator or the number of optimizer windows.
+_ORCHESTRATION_SEMANTIC_IDENTITY_REPLICA_INDICES = frozenset({4, 7})
 ORCHESTRATION_ATOMIC_MUTATION_KINDS = (
     "terminal_decision_contract",
     "event_type_vocabulary",
@@ -275,6 +279,136 @@ def _opaque_orchestration_training_identity(
     )
 
 
+def _uses_semantic_orchestration_training_identity(
+    *,
+    identity_class: str,
+    behavior: str,
+    variant: str,
+    replica_index: int | None,
+    fact_kind: str | None,
+) -> bool:
+    """Expose role-bearing IDs in two high-value conditioned replicas."""
+
+    if identity_class not in {"scenario", "fact"}:
+        raise ValueError("Unknown Fleet training identity class")
+    semantic_variant = (
+        variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+        and replica_index in _ORCHESTRATION_SEMANTIC_IDENTITY_REPLICA_INDICES
+    )
+    if not semantic_variant:
+        return False
+    if identity_class == "scenario":
+        return True
+    if not fact_kind:
+        raise ValueError("Fleet fact identities require an independent fact kind")
+    # Request identity is the most common wrong event-ID namespace observed in
+    # Canary33. Pair it with one behavior-critical state identity per graph so
+    # the model sees explicit scenario/fact role separation without inflating
+    # every context literal or changing the fixed training-row budget.
+    return fact_kind == "request" or fact_kind in (
+        _ORCHESTRATION_VARIED_FACT_KINDS_BY_BEHAVIOR.get(behavior) or ()
+    )
+
+
+def _semantic_orchestration_training_identity(
+    *,
+    identity_class: str,
+    behavior: str,
+    variant: str,
+    replica_index: int | None,
+    lane: str,
+    fact_kind: str | None = None,
+    identity_registry: dict[str, str] | None = None,
+) -> str:
+    """Return a deterministic role-bearing ID disjoint from frozen holdouts."""
+
+    if identity_class not in {"scenario", "fact"}:
+        raise ValueError("Unknown Fleet training identity class")
+    if identity_class == "fact" and not fact_kind:
+        raise ValueError("Fleet fact identities require an independent fact kind")
+    digest = canonical_sha256(
+        {
+            "schemaVersion": ORCHESTRATION_TRAINING_IDENTITY_SCHEMA_VERSION,
+            "identityMorphology": "semantic_role_bearing",
+            "identityClass": identity_class,
+            "behaviorClass": behavior,
+            "trainingMatrixVariant": variant,
+            "behaviorConditionedInstanceIndex": (
+                replica_index + 1 if replica_index is not None else None
+            ),
+            "lane": lane,
+            "factKind": fact_kind,
+        }
+    )
+    role = (
+        "scenario"
+        if identity_class == "scenario"
+        else re.sub(r"[^a-z0-9]+", "-", str(fact_kind).lower()).strip("-")
+    )
+    if not role:
+        raise ValueError("Fleet semantic training identity role is invalid")
+    surface_index = _orchestration_training_identity_surface_index(
+        identity_class=identity_class,
+        behavior=behavior,
+        replica_index=replica_index,
+        lane=lane,
+        fact_kind=fact_kind,
+        digest=digest,
+    )
+    opaque_surface = _format_orchestration_training_identity(
+        identity_class=identity_class,
+        digest=digest,
+        surface_index=surface_index,
+    )
+    identity = (
+        f"{role}--"
+        f"{opaque_surface.removeprefix(ORCHESTRATION_TRAINING_IDENTITY_PREFIX)}"
+    )
+    return _register_orchestration_training_identity(
+        identity_registry=identity_registry,
+        identity=identity,
+        digest=digest,
+        identity_class=identity_class,
+    )
+
+
+def _orchestration_training_identity(
+    *,
+    identity_class: str,
+    behavior: str,
+    variant: str,
+    replica_index: int | None,
+    lane: str,
+    fact_kind: str | None = None,
+    identity_registry: dict[str, str] | None = None,
+) -> str:
+    if _uses_semantic_orchestration_training_identity(
+        identity_class=identity_class,
+        behavior=behavior,
+        variant=variant,
+        replica_index=replica_index,
+        fact_kind=fact_kind,
+    ):
+        return _semantic_orchestration_training_identity(
+            identity_class=identity_class,
+            behavior=behavior,
+            variant=variant,
+            replica_index=replica_index,
+            lane=lane,
+            fact_kind=fact_kind,
+            identity_registry=identity_registry,
+        )
+    return _opaque_orchestration_training_identity(
+        identity_class=identity_class,
+        behavior=behavior,
+        variant=variant,
+        replica_index=replica_index,
+        lane=lane,
+        fact_kind=fact_kind,
+        identity_registry=identity_registry,
+    )
+
+
 def _orchestration_training_scenario_id(
     *,
     behavior: str,
@@ -283,7 +417,7 @@ def _orchestration_training_scenario_id(
     lane: str = "sft",
     identity_registry: dict[str, str] | None = None,
 ) -> str:
-    return _opaque_orchestration_training_identity(
+    return _orchestration_training_identity(
         identity_class="scenario",
         behavior=behavior,
         variant=variant,
@@ -302,7 +436,7 @@ def _orchestration_training_fact_id(
     lane: str = "sft",
     identity_registry: dict[str, str] | None = None,
 ) -> str:
-    return _opaque_orchestration_training_identity(
+    return _orchestration_training_identity(
         identity_class="fact",
         behavior=behavior,
         variant=variant,
@@ -345,6 +479,60 @@ def _is_opaque_orchestration_training_fact_id(value: str) -> bool:
         value,
         identity_class="fact",
     )
+
+
+def _is_orchestration_training_identity_payload(
+    value: str,
+    *,
+    identity_class: str,
+) -> bool:
+    for segment_widths, separator in _ORCHESTRATION_TRAINING_IDENTITY_SURFACES[
+        identity_class
+    ]:
+        pattern = separator.join(rf"[a-z]{{{width}}}" for width in segment_widths)
+        if re.fullmatch(pattern, value) is not None:
+            return True
+    return False
+
+
+def _is_semantic_orchestration_training_scenario_id(value: str) -> bool:
+    prefix = "scenario--"
+    return value.startswith(prefix) and _is_orchestration_training_identity_payload(
+        value.removeprefix(prefix),
+        identity_class="scenario",
+    )
+
+
+def _is_semantic_orchestration_training_fact_id(value: str) -> bool:
+    if value.count("--") != 1:
+        return False
+    role, payload = value.split("--", maxsplit=1)
+    return (
+        role != "scenario"
+        and re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", role) is not None
+        and _is_orchestration_training_identity_payload(
+            payload,
+            identity_class="fact",
+        )
+    )
+
+
+def _semantic_orchestration_training_fact_role(value: str) -> str | None:
+    if not _is_semantic_orchestration_training_fact_id(value):
+        return None
+    return value.split("--", maxsplit=1)[0]
+
+
+def _is_orchestration_training_scenario_id(value: str) -> bool:
+    return _is_opaque_orchestration_training_scenario_id(
+        value
+    ) or _is_semantic_orchestration_training_scenario_id(value)
+
+
+def _is_orchestration_training_fact_id(value: str) -> bool:
+    return _is_opaque_orchestration_training_fact_id(
+        value
+    ) or _is_semantic_orchestration_training_fact_id(value)
 
 
 def generate_fleet_artifacts(manifest: AgentBehaviorManifest) -> FleetArtifacts:
@@ -1282,7 +1470,7 @@ def _derive_orchestration_graph_from_contract(
             lane=str(training_identity_lane),
         )
         if (
-            not _is_opaque_orchestration_training_scenario_id(scenario_id)
+            not _is_orchestration_training_scenario_id(scenario_id)
             or scenario_id != expected_scenario_id
         ):
             raise ValueError("Fleet training scenario identity is invalid")
@@ -2094,12 +2282,12 @@ def _orchestration_training_uses_retry_prompt(
 ) -> bool:
     if lane not in {"sft", "dpo"}:
         raise ValueError(f"Unknown Fleet orchestration training lane: {lane}")
-    variant = scenario.get("trainingMatrixVariant")
-    return (lane == "dpo" and variant == "core") or (
-        variant == ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
-        and scenario.get("behaviorConditionedInstanceIndex")
-        == ORCHESTRATION_BEHAVIOR_CONDITIONED_REPLICAS
-    )
+    # Fleet's frozen event-graph evaluation is an initial-generation task.
+    # Canary33 produced valid JSON on every attempt, while retry-conditioned
+    # native graph rows shifted exact policy vocabulary away from the stronger
+    # SFT checkpoint. Keep recovery training in the separate balanced contract
+    # corpus and bind every native graph row to the deployed prompt mode.
+    return False
 
 
 def _orchestration_generation_prompt_metadata(
@@ -2137,14 +2325,29 @@ def _preference_natural_fact_alias(
             "source": source,
         }
     )
-    identity = _format_orchestration_training_identity(
-        identity_class="fact",
-        digest=digest,
-        surface_index=(
-            int(digest[:8], 16)
-            % len(_ORCHESTRATION_TRAINING_IDENTITY_SURFACES["fact"])
-        ),
-    )
+    semantic_role = _semantic_orchestration_training_fact_role(source)
+    if semantic_role is not None:
+        opaque_surface = _format_orchestration_training_identity(
+            identity_class="fact",
+            digest=digest,
+            surface_index=(
+                int(digest[:8], 16)
+                % len(_ORCHESTRATION_TRAINING_IDENTITY_SURFACES["fact"])
+            ),
+        )
+        identity = (
+            f"{semantic_role}--"
+            f"{opaque_surface.removeprefix(ORCHESTRATION_TRAINING_IDENTITY_PREFIX)}"
+        )
+    else:
+        identity = _format_orchestration_training_identity(
+            identity_class="fact",
+            digest=digest,
+            surface_index=(
+                int(digest[:8], 16)
+                % len(_ORCHESTRATION_TRAINING_IDENTITY_SURFACES["fact"])
+            ),
+        )
     return _register_orchestration_training_identity(
         identity_registry=identity_registry,
         identity=identity,
@@ -3348,17 +3551,8 @@ def _atomic_orchestration_rejection(
     if mutation_kind == "terminal_decision_contract":
         graph = _terminal_decision_rejection(graph)
     elif mutation_kind == "event_type_vocabulary":
-        mutable_events = [
-            event
-            for event in graph["events"]
-            if event.get("type") not in {"request_received", "stop"}
-        ]
-        if not mutable_events:
-            raise ValueError("Atomic Fleet rejection lacks a behavior event")
-        mutable_events[0]["type"] = _natural_noncanonical_event_type_alias(
-            graph,
-            mutable_events[0],
-        )
+        event_index, _, alias = _event_type_vocabulary_rejection_target(graph)
+        graph["events"][event_index]["type"] = alias
     elif mutation_kind == "event_completeness_contract":
         graph = _atomic_event_completeness_rejection(graph)
     elif mutation_kind == "event_order":
@@ -3372,41 +3566,23 @@ def _atomic_orchestration_rejection(
         graph["events"][first] = first_body
         graph["events"][second] = second_body
     elif mutation_kind == "event_id_grammar":
-        source_id = graph["events"][0]["id"]
-        replacement_id = _fact_derived_noncanonical_event_id(event_id_fact)
-        if any(
-            event.get("id") == replacement_id
-            for event in graph["events"][1:]
-        ):
-            raise ValueError("Fleet chosen graph already uses the invalid event ID")
-        graph["events"][0]["id"] = replacement_id
-        for dependency in graph["dependencies"]:
-            for endpoint in ("fromEventID", "toEventID"):
-                if dependency.get(endpoint) == source_id:
-                    dependency[endpoint] = replacement_id
+        graph = _event_id_grammar_rejection(
+            graph,
+            event_id_fact=event_id_fact,
+        )
     elif mutation_kind == "dependency_endpoint_reference":
         dependency = graph["dependencies"][-1]
         replacement_endpoint = graph["events"][0]["id"]
         dependency["toEventID"] = replacement_endpoint
     elif mutation_kind == "event_payload_schema":
-        payload_event = next(
-            (
-                event
-                for event in graph["events"]
-                if event.get("type") in _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS
-            ),
-            None,
+        event_index, required_key, alias_key = (
+            _event_payload_schema_rejection_target(graph)
         )
-        if payload_event is None:
-            raise ValueError("Atomic Fleet rejection lacks a payload event")
-        required_key = _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS[
-            str(payload_event["type"])
-        ]
-        if required_key not in payload_event:
-            raise ValueError(
-                "Atomic Fleet rejection payload is missing its chosen field"
-            )
-        payload_event.pop(required_key)
+        _apply_event_payload_key_rejection(
+            graph["events"][event_index],
+            required_key=required_key,
+            alias_key=alias_key,
+        )
     elif mutation_kind == "delegated_slot_contract":
         delegated = graph["decision"]["delegatedSlotIDs"]
         if not isinstance(delegated, list):
@@ -3517,10 +3693,10 @@ def _core_failure_family_rejection(
         events[-1]["reason"] = stop_reason
     elif mutation == "scenario_identity_role":
         if not isinstance(event_id_fact, str) or not (
-            _is_opaque_orchestration_training_fact_id(event_id_fact)
+            _is_orchestration_training_fact_id(event_id_fact)
         ):
             raise ValueError(
-                "Fleet scenario-identity rejection lacks an opaque fact identity"
+                "Fleet scenario-identity rejection lacks a training fact identity"
             )
         if graph.get("scenarioID") == event_id_fact:
             raise ValueError(
@@ -3555,6 +3731,47 @@ _CANONICAL_ORCHESTRATION_STRATEGIES = (
     "unavailable_boundary",
     "reject_invalid_slot",
 )
+
+_EVENT_ID_GRAMMAR_CONTRAST_BY_STRATEGY = {
+    "no_delegation": "unpadded_ordinals",
+    "sequential": "mixed_fact_namespace",
+    "parallel_then_aggregate": "duplicate_identity",
+    "bounded_handoff": "dotted_event_separator",
+    "deduplicated": "missing_identity",
+    "aggregate": "semantic_stage_identity",
+    "approval_boundary": "scenario_namespace_mismatch",
+    "unavailable_boundary": "fact_namespace_all_events",
+    "reject_invalid_slot": "event_only_namespace",
+}
+
+# Canary33's full frozen evaluation exposed a narrow set of plausible policy
+# aliases after SFT/DPO had already learned valid JSON. Reuse those exact
+# lexical confusions in the existing contrast slots so the next run receives
+# direct negative evidence without adding rows or copying any holdout fact.
+_OBSERVED_EVENT_TYPE_ALIAS_BY_STRATEGY = {
+    "sequential": ("result_received", "observation_received"),
+    "parallel_then_aggregate": (
+        "branch_join_verified",
+        "context_join_verified",
+    ),
+    "bounded_handoff": ("result_received", "observation_received"),
+    "deduplicated": ("duplicate_suppressed", "branch_result_suppressed"),
+    "aggregate": ("aggregation_inputs_verified", "context_verified"),
+    "approval_boundary": (
+        "approval_policy_evaluated",
+        "approval_policy_snapshot_loaded",
+    ),
+    "reject_invalid_slot": (
+        "slot_directory_checked",
+        "slot_directory_entry_missing",
+    ),
+}
+
+_OBSERVED_EVENT_PAYLOAD_KEY_ALIASES = {
+    "targetSlotID": "targetSlot",
+    "sourceSlotID": "sourceSlot",
+    "branchID": "branchIDs",
+}
 
 _NONCANONICAL_EVENT_TYPE_SUFFIX_ALIASES = {
     "available": "observed",
@@ -3623,6 +3840,104 @@ def _natural_noncanonical_event_type_alias(
         }
     )
     return aliases[int(digest[:8], 16) % len(aliases)]
+
+
+def _event_type_vocabulary_rejection_target(
+    graph: dict[str, Any],
+) -> tuple[int, str, str]:
+    """Select an observed high-risk alias, with a deterministic fallback."""
+
+    events = graph.get("events")
+    strategy = graph.get("decision", {}).get("strategy")
+    if not isinstance(events, list) or not all(
+        isinstance(event, dict) for event in events
+    ):
+        raise ValueError("Atomic Fleet rejection lacks valid events")
+    observed_alias = _OBSERVED_EVENT_TYPE_ALIAS_BY_STRATEGY.get(str(strategy))
+    if observed_alias is not None:
+        canonical_event_type, alias = observed_alias
+        matching_indices = [
+            index
+            for index, event in enumerate(events)
+            if event.get("type") == canonical_event_type
+        ]
+        if len(matching_indices) != 1:
+            raise ValueError(
+                "Atomic Fleet rejection lacks its observed alias target"
+            )
+        return matching_indices[0], canonical_event_type, alias
+
+    mutable_indices = [
+        index
+        for index, event in enumerate(events)
+        if event.get("type") not in {"request_received", "stop"}
+    ]
+    if not mutable_indices:
+        raise ValueError("Atomic Fleet rejection lacks a behavior event")
+    event_index = mutable_indices[0]
+    canonical_event_type = events[event_index].get("type")
+    if not isinstance(canonical_event_type, str):
+        raise ValueError("Atomic Fleet rejection behavior event is malformed")
+    return (
+        event_index,
+        canonical_event_type,
+        _natural_noncanonical_event_type_alias(graph, events[event_index]),
+    )
+
+
+def _event_payload_schema_rejection_target(
+    graph: dict[str, Any],
+) -> tuple[int, str, str | None]:
+    """Prefer observed payload-key aliases before a bounded omission fallback."""
+
+    events = graph.get("events")
+    if not isinstance(events, list) or not all(
+        isinstance(event, dict) for event in events
+    ):
+        raise ValueError("Atomic Fleet rejection lacks valid events")
+    candidates: list[tuple[int, str]] = []
+    for index, event in enumerate(events):
+        required_key = _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS.get(
+            str(event.get("type"))
+        )
+        if required_key is None:
+            continue
+        if required_key not in event:
+            raise ValueError(
+                "Atomic Fleet rejection payload is missing its chosen field"
+            )
+        candidates.append((index, required_key))
+    if not candidates:
+        raise ValueError("Atomic Fleet rejection lacks a payload event")
+    for event_index, required_key in candidates:
+        alias_key = _OBSERVED_EVENT_PAYLOAD_KEY_ALIASES.get(required_key)
+        if alias_key is not None:
+            return event_index, required_key, alias_key
+    event_index, required_key = candidates[0]
+    return event_index, required_key, None
+
+
+def _apply_event_payload_key_rejection(
+    event: dict[str, Any],
+    *,
+    required_key: str,
+    alias_key: str | None,
+) -> None:
+    """Apply one payload-key mutation while preserving field order and value."""
+
+    if required_key not in event:
+        raise ValueError("Fleet chosen payload field is missing")
+    if alias_key is None:
+        event.pop(required_key)
+        return
+    if alias_key in event:
+        raise ValueError("Fleet rejected payload alias already exists")
+    rewritten = {
+        (alias_key if key == required_key else key): value
+        for key, value in event.items()
+    }
+    event.clear()
+    event.update(rewritten)
 
 
 def _natural_noncanonical_stop_reason_alias(
@@ -3697,9 +4012,9 @@ def _orchestration_event_id_negative_fact(
     if candidate is None:
         candidate = facts.get("approvedActionIdentifier")
     if not isinstance(candidate, str) or not (
-        _is_opaque_orchestration_training_fact_id(candidate)
+        _is_orchestration_training_fact_id(candidate)
     ):
-        raise ValueError("Fleet rejection lacks an opaque event-ID fact")
+        raise ValueError("Fleet rejection lacks a training event-ID fact")
     return candidate
 
 
@@ -3707,10 +4022,127 @@ def _fact_derived_noncanonical_event_id(fact_id: str | None) -> str:
     """Use a supplied request fact as the wrong event namespace."""
 
     if not isinstance(fact_id, str) or not (
-        _is_opaque_orchestration_training_fact_id(fact_id)
+        _is_orchestration_training_fact_id(fact_id)
     ):
-        raise ValueError("Fleet rejection lacks an opaque request fact")
+        raise ValueError("Fleet rejection lacks a training request fact")
     return f"{fact_id}::event::01"
+
+
+def _event_id_grammar_contrast_mode(graph: dict[str, Any]) -> str:
+    decision = graph.get("decision")
+    strategy = decision.get("strategy") if isinstance(decision, dict) else None
+    mode = _EVENT_ID_GRAMMAR_CONTRAST_BY_STRATEGY.get(strategy)
+    if mode is None:
+        raise ValueError("Fleet chosen graph lacks a canonical event-ID strategy")
+    return mode
+
+
+def _rebind_orchestration_event_ids(
+    graph: dict[str, Any],
+    event_ids: list[str],
+) -> dict[str, Any]:
+    events = graph.get("events")
+    dependencies = graph.get("dependencies")
+    if (
+        not isinstance(events, list)
+        or not isinstance(dependencies, list)
+        or len(events) != len(event_ids)
+        or not all(
+            isinstance(event, dict) and isinstance(event.get("id"), str)
+            for event in events
+        )
+        or not all(isinstance(event_id, str) for event_id in event_ids)
+    ):
+        raise ValueError("Fleet chosen event identities are malformed")
+    original_ids = [str(event["id"]) for event in events]
+    if len(original_ids) != len(set(original_ids)):
+        raise ValueError("Fleet chosen event identities are not unique")
+    replacements = dict(zip(original_ids, event_ids, strict=True))
+    for event, event_id in zip(events, event_ids, strict=True):
+        event["id"] = event_id
+    for dependency in dependencies:
+        if not isinstance(dependency, dict):
+            raise ValueError("Fleet chosen dependency is malformed")
+        for endpoint in ("fromEventID", "toEventID"):
+            value = dependency.get(endpoint)
+            if value not in replacements:
+                raise ValueError("Fleet chosen dependency endpoint is malformed")
+            dependency[endpoint] = replacements[str(value)]
+    return graph
+
+
+def _event_id_grammar_rejection(
+    source: dict[str, Any],
+    *,
+    event_id_fact: str | None,
+) -> dict[str, Any]:
+    """Cover observed event-ID failures without adding preference rows."""
+
+    graph = json.loads(json.dumps(source, ensure_ascii=False))
+    scenario_id = graph.get("scenarioID")
+    events = graph.get("events")
+    if not isinstance(scenario_id, str) or not isinstance(events, list) or not events:
+        raise ValueError("Fleet chosen event identities are malformed")
+    canonical_ids = [
+        f"{scenario_id}::event::{index:02d}"
+        for index in range(1, len(events) + 1)
+    ]
+    if [event.get("id") for event in events if isinstance(event, dict)] != canonical_ids:
+        raise ValueError("Fleet chosen graph lacks canonical event identities")
+    fact_namespace = _fact_derived_noncanonical_event_id(event_id_fact).split(
+        "::event::",
+        maxsplit=1,
+    )[0]
+    if event_id_fact not in _orchestration_scalar_values(graph):
+        raise ValueError("Fleet event-ID fact is not bound to the chosen graph")
+    mode = _event_id_grammar_contrast_mode(graph)
+    if mode == "unpadded_ordinals":
+        rejected_ids = [
+            f"{scenario_id}::event::{index}"
+            for index in range(1, len(events) + 1)
+        ]
+    elif mode == "mixed_fact_namespace":
+        rejected_ids = list(canonical_ids)
+        rejected_ids[-1] = f"{fact_namespace}::event::{len(events):02d}"
+    elif mode == "duplicate_identity":
+        rejected_ids = list(canonical_ids)
+        rejected_ids[1] = rejected_ids[0]
+    elif mode == "dotted_event_separator":
+        rejected_ids = [
+            f"{scenario_id}::event.{index:02d}"
+            for index in range(1, len(events) + 1)
+        ]
+    elif mode == "missing_identity":
+        rejected_ids = list(canonical_ids)
+        rejected_ids[1] = ""
+    elif mode == "semantic_stage_identity":
+        type_counts: dict[str, int] = {}
+        rejected_ids = []
+        for event in events:
+            event_type = str(event.get("type") or "event").replace("_", "-")
+            type_counts[event_type] = type_counts.get(event_type, 0) + 1
+            rejected_ids.append(
+                f"{event_type}-{type_counts[event_type]:02d}"
+            )
+    elif mode == "scenario_namespace_mismatch":
+        rejected_ids = [
+            f"{scenario_id}_mismatch::event::{index:02d}"
+            for index in range(1, len(events) + 1)
+        ]
+    elif mode == "fact_namespace_all_events":
+        rejected_ids = [
+            f"{fact_namespace}::event::{index:02d}"
+            for index in range(1, len(events) + 1)
+        ]
+    elif mode == "event_only_namespace":
+        rejected_ids = [
+            f"event::{index:02d}" for index in range(1, len(events) + 1)
+        ]
+    else:  # pragma: no cover - guarded by the strategy map
+        raise ValueError(f"Unknown Fleet event-ID contrast mode: {mode}")
+    if rejected_ids == canonical_ids:
+        raise ValueError("Fleet event-ID rejection did not change identity")
+    return _rebind_orchestration_event_ids(graph, rejected_ids)
 
 
 def _atomic_event_omission_index(events: Any) -> int:
@@ -3875,18 +4307,10 @@ def _validate_atomic_orchestration_rejection(
     if mutation_kind == "terminal_decision_contract":
         expected = _terminal_decision_rejection(expected)
     elif mutation_kind == "event_type_vocabulary":
-        mutable_events = [
-            event
-            for event in expected.get("events", [])
-            if isinstance(event, dict)
-            and event.get("type") not in {"request_received", "stop"}
-        ]
-        if not mutable_events or not isinstance(mutable_events[0].get("type"), str):
-            raise ValueError("Fleet chosen behavior event is malformed")
-        mutable_events[0]["type"] = _natural_noncanonical_event_type_alias(
-            expected,
-            mutable_events[0],
+        event_index, _, alias = _event_type_vocabulary_rejection_target(
+            expected
         )
+        expected["events"][event_index]["type"] = alias
     elif mutation_kind == "event_completeness_contract":
         expected = _atomic_event_completeness_rejection(expected)
     elif mutation_kind == "event_order":
@@ -3901,23 +4325,10 @@ def _validate_atomic_orchestration_rejection(
         events[first] = first_body
         events[second] = second_body
     elif mutation_kind == "event_id_grammar":
-        events = expected.get("events")
-        if not isinstance(events, list) or not events or not isinstance(
-            events[0].get("id") if isinstance(events[0], dict) else None,
-            str,
-        ):
-            raise ValueError("Fleet chosen event identity is malformed")
-        source_id = events[0]["id"]
-        replacement_id = _fact_derived_noncanonical_event_id(event_id_fact)
-        if any(event.get("id") == replacement_id for event in events[1:]):
-            raise ValueError("Fleet chosen graph already uses the invalid event ID")
-        events[0]["id"] = replacement_id
-        for dependency in expected.get("dependencies", []):
-            if not isinstance(dependency, dict):
-                raise ValueError("Fleet chosen dependency is malformed")
-            for endpoint in ("fromEventID", "toEventID"):
-                if dependency.get(endpoint) == source_id:
-                    dependency[endpoint] = replacement_id
+        expected = _event_id_grammar_rejection(
+            expected,
+            event_id_fact=event_id_fact,
+        )
     elif mutation_kind == "dependency_endpoint_reference":
         dependencies = expected.get("dependencies")
         events = expected.get("events")
@@ -3941,23 +4352,14 @@ def _validate_atomic_orchestration_rejection(
             raise ValueError("Fleet chosen dependency endpoint is malformed")
         dependencies[-1]["toEventID"] = replacement_endpoint
     elif mutation_kind == "event_payload_schema":
-        payload_event = next(
-            (
-                event
-                for event in expected.get("events", [])
-                if isinstance(event, dict)
-                and event.get("type") in _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS
-            ),
-            None,
+        event_index, required_key, alias_key = (
+            _event_payload_schema_rejection_target(expected)
         )
-        if payload_event is None:
-            raise ValueError("Fleet chosen payload event is malformed")
-        required_key = _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS[
-            str(payload_event["type"])
-        ]
-        if required_key not in payload_event:
-            raise ValueError("Fleet chosen payload field is missing")
-        payload_event.pop(required_key)
+        _apply_event_payload_key_rejection(
+            expected["events"][event_index],
+            required_key=required_key,
+            alias_key=alias_key,
+        )
     else:
         delegated = expected.get("decision", {}).get("delegatedSlotIDs")
         if not isinstance(delegated, list) or not all(
