@@ -112,14 +112,9 @@ ORCHESTRATION_OUTPUT_INTERFACE = (
     "`aggregationOwnerSlotID` is a known-slot string or null, while "
     "`stopReason` and `strategy` are strings. Each event has `id` and `type` "
     "plus only the fields required by its behavior, with no wrapper objects or "
-    "invented aliases. Treat every event `type` and terminal `reason` as a closed "
-    "canonical enum token: never paraphrase, reorder, or recombine its words. "
-    "Every enabled policy condition contributes its canonical required stage; "
-    "never skip or collapse that stage. Input fact IDs are payload values only "
-    "and never replace `scenarioID` or an event-ID namespace. A supplied "
-    "`peerContext` object is input-only: each `delegate` event's `contextKeys` "
-    "equals exactly `peerContext[targetSlotID]` as a JSON string array; never emit "
-    "the mapping, a slot key, or a key/value member inside that array. Copy the "
+    "invented aliases. Event `type` and terminal `reason` are exact closed-enum "
+    "tokens. Emit every stage enabled by the policy conditions. Fact IDs are "
+    "payload-only, never scenario or event IDs. Copy the "
     "supplied graph schema version, scenario ID, and known slot IDs exactly. "
     "Substitute the actual supplied scenario ID into "
     "every event ID using a two-digit one-based order; never emit the literal "
@@ -129,6 +124,10 @@ ORCHESTRATION_OUTPUT_INTERFACE = (
     "whose `reason` exactly equals `decision.stopReason`, no more than 12 events "
     "or 16 dependencies, and stop immediately after the minimal graph's closing "
     "brace."
+)
+ORCHESTRATION_PEER_CONTEXT_INTERFACE = (
+    "`peerContext` is input-only: each `delegate.contextKeys` exactly copies "
+    "`peerContext[targetSlotID]`; do not emit the mapping or its entries."
 )
 
 
@@ -700,6 +699,9 @@ def _canonical_orchestration_prompt(
     """Use one non-leaking prompt grammar for training and holdout graphs."""
 
     facts = derivation["facts"]
+    interface_rules = [ORCHESTRATION_OUTPUT_INTERFACE]
+    if "peerContext" in facts:
+        interface_rules.append(ORCHESTRATION_PEER_CONTEXT_INTERFACE)
     return "\n".join(
         [
             "Return exactly one JSON Fleet event-graph object and nothing else.",
@@ -721,7 +723,7 @@ def _canonical_orchestration_prompt(
                 f"`{derivation['scenarioID']}`; known slots "
                 f"{json.dumps(derivation['knownSlotIDs'], ensure_ascii=False)}."
             ),
-            ORCHESTRATION_OUTPUT_INTERFACE,
+            *interface_rules,
             (
                 "Canonical event IDs are derived solely from scenario identity and "
                 f"order using `{ORCHESTRATION_EVENT_ID_GRAMMAR}`."

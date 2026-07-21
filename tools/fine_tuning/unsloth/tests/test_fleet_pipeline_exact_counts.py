@@ -16,10 +16,18 @@ from tools.fine_tuning.unsloth import train_sft, ubuntu_pipeline
 
 SPECIFICATION = [
     ("native", 55),
-    ("primary", 15),
+    ("policy_bridge", 5),
     ("supplemental_a", 5),
     ("supplemental_b", 5),
-    ("public", 20),
+    ("public", 30),
+]
+
+DPO_SPECIFICATION = [
+    ("native", 55),
+    ("primary", 4),
+    ("supplemental_a", 3),
+    ("supplemental_b", 3),
+    ("public", 4),
 ]
 
 _CALLABLE_IDENTITY_UNSIGNED = {
@@ -54,6 +62,11 @@ def _metadata(kind: str) -> dict[str, Any]:
         return {
             "sourceFamily": "adapter_ultra_specific",
             "taskType": "delegation_protocol",
+        }
+    if kind == "policy_bridge":
+        return {
+            "sourceFamily": "adapter_ultra_specific",
+            "taskType": "fleet_contract_event_graph_vocabulary",
         }
     if kind == "supplemental_a":
         return {
@@ -94,7 +107,7 @@ def _rows() -> list[dict[str, Any]]:
 
 def _dpo_rows() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for index, (kind, token_count) in enumerate(SPECIFICATION):
+    for index, (kind, token_count) in enumerate(DPO_SPECIFICATION):
         metadata = _metadata(kind)
         if kind == "native":
             metadata = {
@@ -280,7 +293,7 @@ def test_runtime_rejects_self_consistent_rewritten_fleet_counts_and_schedule(
 
     # These fabricated counts still satisfy every aggregate cap and are used to
     # regenerate a perfectly self-consistent optimizer-window schedule.
-    fabricated = _evidence(rows, [50, 20, 5, 5, 20], config)
+    fabricated = _evidence(rows, [50, 10, 5, 5, 30], config)
     assert ubuntu_pipeline._verify_fleet_loss_share_evidence(
         value=fabricated,
         config=config,
@@ -311,8 +324,8 @@ def test_runtime_exactly_retokenizes_fleet_dpo_chosen_completions(
     _write_jsonl(dataset_dir / "train_dpo.jsonl", rows)
     _write_jsonl(dataset_dir / "val_dpo.jsonl", rows)
 
-    # Exact chosen counts are [56, 16, 6, 6, 21] after TRL's appended EOS.
-    fabricated = _dpo_evidence(rows, [51, 21, 6, 6, 21], config)
+    # Exact chosen counts are [56, 5, 4, 4, 5] after TRL's appended EOS.
+    fabricated = _dpo_evidence(rows, [55, 5, 4, 4, 5], config)
     assert ubuntu_pipeline._verify_fleet_loss_share_evidence(
         value=fabricated,
         config=config,
@@ -522,7 +535,9 @@ def test_pipeline_schedule_reconstruction_requires_batch_size_one() -> None:
         )
 
 
-def test_pipeline_reconstructs_family_round_robin_schedule() -> None:
+def test_pipeline_reconstructs_family_round_robin_schedule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _config()
     row_evidence = [
         {
@@ -551,7 +566,7 @@ def test_pipeline_reconstructs_family_round_robin_schedule() -> None:
     schedule_contract = contract["sftOptimizerWindowScheduleContract"]
     band = contract["optimizerFamilyShareBands"]["lanes"]["sft"]
 
-    trainer_schedule, _ = (
+    trainer_schedule, trainer_epoch_orders = (
         train_sft._build_fleet_sft_optimizer_window_schedule(
             row_token_evidence=row_evidence,
             config=config,
@@ -559,6 +574,27 @@ def test_pipeline_reconstructs_family_round_robin_schedule() -> None:
             minimum_basis_points=band["minimumBasisPoints"],
             maximum_basis_points=band["maximumBasisPoints"],
         )
+    )
+    original_canonical_sha256 = ubuntu_pipeline.canonical_sha256
+    observed_key_sets: dict[str, set[frozenset[str]]] = {}
+    ranked_roles = {
+        "native_source_record",
+        "non_native_source_record",
+        "window_record",
+    }
+
+    def capture_rank_payload(value: Any) -> str:
+        if isinstance(value, dict) and value.get("role") in ranked_roles:
+            role = str(value["role"])
+            observed_key_sets.setdefault(role, set()).add(
+                frozenset(value)
+            )
+        return original_canonical_sha256(value)
+
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "canonical_sha256",
+        capture_rank_payload,
     )
     verifier_schedule = (
         ubuntu_pipeline._pipeline_fleet_sft_optimizer_window_schedule(
@@ -571,6 +607,71 @@ def test_pipeline_reconstructs_family_round_robin_schedule() -> None:
     )
 
     assert verifier_schedule == trainer_schedule
+    assert observed_key_sets == {
+        "native_source_record": {
+            frozenset(
+                {"algorithm", "seed", "role", "sourceRowSHA256"}
+            )
+        },
+        "non_native_source_record": {
+            frozenset(
+                {"algorithm", "seed", "role", "sourceRowSHA256"}
+            )
+        },
+        "window_record": {
+            frozenset(
+                {
+                    "algorithm",
+                    "seed",
+                    "epochIndex",
+                    "candidateIndex",
+                    "role",
+                    "windowIndex",
+                    "sourceRowSHA256",
+                }
+            )
+        },
+    }
+
+    permuted_evidence = [
+        {
+            **copy.deepcopy(row_evidence[source_index]),
+            "rowIndex": row_index,
+        }
+        for row_index, source_index in enumerate(
+            reversed(range(len(row_evidence)))
+        )
+    ]
+    permuted_trainer_schedule, permuted_epoch_orders = (
+        train_sft._build_fleet_sft_optimizer_window_schedule(
+            row_token_evidence=permuted_evidence,
+            config=config,
+            schedule_contract=schedule_contract,
+            minimum_basis_points=band["minimumBasisPoints"],
+            maximum_basis_points=band["maximumBasisPoints"],
+        )
+    )
+    permuted_verifier_schedule = (
+        ubuntu_pipeline._pipeline_fleet_sft_optimizer_window_schedule(
+            row_token_evidence=permuted_evidence,
+            config=config,
+            schedule_contract=schedule_contract,
+            minimum_basis_points=band["minimumBasisPoints"],
+            maximum_basis_points=band["maximumBasisPoints"],
+        )
+    )
+
+    assert permuted_verifier_schedule == permuted_trainer_schedule
+    assert [
+        [row_evidence[row_index]["sourceRowSHA256"] for row_index in order]
+        for order in trainer_epoch_orders
+    ] == [
+        [
+            permuted_evidence[row_index]["sourceRowSHA256"]
+            for row_index in order
+        ]
+        for order in permuted_epoch_orders
+    ]
 
 
 def test_pipeline_runtime_verifier_requires_batch_size_one(

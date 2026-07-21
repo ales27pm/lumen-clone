@@ -63,6 +63,7 @@ from lumen_manifest_crawler.fleet_artifacts import (
     _event_type_vocabulary_rejection_target,
     _is_orchestration_training_fact_id,
     _orchestration_event_id_negative_fact,
+    _orchestration_policy_conditions,
     _orchestration_scalar_leaf_differences,
     _orchestration_topology_contract,
     _terminal_decision_rejection,
@@ -85,9 +86,9 @@ FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = (
 )
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_TOKEN_SHARE_HARD_MAX = 0.10
 FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR = 10_000
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.7.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.8.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
-    "lumen.fleet-loss-share-evidence/1.3.0"
+    "lumen.fleet-loss-share-evidence/1.4.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA_VERSION = (
     "lumen.fleet-sft-optimizer-window-schedule-contract/1.0.0"
@@ -96,11 +97,11 @@ FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_EVIDENCE_SCHEMA_VERSION = (
     "lumen.fleet-sft-optimizer-window-schedule/1.0.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
-    "sha256_epoch_stratified_token_aware_family_round_robin/1.2.0"
+    "sha256_epoch_stratified_token_aware_family_round_robin/1.3.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT = 256
 FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION = (
-    "lumen.fleet-optimizer-family-share/1.0.0"
+    "lumen.fleet-optimizer-family-share/1.1.0"
 )
 FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION = (
     "lumen.fleet-optimizer-family-source-proxy/1.2.0"
@@ -126,6 +127,10 @@ FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS = 5_200
 FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS = 5_800
 FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS = 1_800
 FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS = 2_200
+FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MIN_BASIS_POINTS = 6_000
+FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MAX_BASIS_POINTS = 6_500
+FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MIN_BASIS_POINTS = 7_500
+FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MAX_BASIS_POINTS = 8_500
 PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = (
     "lumen.public-corpus-loss-share/1.0.0"
 )
@@ -3213,6 +3218,9 @@ def _fleet_loss_share_contract(
                     "publicNumeratorTokenCount": (
                         "publicBehavioralAssistantTargetTokenCount"
                     ),
+                    "policySignalNumeratorTokenCount": (
+                        "allPolicyAssistantTargetTokenCount"
+                    ),
                     "perSourceFamilyNumeratorTokenCounts": (
                         "supplementalStaticAssistantTargetTokenCountsBySourceFamily"
                     ),
@@ -3224,6 +3232,9 @@ def _fleet_loss_share_contract(
                     ),
                     "publicNumeratorTokenCount": (
                         "publicBehavioralChosenTargetTokenCount"
+                    ),
+                    "policySignalNumeratorTokenCount": (
+                        "nativeOrchestrationChosenTargetTokenCount"
                     ),
                     "perSourceFamilyNumeratorTokenCounts": (
                         "supplementalStaticChosenTargetTokenCountsBySourceFamily"
@@ -3322,6 +3333,28 @@ def _fleet_loss_share_contract(
                     "dpo": FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
                 },
             },
+            "policySignalTokenClassificationByLane": {
+                "sft": [
+                    {
+                        "sourceFamily": (
+                            FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+                        ),
+                        "taskType": FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+                    },
+                    {
+                        "sourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
+                        "taskType": FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
+                    },
+                ],
+                "dpo": [
+                    {
+                        "sourceFamily": (
+                            FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+                        ),
+                        "taskType": FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
+                    }
+                ],
+            },
             "lanes": {
                 "sft": {
                     "basis": "assistant_mask_non_ignored_token_count",
@@ -3347,6 +3380,34 @@ def _fleet_loss_share_contract(
                     ),
                     "maximumBasisPoints": (
                         FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS
+                    ),
+                },
+            },
+            "policySignalTokenLanes": {
+                "sft": {
+                    "basis": "assistant_mask_non_ignored_token_count",
+                    "numeratorEvidenceField": (
+                        "allPolicyAssistantTargetTokenCount"
+                    ),
+                    "denominatorEvidenceField": "assistantTargetTokenCount",
+                    "minimumBasisPoints": (
+                        FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MIN_BASIS_POINTS
+                    ),
+                    "maximumBasisPoints": (
+                        FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MAX_BASIS_POINTS
+                    ),
+                },
+                "dpo": {
+                    "basis": "rendered_chosen_completion_token_count",
+                    "numeratorEvidenceField": (
+                        "nativeOrchestrationChosenTargetTokenCount"
+                    ),
+                    "denominatorEvidenceField": "chosenTargetTokenCount",
+                    "minimumBasisPoints": (
+                        FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MIN_BASIS_POINTS
+                    ),
+                    "maximumBasisPoints": (
+                        FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MAX_BASIS_POINTS
                     ),
                 },
             },
@@ -3790,15 +3851,13 @@ def _fleet_policy_vocabulary_sft_anchors(
     manifest: AgentBehaviorManifest,
     records: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Derive non-held-out schema anchors per visible core behavior.
+    """Derive compact behavior-to-policy bridges from each core graph.
 
-    The native topology matrix is intentionally immutable. Its nine new core
-    SFT rows tokenize densely enough to exceed the exact internal-only family
-    band. These anchors add diverse behavioral denominator signal instead of
-    weakening that guard: each teaches one behavior's exact canonical stage
-    vocabulary, dependency orders, and terminal decision without copying a
-    held-out scenario, runnable graph, or rejected vocabulary into positive
-    SFT targets.
+    Each bridge binds one policy condition surface to the exact event types,
+    direct edges, payload keys, or decision already present in the visible
+    optimizer core. The targets deliberately omit runnable scenario facts,
+    event IDs, and alternate verbose schemas so they reinforce policy recall
+    without competing with the deployed event-graph output contract.
     """
 
     core_graphs: dict[str, dict[str, Any]] = {}
@@ -3857,7 +3916,6 @@ def _fleet_policy_vocabulary_sft_anchors(
         )
     anchors: list[dict[str, Any]] = []
     for behavior, graph in sorted(core_graphs.items()):
-        event_schemas: list[dict[str, Any]] = []
         event_order_by_id: dict[str, int] = {}
         for event_order, event in enumerate(graph["events"], start=1):
             if (
@@ -3869,15 +3927,7 @@ def _fleet_policy_vocabulary_sft_anchors(
                     "Fleet core graph exposes an invalid canonical event"
                 )
             event_order_by_id[event["id"]] = event_order
-            event_schemas.append(
-                {
-                    "type": event["type"],
-                    "payloadKeys": [
-                        key for key in event if key not in {"id", "type"}
-                    ],
-                }
-            )
-        dependency_orders: list[dict[str, int]] = []
+        dependency_orders: list[list[int]] = []
         for dependency in graph["dependencies"]:
             if not isinstance(dependency, dict):
                 raise ValueError(
@@ -3885,77 +3935,47 @@ def _fleet_policy_vocabulary_sft_anchors(
                 )
             try:
                 dependency_orders.append(
-                    {
-                        "fromOrder": event_order_by_id[
+                    [
+                        event_order_by_id[
                             dependency["fromEventID"]
                         ],
-                        "toOrder": event_order_by_id[
+                        event_order_by_id[
                             dependency["toEventID"]
                         ],
-                    }
+                    ]
                 )
             except (KeyError, TypeError) as exc:
                 raise ValueError(
                     "Fleet core graph dependency references an unknown event"
                 ) from exc
-        target = {
+        event_types = [event["type"] for event in graph["events"]]
+        enabled_policy_conditions = sorted(
+            key
+            for key, enabled in _orchestration_policy_conditions(
+                behavior=behavior,
+                training_variant="core",
+            ).items()
+            if enabled
+        )
+        graph_contract_target = {
             "behaviorClass": behavior,
-            "graphTopLevelKeys": list(graph),
-            "decisionKeys": list(graph["decision"]),
-            "eventID": {
-                "namespaceKey": "scenarioID",
-                "separator": "::event::",
-                "orderEncoding": "two_digit_one_based",
-            },
-            "eventSchemas": event_schemas,
-            "dependencyOrders": dependency_orders,
-            "decisionContract": graph["decision"],
+            "enabledPolicyConditions": enabled_policy_conditions,
+            "eventTypes": event_types,
+            "decision": graph["decision"],
         }
         topology_target = {
             "behaviorClass": behavior,
-            "scenarioIdentitySource": "supplied_scenario_id",
-            "eventIdentity": {
-                "namespaceKey": "scenarioID",
-                "separator": "::event::",
-                "orderEncoding": "two_digit_one_based",
-            },
-            "eventTypeSequence": [
-                event["type"] for event in graph["events"]
-            ],
-            "dependencyOrders": [
-                {
-                    "fromOrder": dependency["fromOrder"],
-                    "kind": "requires",
-                    "toOrder": dependency["toOrder"],
-                }
-                for dependency in dependency_orders
-            ],
-            "terminalEventOrder": len(graph["events"]),
-        }
-        payload_roles = {
-            "approvalRequestID": "copy_userApprovalRequestIdentifier",
-            "requestID": "request_not_scenario",
-            "targetSlotID": "delegation_target",
-            "sourceSlotID": "result_source",
-            "workKey": "persistent_work_key",
-            "contextKeys": "slot_scoped_context",
-            "requestedSlotID": "requested_slot",
-            "reason": "exact_stop_reason",
+            "eventTypes": event_types,
+            "directPrerequisiteEventOrders": dependency_orders,
         }
         semantic_role_target = {
             "behaviorClass": behavior,
-            "scenarioIdentitySource": "supplied_scenario_id",
-            "eventBindings": [
+            "payloadKeysByEventOrder": [
                 {
                     "eventOrder": event_order,
-                    "canonicalType": event["type"],
-                    "requiredPayloadBindings": [
-                        {
-                            "key": key,
-                            "semanticRole": payload_roles[key],
-                        }
-                        for key in event
-                        if key in payload_roles
+                    "eventType": event["type"],
+                    "payloadKeys": [
+                        key for key in event if key not in {"id", "type"}
                     ],
                 }
                 for event_order, event in enumerate(
@@ -3963,47 +3983,31 @@ def _fleet_policy_vocabulary_sft_anchors(
                     start=1,
                 )
             ],
-            "requiredInteriorEventTypes": [
-                event["type"]
-                for event in graph["events"]
-                if event["type"] not in {"request_received", "stop"}
-            ],
-            "decisionBinding": {
-                "strategy": graph["decision"]["strategy"],
-                "delegatedSlotIDs": graph["decision"]["delegatedSlotIDs"],
-                "aggregationOwnerSlotID": graph["decision"][
-                    "aggregationOwnerSlotID"
-                ],
-                "stopReason": graph["decision"]["stopReason"],
-            },
         }
         anchor_specs = (
             (
                 "graph_contract",
                 (
-                    "Return the registered schema contract for Fleet behavior "
-                    f"class {behavior}. Encode stage vocabulary, payload-key "
-                    "ownership, direct prerequisite orders, and the terminal "
-                    "decision. Do not emit scenario facts or a runnable graph."
+                    "Map the enabled policy conditions for Fleet behavior "
+                    f"class {behavior} to its canonical event types and "
+                    "terminal decision. Return only the compact policy bridge."
                 ),
-                target,
+                graph_contract_target,
             ),
             (
                 "topology_identity",
                 (
-                    "Return the identity and direct-prerequisite topology "
-                    f"registry for Fleet behavior class {behavior}. Use event "
-                    "orders rather than scenario-specific identifiers."
+                    "Map Fleet behavior class "
+                    f"{behavior} to its canonical event-type order and direct "
+                    "prerequisite event-order pairs."
                 ),
                 topology_target,
             ),
             (
                 "semantic_role_binding",
                 (
-                    "Return the canonical semantic field bindings for Fleet "
-                    f"behavior class {behavior}. Bind each event order to its "
-                    "registered type and required payload roles; preserve every "
-                    "interior stage and the exact terminal decision."
+                    "Map each canonical event order for Fleet behavior class "
+                    f"{behavior} to its event type and required payload keys."
                 ),
                 semantic_role_target,
             ),
@@ -4024,6 +4028,10 @@ def _fleet_policy_vocabulary_sft_anchors(
                     {
                         "requiredSplit": "train",
                         "policyVocabularyAnchor": True,
+                        "policyBridge": True,
+                        "policyBridgeSchemaVersion": (
+                            "lumen.fleet-policy-bridge/1.0.0"
+                        ),
                         "policyVocabularyAnchorKind": anchor_kind,
                         "policyVocabularyAnchorSurfaceIndex": (
                             anchor_surface_index
@@ -6808,70 +6816,72 @@ def _fleet_observed_mouth_confusion_tasks() -> dict[str, tuple[str, ...]]:
     tasks = {
         "executor": (
             (
-                "After planning, choose the declared peer that serializes a "
-                "validated native action payload."
+                "A validated action needs schema-bound tool JSON. Choose the "
+                "executor, not the embedding owner for numeric vectors or the "
+                "mimicry owner for style and voice adaptation."
             ),
             (
-                "An approved operation needs schema-exact arguments encoded for "
-                "execution; assign its runtime owner."
+                "An approved operation now needs typed arguments encoded for "
+                "execution, rather than semantic vectorization or tone matching."
             ),
             (
-                "Send construction of a manifest-valid invocation object to the "
-                "component responsible for execution."
+                "Route construction of a manifest-valid invocation object to its "
+                "tool-execution owner; this is neither embedding nor mimicry work."
             ),
             (
-                "Choose the adapter that verifies required argument types and "
-                "produces the executable action envelope."
+                "Choose the executor peer that validates argument types and emits an "
+                "executable action envelope, not numeric features or a style profile."
             ),
             (
-                "The response writer must not serialize a native invocation; "
-                "route the approved tool payload to its strict execution owner."
+                "Serialize the approved native call with its strict execution "
+                "adapter; do not confuse tool JSON with a retrieval vector or voice."
             ),
             (
-                "Assign exact tool-argument JSON generation to the manifested "
-                "executor rather than the peer that phrases user responses."
+                "Assign exact tool-argument JSON generation to the executor rather "
+                "than embedding for similarity features or mimicry for phrasing."
             ),
             (
-                "A validated plan now needs an executable schema-bound action, "
-                "not final prose; select the owning Fleet slot."
+                "A validated plan needs an executable schema-bound action. Select "
+                "the execution slot, not the vector or style-adaptation slots."
             ),
             (
-                "Choose the component that turns an approved operation into typed "
-                "tool JSON before any user-facing wording is produced."
+                "Turn an approved operation into typed tool JSON before response "
+                "wording; numeric semantic encoding and voice adaptation are unrelated."
             ),
         ),
         "embedding": (
             (
-                "A document needs a dense numeric representation before similarity "
-                "indexing; assign its runtime owner."
+                "A document needs a dense numeric semantic vector for similarity "
+                "indexing. Choose embedding, not mimicry or tool execution."
             ),
             (
-                "Choose the declared peer that encodes memory text into features "
-                "used for nearest-neighbor retrieval."
+                "Encode memory text into numeric nearest-neighbor features; this is "
+                "embedding work, not voice imitation or action serialization."
             ),
             (
-                "Send production of a retrieval vector for stored content to the "
-                "component responsible for representation."
+                "Send retrieval-vector generation for stored content to embedding, "
+                "not mimicry for style adaptation or executor for tool calls."
             ),
             (
-                "Assign semantic encoding of indexable text to the adapter that "
-                "owns numerical embeddings."
+                "Assign numeric semantic encoding of indexable text to the embedding "
+                "owner; style or voice adaptation belongs to mimicry, while schema-bound "
+                "actions belong to executor."
             ),
             (
-                "The response writer must not compute retrieval encodings; send "
-                "numeric feature construction to the embedding inference owner."
+                "Construct numeric retrieval features with embedding, not an executor "
+                "action payload and not a mimicry style profile."
             ),
             (
-                "Assign photo-index vectorization to the manifested embedding "
-                "component rather than the peer that writes final prose."
+                "Assign photo-index vectorization to embedding; it computes numeric "
+                "similarity features rather than tool JSON or adapted voice."
             ),
             (
-                "Text needs a semantic vector for dense retrieval before any answer "
-                "is rendered; select the responsible Fleet slot."
+                "Text needs a numeric semantic vector for dense retrieval. Select "
+                "embedding, while mimicry handles style and executor handles actions."
             ),
             (
-                "Choose the component that computes numeric similarity features, "
-                "not the component that communicates results to the user."
+                "Choose embedding to compute numeric similarity features, not mimicry "
+                "to adapt expression or executor to serialize a native invocation."
             ),
         ),
     }
