@@ -522,6 +522,57 @@ def test_pipeline_schedule_reconstruction_requires_batch_size_one() -> None:
         )
 
 
+def test_pipeline_reconstructs_family_round_robin_schedule() -> None:
+    config = _config()
+    row_evidence = [
+        {
+            "rowIndex": row_index,
+            "sourceRowSHA256": ubuntu_pipeline.canonical_sha256(
+                {"rowIndex": row_index, "targetTokenCount": token_count}
+            ),
+            "sourceFamily": (
+                "fleet_orchestration_native"
+                if row_index < 10
+                else "adapter_ultra_specific"
+            ),
+            "taskType": (
+                "fleet_orchestration_event_graph"
+                if row_index < 10
+                else "delegation_protocol"
+            ),
+            "category": "behavioral_primary",
+            "targetTokenCount": token_count,
+        }
+        for row_index, token_count in enumerate(
+            [51] * 10 + [4, 5, 6, 7, 8, 9, 10] * 10
+        )
+    ]
+    contract = config["fleetLossShareContract"]
+    schedule_contract = contract["sftOptimizerWindowScheduleContract"]
+    band = contract["optimizerFamilyShareBands"]["lanes"]["sft"]
+
+    trainer_schedule, _ = (
+        train_sft._build_fleet_sft_optimizer_window_schedule(
+            row_token_evidence=row_evidence,
+            config=config,
+            schedule_contract=schedule_contract,
+            minimum_basis_points=band["minimumBasisPoints"],
+            maximum_basis_points=band["maximumBasisPoints"],
+        )
+    )
+    verifier_schedule = (
+        ubuntu_pipeline._pipeline_fleet_sft_optimizer_window_schedule(
+            row_token_evidence=row_evidence,
+            config=config,
+            schedule_contract=schedule_contract,
+            minimum_basis_points=band["minimumBasisPoints"],
+            maximum_basis_points=band["maximumBasisPoints"],
+        )
+    )
+
+    assert verifier_schedule == trainer_schedule
+
+
 def test_pipeline_runtime_verifier_requires_batch_size_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -252,7 +252,7 @@ FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_SCHEMA = (
     "lumen.fleet-sft-optimizer-window-schedule/1.0.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
-    "sha256_epoch_stratified_token_aware_native_round_robin/1.1.0"
+    "sha256_epoch_stratified_token_aware_family_round_robin/1.2.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT = 256
 FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA = (
@@ -2190,17 +2190,20 @@ def _fleet_sft_epoch_order(
         else:  # pragma: no cover - guarded by exact schedule geometry
             raise RuntimeError("Fleet SFT native schedule exceeded window capacity")
 
-    non_native_cursor = 0
-    for window_index in window_order:
-        remaining = window_sizes[window_index] - len(windows[window_index])
-        windows[window_index].extend(
-            non_native_samples[
-                non_native_cursor : non_native_cursor + remaining
+    non_native_window_cursor = 0
+    for row_index in non_native_samples:
+        for _ in window_order:
+            window_index = window_order[
+                non_native_window_cursor % len(window_order)
             ]
-        )
-        non_native_cursor += remaining
-    if non_native_cursor != len(non_native_samples):
-        raise RuntimeError("Fleet SFT non-native schedule did not fill all windows")
+            non_native_window_cursor += 1
+            if len(windows[window_index]) < window_sizes[window_index]:
+                windows[window_index].append(row_index)
+                break
+        else:  # pragma: no cover - guarded by exact schedule geometry
+            raise RuntimeError(
+                "Fleet SFT non-native schedule exceeded window capacity"
+            )
 
     for window_index, window in enumerate(windows):
         ranked_occurrences = sorted(
