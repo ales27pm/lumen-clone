@@ -2197,13 +2197,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "a9effffc68c5e032594d42dbbeb3c2724940296c",
+  "manifestCommit": "e5ccf825631ffecabb96f68f53c47e6b1ad4d442",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "3533b3a9d085965ec64a195f7678e80c0fc45ee1be9f607282bbe1690a1532e8",
+    "promptSHA256": "0d8dc7147ef437d469011b88a9b865ab3e9954ba8790cd53544a9eda1631a3b3",
     "promptUTF8ByteCount": 26334,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2215,8 +2215,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "a9effffc68c5e032594d42dbbeb3c2724940296c",
+    "baseCommit": "e5ccf825631ffecabb96f68f53c47e6b1ad4d442",
     "dirtyState": false,
-    "workingTreeDigest": "018a36d27f2abe4183f2892e99cafeab35bbcd0d2521007604031aa2f6194ff0"
+    "workingTreeDigest": "ffc72df112d491dfe374c3cb228f7e220e905990e1f2cc6ce81eda14494ca572"
   }
 }

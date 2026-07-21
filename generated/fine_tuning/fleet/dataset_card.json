@@ -1,7 +1,7 @@
 {
   "agent": "fleet",
   "availableSFTRecords": 862,
-  "candidateSFTRecords": 7284,
+  "candidateSFTRecords": 7286,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": {
@@ -96,7 +96,7 @@
       },
       "schemaVersion": "lumen.fleet-loss-share/1.6.0",
       "sftOptimizerWindowScheduleContract": {
-        "algorithm": "sha256_epoch_stratified_native_round_robin/1.0.0",
+        "algorithm": "sha256_epoch_stratified_token_aware_native_round_robin/1.1.0",
         "basis": "mean_of_floor_per_optimizer_window_native_assistant_target_token_share_basis_points",
         "basisPointDenominator": 10000,
         "candidateSearchCount": 256,
@@ -513,7 +513,7 @@
       "samplingInputRecordCount": 1043,
       "samplingInputStratumCount": 43,
       "schemaVersion": "lumen.fleet-validation-sampling/1.0.0",
-      "selectedCohortSHA256": "0ec4292a222430b1899ce2ce345e77f16fbf1579c40992895db03cb04df1b819",
+      "selectedCohortSHA256": "37a894464cad28979301798e076ddbc45d1fd8b506ae295bda1af3dc5bac0c59",
       "selectedRecordCount": 128,
       "selectedStratumCount": 43,
       "selectionStrategy": "least_represented_stratum_then_salted_stable_hash_v1",
@@ -620,18 +620,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "a784cadcc0e03faa1508fa202530079b99f25d54904cd42fee80dc68d6c26858"
+      "reportSHA256": "567638cab67ce8773b8028f1aa5638c48bba3b77b27e0937244bbee66e760be4"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "712ca9b98b22e523022c9cfcfc99cd47071f89a5eb618bd084224c9a8a726472",
+    "frozenEvaluationSHA256": "3472bee12ba87e00fdf3d9d3778809ab0cc7064d74eee777de1a5c2b2896fe56",
     "recordCount": 15,
     "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "998f7addd8b12cfbc1cf9cd96bca0d261f88a30b6738fe4ca57f9d7c0cfd3fb5",
-      "optimizedTrainingCorpusSHA256": "f46afaef07d0e37e8f1666da5978d81dedb5d3920c57ac35338ec973631e8e95",
+      "baselineTrainingCorpusSHA256": "8f63502834f1fbd6452f571c6741d31da1f358cc007790dce4fbfee4bbbd6f2d",
+      "optimizedTrainingCorpusSHA256": "583d60781f423ca1c3aa4fcdd0ae5b901318cca0104fa474e72389178f44462a",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -660,7 +660,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "bf10ee0506b9b8e1ac92220ab1c550b6738fb6a48853d23063d062871ed14a88",
+    "experimentManifestSHA256": "970f25c82e673ce6c564c406adb1e721f20401032a659c3b45947e457ec9d46d",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -708,7 +708,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "a9effffc68c5e032594d42dbbeb3c2724940296c",
+  "manifestCommit": "e5ccf825631ffecabb96f68f53c47e6b1ad4d442",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 401,
@@ -980,9 +980,9 @@
     "self_model_sft": 4
   },
   "sourceIntegrity": {
-    "baseCommit": "a9effffc68c5e032594d42dbbeb3c2724940296c",
+    "baseCommit": "e5ccf825631ffecabb96f68f53c47e6b1ad4d442",
     "dirtyState": false,
-    "workingTreeDigest": "018a36d27f2abe4183f2892e99cafeab35bbcd0d2521007604031aa2f6194ff0"
+    "workingTreeDigest": "ffc72df112d491dfe374c3cb228f7e220e905990e1f2cc6ce81eda14494ca572"
   },
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning.",
   "taskTypeCounts": {
@@ -1033,5 +1033,5 @@
     "ultra_specific_fleet_slot_directory",
     "ultra_specific_tool_boundary_awareness"
   ],
-  "worktreeFingerprint": "018a36d27f2abe4183f2892e99cafeab35bbcd0d2521007604031aa2f6194ff0"
+  "worktreeFingerprint": "ffc72df112d491dfe374c3cb228f7e220e905990e1f2cc6ce81eda14494ca572"
 }
