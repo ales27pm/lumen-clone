@@ -50,17 +50,18 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     upgrade_evaluation_record,
 )
 from lumen_manifest_crawler.fleet_artifacts import (
-    _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS,
     ORCHESTRATION_ATOMIC_MUTATION_KINDS,
     ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS,
     ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE,
     ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS,
     _atomic_event_completeness_rejection,
     _atomic_event_order_indices,
+    _apply_event_payload_key_rejection,
     _core_failure_family_rejection,
-    _fact_derived_noncanonical_event_id,
-    _is_opaque_orchestration_training_fact_id,
-    _natural_noncanonical_event_type_alias,
+    _event_id_grammar_rejection,
+    _event_payload_schema_rejection_target,
+    _event_type_vocabulary_rejection_target,
+    _is_orchestration_training_fact_id,
     _orchestration_event_id_negative_fact,
     _orchestration_scalar_leaf_differences,
     _orchestration_topology_contract,
@@ -84,7 +85,7 @@ FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = (
 )
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_TOKEN_SHARE_HARD_MAX = 0.10
 FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR = 10_000
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.6.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.7.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
     "lumen.fleet-loss-share-evidence/1.3.0"
 )
@@ -102,7 +103,7 @@ FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION = (
     "lumen.fleet-optimizer-family-share/1.0.0"
 )
 FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION = (
-    "lumen.fleet-optimizer-family-source-proxy/1.1.0"
+    "lumen.fleet-optimizer-family-source-proxy/1.2.0"
 )
 FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY = "fleet_orchestration_native"
 FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE = (
@@ -116,7 +117,12 @@ FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE = (
 )
 FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS = 5_000
 FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS = 6_000
-FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS = 5_000
+# Semantic scenario prefixes are deliberately conservative under the UTF-8
+# source proxy but compress well under the pinned Qwen tokenizer. A 52% source
+# floor retains public diversity while keeping the final cohort below the 81
+# native rows' one-per-optimizer-window capacity; the exact 50-60% tokenizer
+# gate remains authoritative before any optimizer is created.
+FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MIN_BASIS_POINTS = 5_200
 FLEET_NATIVE_ORCHESTRATION_SFT_PROXY_SHARE_MAX_BASIS_POINTS = 5_800
 FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS = 1_800
 FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS = 2_200
@@ -198,8 +204,8 @@ FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT = {
         "coherent_noncanonical_strategy_and_stop_reason",
     ),
     "event_type_vocabulary": (
-        "$.events[first_behavior_event].type",
-        "deterministic_natural_noncanonical_alias",
+        "$.events[behavior_specific_event].type",
+        "observed_high_risk_alias_or_deterministic_fallback",
     ),
     "event_completeness_contract": (
         "$.events",
@@ -210,8 +216,8 @@ FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT = {
         "first_safe_adjacent_behavior_event_pair_swapped",
     ),
     "event_id_grammar": (
-        "$.events[0].id + $.dependencies[*]",
-        "request_fact_derived_noncanonical_event_id_with_rebound_endpoints",
+        "$.events[*].id + $.dependencies[*]",
+        "behavior_specific_noncanonical_identity_family_with_rebound_endpoints",
     ),
     "dependency_endpoint_reference": (
         "$.dependencies[*].toEventID",
@@ -219,7 +225,7 @@ FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT = {
     ),
     "event_payload_schema": (
         "$.events[*]",
-        "required_field_removed",
+        "required_field_replaced_with_observed_alias_or_removed_fallback",
     ),
     "delegated_slot_contract": (
         "$.decision.delegatedSlotIDs[*]",
@@ -2059,7 +2065,7 @@ def _fleet_native_prompt_request_identifier(user_prompt: str) -> str | None:
     return (
         request_identifier
         if isinstance(request_identifier, str)
-        and _is_opaque_orchestration_training_fact_id(request_identifier)
+        and _is_orchestration_training_fact_id(request_identifier)
         else None
     )
 
@@ -2112,23 +2118,14 @@ def _valid_fleet_native_preference_mutation(
     if mutation == "event_type_vocabulary":
         try:
             expected = json.loads(json.dumps(chosen, ensure_ascii=False))
-            mutable_events = [
-                event
-                for event in expected["events"]
-                if isinstance(event, dict)
-                and event.get("type") not in {"request_received", "stop"}
-            ]
-            if not mutable_events:
-                return False
-            mutable_index = expected["events"].index(mutable_events[0])
-            mutable_events[0]["type"] = _natural_noncanonical_event_type_alias(
-                expected,
-                mutable_events[0],
+            event_index, _, alias = _event_type_vocabulary_rejection_target(
+                expected
             )
+            expected["events"][event_index]["type"] = alias
         except (KeyError, TypeError, ValueError):
             return False
         return (
-            differences == [f"$.events[{mutable_index}].type"]
+            differences == [f"$.events[{event_index}].type"]
             and rejected == expected
         )
 
@@ -2160,28 +2157,13 @@ def _valid_fleet_native_preference_mutation(
 
     if mutation == "event_id_grammar":
         try:
-            expected = json.loads(json.dumps(chosen, ensure_ascii=False))
-            source_id = expected["events"][0]["id"]
-            replacement_id = _fact_derived_noncanonical_event_id(
-                event_id_fact
+            expected = _event_id_grammar_rejection(
+                chosen,
+                event_id_fact=event_id_fact,
             )
-            if any(
-                event.get("id") == replacement_id
-                for event in expected["events"][1:]
-            ):
-                return False
-            expected["events"][0]["id"] = replacement_id
-            for dependency in expected["dependencies"]:
-                for endpoint in ("fromEventID", "toEventID"):
-                    if dependency.get(endpoint) == source_id:
-                        dependency[endpoint] = replacement_id
         except (IndexError, KeyError, TypeError, ValueError):
             return False
-        return (
-            rejected == expected
-            and _orchestration_topology_contract(rejected)
-            == _orchestration_topology_contract(chosen)
-        )
+        return rejected == expected
 
     if mutation == "dependency_endpoint_reference":
         try:
@@ -2214,31 +2196,21 @@ def _valid_fleet_native_preference_mutation(
         )
 
     if mutation == "event_payload_schema":
-        if len(differences) != 1:
-            return False
-        match = re.fullmatch(r"\$\.events\[([0-9]+)\]", differences[0])
-        if match is None:
-            return False
-        index = int(match.group(1))
         try:
-            chosen_event = chosen["events"][index]
-            rejected_event = rejected["events"][index]
-        except (IndexError, KeyError, TypeError):
-            return False
-        if not isinstance(chosen_event, dict) or not isinstance(rejected_event, dict):
-            return False
-        event_type = chosen_event.get("type")
-        required_key = _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS.get(str(event_type))
-        return (
-            isinstance(required_key, str)
-            and required_key in chosen_event
-            and required_key not in rejected_event
-            and set(chosen_event) - set(rejected_event) == {required_key}
-            and not (set(rejected_event) - set(chosen_event))
-            and all(
-                chosen_event[key] == rejected_event[key]
-                for key in rejected_event
+            expected = json.loads(json.dumps(chosen, ensure_ascii=False))
+            event_index, required_key, alias_key = (
+                _event_payload_schema_rejection_target(expected)
             )
+            _apply_event_payload_key_rejection(
+                expected["events"][event_index],
+                required_key=required_key,
+                alias_key=alias_key,
+            )
+        except (IndexError, KeyError, TypeError, ValueError):
+            return False
+        return (
+            differences == [f"$.events[{event_index}]"]
+            and rejected == expected
         )
 
     if mutation == "delegated_slot_contract":
@@ -2640,11 +2612,7 @@ def _assert_fleet_native_orchestration_training_coverage(
                         f"Fleet native {lane} {behavior} exposes a DPO-only row"
                     )
                 if variant == "core":
-                    expected_prompt_mode = (
-                        "strict_json_retry"
-                        if "DPO" in lane
-                        else "initial_generation"
-                    )
+                    expected_prompt_mode = "initial_generation"
                     if metadata.get("generationPromptMode") != expected_prompt_mode:
                         raise ValueError(
                             f"Fleet native {lane} {behavior} core prompt mode is invalid"
@@ -3822,14 +3790,15 @@ def _fleet_policy_vocabulary_sft_anchors(
     manifest: AgentBehaviorManifest,
     records: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Derive one non-held-out schema anchor per visible core behavior.
+    """Derive non-held-out schema anchors per visible core behavior.
 
     The native topology matrix is intentionally immutable. Its nine new core
     SFT rows tokenize densely enough to exceed the exact internal-only family
     band. These anchors add diverse behavioral denominator signal instead of
-    weakening that guard: each teaches one behavior's exact stage vocabulary,
-    payload-key alternatives, dependency orders, and terminal decision without
-    copying a held-out scenario or runnable graph.
+    weakening that guard: each teaches one behavior's exact canonical stage
+    vocabulary, dependency orders, and terminal decision without copying a
+    held-out scenario, runnable graph, or rejected vocabulary into positive
+    SFT targets.
     """
 
     core_graphs: dict[str, dict[str, Any]] = {}
@@ -3942,37 +3911,6 @@ def _fleet_policy_vocabulary_sft_anchors(
             "dependencyOrders": dependency_orders,
             "decisionContract": graph["decision"],
         }
-        terminal_rejection = _terminal_decision_rejection(graph)
-        seen_event_types: set[str] = set()
-        event_type_repairs: list[dict[str, str]] = []
-        for event in graph["events"]:
-            event_type = event["type"]
-            if event_type in seen_event_types:
-                continue
-            seen_event_types.add(event_type)
-            event_type_repairs.append(
-                {
-                    "rejectAlias": _natural_noncanonical_event_type_alias(
-                        graph,
-                        event,
-                    ),
-                    "useCanonicalType": event_type,
-                }
-            )
-        repair_target = {
-            "behaviorClass": behavior,
-            "eventTypeRepairs": event_type_repairs,
-            "terminalDecisionRepair": {
-                "rejectStrategy": terminal_rejection["decision"][
-                    "strategy"
-                ],
-                "useStrategy": graph["decision"]["strategy"],
-                "rejectStopReason": terminal_rejection["decision"][
-                    "stopReason"
-                ],
-                "useStopReason": graph["decision"]["stopReason"],
-            },
-        }
         topology_target = {
             "behaviorClass": behavior,
             "scenarioIdentitySource": "supplied_scenario_id",
@@ -4004,15 +3942,6 @@ def _fleet_policy_vocabulary_sft_anchors(
                     "decision. Do not emit scenario facts or a runnable graph."
                 ),
                 target,
-            ),
-            (
-                "vocabulary_repair",
-                (
-                    "Repair plausible but noncanonical Fleet vocabulary for "
-                    f"behavior class {behavior}. Return only the registered "
-                    "event-type and terminal-decision replacements."
-                ),
-                repair_target,
             ),
             (
                 "topology_identity",
@@ -16260,11 +16189,17 @@ def _agent_unsloth_config(
         ),
         # Repeated pilots showed that held-out preference accuracy did not
         # predict Cortex free-generation quality, and the DPO phase regressed a
-        # stronger SFT checkpoint. Keep Cortex at its empirical minimum. Every
-        # other role has only a small preference lane and very few effective
-        # optimizer steps, so use the conservative PEFT-scale DPO rate without
-        # changing the independently tuned SFT rate or epoch count.
-        "dpo_learning_rate": 0.0000001 if agent == "cortex" else 0.000005,
+        # stronger SFT checkpoint. Keep Cortex at its empirical minimum.
+        # Canary33 likewise moved Fleet from 9/15 at SFT to 7/15 after DPO at
+        # 5e-6 despite 0.9167 validation preference accuracy, so keep Fleet's
+        # RPO regularization while reducing its policy step to 1e-6. The other
+        # roles retain the conservative PEFT-scale rate without changing their
+        # independently tuned SFT rate or epoch count.
+        "dpo_learning_rate": (
+            0.0000001
+            if agent == "cortex"
+            else (0.000001 if agent == "fleet" else 0.000005)
+        ),
         "dpo_num_train_epochs": optimization_step_policy["dpo"][
             "selectedEpochs"
         ],
