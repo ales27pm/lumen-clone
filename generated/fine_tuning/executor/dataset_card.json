@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "a8dfa1e631527b653222b79d6af6acc6b423a246a0f0303b2a5fb0adeee26d24"
+      "reportSHA256": "95131d579fc99726044862a10d12b6a5b6c42875f52b1a80d00e8c4ecca77e69"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "d86fb63692b817300f3a68b95d95f5fe2488bb3bc758c480266dde62f84867ba",
-      "optimizedTrainingCorpusSHA256": "5c0a6a7f980bfa2c8661178993922f2d90afc2c4b07439f58c9cd29d53d24ab9",
+      "baselineTrainingCorpusSHA256": "53300a9b695f5b137d95cb9a009295649013834159927e1e01c09f3ac5f815fe",
+      "optimizedTrainingCorpusSHA256": "f77f678fa7addcaa72112a129537724ecda713507a9d8eb9d03472c831d6da16",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 462,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "7b1aecff64e9f6240bd8a1011351a930a293d13a8589e92e844e8a85f37bd3eb",
+    "experimentManifestSHA256": "610abdc3f8322a42a0b72346a69bc908d5ed4982bde494b592a95790f6df2c9d",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "fe6cb777b20606f8fd8122851cc26d632c5527e9",
+  "manifestCommit": "37026e247cf9dae3e177540a3d08e5bdd8f817dc",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 36,
@@ -463,9 +463,9 @@
     "tool_schema_cards": 38
   },
   "sourceIntegrity": {
-    "baseCommit": "fe6cb777b20606f8fd8122851cc26d632c5527e9",
+    "baseCommit": "37026e247cf9dae3e177540a3d08e5bdd8f817dc",
     "dirtyState": false,
-    "workingTreeDigest": "7de6ed0360de54d6f410b372a1de3832b7ed35375393ceb44fb289678015869e"
+    "workingTreeDigest": "060639d0665f1bff11aa7cbe5c0eb1ac1bdc16043b36fab96026c79cae431a2f"
   },
   "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.",
   "taskTypeCounts": {
@@ -492,5 +492,5 @@
     "ultra_specific_post_observation_final",
     "ultra_specific_tool_call_generation"
   ],
-  "worktreeFingerprint": "7de6ed0360de54d6f410b372a1de3832b7ed35375393ceb44fb289678015869e"
+  "worktreeFingerprint": "060639d0665f1bff11aa7cbe5c0eb1ac1bdc16043b36fab96026c79cae431a2f"
 }

@@ -66,7 +66,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "8f59cebcb162dec2c8671f62f01e66435147544cb28d33d8b31ec8588dde4b4f"
+        "reportSHA256": "c9d1e58f9d5e8d520cbb04a1dada747cf3e4a2e2b42d0cbba06ad7ffba3172a0"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -74,7 +74,7 @@
       "recordCount": 5,
       "schemaVersion": "lumen.adapter-eval/1.1.0"
     },
-    "manifestCommit": "fe6cb777b20606f8fd8122851cc26d632c5527e9",
+    "manifestCommit": "37026e247cf9dae3e177540a3d08e5bdd8f817dc",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 61,
@@ -94,9 +94,9 @@
       "public_adapter_corpus_coedit_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "fe6cb777b20606f8fd8122851cc26d632c5527e9",
+      "baseCommit": "37026e247cf9dae3e177540a3d08e5bdd8f817dc",
       "dirtyState": false,
-      "workingTreeDigest": "7de6ed0360de54d6f410b372a1de3832b7ed35375393ceb44fb289678015869e"
+      "workingTreeDigest": "060639d0665f1bff11aa7cbe5c0eb1ac1bdc16043b36fab96026c79cae431a2f"
     },
     "taskTypes": [
       "critical_contract_preference_extraction",
@@ -150,7 +150,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "1725c3a035aaff580dd6b1f3cf71b79ec4431f8d85287df035cd6fe35959e5d6",
+    "experimentManifestSHA256": "4727a4870846dd30d8c87b82a407bfbbe7ae20baee75d137559f83b28bb5ac60",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -227,12 +227,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mimicry, Lumen's style adaptation agent. Adapt tone within safety and privacy boundaries.",
-  "trainingCodeBundleSHA256": "7d908675968f32fa2229ed4ab8360810636f881ed798662c94fbd7714c6bf3b1",
-  "trainingCodeSHA256": "c72e8dfa66a6ed206ac9a83511a19506d072da4dd39168a3c0b6c97aca2cb3fc",
+  "trainingCodeBundleSHA256": "1aea32b62579ed408a9b9fd8ee05a0241e183fbf63ef2416da82812f978b4f76",
+  "trainingCodeSHA256": "4a1fed4291e41a6bff1c27a0769e498f5056f6609ab5b502478385e35d6cd0ff",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "41560e4a759a63290a1508043df062ac860331d7654970ff904de94ea8ee0218",
-    "orpo": "af0818e68be24ca40d6cdd202bfcb49e2da7c11fb9210b199515b9a31028a7b7",
-    "sft": "c72e8dfa66a6ed206ac9a83511a19506d072da4dd39168a3c0b6c97aca2cb3fc"
+    "dpo": "fbd7b975e8c5bbec081f3baaf1d4e45120051551db22b02b9d999ce31cdfd0c4",
+    "orpo": "3d17c95adea45179256b8b0109c291ca100ff5b98b5b92c490d7bbd7a8b6097c",
+    "sft": "4a1fed4291e41a6bff1c27a0769e498f5056f6609ab5b502478385e35d6cd0ff"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
