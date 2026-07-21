@@ -28,6 +28,9 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     score_evaluation_suite,
     upgrade_evaluation_record,
 )
+from lumen_manifest_crawler.dataset.chat_template_contract import (
+    generic_strict_json_retry_instruction,
+)
 from lumen_manifest_crawler.dataset.compiler import _records_hash
 from lumen_manifest_crawler.dataset.codebase_home import (
     MAX_CHUNK_CHARS,
@@ -104,6 +107,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _CORTEX_RETRY_GUIDANCE_BY_FAILURE_CODE,
     _balanced_fleet_contract_dpo_pairs,
     _balanced_fleet_contract_sft_anchors,
+    _assert_fleet_balanced_retry_training_coverage,
     _agent_unsloth_config,
     _bind_fleet_dpo_contract,
     _bind_fleet_sft_contract,
@@ -307,6 +311,9 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
         assert config["adapterExport"]["sharedBaseRepoID"] == EXPECTED_SHARED_BASE_REPO
         assert config["preference_trainer"] == "dpo"
         assert config["dpo_beta"] == pytest.approx(0.1)
+        assert config["dpo_rpo_alpha"] == (
+            1.0 if agent == "fleet" else None
+        )
         assert config["bf16"] is False
         assert config["fp16"] is True
         assert config["trainingCodeManifest"]["phase"] == "sft"
@@ -2706,6 +2713,7 @@ def test_cortex_route_dpo_is_manifest_complete_and_train_anchored(
     assert cortex.unsloth_config["num_train_epochs"] == 3
     assert cortex.unsloth_config["dpo_learning_rate"] == pytest.approx(0.0000001)
     assert cortex.unsloth_config["dpo_num_train_epochs"] == 1
+    assert cortex.unsloth_config["dpo_rpo_alpha"] is None
     assert cortex.unsloth_config["max_prompt_length"] == 3200
     assert cortex.unsloth_config["preference_minimum_prompt_margin_tokens"] == 64
     assert cortex.unsloth_config["preference_minimum_sequence_margin_tokens"] == 128
@@ -8738,7 +8746,7 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
     )
     assert train_counts == Counter(
         {
-            "fleet_contract_delegation": 216,
+            "fleet_contract_delegation": 240,
             "fleet_contract_known_slots": 21,
             "fleet_contract_tool_boundary": 21,
         }
@@ -8782,6 +8790,36 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
                 <= len(records)
                 * FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS
             )
+    _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
+    finalized_retry_records = [
+        record
+        for record in fleet.train_dpo
+        if record["metadata"].get("taskType")
+        in FLEET_BALANCED_CONTRACT_TASK_TYPES
+        and record["metadata"].get("generationPromptMode")
+        == "strict_json_retry"
+    ]
+    finalized_retry_groups = {
+        (
+            record["metadata"]["taskType"],
+            record["metadata"]["retryCoverageScope"],
+            _canonical_rendered_prompt_key(record, lane="dpo"),
+        )
+        for record in finalized_retry_records
+    }
+    assert len(finalized_retry_records) == 16
+    assert len(finalized_retry_groups) == 8
+    assert {
+        (task_type, scope)
+        for task_type, scope, _ in finalized_retry_groups
+    } == {
+        *{
+            ("fleet_contract_delegation", slot_ids_by_agent[owner])
+            for owner in _fleet_delegation_tasks()
+        },
+        ("fleet_contract_known_slots", "contract_family"),
+        ("fleet_contract_tool_boundary", "contract_family"),
+    }
     assert fleet.contamination_report["contaminated"] is False
     assert fleet.contamination_report["matchCount"] == 0
 
@@ -8829,7 +8867,6 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
         }
     )
 
-    _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
     delegation_by_split = {
         "train": [
             record
@@ -8860,6 +8897,8 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
             for owner in delegation_tasks
         }
         if split == "train":
+            for owner in delegation_tasks:
+                expected_counts[slot_ids_by_agent[owner]] += 4
             for owner in ("embedding", "executor"):
                 expected_counts[slot_ids_by_agent[owner]] += (
                     8 + FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER
@@ -8888,8 +8927,11 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
             record["metadata"]["contrastMode"] for record in owner_train
         )
         assert contrast_modes["balanced_rotation"] == 32
+        assert contrast_modes["balanced_secondary_semantic_contrast"] == 4
         assert contrast_modes["observed_mimicry_confusion"] == (
-            7 if owner in {"embedding", "executor"} else 0
+            7
+            if owner in {"embedding", "executor"}
+            else 0
         )
         assert contrast_modes["independent_semantic_confusion"] == (
             1 if owner in {"embedding", "executor"} else 0
@@ -8916,6 +8958,11 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
             elif mode == "observed_mouth_confusion":
                 assert rejected_slot == slot_ids_by_agent["mouth"]
                 assert "observed Mouth" in record["metadata"]["reason"]
+            elif mode == "balanced_secondary_semantic_contrast":
+                assert rejected_slot != target_slot_id
+                assert "second independent manifested semantic owner" in (
+                    record["metadata"]["reason"]
+                )
 
     records = [
         record
@@ -8928,7 +8975,25 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
         chosen = json.loads(record["chosen"]["content"])
         rejected = json.loads(record["rejected"]["content"])
         assert set(chosen) == set(rejected)
-        assert sum(chosen[key] != rejected[key] for key in chosen) == 1
+        changed_keys = {
+            key for key in chosen if chosen[key] != rejected[key]
+        }
+        if record["metadata"].get("generationPromptMode") == (
+            "strict_json_retry"
+        ):
+            assert record["metadata"]["retryContrastMode"] == (
+                "strict_retry_compound_repetition"
+            )
+            assert record["metadata"]["compoundPreferenceDimensions"] == [
+                "incorrect_contract_value",
+                "duplicate_known_slot",
+            ]
+            assert "knownSlots" in changed_keys
+            assert len(changed_keys) == (
+                1 if preference_type == "fleet_contract_known_slots" else 2
+            )
+        else:
+            assert len(changed_keys) == 1
         assert chosen["knownSlots"] == slot_ids
         if "delegateTo" in chosen:
             assert chosen["delegateTo"] in slot_ids
@@ -8982,6 +9047,64 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
             allowed_slots=set(slot_ids),
             has_output=True,
         )["passed"] is False
+
+
+def test_finalized_fleet_retry_coverage_rejects_unmanifested_owner_tampering(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    train_dpo = copy.deepcopy(fine_tuning["fleet"].train_dpo)
+    _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
+    embedding_slot = slot_ids_by_agent["embedding"]
+    tampered_count = 0
+    for record in train_dpo:
+        metadata = record.get("metadata") or {}
+        if metadata.get("taskType") != "fleet_contract_delegation":
+            continue
+        chosen = json.loads(record["chosen"]["content"])
+        if chosen.get("delegateTo") != embedding_slot:
+            continue
+        chosen["delegateTo"] = "bogus_unmanifested_owner"
+        record["chosen"]["content"] = json.dumps(
+            chosen,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        if metadata.get("retryCoverageScope") == embedding_slot:
+            metadata["retryCoverageScope"] = "bogus_unmanifested_owner"
+        tampered_count += 1
+
+    assert tampered_count > 0
+    with pytest.raises(ValueError, match="manifested slot contract"):
+        _assert_fleet_balanced_retry_training_coverage(
+            fine_tuning["fleet"].train_sft,
+            train_dpo,
+            manifest=manifest,
+        )
+
+
+def test_finalized_fleet_retry_coverage_rejects_missing_sft_anchor(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    fleet = fine_tuning["fleet"]
+    train_sft = copy.deepcopy(fleet.train_sft)
+    retry_index = next(
+        index
+        for index, record in enumerate(train_sft)
+        if record.get("metadata", {}).get("generationPromptMode")
+        == "strict_json_retry"
+        and record.get("metadata", {}).get("taskType")
+        in FLEET_BALANCED_CONTRACT_TASK_TYPES
+    )
+    train_sft.pop(retry_index)
+
+    with pytest.raises(ValueError, match="SFT prompts do not exactly match DPO"):
+        _assert_fleet_balanced_retry_training_coverage(
+            train_sft,
+            fleet.train_dpo,
+            manifest=manifest,
+        )
 
 
 def test_closed_world_semantic_preferences_are_optimizer_visible_and_clean(
@@ -9372,6 +9495,48 @@ def test_balanced_fleet_preference_targets_become_split_preserving_sft_anchors(
     manifest, _, _ = compiled_fine_tuning
     pairs = _balanced_fleet_contract_dpo_pairs(manifest)
     anchors = _balanced_fleet_contract_sft_anchors(manifest)
+    retry_pairs = [
+        pair
+        for pair in pairs
+        if pair["metadata"].get("generationPromptMode")
+        == "strict_json_retry"
+    ]
+    _, _, slot_ids_by_agent = _fleet_slot_contract(manifest)
+    retry_prompt_groups = {
+        (
+            pair["metadata"]["taskType"],
+            pair["metadata"]["retryCoverageScope"],
+            _canonical_rendered_prompt_key(pair, lane="dpo"),
+        )
+        for pair in retry_pairs
+    }
+    assert len(retry_pairs) == 16
+    assert len(retry_prompt_groups) == 8
+    assert {
+        (task_type, scope)
+        for task_type, scope, _ in retry_prompt_groups
+    } == {
+        *{
+            ("fleet_contract_delegation", slot_ids_by_agent[owner])
+            for owner in _fleet_delegation_tasks()
+        },
+        ("fleet_contract_known_slots", "contract_family"),
+        ("fleet_contract_tool_boundary", "contract_family"),
+    }
+    retry_suffix = "\n\n" + generic_strict_json_retry_instruction(
+        "invalid_json"
+    )
+    for pair in retry_pairs:
+        metadata = pair["metadata"]
+        assert metadata["retryContrastMode"] == (
+            "strict_retry_compound_repetition"
+        )
+        assert metadata["retryFailureCode"] == "invalid_json"
+        assert pair["prompt"][-1]["content"].endswith(retry_suffix)
+        chosen = json.loads(pair["chosen"]["content"])
+        rejected = json.loads(pair["rejected"]["content"])
+        assert len(chosen["knownSlots"]) == len(set(chosen["knownSlots"]))
+        assert len(rejected["knownSlots"]) > len(set(rejected["knownSlots"]))
     suffix_by_task = {
         "fleet_contract_delegation": FLEET_DELEGATION_OUTPUT_CONTRACT,
         "fleet_contract_known_slots": FLEET_SLOT_DIRECTORY_OUTPUT_CONTRACT,
@@ -9409,21 +9574,19 @@ def test_balanced_fleet_preference_targets_become_split_preserving_sft_anchors(
     assert {
         task_type for task_type, _ in anchor_by_prompt
     } == FLEET_BALANCED_CONTRACT_TASK_TYPES
-    assert all(
-        len(records) == (
-            2
-            if any(
-                record["metadata"].get("contrastMode")
-                in {
-                    "observed_mimicry_confusion",
-                    "independent_semantic_confusion",
-                }
-                for record in records
-            )
-            else 1
-        )
-        for records in pairs_by_prompt.values()
-    )
+    for records in pairs_by_prompt.values():
+        modes = {
+            record["metadata"].get("contrastMode") for record in records
+        }
+        expected_count = 1
+        if "balanced_secondary_semantic_contrast" in modes:
+            expected_count += 1
+        if modes & {
+            "observed_mimicry_confusion",
+            "independent_semantic_confusion",
+        }:
+            expected_count += 1
+        assert len(records) == expected_count
 
     for key, anchor in anchor_by_prompt.items():
         task_type, _ = key
@@ -9466,7 +9629,11 @@ def test_balanced_fleet_preference_targets_become_split_preserving_sft_anchors(
             }
         user = anchor["messages"][-2]["content"]
         suffix = suffix_by_task[task_type]
-        assert user.endswith(f"\n\n{suffix}")
+        if anchor["metadata"].get("generationPromptMode") == "strict_json_retry":
+            assert user.endswith(retry_suffix)
+            assert f"\n\n{suffix}{retry_suffix}" in user
+        else:
+            assert user.endswith(f"\n\n{suffix}")
         assert "complete manifest declaration order" in suffix
         assert re.findall(r"`([^`]+)`", suffix) == (
             quoted_keys_by_task[task_type]
@@ -9557,7 +9724,6 @@ def test_compiled_fleet_anchors_survive_with_dpo_parity_and_clean_evaluation(
                 slot_ids_by_agent[owner]: (
                     FLEET_DELEGATION_PROMPTS_PER_OWNER
                     - FLEET_DELEGATION_VALIDATION_PROMPTS_PER_OWNER
-                    - 1
                     + (
                         FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER
                         if owner in {"embedding", "executor"}
@@ -9779,6 +9945,7 @@ def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> N
         "lora_r",
         "lora_alpha",
         "learning_rate",
+        "dpo_rpo_alpha",
         "dataset_dir",
         "output_dir",
     }
@@ -9786,11 +9953,66 @@ def test_unsloth_configs_include_required_keys(compiled_fine_tuning: tuple) -> N
     for agent in AGENTS:
         config = fine_tuning[agent].unsloth_config
         assert required.issubset(config.keys()), f"{agent} missing keys"
+        assert config["dpo_rpo_alpha"] == (
+            1.0 if agent == "fleet" else None
+        )
 
     config_dir = _repo_root() / "tools" / "fine_tuning" / "unsloth" / "configs"
     for path in config_dir.glob("*.json"):
         cfg = json.loads(path.read_text(encoding="utf-8"))
         assert required.issubset(cfg.keys()), f"{path} missing required keys"
+        agent = str(cfg["agent"])
+        assert cfg["dpo_rpo_alpha"] == (
+            1.0 if agent == "fleet" else None
+        )
+
+
+def test_unsloth_rpo_contract_rejects_missing_or_wrong_agent_values(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+
+    missing_fleet_config = dict(fine_tuning["fleet"].unsloth_config)
+    missing_fleet_config.pop("dpo_rpo_alpha")
+    missing = dict(fine_tuning)
+    missing["fleet"] = replace(
+        fine_tuning["fleet"],
+        unsloth_config=missing_fleet_config,
+    )
+    missing_failures = validate_agent_fine_tuning_datasets(manifest, missing)
+    assert any(
+        failure.code == "missing_unsloth_config_key"
+        and failure.path
+        == "fine_tuning.fleet.unsloth_config.dpo_rpo_alpha"
+        for failure in missing_failures
+    )
+
+    wrong_fleet_config = {
+        **fine_tuning["fleet"].unsloth_config,
+        "dpo_rpo_alpha": None,
+    }
+    wrong_cortex_config = {
+        **fine_tuning["cortex"].unsloth_config,
+        "dpo_rpo_alpha": 1.0,
+    }
+    wrong = dict(fine_tuning)
+    wrong["fleet"] = replace(
+        fine_tuning["fleet"],
+        unsloth_config=wrong_fleet_config,
+    )
+    wrong["cortex"] = replace(
+        fine_tuning["cortex"],
+        unsloth_config=wrong_cortex_config,
+    )
+    wrong_failures = validate_agent_fine_tuning_datasets(manifest, wrong)
+    assert {
+        failure.path
+        for failure in wrong_failures
+        if failure.code == "invalid_unsloth_dpo_rpo_alpha"
+    } >= {
+        "fine_tuning.fleet.unsloth_config.dpo_rpo_alpha",
+        "fine_tuning.cortex.unsloth_config.dpo_rpo_alpha",
+    }
 
 
 def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
@@ -9813,6 +10035,10 @@ def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
         "rem": 0.000005,
         "fleet": 0.000005,
     }
+    expected_dpo_rpo_alphas = {
+        agent: (1.0 if agent == "fleet" else None)
+        for agent in AGENTS
+    }
     assert {
         agent: fine_tuning[agent].unsloth_config["learning_rate"]
         for agent in AGENTS
@@ -9821,6 +10047,10 @@ def test_learning_rates_remain_bounded_and_step_policy_prevents_undertraining(
         agent: fine_tuning[agent].unsloth_config["dpo_learning_rate"]
         for agent in AGENTS
     } == expected_dpo_learning_rates
+    assert {
+        agent: fine_tuning[agent].unsloth_config["dpo_rpo_alpha"]
+        for agent in AGENTS
+    } == expected_dpo_rpo_alphas
     cortex = fine_tuning["cortex"].unsloth_config
     assert cortex["num_train_epochs"] == 3
     assert cortex["dpo_num_train_epochs"] == 1

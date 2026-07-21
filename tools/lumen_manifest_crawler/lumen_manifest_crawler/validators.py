@@ -1547,12 +1547,25 @@ def _validate_unsloth_config(*, agent: str, config: dict[str, Any], failures: li
         "lora_r",
         "lora_alpha",
         "learning_rate",
+        "dpo_rpo_alpha",
         "dataset_dir",
         "output_dir",
     }
     for key in required:
         if key not in config:
             failures.append(ValidationFailure(code="missing_unsloth_config_key", message=f"{agent} missing unsloth key {key}", path=f"fine_tuning.{agent}.unsloth_config.{key}"))
+    expected_rpo_alpha = 1.0 if agent == "fleet" else None
+    if config.get("dpo_rpo_alpha") != expected_rpo_alpha:
+        failures.append(
+            ValidationFailure(
+                code="invalid_unsloth_dpo_rpo_alpha",
+                message=(
+                    f"{agent} dpo_rpo_alpha must be "
+                    f"{expected_rpo_alpha!r}"
+                ),
+                path=f"fine_tuning.{agent}.unsloth_config.dpo_rpo_alpha",
+            )
+        )
 
 
 def _validate_executor_tool_coverage(ds: Any, known_tools: set[str], failures: list[ValidationFailure]) -> None:

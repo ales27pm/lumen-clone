@@ -22,6 +22,9 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     upgrade_evaluation_record,
 )
 from lumen_manifest_crawler.dataset.adapter_export import agent_adapter_export_plan
+from lumen_manifest_crawler.dataset.chat_template_contract import (
+    generic_strict_json_retry_instruction,
+)
 from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
 from lumen_manifest_crawler.dataset.fine_tuning import (
     EXECUTOR_RUNTIME_SYSTEM_PROMPT,
@@ -4777,6 +4780,102 @@ def test_fleet_schema_suffix_helpers_are_exact_and_ambiguity_fails_closed() -> N
         )
 
 
+def test_fleet_retry_suffix_normalization_removes_only_attested_boilerplate() -> None:
+    contract = adapter_evaluation.FLEET_DELEGATION_OUTPUT_CONTRACT
+    retry = generic_strict_json_retry_instruction("invalid_json")
+    base_prompt = "Choose the declared owner for this capability."
+    rendered = f"{base_prompt}\n\n{contract}\n\n{retry}"
+    metadata = {
+        "agent": "fleet",
+        "taskType": "fleet_contract_delegation",
+        "generationPromptMode": "strict_json_retry",
+        "retryFailureCode": "invalid_json",
+    }
+
+    assert adapter_evaluation._fleet_prompt_without_short_contract_suffix(
+        rendered,
+        metadata,
+    ) == base_prompt
+    assert adapter_evaluation._fleet_prompt_without_short_contract_suffix(
+        rendered,
+        {**metadata, "generationPromptMode": "initial_generation"},
+    ) == rendered
+    assert adapter_evaluation._fleet_prompt_without_short_contract_suffix(
+        rendered + " unexpected",
+        metadata,
+    ) == rendered + " unexpected"
+
+
+def test_fleet_retry_contract_binding_is_terminal_ordered_and_idempotent() -> None:
+    contract = adapter_evaluation.FLEET_DELEGATION_OUTPUT_CONTRACT
+    retry = generic_strict_json_retry_instruction("invalid_json")
+    base_prompt = "Choose the declared owner for this bounded operation."
+    metadata = {
+        "agent": "fleet",
+        "taskType": "fleet_contract_delegation",
+        "generationPromptMode": "strict_json_retry",
+        "retryFailureCode": "invalid_json",
+    }
+    expected = f"{base_prompt}\n\n{contract}\n\n{retry}"
+
+    assert adapter_evaluation._fleet_prompt_with_short_contract(
+        f"{base_prompt}\n\n{retry}",
+        metadata,
+    ) == expected
+    assert adapter_evaluation._fleet_prompt_with_short_contract(
+        expected,
+        metadata,
+    ) == expected
+    with pytest.raises(ValueError, match="exact retry suffix"):
+        adapter_evaluation._fleet_prompt_with_short_contract(
+            f"{base_prompt}\n\n{contract}",
+            metadata,
+        )
+
+
+def test_fleet_retry_boilerplate_does_not_mask_base_prompt_contamination() -> None:
+    contract = adapter_evaluation.FLEET_DELEGATION_OUTPUT_CONTRACT
+    retry = generic_strict_json_retry_instruction("invalid_json")
+    metadata = {
+        "agent": "fleet",
+        "taskType": "fleet_contract_delegation",
+        "generationPromptMode": "strict_json_retry",
+        "retryFailureCode": "invalid_json",
+    }
+
+    def training(prompt: str) -> dict:
+        return {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"{prompt}\n\n{contract}\n\n{retry}",
+                }
+            ],
+            "metadata": metadata,
+        }
+
+    heldout_prompt = "Resolve the quarantined vector owner for case heliotrope."
+    evaluation = _eval(
+        "fleet",
+        "delegation_protocol",
+        [{"type": "json_valid"}],
+        prompt=f"{heldout_prompt}\n\n{contract}",
+    )
+
+    clean = build_contamination_report(
+        [training("Route the amber summarizer using its declared slot.")],
+        [evaluation],
+    )
+    contaminated = build_contamination_report(
+        [training(heldout_prompt)],
+        [evaluation],
+    )
+
+    assert clean["contaminated"] is False
+    assert contaminated["contaminated"] is True
+    assert contaminated["matches"][0]["matchKind"] == "exact_record"
+
+
 @pytest.mark.parametrize("target_location", ("expected", "metric"))
 def test_contamination_report_fingerprints_natural_language_scoring_targets(
     target_location: str,
@@ -7143,6 +7242,41 @@ def test_wrapped_short_frozen_prompts_are_removed_but_tiny_fragments_are_not() -
     assert _exclude_evaluation_segment_matches(
         [wrapped, tiny_only, assistant_leak, chosen_leak, system_only], evaluation
     ) == [tiny_only, system_only]
+
+
+def test_training_filter_uses_the_attested_short_window_contamination_threshold() -> None:
+    evaluation = [
+        _eval(
+            "fleet",
+            "delegation_protocol",
+            [{"type": "json_valid"}],
+            prompt=(
+                "Delegate semantic vector generation to its manifested owner "
+                "without inventing a peer slot."
+            ),
+        )
+    ]
+    half_containment = {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Assign fact-preserving tone adaptation to its manifested "
+                    "owner without inventing a peer or shadow slot."
+                ),
+            },
+            {"role": "assistant", "content": "{}"},
+        ]
+    }
+
+    assert build_contamination_report(
+        [half_containment],
+        evaluation,
+    )["matches"][0]["similarity"] == 0.5
+    assert _exclude_evaluation_segment_matches(
+        [half_containment],
+        evaluation,
+    ) == []
 
 
 def test_native_fleet_boundary_eval_rejects_tampered_event_payloads() -> None:

@@ -17,10 +17,37 @@ STRUCTURED_OUTPUT_INSTRUCTION = (
     "Response format contract: output exactly one valid JSON object. Do not include "
     "prose, markdown, code fences, or hidden reasoning."
 )
+GENERIC_STRICT_JSON_RETRY_INSTRUCTION = (
+    "This is the single bounded retry after strict raw JSON validation failed. "
+    "Re-read the response-format contract and the user's request. Emit a fresh, "
+    "complete JSON object now. Output JSON only: no prose, markdown, code fences, "
+    "comments, or hidden reasoning. Start with { and stop after its matching }. "
+    "Keep the object concise. Do not emit a tool catalog, repeat or repair the "
+    "previous output, emit duplicate keys, or emit an unbounded array."
+)
+STRICT_JSON_RETRY_VALIDATION_FAILURE_GUIDANCE = (
+    " Validation failure code: {validation_error}. Use that code only to re-check "
+    "the response contract; do not invent missing user values."
+)
 _STRUCTURED_OUTPUT_CONTRACT_MARKER_PATTERN = re.compile(
     r"(?i)\bresponse[\s_-]*format[\s_-]*contract\b"
 )
 StructuredOutputInstructionStatus = Literal["absent", "exact_once", "drifted"]
+
+
+def generic_strict_json_retry_instruction(
+    validation_error: str | None = None,
+) -> str:
+    """Return the shared bounded retry instruction used by training and evaluation."""
+
+    instruction = GENERIC_STRICT_JSON_RETRY_INSTRUCTION
+    if validation_error is None:
+        return instruction
+    if re.fullmatch(r"[a-z][a-z0-9_]{0,127}", validation_error) is None:
+        raise ValueError("Strict JSON retry received an invalid failure code")
+    return instruction + STRICT_JSON_RETRY_VALIDATION_FAILURE_GUIDANCE.format(
+        validation_error=validation_error,
+    )
 
 
 def structured_output_instruction_status(

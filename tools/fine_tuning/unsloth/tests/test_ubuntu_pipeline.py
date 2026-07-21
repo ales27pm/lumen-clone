@@ -26,6 +26,7 @@ from lumen_manifest_crawler.dataset.optimization_policy import (
 from tools.fine_tuning.unsloth import (
     evaluate_adapter,
     runtime_binding_smoke_gate,
+    train_dpo,
     ubuntu_pipeline,
     ubuntu_source_integrity,
 )
@@ -1181,6 +1182,7 @@ def _write_evaluation_evidence(
         "dpo_learning_rate": 5e-6,
         "dpo_num_train_epochs": 1,
         "dpo_beta": 0.1,
+        "dpo_rpo_alpha": 1.0 if agent == "fleet" else None,
         "gradient_checkpointing": True,
         "use_logits_to_keep": True,
         "precompute_ref_log_probs": True,
@@ -3817,6 +3819,7 @@ def test_final_config_switches_to_verified_preference_lineage(
         "dpo_learning_rate": 5e-6,
         "dpo_num_train_epochs": 1,
         "dpo_beta": 0.1,
+        "dpo_rpo_alpha": None,
         "max_seq_length": 64,
         "max_prompt_length": 32,
         "batch_size": 1,
@@ -7302,3 +7305,117 @@ def test_controlled_trainers_evaluate_each_epoch_and_checkpoint_preference_steps
     assert '"save_strategy": "steps"' in dpo_source
     assert '"save_steps": checkpoint_save_steps' in dpo_source
     assert '"save_only_model": False' in dpo_source
+
+
+def test_rpo_chosen_nll_evidence_is_visible_only_when_enabled() -> None:
+    assert ubuntu_pipeline._verified_rpo_chosen_nll_evidence(
+        {"rpoAlpha": None},
+        {"evaluation_metrics": {}},
+    ) is None
+    assert ubuntu_pipeline._verified_rpo_chosen_nll_evidence(
+        {"rpoAlpha": 1.0},
+        {"evaluation_metrics": {"eval_nll_loss": 0.25}},
+    ) == {
+        "rpoAlpha": 1.0,
+        "metric": "eval_nll_loss",
+        "value": 0.25,
+    }
+
+
+@pytest.mark.parametrize(
+    "invalid_metric",
+    (None, True, "0.25", -0.1, float("nan"), float("inf")),
+)
+def test_rpo_chosen_nll_evidence_rejects_missing_or_nonfinite_metrics(
+    invalid_metric: object,
+) -> None:
+    with pytest.raises(RuntimeError, match="finite eval_nll_loss"):
+        ubuntu_pipeline._verified_rpo_chosen_nll_evidence(
+            {"rpoAlpha": 1.0},
+            {"evaluation_metrics": {"eval_nll_loss": invalid_metric}},
+        )
+
+
+@pytest.mark.parametrize("rpo_alpha", (None, 1.0))
+def test_rpo_runtime_capability_evidence_is_required_and_hash_bound(
+    rpo_alpha: float | None,
+) -> None:
+    if rpo_alpha is None:
+        evidence = train_dpo._verify_rpo_runtime_capability(
+            dpo_config_class=object,
+            dpo_trainer_class=object,
+            rpo_alpha=None,
+        )
+    else:
+        unsigned = {
+            "schemaVersion": train_dpo.RPO_RUNTIME_CAPABILITY_SCHEMA,
+            "status": "verified",
+            "rpoAlpha": 1.0,
+            "configClass": "trl.DPOConfig",
+            "trainerClass": "trl.DPOTrainer",
+            "methodSourceSHA256": {
+                method: character * 64
+                for method, character in zip(
+                    (
+                        "concatenated_forward",
+                        "get_batch_loss_metrics",
+                        "prediction_step",
+                        "log",
+                        "evaluate",
+                    ),
+                    "abcde",
+                    strict=True,
+                )
+            },
+        }
+        evidence = {
+            **unsigned,
+            train_dpo.RPO_RUNTIME_CAPABILITY_HASH_FIELD: (
+                train_dpo._canonical_sha256(unsigned)
+            ),
+        }
+
+    assert ubuntu_pipeline._verified_rpo_runtime_capability_evidence(
+        {"rpoAlpha": rpo_alpha},
+        {"rpoRuntimeCapability": evidence},
+    ) == evidence
+
+    with pytest.raises(RuntimeError, match="exact-runtime RPO capability"):
+        ubuntu_pipeline._verified_rpo_runtime_capability_evidence(
+            {"rpoAlpha": rpo_alpha},
+            {"rpoRuntimeCapability": {**evidence, "status": "tampered"}},
+        )
+
+    with pytest.raises(RuntimeError, match="exact-runtime RPO capability"):
+        ubuntu_pipeline._verified_rpo_runtime_capability_evidence(
+            {"rpoAlpha": rpo_alpha},
+            {},
+        )
+
+
+@pytest.mark.parametrize("rpo_alpha", (None, 1.0))
+def test_constructed_rpo_binding_evidence_is_required_and_hash_bound(
+    rpo_alpha: float | None,
+) -> None:
+    args = SimpleNamespace(rpo_alpha=rpo_alpha)
+    evidence = train_dpo._verify_constructed_rpo_binding(
+        SimpleNamespace(args=args),
+        args,
+        rpo_alpha=rpo_alpha,
+    )
+    assert ubuntu_pipeline._verified_constructed_rpo_binding_evidence(
+        {"rpoAlpha": rpo_alpha},
+        {"constructedRPOBinding": evidence},
+    ) == evidence
+
+    with pytest.raises(RuntimeError, match="constructed RPO binding"):
+        ubuntu_pipeline._verified_constructed_rpo_binding_evidence(
+            {"rpoAlpha": rpo_alpha},
+            {"constructedRPOBinding": {**evidence, "status": "tampered"}},
+        )
+
+    with pytest.raises(RuntimeError, match="constructed RPO binding"):
+        ubuntu_pipeline._verified_constructed_rpo_binding_evidence(
+            {"rpoAlpha": rpo_alpha},
+            {},
+        )
