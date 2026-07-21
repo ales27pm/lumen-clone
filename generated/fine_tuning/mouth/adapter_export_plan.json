@@ -66,7 +66,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "3807c544b58a51a084ed10bc0fb45bfafeac2a40280c279365f549db1d553eec"
+        "reportSHA256": "c395a84816e110d793fb7fe67995a546a577b7a3d7666b6aba05bfd9b51c01cf"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -74,7 +74,7 @@
       "recordCount": 7,
       "schemaVersion": "lumen.adapter-eval/1.1.0"
     },
-    "manifestCommit": "30ea340ce9d4d33dd70893689b520f22aa34e096",
+    "manifestCommit": "4af31151490fa0ba1c3519b5eabcb323cd3ffc4c",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 28,
@@ -96,9 +96,9 @@
       "public_adapter_corpus_toolace_train"
     ],
     "sourceIntegrity": {
-      "baseCommit": "30ea340ce9d4d33dd70893689b520f22aa34e096",
+      "baseCommit": "4af31151490fa0ba1c3519b5eabcb323cd3ffc4c",
       "dirtyState": false,
-      "workingTreeDigest": "4be48b4d8fec576ebdeff78cc2f0feb8a9bebf4f365d23c7eceae7c2ced8d206"
+      "workingTreeDigest": "f118505dca20aeeda71e2ed2fdb5f370491fd2b1649baf7f58d45531ce9ba2d2"
     },
     "taskTypes": [
       "public_grounded_response_finalization",
@@ -157,7 +157,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "87245dddbbf98b71dcdd6de4a427a6a1364158fc1fd0ab7b8355e15b991ccffc",
+    "experimentManifestSHA256": "e09a6fbbef7959ccb33b2a42f62dd8b2ade667bc666f100b55ec9a538aa10fc1",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -234,12 +234,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Mouth, Lumen's user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
-  "trainingCodeBundleSHA256": "49d5b6089f5e73ad826d69fff2cf9c277d0f32da0b8392d341ac481c782de7b1",
-  "trainingCodeSHA256": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa",
+  "trainingCodeBundleSHA256": "1562c06d1ef71667ed24ee706b0d44328c6d3a6a78c310b2b4dc27be348fc97f",
+  "trainingCodeSHA256": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "7a1ec1ae627ae8b107630736d53747b2915f03c9083cfadeb62a90ed1bdd63cf",
-    "orpo": "692b8cb2e649c971f76aa6caace27fc2ff330951896ba0bd13ed63d38d250fb9",
-    "sft": "64e238a4140a1d9d33e8dfe0f1eed5273d4f18fd59fa263b70c36026954ea4fa"
+    "dpo": "a3ac394d0b423e67870e56c647ac9dee5ae635a21a288eed7dde791780acd853",
+    "orpo": "89a7f114763e0d009dba0d96e23ed87192946cc3d355d154506c33e1859d0e9f",
+    "sft": "11a49792ff0f13197d5079271bb944efd8100f087cbe712827603dcf596c3bea"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }
