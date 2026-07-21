@@ -86,7 +86,7 @@ def _contract() -> dict[str, Any]:
             "minimumBasisPoints": 5_000,
             "maximumBasisPoints": 6_000,
             "algorithm": (
-                "sha256_epoch_stratified_token_aware_native_round_robin/1.1.0"
+                "sha256_epoch_stratified_token_aware_family_round_robin/1.2.0"
             ),
             "candidateSearchCount": 256,
             "permutationPolicy": "each_source_row_exactly_once_per_epoch",
@@ -824,6 +824,13 @@ def test_stratified_schedule_uses_exact_token_aware_non_native_order() -> None:
 
     assert epoch_orders[0] == expected_order
     assert expected_order != hash_only_order
+    for start in range(0, len(expected_order), 8):
+        window = expected_order[start : start + 8]
+        assert sorted(
+            row_evidence[row_index]["targetTokenCount"]
+            for row_index in window
+            if row_index in non_native_indices
+        ) == [4, 5, 6, 7, 8, 9, 10]
 
 
 def test_generated_optimized_proxy_rows_have_feasible_window_schedule() -> None:
