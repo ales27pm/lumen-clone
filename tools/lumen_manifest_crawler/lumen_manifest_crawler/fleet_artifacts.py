@@ -29,17 +29,17 @@ ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE = "core_failure_family_atomic"
 ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS = {
     "parallel-dependencies": "top_level_dependencies_omission",
     "no-delegation": "event_type_vocabulary",
-    "approval-boundary": "event_completeness_contract",
-    "unavailable-boundary": "decision_aggregation_owner_omission",
+    "approval-boundary": "approval_request_event_vocabulary",
+    "unavailable-boundary": "scenario_identity_role",
     "context-handoff": "decision_strategy_role",
-    "aggregation-owner": "dependency_endpoint_role",
+    "aggregation-owner": "terminal_stop_reason",
     "nonexistent-slot-negative": "terminal_stop_reason",
     "duplicate-suppression": "event_payload_schema",
-    "sequential-dependencies": "scenario_identity_role",
+    "sequential-dependencies": "result_source_slot_role",
 }
 _ORCHESTRATION_TOP_LEVEL_OMISSION_KEY = "dependencies"
 ORCHESTRATION_TRAINING_IDENTITY_SCHEMA_VERSION = (
-    "lumen.fleet-training-identity/1.6.0"
+    "lumen.fleet-training-identity/1.7.0"
 )
 ORCHESTRATION_TRAINING_SCENARIO_ID_WIDTH = 6
 ORCHESTRATION_TRAINING_FACT_ID_WIDTH = 6
@@ -112,8 +112,16 @@ ORCHESTRATION_OUTPUT_INTERFACE = (
     "`aggregationOwnerSlotID` is a known-slot string or null, while "
     "`stopReason` and `strategy` are strings. Each event has `id` and `type` "
     "plus only the fields required by its behavior, with no wrapper objects or "
-    "invented aliases. Copy the supplied graph schema version, scenario ID, "
-    "and known slot IDs exactly. Substitute the actual supplied scenario ID into "
+    "invented aliases. Treat every event `type` and terminal `reason` as a closed "
+    "canonical enum token: never paraphrase, reorder, or recombine its words. "
+    "Every enabled policy condition contributes its canonical required stage; "
+    "never skip or collapse that stage. Input fact IDs are payload values only "
+    "and never replace `scenarioID` or an event-ID namespace. A supplied "
+    "`peerContext` object is input-only: each `delegate` event's `contextKeys` "
+    "equals exactly `peerContext[targetSlotID]` as a JSON string array; never emit "
+    "the mapping, a slot key, or a key/value member inside that array. Copy the "
+    "supplied graph schema version, scenario ID, and known slot IDs exactly. "
+    "Substitute the actual supplied scenario ID into "
     "every event ID using a two-digit one-based order; never emit the literal "
     "`<scenarioID>` placeholder. Every dependency endpoint references an emitted "
     "event ID. `delegatedSlotIDs` is the first-event-order list of unique known "
@@ -908,8 +916,8 @@ def _training_orchestration_facts(
     raise ValueError(f"Unknown Fleet training derivation behavior: {behavior}")
 
 
-def _semantic_training_fact_kind(kind: str, source_value: Any) -> str:
-    """Bind a training-only semantic value into a role-bearing fact identity."""
+def _semantic_training_fact_slug(source_value: Any) -> str:
+    """Return a safe compact slug for one training-only semantic value."""
 
     if not isinstance(source_value, str) or not source_value:
         raise ValueError("Fleet semantic training fact source is invalid")
@@ -919,9 +927,19 @@ def _semantic_training_fact_kind(kind: str, source_value: Any) -> str:
         "-",
         separated.lower(),
     ).strip("-")
-    if not semantic_slug or semantic_slug.startswith("holdout"):
+    if (
+        not semantic_slug
+        or semantic_slug == "scenario"
+        or semantic_slug.startswith("holdout")
+    ):
         raise ValueError("Fleet semantic training fact source is unsafe")
-    return f"{kind}-{semantic_slug}"
+    return semantic_slug
+
+
+def _semantic_training_fact_kind(kind: str, source_value: Any) -> str:
+    """Bind a training-only semantic value into a role-bearing fact identity."""
+
+    return f"{kind}-{_semantic_training_fact_slug(source_value)}"
 
 
 def _training_feature_facts(
@@ -963,13 +981,22 @@ def _training_feature_facts(
     if behavior == "nonexistent-slot-negative":
         facts["requestedSlotIdentifier"] = fact("requested-unlisted-slot")
     if behavior in {"sequential-dependencies", "parallel-dependencies"}:
+        source_value_by_slug: dict[str, str] = {}
+        for context_keys in facts["peerContext"].values():
+            for context_key in context_keys:
+                semantic_slug = _semantic_training_fact_slug(context_key)
+                registered_source = source_value_by_slug.setdefault(
+                    semantic_slug,
+                    context_key,
+                )
+                if registered_source != context_key:
+                    raise ValueError(
+                        "Fleet semantic training fact slug collision"
+                    )
         facts["peerContext"] = {
             slot_id: [
                 fact(
-                    _semantic_training_fact_kind(
-                        f"peer-context-{slot_id}",
-                        context_key,
-                    )
+                    _semantic_training_fact_slug(context_key)
                 )
                 for context_key in context_keys
             ]
@@ -3664,6 +3691,53 @@ def _orchestration_top_level_schema_omission_rejection(
     return graph
 
 
+def _approval_request_event_vocabulary_rejection(
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    """Swap only the canonical approval-request event into a plausible alias."""
+
+    graph = json.loads(json.dumps(source, ensure_ascii=False))
+    matches = [
+        event
+        for event in graph.get("events", [])
+        if isinstance(event, dict)
+        and event.get("type") == "request_user_approval"
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Fleet approval rejection lacks one canonical approval-request event"
+        )
+    matches[0]["type"] = "user_approval_request"
+    return graph
+
+
+def _result_source_slot_role_rejection(
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    """Replace one result source with a different manifested peer slot."""
+
+    graph = json.loads(json.dumps(source, ensure_ascii=False))
+    matches = [
+        event
+        for event in graph.get("events", [])
+        if isinstance(event, dict) and event.get("type") == "result_received"
+    ]
+    known_slots = graph.get("knownSlotIDs")
+    if (
+        len(matches) != 1
+        or not isinstance(known_slots, list)
+        or not all(isinstance(slot, str) for slot in known_slots)
+        or not isinstance(matches[0].get("sourceSlotID"), str)
+    ):
+        raise ValueError("Fleet result-source rejection lacks a canonical source")
+    source_slot = str(matches[0]["sourceSlotID"])
+    alternatives = sorted(slot for slot in known_slots if slot != source_slot)
+    if not alternatives:
+        raise ValueError("Fleet result-source rejection lacks an alternate slot")
+    matches[0]["sourceSlotID"] = alternatives[-1]
+    return graph
+
+
 def _core_failure_family_rejection(
     source: dict[str, Any],
     *,
@@ -3681,6 +3755,8 @@ def _core_failure_family_rejection(
 
     if mutation == "top_level_dependencies_omission":
         return _orchestration_top_level_schema_omission_rejection(source)
+    if mutation == "approval_request_event_vocabulary":
+        return _approval_request_event_vocabulary_rejection(source)
     if mutation == "event_completeness_contract":
         graph = json.loads(json.dumps(source, ensure_ascii=False))
         return _atomic_event_omission_rejection(graph)
@@ -3709,6 +3785,8 @@ def _core_failure_family_rejection(
         if "aggregationOwnerSlotID" not in decision:
             raise ValueError("Fleet core decision lacks its aggregation owner field")
         decision.pop("aggregationOwnerSlotID")
+    elif mutation == "result_source_slot_role":
+        return _result_source_slot_role_rejection(graph)
     elif mutation == "decision_strategy_role":
         if decision.get("strategy") != "bounded_handoff":
             raise ValueError(
@@ -3778,15 +3856,16 @@ _EVENT_ID_GRAMMAR_CONTRAST_BY_STRATEGY = {
     "bounded_handoff": "dotted_event_separator",
     "deduplicated": "missing_identity",
     "aggregate": "semantic_stage_identity",
-    "approval_boundary": "scenario_namespace_mismatch",
+    "approval_boundary": "fact_namespace_all_events",
     "unavailable_boundary": "fact_namespace_all_events",
     "reject_invalid_slot": "event_only_namespace",
 }
 
-# Canary33's full frozen evaluation exposed a narrow set of plausible policy
-# aliases after SFT/DPO had already learned valid JSON. Reuse those exact
-# lexical confusions in the existing contrast slots so the next run receives
-# direct negative evidence without adding rows or copying any holdout fact.
+# Development canaries expose plausible policy aliases after SFT/DPO has
+# learned valid JSON. Reuse model-produced lexical confusions in existing
+# contrast slots without adding rows or copying expected holdout facts. Once a
+# canary output informs training, its fixed cases are regression evidence; an
+# independent untouched suite remains required for promotion qualification.
 _OBSERVED_EVENT_TYPE_ALIAS_BY_STRATEGY = {
     "sequential": ("result_received", "observation_received"),
     "parallel_then_aggregate": (
@@ -3810,6 +3889,22 @@ _OBSERVED_EVENT_PAYLOAD_KEY_ALIASES = {
     "targetSlotID": "targetSlot",
     "sourceSlotID": "sourceSlot",
     "branchID": "branchIDs",
+}
+
+_OBSERVED_STOP_REASON_ALIAS_BY_STRATEGY = {
+    "aggregate": (
+        "single_owner_finalized",
+        "single_render_owner_complete",
+    ),
+    "sequential": (
+        "grounded_response_complete",
+        "grounded_response_validated",
+    ),
+}
+
+_REQUIRED_EVENT_OMISSION_TARGET_BY_STRATEGY = {
+    "reject_invalid_slot": "invalid_slot_rejected",
+    "unavailable_boundary": "request_received",
 }
 
 _NONCANONICAL_EVENT_TYPE_SUFFIX_ALIASES = {
@@ -3985,6 +4080,16 @@ def _natural_noncanonical_stop_reason_alias(
 ) -> str:
     """Return a coherent but noncanonical terminal reason near-miss."""
 
+    strategy = graph.get("decision", {}).get("strategy")
+    observed_alias = _OBSERVED_STOP_REASON_ALIAS_BY_STRATEGY.get(str(strategy))
+    if observed_alias is not None:
+        canonical_reason, alias = observed_alias
+        if stop_reason != canonical_reason:
+            raise ValueError(
+                "Fleet observed stop-reason contrast lacks its canonical target"
+            )
+        return alias
+
     tokens = stop_reason.split("_")
     candidates: list[str] = []
     if len(tokens) >= 3:
@@ -4030,12 +4135,12 @@ def _terminal_decision_rejection(
         or events[-1].get("reason") != decision.get("stopReason")
     ):
         raise ValueError("Fleet chosen graph lacks a canonical terminal decision")
-    decision["strategy"] = _rotated_canonical_strategy(
-        decision.get("strategy")
-    )
     stop_reason = _natural_noncanonical_stop_reason_alias(
         graph,
         str(decision["stopReason"]),
+    )
+    decision["strategy"] = _rotated_canonical_strategy(
+        decision.get("strategy")
     )
     decision["stopReason"] = stop_reason
     events[-1]["reason"] = stop_reason
@@ -4047,9 +4152,19 @@ def _orchestration_event_id_negative_fact(
 ) -> str:
     """Select the frozen-schema identity used for an event-ID role negative."""
 
-    candidate = facts.get("requestIdentifier")
-    if candidate is None:
-        candidate = facts.get("approvedActionIdentifier")
+    candidate = next(
+        (
+            facts.get(key)
+            for key in (
+                "userApprovalRequestIdentifier",
+                "permissionCheckIdentifier",
+                "requestIdentifier",
+                "approvedActionIdentifier",
+            )
+            if facts.get(key) is not None
+        ),
+        None,
+    )
     if not isinstance(candidate, str) or not (
         _is_orchestration_training_fact_id(candidate)
     ):
@@ -4184,11 +4299,28 @@ def _event_id_grammar_rejection(
     return _rebind_orchestration_event_ids(graph, rejected_ids)
 
 
-def _atomic_event_omission_index(events: Any) -> int:
+def _atomic_event_omission_index(graph: dict[str, Any]) -> int:
     """Choose a behavior event whose removal preserves delegation ordering."""
 
+    events = graph.get("events")
     if not isinstance(events, list):
         raise ValueError("Fleet chosen events are malformed")
+    strategy = graph.get("decision", {}).get("strategy")
+    targeted_event_type = _REQUIRED_EVENT_OMISSION_TARGET_BY_STRATEGY.get(
+        str(strategy)
+    )
+    if targeted_event_type is not None:
+        matches = [
+            index
+            for index, event in enumerate(events)
+            if isinstance(event, dict)
+            and event.get("type") == targeted_event_type
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                "Fleet chosen graph lacks its required omission target"
+            )
+        return matches[0]
     for index, event in enumerate(events):
         if (
             isinstance(event, dict)
@@ -4208,7 +4340,7 @@ def _atomic_event_omission_rejection(
     dependencies = graph.get("dependencies")
     if not isinstance(events, list) or not isinstance(dependencies, list):
         raise ValueError("Fleet chosen graph lacks events or dependencies")
-    omission_index = _atomic_event_omission_index(events)
+    omission_index = _atomic_event_omission_index(graph)
     omitted = events[omission_index]
     omitted_id = omitted.get("id") if isinstance(omitted, dict) else None
     if not isinstance(omitted_id, str):
@@ -4227,8 +4359,10 @@ def _atomic_event_omission_rejection(
         and dependency.get("fromEventID") == omitted_id
         and isinstance(dependency.get("toEventID"), str)
     ]
-    if not predecessors or not successors:
-        raise ValueError("Fleet chosen omission event is not an interior graph node")
+    if not successors or (omission_index != 0 and not predecessors):
+        raise ValueError(
+            "Fleet chosen omission event is not a removable required graph node"
+        )
     retained = [
         dependency
         for dependency in dependencies
@@ -4304,6 +4438,8 @@ def _atomic_event_completeness_rejection(
         strategy_index = _CANONICAL_ORCHESTRATION_STRATEGIES.index(strategy)
     except ValueError as exc:
         raise ValueError("Fleet chosen graph lacks a canonical strategy") from exc
+    if strategy in _REQUIRED_EVENT_OMISSION_TARGET_BY_STRATEGY:
+        return _atomic_event_omission_rejection(graph)
     if strategy_index % 2 == 0:
         return _atomic_terminal_stop_omission_rejection(graph)
     return _atomic_event_omission_rejection(graph)

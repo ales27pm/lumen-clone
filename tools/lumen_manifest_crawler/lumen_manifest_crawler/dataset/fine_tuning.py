@@ -3933,6 +3933,7 @@ def _fleet_policy_vocabulary_sft_anchors(
             "terminalEventOrder": len(graph["events"]),
         }
         payload_roles = {
+            "approvalRequestID": "copy_userApprovalRequestIdentifier",
             "requestID": "request_not_scenario",
             "targetSlotID": "delegation_target",
             "sourceSlotID": "result_source",

@@ -644,6 +644,7 @@ def test_compiled_fleet_has_three_positive_policy_anchors_per_core_behavior(
                 "terminalEventOrder": len(graph["events"]),
             }
             payload_roles = {
+                "approvalRequestID": "copy_userApprovalRequestIdentifier",
                 "requestID": "request_not_scenario",
                 "targetSlotID": "delegation_target",
                 "sourceSlotID": "result_source",
@@ -1222,6 +1223,7 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
 
     for record in atomic_records:
         metadata = record["metadata"]
+        behavior_class = metadata["behaviorClass"]
         expected_kind = metadata["atomicPreferenceMutation"]
         expected_path, rejected_reason = expected_mutations[expected_kind]
         scenario = scenarios_by_id[metadata["scenarioID"]]
@@ -1299,6 +1301,16 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
             assert rejected["decision"]["aggregationOwnerSlotID"] == chosen[
                 "decision"
             ]["aggregationOwnerSlotID"]
+            observed_alias = (
+                fleet_artifact_module._OBSERVED_STOP_REASON_ALIAS_BY_STRATEGY.get(
+                    chosen["decision"]["strategy"]
+                )
+            )
+            if observed_alias is not None:
+                assert (
+                    chosen["decision"]["stopReason"],
+                    rejected["decision"]["stopReason"],
+                ) == observed_alias
         elif expected_kind == "event_type_vocabulary":
             event_index, canonical_event_type, expected_alias = (
                 fleet_artifact_module._event_type_vocabulary_rejection_target(
@@ -1322,6 +1334,23 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
                 assert rejected["decision"] == chosen["decision"]
             else:
                 completeness_modes.add("interior_event")
+            if behavior_class == "unavailable-boundary":
+                assert not any(
+                    event["type"] == "request_received"
+                    for event in rejected["events"]
+                )
+                assert rejected["events"][0]["type"] == (
+                    "permission_state_checked"
+                )
+            elif behavior_class == "nonexistent-slot-negative":
+                assert not any(
+                    event["type"] == "invalid_slot_rejected"
+                    for event in rejected["events"]
+                )
+                assert any(
+                    event["type"] == "rejection_recorded"
+                    for event in rejected["events"]
+                )
         elif expected_kind == "event_order":
             first, second = fleet_artifact_module._atomic_event_order_indices(
                 chosen["events"]
@@ -1347,6 +1376,15 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
                     event_id_fact=event_id_fact,
                 )
             )
+            if behavior_class in {
+                "approval-boundary",
+                "unavailable-boundary",
+            }:
+                assert mode == "fact_namespace_all_events"
+                assert all(
+                    event["id"].startswith(event_id_fact + "::event::")
+                    for event in rejected["events"]
+                )
             if mode not in {"duplicate_identity", "missing_identity"}:
                 assert fleet_artifact_module._orchestration_topology_contract(
                     rejected
@@ -1418,7 +1456,6 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
                     for dependency in rejected["dependencies"]
                 )
 
-        behavior_class = metadata["behaviorClass"]
         graph = scenario["graph"]
         decision = graph["decision"]
         metric = {
@@ -1489,6 +1526,12 @@ def test_behavior_conditioned_preferences_are_atomic_and_scorer_invalid():
             ),
             "payloadKeyAliases": (
                 fleet_artifact_module._OBSERVED_EVENT_PAYLOAD_KEY_ALIASES
+            ),
+            "stopReasonAliases": (
+                fleet_artifact_module._OBSERVED_STOP_REASON_ALIAS_BY_STRATEGY
+            ),
+            "omissionTargets": (
+                fleet_artifact_module._REQUIRED_EVENT_OMISSION_TARGET_BY_STRATEGY
             ),
         },
         sort_keys=True,
@@ -1604,13 +1647,13 @@ def test_native_fleet_core_dpo_rejections_cover_observed_failure_families():
     assert fleet_artifact_module.ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS == {
         "parallel-dependencies": "top_level_dependencies_omission",
         "no-delegation": "event_type_vocabulary",
-        "approval-boundary": "event_completeness_contract",
-        "unavailable-boundary": "decision_aggregation_owner_omission",
+        "approval-boundary": "approval_request_event_vocabulary",
+        "unavailable-boundary": "scenario_identity_role",
         "context-handoff": "decision_strategy_role",
-        "aggregation-owner": "dependency_endpoint_role",
+        "aggregation-owner": "terminal_stop_reason",
         "nonexistent-slot-negative": "terminal_stop_reason",
         "duplicate-suppression": "event_payload_schema",
-        "sequential-dependencies": "scenario_identity_role",
+        "sequential-dependencies": "result_source_slot_role",
     }
 
     for record in records:
@@ -1643,20 +1686,104 @@ def test_native_fleet_core_dpo_rejections_cover_observed_failure_families():
 
         if behavior == "parallel-dependencies":
             assert set(rejected) == set(chosen) - {"dependencies"}
+        elif behavior == "approval-boundary":
+            changed = [
+                (chosen_event, rejected_event)
+                for chosen_event, rejected_event in zip(
+                    chosen["events"],
+                    rejected["events"],
+                    strict=True,
+                )
+                if chosen_event != rejected_event
+            ]
+            assert len(changed) == 1
+            assert changed[0][0]["type"] == "request_user_approval"
+            assert changed[0][1]["type"] == "user_approval_request"
         elif behavior == "unavailable-boundary":
-            assert set(rejected["decision"]) == set(chosen["decision"]) - {
-                "aggregationOwnerSlotID"
-            }
-        elif behavior == "context-handoff":
-            assert rejected["decision"]["strategy"] == "context_handoff"
-        elif behavior == "sequential-dependencies":
-            assert rejected["scenarioID"] != chosen["scenarioID"]
+            permission_check = preference["canonicalDerivation"]["facts"][
+                "permissionCheckIdentifier"
+            ]
+            assert rejected["scenarioID"] == permission_check
             assert all(
-                event["id"].startswith(rejected["scenarioID"] + "::event::")
+                event["id"].startswith(permission_check + "::event::")
                 for event in rejected["events"]
             )
+        elif behavior == "context-handoff":
+            assert rejected["decision"]["strategy"] == "context_handoff"
+        elif behavior == "aggregation-owner":
+            assert rejected["decision"]["stopReason"] == (
+                "single_render_owner_complete"
+            )
+            assert rejected["events"][-1]["reason"] == (
+                "single_render_owner_complete"
+            )
+        elif behavior == "sequential-dependencies":
+            chosen_result = next(
+                event
+                for event in chosen["events"]
+                if event["type"] == "result_received"
+            )
+            rejected_result = next(
+                event
+                for event in rejected["events"]
+                if event["type"] == "result_received"
+            )
+            assert chosen_result["sourceSlotID"] == "executor"
+            assert rejected_result["sourceSlotID"] == "rem"
         else:
             assert rejected["scenarioID"] == chosen["scenarioID"]
+
+        expected_reason = {
+            "approval-boundary": "event_type_schema_unknown",
+            "unavailable-boundary": "scenario_id_mismatch",
+            "aggregation-owner": "stop_reason_mismatch",
+            "sequential-dependencies": "exact_candidate_hash_mismatch",
+        }.get(behavior)
+        if expected_reason is not None:
+            decision = chosen["decision"]
+            metric = {
+                "type": "orchestration_graph",
+                "contract": {
+                    "metricVersion": "1.0.0",
+                    "graphSchemaVersion": chosen["graphSchemaVersion"],
+                    "scenarioID": preference["id"],
+                    "strategy": decision["strategy"],
+                    "knownSlotIDs": chosen["knownSlotIDs"],
+                    "expectedDelegatedSlotIDs": decision[
+                        "delegatedSlotIDs"
+                    ],
+                    "expectedAggregationOwnerSlotID": decision[
+                        "aggregationOwnerSlotID"
+                    ],
+                    "expectedStopReason": decision["stopReason"],
+                    "requiredEventTypes": [
+                        event["type"] for event in chosen["events"]
+                    ],
+                    "requiredDependencies": chosen["dependencies"],
+                    "requiresCanonicalDerivation": True,
+                    "canonicalDerivation": preference[
+                        "canonicalDerivation"
+                    ],
+                    "mustUseKnownSlotsOnly": True,
+                    "mustNotExposePrivateState": True,
+                    **preference["evalConstraints"],
+                    "expectedCandidateHashSchemaVersion": (
+                        "lumen.eval-candidate-hash/1.0.0"
+                    ),
+                    "expectedCandidateSHA256": canonical_sha256(chosen),
+                    "expectedCandidateTopologyHashSchemaVersion": (
+                        "lumen.eval-candidate-topology-hash/1.0.0"
+                    ),
+                    "expectedCandidateTopologySHA256": canonical_sha256(
+                        fleet_artifact_module._orchestration_topology_contract(
+                            chosen
+                        )
+                    ),
+                },
+            }
+            rejected_result = _score_orchestration_graph(metric, rejected)
+            assert rejected_result["passed"] is False
+            assert rejected_result["reason"] == expected_reason
 
 
 def test_core_native_metadata_binds_failure_family_to_exact_behavior():
@@ -1684,9 +1811,7 @@ def test_core_native_metadata_binds_failure_family_to_exact_behavior():
     assert resolved["preferenceContrastMode"] == (
         fleet_artifact_module.ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE
     )
-    assert resolved["coreFailureFamilyMutation"] == (
-        "decision_aggregation_owner_omission"
-    )
+    assert resolved["coreFailureFamilyMutation"] == "scenario_identity_role"
 
     with pytest.raises(ValueError, match="invalid core failure-family metadata"):
         fine_tuning_module._fleet_native_matrix_metadata(
@@ -1852,6 +1977,35 @@ def test_conditioned_training_varies_a_nonrequest_payload_fact_per_behavior():
     ) == 8
 
 
+def test_semantic_context_roles_reject_reserved_and_colliding_slugs():
+    with pytest.raises(ValueError, match="source is unsafe"):
+        fleet_artifact_module._semantic_training_fact_slug("scenario")
+
+    conditions = fleet_artifact_module._orchestration_policy_conditions(
+        behavior="sequential-dependencies",
+        training_variant=(
+            fleet_artifact_module.ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+        ),
+    )
+    with pytest.raises(ValueError, match="fact slug collision"):
+        fleet_artifact_module._training_feature_facts(
+            base_facts={
+                "peerContext": {
+                    "cortex": ["shared.context"],
+                    "executor": ["shared_context"],
+                    "mouth": ["renderContext"],
+                }
+            },
+            behavior="sequential-dependencies",
+            variant=(
+                fleet_artifact_module.ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT
+            ),
+            replica_index=0,
+            conditions=conditions,
+            identity_registry={},
+        )
+
+
 def test_conditioned_semantic_context_survives_sft_and_dpo_rebinding():
     manifest = generate_manifest(Path(".").resolve())
 
@@ -1959,10 +2113,7 @@ def test_conditioned_semantic_context_survives_sft_and_dpo_rebinding():
                 variants[replica_index],
                 strict=True,
             ):
-                expected_roles = [
-                    f"peer-context-{slot_id}-{slug(value)}"
-                    for value in source_values
-                ]
+                expected_roles = [slug(value) for value in source_values]
                 assert [
                     fleet_artifact_module._semantic_orchestration_training_fact_role(
                         value
@@ -1980,6 +2131,10 @@ def test_conditioned_semantic_context_survives_sft_and_dpo_rebinding():
                     scenario["graph"],
                     slot_id,
                 )["contextKeys"] == facts["peerContext"][slot_id]
+                assert fleet_artifact_module._delegation_to(
+                    preference["graph"],
+                    slot_id,
+                )["contextKeys"] == preference_facts["peerContext"][slot_id]
         elif behavior == "context-handoff":
             allowed, forbidden = fleet_artifact_module._HANDOFF_CONTEXT_VARIANTS[
                 replica_index
@@ -2671,6 +2826,10 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
                 assert required_key in prompt
             assert "never emit the literal `<scenarioID>` placeholder" in prompt
             assert "no more than 12 events or 16 dependencies" in prompt
+            assert "closed canonical enum token" in prompt
+            assert "never skip or collapse that stage" in prompt
+            assert "Input fact IDs are payload values only" in prompt
+            assert "`peerContext` object is input-only" in prompt
             assert not any(
                 f'"{event["type"]}"' in prompt
                 for event in scenario["graph"]["events"]
