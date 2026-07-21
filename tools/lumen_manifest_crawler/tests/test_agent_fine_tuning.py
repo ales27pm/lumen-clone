@@ -119,7 +119,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _cap_public_corpus_token_share,
     _cortex_failure_repair_sft_records,
     _fleet_delegation_tasks,
-    _fleet_native_prompt_request_identifier,
+    _fleet_native_prompt_event_id_fact,
     _fleet_observed_mouth_confusion_tasks,
     _first_role_content,
     _fleet_slot_contract,
@@ -6880,10 +6880,10 @@ def test_fleet_native_dpo_mutations_survive_canonical_binding(
         for record in records
     } == set(FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT)
     for record in records:
-        request_identifier = _fleet_native_prompt_request_identifier(
+        event_id_fact = _fleet_native_prompt_event_id_fact(
             _first_role_content(record["prompt"], "user")
         )
-        assert request_identifier is not None
+        assert event_id_fact is not None
         for completion in ("chosen", "rejected"):
             content = record[completion]["content"]
             payload = _strict_json_loads(content)
@@ -6900,7 +6900,7 @@ def test_fleet_native_dpo_mutations_survive_canonical_binding(
             chosen,
             rejected,
             mutation,
-            event_id_fact=request_identifier,
+            event_id_fact=event_id_fact,
         )
         tampered_rejected = json.loads(json.dumps(rejected, ensure_ascii=False))
         tampered_rejected["scenarioID"] = f"{rejected['scenarioID']}--tampered"
@@ -6908,7 +6908,7 @@ def test_fleet_native_dpo_mutations_survive_canonical_binding(
             chosen,
             tampered_rejected,
             mutation,
-            event_id_fact=request_identifier,
+            event_id_fact=event_id_fact,
         )
 
 
@@ -9208,8 +9208,8 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
     assert len(optimized_fleet["train_sft"]) == (
         optimized_fleet_policy["trainRecordCount"]
     )
-    assert fleet_sft_policy["baseEpochs"] == 3
-    assert fleet_sft_policy["selectedEpochs"] >= 3
+    assert fleet_sft_policy["baseEpochs"] == 4
+    assert fleet_sft_policy["selectedEpochs"] >= 4
     assert fleet_sft_policy["projectedEffectiveSteps"] >= 100
     assert fleet.dataset_card["constraints"][
         "fleetOrchestrationEvaluationRequired"
@@ -10133,8 +10133,8 @@ def test_fleet_uses_memory_safe_microbatches_without_changing_optimizer_exposure
         fleet["gradient_accumulation_steps"]
     )
     assert NON_CORTEX_MINIMUM_EFFECTIVE_SFT_STEPS["fleet"] == 24
-    assert policy["sft"]["baseEpochs"] == 3
-    assert policy["sft"]["selectedEpochs"] >= 3
+    assert policy["sft"]["baseEpochs"] == 4
+    assert policy["sft"]["selectedEpochs"] >= 4
     assert policy["dpo"]["baseEpochs"] == 1
     assert policy["dpo"]["selectedEpochs"] >= 1
     assert fleet["num_train_epochs"] == policy["sft"]["selectedEpochs"]

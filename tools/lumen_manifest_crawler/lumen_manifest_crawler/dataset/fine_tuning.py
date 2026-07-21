@@ -52,19 +52,17 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
 from lumen_manifest_crawler.fleet_artifacts import (
     _ATOMIC_REQUIRED_EVENT_PAYLOAD_KEYS,
     ORCHESTRATION_ATOMIC_MUTATION_KINDS,
-    ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT,
     ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS,
-    ORCHESTRATION_CORE_TOP_LEVEL_OMISSION_BEHAVIORS,
-    ORCHESTRATION_TOP_LEVEL_OMISSION_KEY,
+    ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE,
+    ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS,
     _atomic_event_completeness_rejection,
     _atomic_event_order_indices,
-    _compound_orchestration_repetition_rejection,
+    _core_failure_family_rejection,
     _fact_derived_noncanonical_event_id,
     _is_opaque_orchestration_training_fact_id,
     _natural_noncanonical_event_type_alias,
+    _orchestration_event_id_negative_fact,
     _orchestration_scalar_leaf_differences,
-    _orchestration_top_level_schema_omission_rejection,
-    _orchestration_training_scenario_id,
     _orchestration_topology_contract,
     _terminal_decision_rejection,
 )
@@ -112,6 +110,9 @@ FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE = (
 )
 FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE = (
     "fleet_orchestration_event_graph_preference"
+)
+FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE = (
+    "fleet_contract_event_graph_vocabulary"
 )
 FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MIN_BASIS_POINTS = 5_000
 FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS = 6_000
@@ -186,7 +187,7 @@ FLEET_NATIVE_ORCHESTRATION_TRAINING_VARIANTS = frozenset(
     }
 )
 FLEET_NATIVE_ORCHESTRATION_SFT_TRAINING_VARIANTS = frozenset(
-    {"behavior-conditioned"}
+    {"core", "behavior-conditioned"}
 )
 FLEET_NATIVE_ORCHESTRATION_VALIDATION_VARIANTS = frozenset(
     {"normalization-policy-audited"}
@@ -246,6 +247,7 @@ FLEET_SOURCE_ROLE_REGISTRY: dict[tuple[str, str], str] = {
             "fleet_contract_known_slots",
             "fleet_contract_tool_boundary",
             "fleet_contract_tool_ownership",
+            FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
             "slot_id_directory",
             "ultra_specific_fleet_delegation",
             "ultra_specific_fleet_known_slot_directory",
@@ -1024,6 +1026,21 @@ def compile_agent_fine_tuning_datasets(
             routing_stats[agent]["taskTypes"].add(task_type)
             routing_stats[agent]["availableSFTRecords"] += 1
 
+    fleet_policy_vocabulary_anchor = (
+        _fleet_policy_vocabulary_sft_anchor(
+            manifest,
+            routed_sft["fleet"],
+        )
+    )
+    if fleet_policy_vocabulary_anchor is not None:
+        routed_sft["fleet"].append(fleet_policy_vocabulary_anchor)
+        routing_stats["fleet"]["sourceFamilies"].add(
+            ULTRA_SPECIFIC_SOURCE_FAMILY
+        )
+        routing_stats["fleet"]["taskTypes"].add(
+            FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE
+        )
+        routing_stats["fleet"]["availableSFTRecords"] += 1
     routed_sft["fleet"] = _bind_fleet_sft_contract(
         manifest,
         routed_sft["fleet"],
@@ -1882,7 +1899,7 @@ def _fleet_native_graph_payload(
     lane: str,
     behavior: str,
     output_kind: str,
-    allowed_missing_top_level_key: str | None = None,
+    require_canonical_schema: bool = True,
 ) -> dict[str, Any]:
     if not isinstance(content, str) or not content:
         raise ValueError(
@@ -1894,6 +1911,15 @@ def _fleet_native_graph_payload(
         raise ValueError(
             f"Fleet native {lane} {behavior} has invalid {output_kind} graph JSON"
         ) from exc
+    if not isinstance(graph, dict):
+        raise ValueError(
+            f"Fleet native {lane} {behavior} has invalid {output_kind} graph schema"
+        )
+    # Core DPO rejections intentionally encode one deterministic scorer-invalid
+    # failure family. They must remain strict JSON objects, but their exact
+    # noncanonical shape is verified against the generator-owned helper below.
+    if not require_canonical_schema:
+        return graph
     required_keys = {
         "decision",
         "dependencies",
@@ -1902,16 +1928,7 @@ def _fleet_native_graph_payload(
         "knownSlotIDs",
         "scenarioID",
     }
-    expected_keys = (
-        required_keys - {allowed_missing_top_level_key}
-        if allowed_missing_top_level_key is not None
-        else required_keys
-    )
-    if (
-        allowed_missing_top_level_key not in {None, "dependencies"}
-        or not isinstance(graph, dict)
-        or set(graph) != expected_keys
-    ):
+    if set(graph) != required_keys:
         raise ValueError(
             f"Fleet native {lane} {behavior} has invalid {output_kind} graph schema"
         )
@@ -1928,10 +1945,7 @@ def _fleet_native_graph_payload(
     if (
         not isinstance(graph.get("events"), list)
         or not graph["events"]
-        or (
-            allowed_missing_top_level_key != "dependencies"
-            and not isinstance(graph.get("dependencies"), list)
-        )
+        or not isinstance(graph.get("dependencies"), list)
         or not isinstance(graph.get("knownSlotIDs"), list)
         or not graph["knownSlotIDs"]
         or not isinstance(graph.get("graphSchemaVersion"), str)
@@ -1983,11 +1997,10 @@ def _fleet_native_record_graphs(
         if isinstance(record.get("metadata"), dict)
         else {}
     )
-    allowed_missing_top_level_key = (
-        ORCHESTRATION_TOP_LEVEL_OMISSION_KEY
-        if metadata.get("preferenceContrastMode")
-        == "top_level_schema_omission"
-        else None
+    core_failure_family = (
+        metadata.get("trainingMatrixVariant") == "core"
+        and metadata.get("preferenceContrastMode")
+        == ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE
     )
     return (
         _fleet_native_graph_payload(
@@ -2001,7 +2014,7 @@ def _fleet_native_record_graphs(
             lane=lane,
             behavior=behavior,
             output_kind="rejected",
-            allowed_missing_top_level_key=allowed_missing_top_level_key,
+            require_canonical_schema=not core_failure_family,
         ),
     )
 
@@ -2047,6 +2060,18 @@ def _fleet_native_prompt_request_identifier(user_prompt: str) -> str | None:
         and _is_opaque_orchestration_training_fact_id(request_identifier)
         else None
     )
+
+
+def _fleet_native_prompt_event_id_fact(user_prompt: str) -> str | None:
+    """Resolve the generator-owned fact used by event-identity negatives."""
+
+    facts = _fleet_native_prompt_facts(user_prompt)
+    if not isinstance(facts, dict):
+        return None
+    try:
+        return _orchestration_event_id_negative_fact(facts)
+    except (TypeError, ValueError):
+        return None
 
 
 def _valid_fleet_native_preference_mutation(
@@ -2526,13 +2551,21 @@ def _assert_fleet_native_orchestration_training_coverage(
         ORCHESTRATION_ATOMIC_MUTATION_KINDS
     ):
         raise RuntimeError("Fleet native mutation contracts are out of sync")
+    if set(ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS) != set(
+        FLEET_NATIVE_ORCHESTRATION_CORE_DPO_BEHAVIORS
+    ):
+        raise RuntimeError(
+            "Fleet native core failure-family contracts are out of sync"
+        )
     behavior_conditioned_count = len(
         FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT
     )
     train_sft_variants = {
         behavior: {
-            variant: ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS
-            for variant in FLEET_NATIVE_ORCHESTRATION_SFT_TRAINING_VARIANTS
+            "core": 1,
+            "behavior-conditioned": (
+                ORCHESTRATION_BEHAVIOR_CONDITIONED_SFT_REPLICAS
+            ),
         }
         for behavior in FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS
     }
@@ -2604,6 +2637,16 @@ def _assert_fleet_native_orchestration_training_coverage(
                     raise ValueError(
                         f"Fleet native {lane} {behavior} exposes a DPO-only row"
                     )
+                if variant == "core":
+                    expected_prompt_mode = (
+                        "strict_json_retry"
+                        if "DPO" in lane
+                        else "initial_generation"
+                    )
+                    if metadata.get("generationPromptMode") != expected_prompt_mode:
+                        raise ValueError(
+                            f"Fleet native {lane} {behavior} core prompt mode is invalid"
+                        )
                 if not isinstance(topology_hash, str) or not re.fullmatch(
                     r"[0-9a-f]{64}", topology_hash
                 ):
@@ -2666,15 +2709,15 @@ def _assert_fleet_native_orchestration_training_coverage(
                             else [],
                             "user",
                         )
-                        request_identifier = (
-                            _fleet_native_prompt_request_identifier(user_prompt)
+                        event_id_fact = (
+                            _fleet_native_prompt_event_id_fact(user_prompt)
                         )
-                        if request_identifier is None or not (
+                        if event_id_fact is None or not (
                             _valid_fleet_native_preference_mutation(
                                 chosen_graph,
                                 rejected_graph,
                                 mutation,
-                                event_id_fact=request_identifier,
+                                event_id_fact=event_id_fact,
                             )
                         ):
                             raise ValueError(
@@ -2682,49 +2725,47 @@ def _assert_fleet_native_orchestration_training_coverage(
                                 "mutation is invalid"
                             )
                 elif "DPO" in lane and variant == "core":
-                    try:
-                        if (
+                    user_prompt = _first_role_content(
+                        record.get("prompt", [])
+                        if isinstance(record.get("prompt"), list)
+                        else [],
+                        "user",
+                    )
+                    event_id_fact = (
+                        _fleet_native_prompt_event_id_fact(user_prompt)
+                    )
+                    expected_mutation = (
+                        ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS.get(
                             behavior
-                            in ORCHESTRATION_CORE_TOP_LEVEL_OMISSION_BEHAVIORS
-                        ):
-                            expected_core_rejection = (
-                                _orchestration_top_level_schema_omission_rejection(
-                                    chosen_graph
-                                )
+                        )
+                    )
+                    try:
+                        expected_core_rejection = (
+                            _core_failure_family_rejection(
+                                chosen_graph,
+                                behavior=behavior,
+                                event_id_fact=event_id_fact,
                             )
-                            expected_contrast_mode = (
-                                "top_level_schema_omission"
-                            )
-                            expected_dimensions = [
-                                "missing_top_level_dependencies"
-                            ]
-                        else:
-                            expected_core_rejection = (
-                                _compound_orchestration_repetition_rejection(
-                                    chosen_graph
-                                )
-                            )
-                            expected_contrast_mode = (
-                                "compound_schema_repetition"
-                            )
-                            expected_dimensions = [
-                                "duplicate_known_slot",
-                                "repeated_event",
-                                "repeated_dependency",
-                            ]
+                        )
                     except (KeyError, TypeError, ValueError):
                         expected_core_rejection = None
                     if (
-                        rejected_graph is None
+                        not isinstance(expected_mutation, str)
+                        or (
+                            expected_mutation == "scenario_identity_role"
+                            and event_id_fact is None
+                        )
+                        or rejected_graph is None
                         or expected_core_rejection is None
                         or rejected_graph != expected_core_rejection
                         or metadata.get("preferenceContrastMode")
-                        != expected_contrast_mode
-                        or metadata.get("compoundPreferenceDimensions")
-                        != expected_dimensions
+                        != ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE
+                        or metadata.get("coreFailureFamilyMutation")
+                        != expected_mutation
+                        or "compoundPreferenceDimensions" in metadata
                     ):
                         raise ValueError(
-                            f"Fleet native {lane} {behavior} core schema "
+                            f"Fleet native {lane} {behavior} core failure-family "
                             "contrast is invalid"
                         )
                 elif not sft_optimizer_visible:
@@ -2749,28 +2790,17 @@ def _assert_fleet_native_orchestration_training_coverage(
                             f"Fleet native {lane} {behavior} lacks preference "
                             "source-anchor identity"
                         )
-                    if (
-                        sft_optimizer_visible
-                        and sft_anchor != preference_source
-                    ) or (
-                        not sft_optimizer_visible
-                        and sft_anchor
-                        != _orchestration_training_scenario_id(
-                            behavior=behavior,
-                            variant=ORCHESTRATION_BEHAVIOR_CONDITIONED_VARIANT,
-                            replica_index=0,
+                    if not sft_optimizer_visible:
+                        raise ValueError(
+                            f"Fleet native {lane} {behavior} lacks an exact "
+                            "optimizer-visible SFT anchor"
                         )
-                    ):
+                    if sft_anchor != preference_source:
                         raise ValueError(
                             f"Fleet native {lane} {behavior} has an invalid "
                             "SFT anchor identity"
                         )
-                    expected_anchor_binding_mode = (
-                        "exact_scenario"
-                        if sft_optimizer_visible
-                        else "topology_equivalent"
-                    )
-                    if sft_anchor_binding_mode != expected_anchor_binding_mode:
+                    if sft_anchor_binding_mode != "exact_scenario":
                         raise ValueError(
                             f"Fleet native {lane} {behavior} has an invalid "
                             "SFT anchor binding mode"
@@ -3457,12 +3487,12 @@ def _fleet_native_matrix_metadata(
                     f"metadata.{key}"
                 )
             resolved[key] = value
-        expected_anchor_binding_mode = (
-            "exact_scenario"
-            if sft_optimizer_visible
-            else "topology_equivalent"
-        )
-        if resolved["sftAnchorBindingMode"] != expected_anchor_binding_mode:
+        if not sft_optimizer_visible:
+            raise ValueError(
+                "Fleet native orchestration preference lacks an exact "
+                "optimizer-visible SFT anchor"
+            )
+        if resolved["sftAnchorBindingMode"] != "exact_scenario":
             raise ValueError(
                 "Fleet native orchestration preference has an invalid SFT "
                 "anchor binding mode"
@@ -3473,31 +3503,34 @@ def _fleet_native_matrix_metadata(
         )
     preference_contrast_mode = metadata.get("preferenceContrastMode")
     compound_dimensions = metadata.get("compoundPreferenceDimensions")
+    core_failure_family_mutation = metadata.get(
+        "coreFailureFamilyMutation"
+    )
     if has_preference_identity and resolved["trainingMatrixVariant"] == "core":
         behavior_class = resolved["behaviorClass"]
-        if behavior_class in ORCHESTRATION_CORE_TOP_LEVEL_OMISSION_BEHAVIORS:
-            expected_contrast_mode = "top_level_schema_omission"
-            expected_dimensions = [
-                f"missing_top_level_{ORCHESTRATION_TOP_LEVEL_OMISSION_KEY}"
-            ]
-        else:
-            expected_contrast_mode = "compound_schema_repetition"
-            expected_dimensions = [
-                "duplicate_known_slot",
-                "repeated_event",
-                "repeated_dependency",
-            ]
+        expected_mutation = ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS.get(
+            behavior_class
+        )
         if (
-            preference_contrast_mode != expected_contrast_mode
-            or compound_dimensions != expected_dimensions
+            preference_contrast_mode
+            != ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE
+            or not isinstance(expected_mutation, str)
+            or core_failure_family_mutation != expected_mutation
+            or "compoundPreferenceDimensions" in metadata
         ):
             raise ValueError(
                 "Fleet native orchestration preference has invalid core "
-                "contrast metadata"
+                "failure-family metadata"
             )
         resolved["preferenceContrastMode"] = preference_contrast_mode
-        resolved["compoundPreferenceDimensions"] = list(compound_dimensions)
-    elif preference_contrast_mode is not None or compound_dimensions is not None:
+        resolved["coreFailureFamilyMutation"] = (
+            core_failure_family_mutation
+        )
+    elif (
+        preference_contrast_mode is not None
+        or compound_dimensions is not None
+        or core_failure_family_mutation is not None
+    ):
         raise ValueError(
             "Fleet native orchestration non-core preference has core contrast "
             "metadata"
@@ -3781,6 +3814,130 @@ def _fleet_private_state_contract_payloads(
         "reason": "unverified private runtime claim",
     }
     return chosen, rejected
+
+
+def _fleet_policy_vocabulary_sft_anchor(
+    manifest: AgentBehaviorManifest,
+    records: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Derive one compact non-native anchor from the visible core graphs.
+
+    The native topology matrix is intentionally immutable. Its nine new core
+    SFT rows can otherwise push the internal-only source proxy just above the
+    calibrated maximum. This anchor adds useful denominator signal instead of
+    weakening that guard: it teaches the exact graph/event vocabulary that the
+    failed Fleet canary replaced with plausible aliases.
+    """
+
+    core_graphs: dict[str, dict[str, Any]] = {}
+    for record in records:
+        metadata = (
+            record.get("metadata")
+            if isinstance(record.get("metadata"), dict)
+            else {}
+        )
+        if (
+            metadata.get("sourceFamily")
+            != FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+            or metadata.get("taskType")
+            != FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE
+            or metadata.get("trainingMatrixVariant") != "core"
+        ):
+            continue
+        behavior = metadata.get("behaviorClass")
+        if not isinstance(behavior, str) or not behavior:
+            raise ValueError(
+                "Fleet core policy-vocabulary derivation lacks behaviorClass"
+            )
+        if behavior in core_graphs:
+            raise ValueError(
+                "Fleet core policy-vocabulary derivation has duplicate behavior: "
+                f"{behavior}"
+            )
+        graph = _fleet_native_graph_payload(
+            _first_role_content(record.get("messages") or [], "assistant"),
+            lane="sft",
+            behavior=behavior,
+            output_kind="assistant",
+        )
+        core_graphs[behavior] = graph
+
+    if not core_graphs:
+        return None
+    if set(core_graphs) != FLEET_NATIVE_ORCHESTRATION_SFT_BEHAVIORS:
+        raise ValueError(
+            "Fleet core policy-vocabulary derivation requires all canonical "
+            f"behaviors: observed={sorted(core_graphs)}"
+        )
+
+    top_level_schemas = {tuple(graph) for graph in core_graphs.values()}
+    decision_schemas = {
+        tuple(graph["decision"]) for graph in core_graphs.values()
+    }
+    if len(top_level_schemas) != 1 or len(decision_schemas) != 1:
+        raise ValueError(
+            "Fleet core graphs disagree on their canonical policy schema"
+        )
+    event_schemas: dict[str, set[tuple[str, ...]]] = {}
+    for graph in core_graphs.values():
+        for event in graph["events"]:
+            if not isinstance(event, dict) or not isinstance(
+                event.get("type"),
+                str,
+            ):
+                raise ValueError(
+                    "Fleet core graph exposes an invalid canonical event"
+                )
+            event_schemas.setdefault(event["type"], set()).add(
+                tuple(key for key in event if key not in {"id", "type"})
+            )
+    if not event_schemas:
+        raise ValueError("Fleet core graphs expose no canonical event types")
+
+    target = {
+        "decisionKeys": list(next(iter(decision_schemas))),
+        "eventID": {
+            "namespaceKey": "scenarioID",
+            "separator": "::event::",
+            "orderEncoding": "two_digit_one_based",
+        },
+        "eventSchemas": {
+            event_type: [list(schema) for schema in sorted(schemas)]
+            for event_type, schemas in sorted(event_schemas.items())
+        },
+        "graphTopLevelKeys": list(next(iter(top_level_schemas))),
+    }
+    return _adapter_sft_record(
+        "fleet",
+        (
+            "Return one JSON registry for canonical Fleet graphs. For each "
+            "event type, list every registered payload-key set. At generation "
+            "time select exactly one matching set; never merge alternatives, "
+            "invent aliases, or add fields. Preserve graph and decision key "
+            "order plus event identity components."
+        ),
+        target,
+        FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
+        [],
+        "boundary",
+        {
+            "requiredSplit": "train",
+            "policyVocabularyAnchor": True,
+            "derivedFromSourceFamily": (
+                FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY
+            ),
+            "derivedTrainingMatrixVariant": "core",
+            "derivedBehaviorClasses": sorted(core_graphs),
+            "derivedCoreGraphCount": len(core_graphs),
+            "policyVocabularySHA256": canonical_sha256(target),
+            "specificityVector": [
+                "fleet_contract_event_graph_vocabulary",
+                "canonical_core_graphs",
+                "closed_event_type_vocabulary",
+            ],
+        },
+        manifest,
+    )
 
 
 def _bind_fleet_sft_contract(
@@ -7445,20 +7602,62 @@ def _bind_fleet_dpo_contract(
             == "behavior-conditioned"
         ):
             mutation = metadata.get("atomicPreferenceMutation")
-            request_identifier = _fleet_native_prompt_request_identifier(user)
+            event_id_fact = _fleet_native_prompt_event_id_fact(user)
             chosen_graph = _strict_json_loads(chosen_content)
             rejected_graph = _strict_json_loads(rejected_content)
             if (
                 not isinstance(chosen_graph, dict)
                 or not isinstance(rejected_graph, dict)
                 or not isinstance(mutation, str)
-                or request_identifier is None
+                or event_id_fact is None
                 or not _valid_fleet_native_preference_mutation(
                     chosen_graph,
                     rejected_graph,
                     mutation,
-                    event_id_fact=request_identifier,
+                    event_id_fact=event_id_fact,
                 )
+            ):
+                continue
+        elif (
+            is_native_orchestration
+            and metadata.get("trainingMatrixVariant") == "core"
+        ):
+            behavior = metadata.get("behaviorClass")
+            expected_mutation = (
+                ORCHESTRATION_CORE_FAILURE_FAMILY_MUTATIONS.get(behavior)
+                if isinstance(behavior, str)
+                else None
+            )
+            event_id_fact = _fleet_native_prompt_event_id_fact(user)
+            try:
+                chosen_graph = _strict_json_loads(chosen_content)
+                rejected_graph = _strict_json_loads(rejected_content)
+                expected_rejected = _core_failure_family_rejection(
+                    chosen_graph,
+                    behavior=behavior,
+                    event_id_fact=event_id_fact,
+                )
+            except (
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                continue
+            if (
+                not isinstance(chosen_graph, dict)
+                or not isinstance(rejected_graph, dict)
+                or not isinstance(expected_mutation, str)
+                or (
+                    expected_mutation == "scenario_identity_role"
+                    and event_id_fact is None
+                )
+                or metadata.get("preferenceContrastMode")
+                != ORCHESTRATION_CORE_FAILURE_CONTRAST_MODE
+                or metadata.get("coreFailureFamilyMutation")
+                != expected_mutation
+                or "compoundPreferenceDimensions" in metadata
+                or rejected_graph != expected_rejected
             ):
                 continue
         bound.append(
@@ -15760,7 +15959,7 @@ def _adapter_optimization_step_policy(
         raise ValueError("DPO optimization requires a positive training-record count")
     high_reasoning = agent in {"cortex", "executor", "rem"}
     base_sft_epochs = (
-        3
+        4
         if agent == "fleet"
         else 3
         if agent == "cortex"

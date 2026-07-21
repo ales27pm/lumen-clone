@@ -68,7 +68,7 @@ required exact-token gate against a previously verified tokenizer snapshot. The 
 construction heuristic only: dense minified event-graph JSON can tokenize differently enough that
 the proxy passes while the authoritative aggregate or optimizer-window schedule fails. This gate
 loads the snapshot through the production closure verifier and independently checks root plus every
-advertised Fleet variant, both SFT and DPO, the strict three-epoch SFT schedule, and public/Fleet
+advertised Fleet variant, both SFT and DPO, the strict four-epoch SFT schedule, and public/Fleet
 loss-share evidence. Required mode never converts missing dependencies or a missing snapshot into a
 skip:
 
