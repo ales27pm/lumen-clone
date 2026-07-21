@@ -588,85 +588,49 @@ def test_compiled_fleet_has_three_positive_policy_anchors_per_core_behavior(
                 for index, event in enumerate(graph["events"], start=1)
             }
             dependency_orders = [
-                {
-                    "fromOrder": event_order_by_id[
-                        dependency["fromEventID"]
-                    ],
-                    "toOrder": event_order_by_id[dependency["toEventID"]],
-                }
+                [
+                    event_order_by_id[dependency["fromEventID"]],
+                    event_order_by_id[dependency["toEventID"]],
+                ]
                 for dependency in graph["dependencies"]
             ]
             graph_contract = {
                 "behaviorClass": behavior,
-                "graphTopLevelKeys": list(graph),
-                "decisionKeys": list(graph["decision"]),
-                "eventID": {
-                    "namespaceKey": "scenarioID",
-                    "separator": "::event::",
-                    "orderEncoding": "two_digit_one_based",
-                },
-                "eventSchemas": [
-                    {
-                        "type": event["type"],
-                        "payloadKeys": [
-                            key
-                            for key in event
-                            if key not in {"id", "type"}
-                        ],
-                    }
-                    for event in graph["events"]
+                "enabledPolicyConditions": sorted(
+                    key
+                    for key, enabled in (
+                        fleet_artifact_module._orchestration_policy_conditions(
+                            behavior=behavior,
+                            training_variant="core",
+                        )
+                    ).items()
+                    if enabled
+                ),
+                "eventTypes": [
+                    event["type"] for event in graph["events"]
                 ],
-                "dependencyOrders": dependency_orders,
-                "decisionContract": graph["decision"],
+                "decision": graph["decision"],
             }
             terminal_rejection = (
                 fleet_artifact_module._terminal_decision_rejection(graph)
             )
             topology_identity = {
                 "behaviorClass": behavior,
-                "scenarioIdentitySource": "supplied_scenario_id",
-                "eventIdentity": {
-                    "namespaceKey": "scenarioID",
-                    "separator": "::event::",
-                    "orderEncoding": "two_digit_one_based",
-                },
-                "eventTypeSequence": [
+                "eventTypes": [
                     event["type"] for event in graph["events"]
                 ],
-                "dependencyOrders": [
-                    {
-                        "fromOrder": dependency["fromOrder"],
-                        "kind": "requires",
-                        "toOrder": dependency["toOrder"],
-                    }
-                    for dependency in dependency_orders
-                ],
-                "terminalEventOrder": len(graph["events"]),
-            }
-            payload_roles = {
-                "approvalRequestID": "copy_userApprovalRequestIdentifier",
-                "requestID": "request_not_scenario",
-                "targetSlotID": "delegation_target",
-                "sourceSlotID": "result_source",
-                "workKey": "persistent_work_key",
-                "contextKeys": "slot_scoped_context",
-                "requestedSlotID": "requested_slot",
-                "reason": "exact_stop_reason",
+                "directPrerequisiteEventOrders": dependency_orders,
             }
             semantic_role_binding = {
                 "behaviorClass": behavior,
-                "scenarioIdentitySource": "supplied_scenario_id",
-                "eventBindings": [
+                "payloadKeysByEventOrder": [
                     {
                         "eventOrder": event_order,
-                        "canonicalType": event["type"],
-                        "requiredPayloadBindings": [
-                            {
-                                "key": key,
-                                "semanticRole": payload_roles[key],
-                            }
+                        "eventType": event["type"],
+                        "payloadKeys": [
+                            key
                             for key in event
-                            if key in payload_roles
+                            if key not in {"id", "type"}
                         ],
                     }
                     for event_order, event in enumerate(
@@ -674,19 +638,6 @@ def test_compiled_fleet_has_three_positive_policy_anchors_per_core_behavior(
                         start=1,
                     )
                 ],
-                "requiredInteriorEventTypes": [
-                    event["type"]
-                    for event in graph["events"]
-                    if event["type"] not in {"request_received", "stop"}
-                ],
-                "decisionBinding": {
-                    "strategy": graph["decision"]["strategy"],
-                    "delegatedSlotIDs": graph["decision"]["delegatedSlotIDs"],
-                    "aggregationOwnerSlotID": graph["decision"][
-                        "aggregationOwnerSlotID"
-                    ],
-                    "stopReason": graph["decision"]["stopReason"],
-                },
             }
             expected_targets = {
                 "graph_contract": graph_contract,
@@ -723,6 +674,10 @@ def test_compiled_fleet_has_three_positive_policy_anchors_per_core_behavior(
 
             assert metadata["requiredSplit"] == "train"
             assert metadata["policyVocabularyAnchor"] is True
+            assert metadata["policyBridge"] is True
+            assert metadata["policyBridgeSchemaVersion"] == (
+                "lumen.fleet-policy-bridge/1.0.0"
+            )
             assert metadata["derivedCoreGraphCount"] == 1
             assert metadata["derivedBehaviorClasses"] == [behavior]
             assert metadata["policyVocabularySHA256"] == canonical_sha256(
@@ -2826,10 +2781,13 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
                 assert required_key in prompt
             assert "never emit the literal `<scenarioID>` placeholder" in prompt
             assert "no more than 12 events or 16 dependencies" in prompt
-            assert "closed canonical enum token" in prompt
-            assert "never skip or collapse that stage" in prompt
-            assert "Input fact IDs are payload values only" in prompt
-            assert "`peerContext` object is input-only" in prompt
+            assert "exact closed-enum tokens" in prompt
+            assert "Emit every stage enabled by the policy conditions" in prompt
+            assert "Fact IDs are payload-only" in prompt
+            assert (
+                fleet_artifact_module.ORCHESTRATION_PEER_CONTEXT_INTERFACE
+                in prompt
+            ) is ("peerContext" in derivation["facts"])
             assert not any(
                 f'"{event["type"]}"' in prompt
                 for event in scenario["graph"]["events"]
@@ -2873,6 +2831,11 @@ def test_native_fleet_holdouts_are_hash_bound_and_semantically_disjoint():
         "policyProfile"
         in fleet_artifact_module._orchestration_derivation_contract(scenario)
         for scenario in [*training_scenarios, *eval_scenarios]
+    )
+    assert len(fleet_artifact_module.ORCHESTRATION_OUTPUT_INTERFACE) <= 1_700
+    assert (
+        len(fleet_artifact_module.ORCHESTRATION_PEER_CONTEXT_INTERFACE)
+        <= 150
     )
 
     def values_for_key(value, key):

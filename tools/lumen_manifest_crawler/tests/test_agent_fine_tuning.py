@@ -50,6 +50,8 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     CRITICAL_CONTRACT_VALIDATION_RECORDS_PER_CASE,
     EXECUTOR_RUNTIME_SYSTEM_PROMPT,
     FLEET_BALANCED_CONTRACT_TASK_TYPES,
+    FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MAX_BASIS_POINTS,
+    FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MIN_BASIS_POINTS,
     FLEET_COMPREHENSIVE_TOOL_OWNERSHIP_SFT_SURFACES,
     FLEET_DELEGATION_OUTPUT_CONTRACT,
     FLEET_DELEGATION_PROMPTS_PER_OWNER,
@@ -59,6 +61,8 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION,
     FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MAX_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_DPO_SHARE_MIN_BASIS_POINTS,
+    FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MAX_BASIS_POINTS,
+    FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MIN_BASIS_POINTS,
     FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
     FLEET_NATIVE_ORCHESTRATION_MUTATION_CONTRACT,
     FLEET_NATIVE_ORCHESTRATION_SFT_SHARE_MAX_BASIS_POINTS,
@@ -70,6 +74,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER,
     FLEET_OPTIMIZER_FAMILY_SHARE_SCHEMA_VERSION,
     FLEET_OPTIMIZER_FAMILY_SOURCE_PROXY_SCHEMA_VERSION,
+    FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
     FLEET_REQUIRED_SUPPLEMENTAL_SFT_TASK_TYPES,
     FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
     FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX,
@@ -7238,6 +7243,24 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
                 "dpo": FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
             },
         },
+        "policySignalTokenClassificationByLane": {
+            "sft": [
+                {
+                    "sourceFamily": FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+                    "taskType": FLEET_NATIVE_ORCHESTRATION_SFT_TASK_TYPE,
+                },
+                {
+                    "sourceFamily": ULTRA_SPECIFIC_SOURCE_FAMILY,
+                    "taskType": FLEET_POLICY_VOCABULARY_SFT_TASK_TYPE,
+                },
+            ],
+            "dpo": [
+                {
+                    "sourceFamily": FLEET_NATIVE_ORCHESTRATION_SOURCE_FAMILY,
+                    "taskType": FLEET_NATIVE_ORCHESTRATION_DPO_TASK_TYPE,
+                }
+            ],
+        },
         "lanes": {
             "sft": {
                 "basis": "assistant_mask_non_ignored_token_count",
@@ -7266,6 +7289,34 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
                 ),
             },
         },
+        "policySignalTokenLanes": {
+            "sft": {
+                "basis": "assistant_mask_non_ignored_token_count",
+                "numeratorEvidenceField": (
+                    "allPolicyAssistantTargetTokenCount"
+                ),
+                "denominatorEvidenceField": "assistantTargetTokenCount",
+                "minimumBasisPoints": (
+                    FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MIN_BASIS_POINTS
+                ),
+                "maximumBasisPoints": (
+                    FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MAX_BASIS_POINTS
+                ),
+            },
+            "dpo": {
+                "basis": "rendered_chosen_completion_token_count",
+                "numeratorEvidenceField": (
+                    "nativeOrchestrationChosenTargetTokenCount"
+                ),
+                "denominatorEvidenceField": "chosenTargetTokenCount",
+                "minimumBasisPoints": (
+                    FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MIN_BASIS_POINTS
+                ),
+                "maximumBasisPoints": (
+                    FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MAX_BASIS_POINTS
+                ),
+            },
+        },
         "comparisonRules": {
             "minimum": (
                 "numeratorCount*basisPointDenominator>="
@@ -7283,6 +7334,7 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
             "denominatorTokenCount",
             "supplementalNumeratorTokenCount",
             "publicNumeratorTokenCount",
+            "policySignalNumeratorTokenCount",
             "perSourceFamilyNumeratorTokenCounts",
         }
     source_proxy = loss_share_contract["sourceSelectionProxy"]
@@ -8854,6 +8906,22 @@ def test_fleet_contract_dpo_is_balanced_scorer_aligned_and_update_sized(
         owner: FLEET_OBSERVED_MOUTH_CONFUSION_PROMPTS_PER_OWNER
         for owner in mouth_confusion_tasks
     }
+    for prompt in mouth_confusion_tasks["embedding"]:
+        lowered = prompt.lower()
+        assert "embedding" in lowered
+        assert any(term in lowered for term in ("mimicry", "style", "voice"))
+        assert any(
+            term in lowered
+            for term in ("executor", "execution", "tool", "action", "invocation")
+        )
+    for prompt in mouth_confusion_tasks["executor"]:
+        lowered = prompt.lower()
+        assert any(term in lowered for term in ("executor", "execution", "tool"))
+        assert any(term in lowered for term in ("embedding", "vector", "numeric"))
+        assert any(
+            term in lowered
+            for term in ("mimicry", "style", "voice", "tone")
+        )
     assert not (
         {
             prompt
