@@ -67,7 +67,7 @@ def _unsloth_get_batch_samples(
     else:
         denominator = _FakeScalar(
             sum(
-                train_sft._runtime_shifted_sft_target_token_count(batch)
+                _independent_shifted_target_count(batch)
                 for batch in batches
             )
             + trainer.denominator_delta
@@ -101,6 +101,7 @@ class _FakeTrainer:
             per_device_train_batch_size=1,
             world_size=1,
             packing=False,
+            padding_free=False,
             dataloader_drop_last=False,
             loss_type="nll",
             device="cpu",
@@ -112,7 +113,8 @@ class _FakeTrainer:
         self.model_accepts_loss_kwargs = True
         self.optimizer = None
         self.lr_scheduler = None
-        self.padding_free = True
+        self.padding_free = False
+        self.data_collator = SimpleNamespace(padding_free=False)
         self.model = _FakePeftModel()
         self.train_dataset = [object() for _ in batches]
         self._sampler = sampler
@@ -154,13 +156,22 @@ def _batches() -> list[dict[str, Any]]:
     ]
 
 
+def _independent_shifted_target_count(batch: dict[str, Any]) -> int:
+    labels = batch["labels"].value
+    attention = batch["attention_mask"].value
+    return sum(
+        1
+        for label_row, attention_row in zip(labels, attention)
+        for target, attended in zip(label_row[1:], attention_row[1:])
+        if target != -100 and attended != 0
+    )
+
+
 def _row_evidence(batches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "rowIndex": row_index,
-            "targetTokenCount": (
-                train_sft._runtime_shifted_sft_target_token_count(batch)
-            ),
+            "targetTokenCount": _independent_shifted_target_count(batch),
         }
         for row_index, batch in enumerate(batches)
     ]
@@ -264,6 +275,7 @@ def _attest(
     return train_sft._attest_fleet_sft_runtime_loss_normalization(
         trainer,
         assistant_only_loss=True,
+        sft_config_padding_free=False,
         config=_config(),
         row_token_evidence=row_evidence,
         epoch_orders=_epoch_orders(),
@@ -327,7 +339,7 @@ def test_runtime_attestation_matches_full_window_and_restores_sampler(
         ("model_accepts_loss_kwargs", False),
         ("compute_loss_func", object()),
         ("optimizer", object()),
-        ("padding_free", False),
+        ("padding_free", True),
     ],
 )
 def test_runtime_attestation_rejects_unpinned_trainer_state(
@@ -340,6 +352,44 @@ def test_runtime_attestation_rejects_unpinned_trainer_state(
 
     with pytest.raises(RuntimeError, match="pinned token-normalized"):
         _attest(trainer, sampler, row_evidence)
+
+
+@pytest.mark.parametrize(
+    ("owner", "field", "value"),
+    [
+        ("args", "padding_free", True),
+        ("data_collator", "padding_free", True),
+        ("data_collator", "padding_free", None),
+    ],
+)
+def test_runtime_attestation_rejects_nested_padding_state_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    owner: str,
+    field: str,
+    value: Any,
+) -> None:
+    trainer, sampler, row_evidence = _runtime_fixture(monkeypatch)
+    setattr(getattr(trainer, owner), field, value)
+
+    with pytest.raises(RuntimeError, match="pinned token-normalized"):
+        _attest(trainer, sampler, row_evidence)
+
+
+def test_runtime_attestation_rejects_preinit_sft_config_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trainer, sampler, row_evidence = _runtime_fixture(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="pinned token-normalized"):
+        train_sft._attest_fleet_sft_runtime_loss_normalization(
+            trainer,
+            assistant_only_loss=True,
+            sft_config_padding_free=True,
+            config=_config(),
+            row_token_evidence=row_evidence,
+            epoch_orders=_epoch_orders(),
+            fleet_sampler=sampler,
+        )
 
 
 def test_runtime_attestation_rejects_wrong_batch_sampling_implementation(
@@ -441,11 +491,40 @@ def test_shifted_target_count_rejects_malformed_rows(
 
 
 def test_runtime_target_count_rejects_packing() -> None:
-    with pytest.raises(RuntimeError, match="forbids packed"):
+    with pytest.raises(RuntimeError, match="forbids padding-free or packed"):
         train_sft._runtime_shifted_sft_target_token_count(
             {
                 "labels": _FakeTensor([[1, 2]]),
                 "attention_mask": _FakeTensor([[1, 1]]),
                 "packed_seq_lengths": _FakeTensor([2]),
             }
+        )
+
+
+def test_runtime_target_count_rejects_padding_free_position_ids() -> None:
+    with pytest.raises(RuntimeError, match="forbids padding-free or packed"):
+        train_sft._runtime_shifted_sft_target_token_count(
+            {
+                "labels": _FakeTensor([[1, 2]]),
+                "attention_mask": _FakeTensor([[1, 1]]),
+                "position_ids": _FakeTensor([[0, 1]]),
+            }
+        )
+
+
+def test_runtime_target_count_requires_padded_attention_mask() -> None:
+    with pytest.raises(RuntimeError, match="lacks attention_mask"):
+        train_sft._runtime_shifted_sft_target_token_count(
+            {"labels": _FakeTensor([[1, 2]])}
+        )
+
+
+def test_runtime_target_count_rejects_batch_size_drift() -> None:
+    with pytest.raises(RuntimeError, match="batch size differs"):
+        train_sft._runtime_shifted_sft_target_token_count(
+            {
+                "labels": _FakeTensor([[1, 2], [3, 4]]),
+                "attention_mask": _FakeTensor([[1, 1], [1, 1]]),
+            },
+            expected_batch_size=1,
         )

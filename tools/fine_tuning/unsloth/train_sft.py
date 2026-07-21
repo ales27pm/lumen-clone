@@ -256,7 +256,7 @@ FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
 )
 FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT = 256
 FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA = (
-    "lumen.fleet-sft-runtime-loss-normalization/1.1.0"
+    "lumen.fleet-sft-runtime-loss-normalization/1.2.0"
 )
 FLEET_SFT_TRAINER_CLASS = "__main__._FleetSFTTrainer"
 FLEET_SFT_MODEL_CLASS = "peft.peft_model.PeftModelForCausalLM"
@@ -2081,9 +2081,9 @@ def _fleet_sft_schedule_controls(
     configured_epochs = config.get("num_train_epochs")
     if type(seed) is not int:
         raise RuntimeError("Fleet SFT schedule requires an integer seed")
-    if type(batch_size) is not int or batch_size <= 0:
+    if type(batch_size) is not int or batch_size != 1:
         raise RuntimeError(
-            "Fleet SFT schedule requires a positive integer batch size"
+            "Fleet SFT schedule requires batch_size=1"
         )
     if (
         type(gradient_accumulation_steps) is not int
@@ -2821,21 +2821,38 @@ def _runtime_nested_integer_rows(value: Any, *, label: str) -> list[list[int]]:
     return rows
 
 
-def _runtime_shifted_sft_target_token_count(batch: Mapping[str, Any]) -> int:
+def _runtime_shifted_sft_target_token_count(
+    batch: Mapping[str, Any],
+    *,
+    expected_batch_size: int | None = None,
+) -> int:
     if not isinstance(batch, Mapping) or "labels" not in batch:
         raise RuntimeError("Fleet runtime batch lacks labels")
-    if batch.get("packed_seq_lengths") is not None:
-        raise RuntimeError("Fleet runtime normalization forbids packed sequences")
+    if (
+        batch.get("packed_seq_lengths") is not None
+        or batch.get("position_ids") is not None
+    ):
+        raise RuntimeError(
+            "Fleet runtime normalization forbids padding-free or packed "
+            "sequences"
+        )
     labels = _runtime_nested_integer_rows(batch["labels"], label="labels")
     raw_attention = batch.get("attention_mask")
-    attention = (
-        [[1] * len(row) for row in labels]
-        if raw_attention is None
-        else _runtime_nested_integer_rows(
-            raw_attention,
-            label="attention_mask",
-        )
+    if raw_attention is None:
+        raise RuntimeError("Fleet runtime batch lacks attention_mask")
+    attention = _runtime_nested_integer_rows(
+        raw_attention,
+        label="attention_mask",
     )
+    if (
+        expected_batch_size is not None
+        and (
+            type(expected_batch_size) is not int
+            or expected_batch_size <= 0
+            or len(labels) != expected_batch_size
+        )
+    ):
+        raise RuntimeError("Fleet runtime batch size differs from config")
     if len(labels) != len(attention) or any(
         len(label_row) != len(attention_row)
         for label_row, attention_row in zip(labels, attention)
@@ -2884,6 +2901,7 @@ def _attest_fleet_sft_runtime_loss_normalization(
     trainer: Any,
     *,
     assistant_only_loss: bool,
+    sft_config_padding_free: bool,
     config: Mapping[str, Any],
     row_token_evidence: list[Mapping[str, Any]],
     epoch_orders: list[list[int]],
@@ -2896,6 +2914,7 @@ def _attest_fleet_sft_runtime_loss_normalization(
     )
     trainer_args = getattr(trainer, "args", None)
     accelerator = getattr(trainer, "accelerator", None)
+    data_collator = getattr(trainer, "data_collator", None)
     get_batch_samples = getattr(trainer, "get_batch_samples", None)
     get_batch_samples_function = getattr(
         get_batch_samples,
@@ -2905,6 +2924,7 @@ def _attest_fleet_sft_runtime_loss_normalization(
     trainer_class = f"{type(trainer).__module__}.{type(trainer).__name__}"
     if (
         assistant_only_loss is not True
+        or sft_config_padding_free is not False
         or trainer_class != FLEET_SFT_TRAINER_CLASS
         or trainer_args is None
         or type(
@@ -2919,11 +2939,14 @@ def _attest_fleet_sft_runtime_loss_normalization(
         or type(getattr(trainer_args, "world_size", None)) is not int
         or trainer_args.world_size != 1
         or getattr(trainer_args, "packing", None) is not False
+        or getattr(trainer_args, "padding_free", None) is not False
         or getattr(trainer_args, "dataloader_drop_last", None) is not False
         or getattr(trainer_args, "loss_type", None) != "nll"
         or getattr(trainer, "compute_loss_func", None) is not None
         or getattr(trainer, "model_accepts_loss_kwargs", None) is not True
-        or getattr(trainer, "padding_free", None) is not True
+        or getattr(trainer, "padding_free", None) is not False
+        or data_collator is None
+        or getattr(data_collator, "padding_free", None) is not False
         or accelerator is None
         or type(getattr(accelerator, "gradient_accumulation_steps", None))
         is not int
@@ -3016,7 +3039,14 @@ def _attest_fleet_sft_runtime_loss_normalization(
             "Fleet SFT runtime probe did not materialize one full optimizer window"
         )
     observed_micro_batch_counts = [
-        _runtime_shifted_sft_target_token_count(batch)
+        _runtime_shifted_sft_target_token_count(
+            batch,
+            expected_batch_size=batch_size,
+        )
+        for batch in batch_samples
+    ]
+    observed_micro_batch_sizes = [
+        len(_runtime_nested_integer_rows(batch["labels"], label="labels"))
         for batch in batch_samples
     ]
     reconstructed_denominator = sum(observed_micro_batch_counts)
@@ -3120,7 +3150,15 @@ def _attest_fleet_sft_runtime_loss_normalization(
         "modelAcceptsLossKwargs": True,
         "lossType": "nll",
         "packing": False,
-        "paddingFree": True,
+        "sftConfigPaddingFree": False,
+        "trainerArgsPaddingFree": False,
+        "trainerPaddingFree": False,
+        "dataCollatorPaddingFree": False,
+        "batchCollationMode": "padded_attention_mask",
+        "packedSequenceLengthsPresent": False,
+        "positionIDsPresent": False,
+        "attentionMaskPresent": True,
+        "observedMicroBatchSizes": observed_micro_batch_sizes,
         "worldSize": 1,
         "perDeviceTrainBatchSize": batch_size,
         "trainerGradientAccumulationSteps": gradient_accumulation_steps,
@@ -3146,16 +3184,41 @@ def _attest_fleet_sft_runtime_loss_normalization(
 
 def _validate_fleet_sft_trainer_args(training_args: Any) -> None:
     world_size = getattr(training_args, "world_size", None)
+    per_device_train_batch_size = getattr(
+        training_args,
+        "per_device_train_batch_size",
+        None,
+    )
     if (
         type(world_size) is not int
         or world_size != 1
         or getattr(training_args, "ignore_data_skip", None) is not False
         or getattr(training_args, "dataloader_drop_last", None) is not False
+        or type(per_device_train_batch_size) is not int
+        or per_device_train_batch_size != 1
+        or getattr(training_args, "packing", None) is not False
+        or getattr(training_args, "padding_free", None) is not False
     ):
         raise RuntimeError(
             "Fleet SFT attested scheduling requires single-process Trainer "
-            "resume semantics and dataloader_drop_last=False"
+            "resume semantics, per_device_train_batch_size=1, "
+            "packing=False, padding_free=False, and dataloader_drop_last=False"
         )
+
+
+def _apply_fleet_sft_batching_policy(
+    sft_kwargs: dict[str, Any],
+    *,
+    enabled: bool,
+) -> None:
+    if type(enabled) is not bool:
+        raise RuntimeError("Fleet SFT batching policy requires a boolean mode")
+    if enabled:
+        # The pinned Unsloth runtime changes an omitted padding_free value to
+        # True. Fleet requires one record per micro-batch, so explicit padded
+        # collation adds no within-batch padding and preserves an unambiguous
+        # one-record denominator for the pre-optimizer loss probe.
+        sft_kwargs["padding_free"] = False
 
 
 def _build_fleet_loss_share_evidence(
@@ -6831,8 +6894,13 @@ def main() -> None:
     # treat them as an already-processed dataset instead of rebuilding masks.
     if not assistant_only_loss:
         sft_kwargs["dataset_text_field"] = "text"
+    _apply_fleet_sft_batching_policy(
+        sft_kwargs,
+        enabled=fleet_epoch_orders is not None,
+    )
 
     training_args = SFTConfig(**sft_kwargs)
+    sft_config_padding_free = getattr(training_args, "padding_free", None)
     if fleet_epoch_orders is not None:
         _validate_fleet_sft_trainer_args(training_args)
         fleet_sampler = _FleetEpochStratifiedSampler(fleet_epoch_orders)
@@ -6871,6 +6939,7 @@ def main() -> None:
             _attest_fleet_sft_runtime_loss_normalization(
                 trainer,
                 assistant_only_loss=assistant_only_loss,
+                sft_config_padding_free=sft_config_padding_free,
                 config=cfg,
                 row_token_evidence=fleet_row_evidence,
                 epoch_orders=fleet_epoch_orders,
