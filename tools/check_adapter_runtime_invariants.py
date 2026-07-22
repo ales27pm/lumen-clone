@@ -11,6 +11,7 @@ regressing to the slow five-full-GGUF runtime shape.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import sys
@@ -336,6 +337,31 @@ def check_models_view() -> None:
     )
 
 
+def _function_node(tree: ast.Module, name: str) -> ast.FunctionDef:
+    function = next(
+        (
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == name
+        ),
+        None,
+    )
+    require(function is not None, f"export_gguf.py missing {name}()")
+    return function
+
+
+def _assigned_value(function: ast.FunctionDef, name: str) -> ast.expr | None:
+    for node in ast.walk(function):
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == name
+        ):
+            return node.value
+    return None
+
+
 def check_export_policy() -> None:
     text = read(EXPORT_GGUF)
     require("--release-bake" in text, "export_gguf.py must require explicit --release-bake for merged GGUF export.")
@@ -353,6 +379,74 @@ def check_export_policy() -> None:
         'PREPARED_RUN_ROOT_ENV = "LUMEN_AIO_RUN_ROOT"' in text
         and "guess a recent run or use checked-in generated configs" in text,
         "Release-bake config discovery must bind an exact prepared run root.",
+    )
+    tree = ast.parse(text, filename=str(EXPORT_GGUF))
+    resolver = _function_node(tree, "_resolve_config_dir")
+    gather = _function_node(tree, "gather_configs")
+    main = _function_node(tree, "main")
+
+    run_root_value = _assigned_value(resolver, "run_root")
+    require(
+        run_root_value is not None
+        and ast.unparse(run_root_value)
+        == "os.environ.get(PREPARED_RUN_ROOT_ENV, '').strip()",
+        "Release-bake resolver must read PREPARED_RUN_ROOT_ENV into run_root.",
+    )
+    require(
+        any(
+            isinstance(node, ast.Return)
+            and node.value is not None
+            and ast.unparse(node.value) == "str(Path(run_root) / 'configs')"
+            for node in ast.walk(resolver)
+        ),
+        "Release-bake resolver must return <prepared-run-root>/configs by default.",
+    )
+
+    resolved_dir = _assigned_value(main, "config_dir")
+    loaded_configs = _assigned_value(main, "configs")
+    require(
+        isinstance(resolved_dir, ast.Call)
+        and ast.unparse(resolved_dir.func) == "_resolve_config_dir",
+        "Exporter main must assign config_dir from _resolve_config_dir().",
+    )
+    require(
+        isinstance(loaded_configs, ast.Call)
+        and ast.unparse(loaded_configs.func) == "gather_configs"
+        and len(loaded_configs.args) >= 2
+        and ast.unparse(loaded_configs.args[1]) == "config_dir",
+        "Exporter main must pass the resolved config_dir directly to gather_configs().",
+    )
+
+    gather_root = _assigned_value(gather, "root")
+    release_branch = next(
+        (
+            node
+            for node in ast.walk(gather)
+            if isinstance(node, ast.If)
+            and ast.unparse(node.test) == "require_release_bake_lineage"
+        ),
+        None,
+    )
+    release_nodes = (
+        [nested for statement in release_branch.body for nested in ast.walk(statement)]
+        if release_branch is not None
+        else []
+    )
+    require(
+        gather_root is not None
+        and ast.unparse(gather_root) == "Path(config_dir).resolve()",
+        "gather_configs must derive its root from the resolved config_dir.",
+    )
+    require(
+        any(
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "config_path"
+            and ast.unparse(node.value) == "root / f'{agent}.final.json'"
+            for node in release_nodes
+        ),
+        "Release-bake gather branch must use <resolved-config-dir>/<agent>.final.json.",
     )
 
 
