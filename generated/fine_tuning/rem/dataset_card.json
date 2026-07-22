@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "29b5330a596a65b70105a6eab94e4b20d1d55db0d2db2b26c362ea4487bb31d8"
+      "reportSHA256": "c0b873b09bc2aba9f040914e0855b2aba439e4ab63851bd6312750a12a9d7319"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "f9d8820dd1b6f8091efeaa7c64f73d6281f6338be7fc686b24bd0336b68962ee",
-      "optimizedTrainingCorpusSHA256": "a2cef187043cb6cac474ca8632fe6024cc900c2e8b7cd251cb53b4b9c1fea7fb",
+      "baselineTrainingCorpusSHA256": "d80f9de58e6722d748e750e1a88521502061040127a33210cd3d327b0fa1c756",
+      "optimizedTrainingCorpusSHA256": "eddd8fcac29def41e767c8425c5f86f5ea7e7841d22d1c7ceaf67ec17d7171b5",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "510afd451f4a17cc1dcc0f9b56bac4367a5743d6be3861feeda5a743dd385248",
+    "experimentManifestSHA256": "f095224f684d20ae03af01b55d843a8c6b9d0b39182247f588a043d3ad3d636c",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "3854863b9b6281d0b275534b52eb22d51ed2cd18",
+  "manifestCommit": "fdff0d3eaa14d3693689c59f27f950d948a2e0ec",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 39,
@@ -475,9 +475,9 @@
     "rem_reflection": 5
   },
   "sourceIntegrity": {
-    "baseCommit": "3854863b9b6281d0b275534b52eb22d51ed2cd18",
+    "baseCommit": "fdff0d3eaa14d3693689c59f27f950d948a2e0ec",
     "dirtyState": false,
-    "workingTreeDigest": "6897448ce821817390adcf4d86b08cf12b3cae381353de110815a19de7cca374"
+    "workingTreeDigest": "28d5d8ae16cbf8ed1b2dbd033025b9f8a461512b62ecf247adfad6aa05c33e8e"
   },
   "systemPrompt": "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
   "taskTypeCounts": {
@@ -518,5 +518,5 @@
     "ultra_specific_runtime_repair",
     "ultra_specific_training_evidence_repair"
   ],
-  "worktreeFingerprint": "6897448ce821817390adcf4d86b08cf12b3cae381353de110815a19de7cca374"
+  "worktreeFingerprint": "28d5d8ae16cbf8ed1b2dbd033025b9f8a461512b62ecf247adfad6aa05c33e8e"
 }

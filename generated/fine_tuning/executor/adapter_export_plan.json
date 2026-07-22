@@ -66,7 +66,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "3538dbfffd00a4a98de326000f31aa46c72c2012658fdc16cb7b7403535c4fdc"
+        "reportSHA256": "fd6b990836b4983b2ebf3e7af13ed058571700de54e58c259b503e361f4029b5"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -74,7 +74,7 @@
       "recordCount": 63,
       "schemaVersion": "lumen.adapter-eval/1.1.0"
     },
-    "manifestCommit": "3854863b9b6281d0b275534b52eb22d51ed2cd18",
+    "manifestCommit": "fdff0d3eaa14d3693689c59f27f950d948a2e0ec",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 36,
@@ -98,9 +98,9 @@
       "tool_schema_cards"
     ],
     "sourceIntegrity": {
-      "baseCommit": "3854863b9b6281d0b275534b52eb22d51ed2cd18",
+      "baseCommit": "fdff0d3eaa14d3693689c59f27f950d948a2e0ec",
       "dirtyState": false,
-      "workingTreeDigest": "6897448ce821817390adcf4d86b08cf12b3cae381353de110815a19de7cca374"
+      "workingTreeDigest": "28d5d8ae16cbf8ed1b2dbd033025b9f8a461512b62ecf247adfad6aa05c33e8e"
     },
     "taskTypes": [
       "approval_granted",
@@ -156,7 +156,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "1f169d3730578c03c365c7e80aac76e438944f55b95494eb0ef648f66d231db5",
+    "experimentManifestSHA256": "7941a2844fa3c524a63ff24bc4e635dcaceda1a1b0b77cf05e017a1116f85602",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -233,12 +233,12 @@
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
   "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.",
-  "trainingCodeBundleSHA256": "f641164a414f8ace46f5906f637bc8ce8b85d7799afda0d751ca660052c00d5c",
-  "trainingCodeSHA256": "5a092715c72cc6b3f45a5844821e11c0b4298024e3027e444feef6288cf28295",
+  "trainingCodeBundleSHA256": "6001c2d00fdce3be096a85009bc62a4e636e2be92b9919ecb7a77f42d287d3bc",
+  "trainingCodeSHA256": "e8f9b522d41735608f933d2aa60e509228f23d1ae1567cf473a6a59d9db3ef7b",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "b7a4ded9d804db1a4a39bb3a2b2002166f3d1e36834263c7d3f99bb90b97a809",
-    "orpo": "882824fcd83af2bae690f180b53f38bf889d94552b5de8eeb91b10cf71c3b5fd",
-    "sft": "5a092715c72cc6b3f45a5844821e11c0b4298024e3027e444feef6288cf28295"
+    "dpo": "2ac2751d93088df404d50dc3a271f770b5233795f136f0db15d79ab0c2c155d9",
+    "orpo": "b2dc69501af9b295ad20561d99fce7a80b867502d2cffb3152b3acba43f3c392",
+    "sft": "e8f9b522d41735608f933d2aa60e509228f23d1ae1567cf473a6a59d9db3ef7b"
   },
   "trainingDependencyLockSHA256": "09666d5e815498d1f1c9045fd6589d4294caabd2603815d544fcbe01a5174139"
 }

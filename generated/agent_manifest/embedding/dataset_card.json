@@ -1,12 +1,12 @@
 {
   "counts": {
-    "corpus": 6760,
-    "evalRetrieval": 1013,
-    "hardNegatives": 5909,
-    "trainPairs": 5278,
-    "trainTriplets": 5278,
-    "valPairs": 631,
-    "valTriplets": 631
+    "corpus": 6781,
+    "evalRetrieval": 1040,
+    "hardNegatives": 5903,
+    "trainPairs": 5300,
+    "trainTriplets": 5300,
+    "valPairs": 603,
+    "valTriplets": 603
   },
   "evaluationIsolation": {
     "contentPolicy": "normalized_eval_user_segment_documents_are_evaluation_only",

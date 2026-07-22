@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "b40d12e540c74e3fea0d9d53644a1a92db12b606b94e38dafafdd8925e06449c"
+      "reportSHA256": "382d545b582888fee052393e750a2ac358ffb2f51d547c15ecf4d7122273d98f"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "e3eb3e50828fce557ed96ac801a3e949d82b7751cf54d1e1bd1449024c410f21",
-      "optimizedTrainingCorpusSHA256": "ba27c63c3f7dafbba6e8d2fc82a31f5938c1791f4bc9011f337de14ab3bf5ae8",
+      "baselineTrainingCorpusSHA256": "48fa2e7f6f83d6267beb0b9d5b416bd7335f9d1a0fa2e69c96740d25f838046b",
+      "optimizedTrainingCorpusSHA256": "08a00a75784443bcc3dcaa38b15b7f3710cbb52bfa41d65793d163fddbf6e010",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 1047,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "20086a6b114d4e4beb12117542dc17f3fcfc6bd719dc86001e572dc73142618b",
+    "experimentManifestSHA256": "1d8b6c01b0793290e17cbb90595c31c79d44292a98ba961cbf0e601bba1bb2cc",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "3854863b9b6281d0b275534b52eb22d51ed2cd18",
+  "manifestCommit": "fdff0d3eaa14d3693689c59f27f950d948a2e0ec",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 28,
@@ -475,9 +475,9 @@
     "public_adapter_corpus_toolace_train": 1
   },
   "sourceIntegrity": {
-    "baseCommit": "3854863b9b6281d0b275534b52eb22d51ed2cd18",
+    "baseCommit": "fdff0d3eaa14d3693689c59f27f950d948a2e0ec",
     "dirtyState": false,
-    "workingTreeDigest": "6897448ce821817390adcf4d86b08cf12b3cae381353de110815a19de7cca374"
+    "workingTreeDigest": "28d5d8ae16cbf8ed1b2dbd033025b9f8a461512b62ecf247adfad6aa05c33e8e"
   },
   "systemPrompt": "You are Mouth, Lumen's user-facing response agent. Explain tool results clearly without leaking internal JSON or sentinels.",
   "taskTypeCounts": {
@@ -510,5 +510,5 @@
     "ultra_specific_reference_resolution_failure",
     "user_response_generation"
   ],
-  "worktreeFingerprint": "6897448ce821817390adcf4d86b08cf12b3cae381353de110815a19de7cca374"
+  "worktreeFingerprint": "28d5d8ae16cbf8ed1b2dbd033025b9f8a461512b62ecf247adfad6aa05c33e8e"
 }
