@@ -449,7 +449,9 @@ def _quantized_runtime_model(
         f"{module_name}.weight": module.weight
         for module_name, module in modules
     }
-    cuda_parameter = lambda: SimpleNamespace(device=SimpleNamespace(type="cuda"))
+    def cuda_parameter() -> SimpleNamespace:
+        return SimpleNamespace(device=SimpleNamespace(type="cuda"))
+
     parameter_by_name.update(
         {
             "model.embed_tokens.weight": cuda_parameter(),

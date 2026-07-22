@@ -1700,7 +1700,11 @@ def _prepare_configs(
             base_config=cfg,
             controlled_config=controlled,
             train_sft_record_count=datasets["trainSFT"]["count"],
-            train_dpo_record_count=datasets["trainDPO"]["count"],
+            train_dpo_record_count=(
+                datasets["trainDPO"]["count"]
+                if "trainDPO" in datasets
+                else datasets["dpo"]["count"]
+            ),
             declared_invariant_sha256=variant_manifest.get(
                 "trainingConfigInvariantSHA256"
             ),

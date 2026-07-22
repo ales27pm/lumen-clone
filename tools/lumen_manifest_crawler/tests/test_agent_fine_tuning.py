@@ -133,6 +133,7 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     _finalize_fleet_optimizer_lane,
     _limit_supplemental_sft_records,
     _limit_fleet_supplemental_dpo_records,
+    _ordered_cortex_route_text,
     _public_corpus_loss_share_contract,
     _fleet_source_role,
     _manifest_valid_executor_payload,
@@ -379,7 +380,7 @@ def test_written_fine_tuning_outputs_are_adapter_first(tmp_path: Path, compiled_
 
 
 def test_sft_records_use_chat_format(compiled_fine_tuning: tuple) -> None:
-    _, datasets, fine_tuning = compiled_fine_tuning
+    _, _, fine_tuning = compiled_fine_tuning
     for agent in AGENTS:
         for record in (fine_tuning[agent].train_sft + fine_tuning[agent].val_sft)[:20]:
             messages = record["messages"]
@@ -1592,7 +1593,7 @@ def test_cortex_contrast_decoys_exclude_unsorted_frozen_eval_window() -> None:
 def test_cortex_no_tool_and_invalid_tool_routes_fail_closed(
     compiled_fine_tuning: tuple,
 ) -> None:
-    manifest, _, fine_tuning = compiled_fine_tuning
+    _, _, fine_tuning = compiled_fine_tuning
     cortex = fine_tuning["cortex"]
     records = cortex.train_sft + cortex.val_sft
     frozen_eval_prompts = {record["messages"][-1]["content"] for record in cortex.eval}
@@ -6109,6 +6110,17 @@ def test_cortex_sft_rejects_non_strict_raw_json_before_canonicalization(
 
 
 @pytest.mark.parametrize(
+    "value",
+    (
+        '{"selectedToolID":null,"selectedToolID":"shadow"}',
+        '{"selectedToolID":null,"strictProbe":Infinity}',
+    ),
+)
+def test_cortex_route_ordering_preserves_invalid_json(value: str) -> None:
+    assert _ordered_cortex_route_text(value) == value
+
+
+@pytest.mark.parametrize(
     "chosen",
     (
         '{"selectedToolID":null,"selectedToolID":"shadow"}',
@@ -6358,7 +6370,7 @@ def test_executor_chosen_dpo_outputs_are_manifest_valid_json(compiled_fine_tunin
 def test_executor_compiled_lanes_and_frozen_cases_bind_native_runtime_contract(
     compiled_fine_tuning: tuple,
 ) -> None:
-    manifest, _, fine_tuning = compiled_fine_tuning
+    _, _, fine_tuning = compiled_fine_tuning
     executor = fine_tuning["executor"]
     sft = executor.train_sft + executor.val_sft
     dpo = executor.train_dpo + executor.val_dpo
