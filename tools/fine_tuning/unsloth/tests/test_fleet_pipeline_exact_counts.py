@@ -222,6 +222,9 @@ def _config() -> dict[str, Any]:
         "gradient_accumulation_steps": 8,
         "num_train_epochs": 4,
         "packing": False,
+        "optimizationStepPolicy": {
+            "sft": {"trainRecordCount": 5},
+        },
         "base_model_name": tokenizer["baseModelID"],
         "baseModelRevision": tokenizer["baseModelRevision"],
         "baseModelTokenizerDigest": tokenizer["tokenizerSHA256"],

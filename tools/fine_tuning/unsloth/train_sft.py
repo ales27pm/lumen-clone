@@ -243,7 +243,7 @@ ADAPTER_DERIVED_TOKENIZER_FILES = frozenset(
         "vocab.json",
     }
 )
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.8.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA = "lumen.fleet-loss-share/1.9.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA = "lumen.fleet-loss-share-evidence/1.4.0"
 FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA = (
     "lumen.fleet-sft-optimizer-window-schedule-contract/1.0.0"
@@ -255,6 +255,10 @@ FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM = (
     "sha256_epoch_stratified_token_aware_family_round_robin/1.3.0"
 )
 FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT = 256
+FLEET_SFT_OPTIMIZER_RECORD_GEOMETRY_SCHEMA = (
+    "lumen.fleet-sft-optimizer-record-geometry/1.0.0"
+)
+FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS = 615
 FLEET_SFT_RUNTIME_LOSS_NORMALIZATION_SCHEMA = (
     "lumen.fleet-sft-runtime-loss-normalization/1.2.0"
 )
@@ -905,8 +909,9 @@ def _preflight_sft_token_lengths(
         raise ValueError(
             "minimum_sequence_margin_tokens cannot weaken the controlled 128-token margin"
         )
+    validated_fleet_contract: dict[str, Any] | None = None
     if agent == "fleet":
-        _validated_fleet_loss_share_contract(
+        validated_fleet_contract = _validated_fleet_loss_share_contract(
             fleet_loss_share_contract,
             lane="sft",
             config=fleet_config,
@@ -923,6 +928,58 @@ def _preflight_sft_token_lengths(
         raise RuntimeError(
             "Public-corpus loss-share contract requires a controlled agent"
         )
+    if agent == "fleet":
+        if validated_fleet_contract is None or not isinstance(
+            fleet_config,
+            Mapping,
+        ):
+            raise RuntimeError(
+                "Fleet SFT optimizer-record geometry requires its training "
+                "config"
+            )
+        geometry = validated_fleet_contract[
+            "sftOptimizerRecordGeometryContract"
+        ]
+        maximum_train_records = geometry["maximumTrainRecords"]
+        optimization_policy = fleet_config.get("optimizationStepPolicy")
+        sft_policy = (
+            optimization_policy.get("sft")
+            if isinstance(optimization_policy, Mapping)
+            else None
+        )
+        declared_train_records = (
+            sft_policy.get("trainRecordCount")
+            if isinstance(sft_policy, Mapping)
+            else None
+        )
+        train_split = splits.get("train")
+        train_records = (
+            train_split[0]
+            if isinstance(train_split, tuple)
+            and len(train_split) == 2
+            and isinstance(train_split[0], list)
+            else None
+        )
+        if train_records is None:
+            raise RuntimeError(
+                "Fleet SFT optimizer-record geometry requires a valid train "
+                "split"
+            )
+        actual_train_records = len(train_records)
+        if actual_train_records > maximum_train_records:
+            raise RuntimeError(
+                "Fleet SFT optimizer-record geometry exceeds its calibrated "
+                "train-record ceiling: "
+                f"actual={actual_train_records} "
+                f"maximum={maximum_train_records}"
+            )
+        if actual_train_records != declared_train_records:
+            raise RuntimeError(
+                "Fleet SFT optimizer-record geometry differs from its "
+                "training config: "
+                f"actual={actual_train_records} "
+                f"declared={declared_train_records}"
+            )
     aggregate_total: list[int] = []
     aggregate_assistant: list[int] = []
     split_summaries: dict[str, dict[str, Any]] = {}
@@ -1636,6 +1693,7 @@ def _validated_fleet_loss_share_contract(
             "exactTokenEvidenceContract",
             "failurePolicy",
             "optimizerFamilyShareBands",
+            "sftOptimizerRecordGeometryContract",
             "sftOptimizerWindowScheduleContract",
             "rowMetadataContract",
             "sourceSelectionProxy",
@@ -1919,6 +1977,60 @@ def _validated_fleet_loss_share_contract(
         contract.get("sftOptimizerWindowScheduleContract"),
         sft_family_band=family_lanes["sft"],
     )
+
+    record_geometry = _require_exact_mapping_keys(
+        contract.get("sftOptimizerRecordGeometryContract"),
+        {
+            "schemaVersion",
+            "lane",
+            "maximumTrainRecords",
+            "protectedSourceRole",
+            "removableSourceRoles",
+            "selectionPolicy",
+            "failurePolicy",
+        },
+        label="Fleet SFT optimizer-record geometry contract",
+    )
+    if dict(record_geometry) != {
+        "schemaVersion": FLEET_SFT_OPTIMIZER_RECORD_GEOMETRY_SCHEMA,
+        "lane": "sft",
+        "maximumTrainRecords": FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS,
+        "protectedSourceRole": "behavioral_primary",
+        "removableSourceRoles": [
+            "supplemental_static",
+            "public_behavioral",
+        ],
+        "selectionPolicy": (
+            "largest_deterministic_cap_valid_cohort_from_immutable_"
+            "candidates"
+        ),
+        "failurePolicy": "abort_generation_before_optimizer",
+    }:
+        raise RuntimeError(
+            "Fleet SFT optimizer-record geometry contract drifted"
+        )
+    if config is not None:
+        optimization_policy = config.get("optimizationStepPolicy")
+        sft_policy = (
+            optimization_policy.get("sft")
+            if isinstance(optimization_policy, Mapping)
+            else None
+        )
+        train_record_count = (
+            sft_policy.get("trainRecordCount")
+            if isinstance(sft_policy, Mapping)
+            else None
+        )
+        if (
+            type(train_record_count) is not int
+            or train_record_count <= 0
+            or train_record_count
+            > FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+        ):
+            raise RuntimeError(
+                "Fleet SFT optimizer-record geometry drifted from the "
+                "training config"
+            )
 
     accounting = _require_exact_mapping_keys(
         contract.get("tokenAccounting"),

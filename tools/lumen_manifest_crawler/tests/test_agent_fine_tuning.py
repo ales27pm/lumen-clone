@@ -79,6 +79,8 @@ from lumen_manifest_crawler.dataset.fine_tuning import (
     FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
     FLEET_SUPPLEMENTAL_SOURCE_FAMILY_PROXY_SELECTION_SHARE_HARD_MAX,
     FLEET_SFT_OPTIMIZER_WINDOW_CANDIDATE_COUNT,
+    FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS,
+    FLEET_SFT_OPTIMIZER_RECORD_GEOMETRY_SCHEMA_VERSION,
     FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_ALGORITHM,
     FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_CONTRACT_SCHEMA_VERSION,
     FLEET_SFT_OPTIMIZER_WINDOW_SCHEDULE_EVIDENCE_SCHEMA_VERSION,
@@ -7226,6 +7228,23 @@ def test_fleet_supplemental_targets_are_bounded_by_loss_share(
         ),
         "failurePolicy": "abort_before_optimizer",
     }
+    assert loss_share_contract["sftOptimizerRecordGeometryContract"] == {
+        "schemaVersion": (
+            FLEET_SFT_OPTIMIZER_RECORD_GEOMETRY_SCHEMA_VERSION
+        ),
+        "lane": "sft",
+        "maximumTrainRecords": FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS,
+        "protectedSourceRole": FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY,
+        "removableSourceRoles": [
+            FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC,
+            FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL,
+        ],
+        "selectionPolicy": (
+            "largest_deterministic_cap_valid_cohort_from_immutable_"
+            "candidates"
+        ),
+        "failurePolicy": "abort_generation_before_optimizer",
+    }
     assert loss_share_contract["dpoTokenizationPolicy"] == {
         "trainerImplementation": "trl.DPOTrainer.tokenize_row",
         "trlVersion": "0.24.0",
@@ -8160,6 +8179,124 @@ def test_fleet_sft_finalization_balances_native_proxy_by_pruning_public_only() -
                 lane="sft",
                 config=FineTuningDatasetConfig(),
             )
+
+
+def test_fleet_sft_optimizer_geometry_is_bounded_from_immutable_candidates() -> None:
+    def sft(
+        index: int,
+        *,
+        source_family: str,
+        task_type: str,
+        target_words: int,
+        public: bool = False,
+    ) -> dict:
+        metadata: dict[str, Any] = {
+            "agent": "fleet",
+            "sourceFamily": source_family,
+            "taskType": task_type,
+        }
+        if public:
+            metadata["publicCorpus"] = {
+                "sourceRepository": "example/fleet-public",
+                "sourceRevision": "a" * 40,
+                "sourceGroupID": f"geometry-public-{index}",
+                "stratum": "delegation",
+                "selectionScore": {"overall": float(index)},
+            }
+        return {
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPTS["fleet"]},
+                {"role": "user", "content": f"Geometry item {index}"},
+                {
+                    "role": "assistant",
+                    "content": " ".join(
+                        f"geometry_{index}_{offset}"
+                        for offset in range(target_words)
+                    ),
+                },
+            ],
+            "metadata": metadata,
+        }
+
+    primary = [
+        sft(
+            index,
+            source_family=ULTRA_SPECIFIC_SOURCE_FAMILY,
+            task_type="fleet_contract_delegation",
+            target_words=100,
+        )
+        for index in range(530)
+    ]
+    supplemental = [
+        sft(
+            1_000 + index,
+            source_family="codebase_home_sft",
+            task_type="codebase_home_grounding",
+            target_words=100,
+        )
+        for index in range(100)
+    ]
+    public = [
+        sft(
+            2_000 + index,
+            source_family="public_adapter_corpus_test",
+            task_type="public_capability_delegation",
+            target_words=10,
+            public=True,
+        )
+        for index in range(100)
+    ]
+    records = [*primary, *supplemental, *public]
+    config = FineTuningDatasetConfig(
+        max_fleet_sft_optimizer_records=(
+            FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+        )
+    )
+
+    finalized = _finalize_fleet_optimizer_lane(
+        records,
+        lane="sft",
+        config=config,
+    )
+    repeated = _finalize_fleet_optimizer_lane(
+        list(reversed(records)),
+        lane="sft",
+        config=config,
+    )
+
+    assert finalized == repeated
+    assert len(finalized) == FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+    assert {
+        _canonical_messages_key(record) for record in primary
+    } <= {
+        _canonical_messages_key(record) for record in finalized
+    }
+    assert any(record in finalized for record in supplemental)
+    assert any(record in finalized for record in public)
+
+    for invalid_limit in (0, True):
+        with pytest.raises(
+            ValueError,
+            match="max_fleet_sft_optimizer_records must be a positive integer",
+        ):
+            _finalize_fleet_optimizer_lane(
+                records[:2],
+                lane="sft",
+                config=replace(
+                    config,
+                    max_fleet_sft_optimizer_records=invalid_limit,
+                ),
+            )
+
+    with pytest.raises(
+        ValueError,
+        match="protected behavioral geometry exceeds",
+    ):
+        _finalize_fleet_optimizer_lane(
+            primary[:11],
+            lane="sft",
+            config=replace(config, max_fleet_sft_optimizer_records=10),
+        )
 
 
 def test_fleet_optimizer_finalization_repairs_post_split_concentration_only() -> None:
@@ -9273,6 +9410,36 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
     optimized_fleet_policy = optimized_fleet["variant_manifest"][
         "controlledTrainingConfig"
     ]["optimizationStepPolicy"]["sft"]
+    assert len(fleet.train_sft) == FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+    assert len(fleet.train_dpo) == 385
+    assert len(optimized_fleet["train_sft"]) == (
+        FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+    )
+    assert len(optimized_fleet["train_dpo"]) == 385
+    assert len(
+        fleet.experiment_variants["internal_plus_public_baseline"][
+            "train_sft"
+        ]
+    ) == FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+    assert len(
+        fleet.experiment_variants["internal_only"]["train_sft"]
+    ) <= FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+    for lane_name, lane_records in {
+        "root": fleet.train_sft,
+        "baseline": fleet.experiment_variants[
+            "internal_plus_public_baseline"
+        ]["train_sft"],
+        "optimized": optimized_fleet["train_sft"],
+    }.items():
+        role_counts = Counter(
+            _fleet_source_role(record) for record in lane_records
+        )
+        assert role_counts[FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY] == 530
+        assert role_counts[FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC] > 0
+        assert role_counts[FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL] > 0
+        assert sum(role_counts.values()) == (
+            FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+        ), lane_name
     assert len(optimized_fleet["train_sft"]) == (
         optimized_fleet_policy["trainRecordCount"]
     )
