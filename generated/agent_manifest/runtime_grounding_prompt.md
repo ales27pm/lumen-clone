@@ -2,8 +2,8 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `fdff0d3eaa14d3693689c59f27f950d948a2e0ec`
-- Working-tree digest: `28d5d8ae16cbf8ed1b2dbd033025b9f8a461512b62ecf247adfad6aa05c33e8e`
+- Base commit: `d45cb92075345a99cdc9b4b19466e5f39102e801`
+- Working-tree digest: `4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f`
 - Tools: `53`
 - Intents: `22`
 - Codebase-home records: `807`
