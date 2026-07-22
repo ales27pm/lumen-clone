@@ -14,7 +14,7 @@ jobs:
   static-and-python:
     name: Static checks and Python tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -35,12 +35,26 @@ jobs:
       - name: Adapter runtime invariants
         run: python tools/check_adapter_runtime_invariants.py
 
+      - name: Ubuntu launcher syntax
+        run: |
+          bash -n scripts/ubuntu_train_lumen_full_pipeline.sh
+          bash -n scripts/ubuntu_train_lumen_adapters_aio.sh
+
       - name: Python tests
+        run: |
+          timeout 1500 uv run --python 3.12 \
+            --with-editable ./tools/lumen_manifest_crawler \
+            --with pytest --with pydantic --with typer --with rich \
+            python -m pytest -m "not slow and not e2e"
+
+      - name: Ubuntu source, lineage, evaluation, and launcher tests
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
         run: |
           timeout 900 uv run --python 3.12 \
             --with-editable ./tools/lumen_manifest_crawler \
             --with pytest --with pydantic --with typer --with rich \
-            python -m pytest -m "not slow and not e2e"
+            python -m pytest tools/fine_tuning/unsloth/tests
 
       - name: Git diff whitespace check
         run: git diff --check

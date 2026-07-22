@@ -286,7 +286,16 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--release-bake", action="store_true", help="Explicitly run optional adapter merge/GGUF export.")
     parser.add_argument("--skip-release-bake-existing", action="store_true", help="Reuse existing release-baked GGUF files when --release-bake is enabled.")
     parser.add_argument("--release-bake-python", default=sys.executable, help="Python interpreter for tools/fine_tuning/unsloth/export_gguf.py.")
-    parser.add_argument("--config-dir", type=Path, default=Path("tools/fine_tuning/unsloth/configs"), help="Unsloth config directory.")
+    parser.add_argument(
+        "--config-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional Unsloth config directory. Adapter-first mode defaults to the generated "
+            "fine-tuning output; release bake defaults to $LUMEN_AIO_RUN_ROOT/configs and "
+            "requires prepared <agent>.final.json files."
+        ),
+    )
     parser.add_argument("--agents", default=DEFAULT_AGENTS, help="Comma-separated agents for release-bake manifest/export.")
     parser.add_argument("--quantization", default="q4_k_m", help="GGUF quantization for release-bake export.")
     parser.add_argument("--release-bake-output-root", type=Path, default=Path("models/gguf_release_bake"), help="Release-bake GGUF output root.")
@@ -481,13 +490,11 @@ def build_command_queue(
         improve_loop.extend(["--runtime-audit", str(audit)])
     commands.append({"name": "improve-loop generation", "command": improve_loop})
 
-    export_script = root / "tools" / "fine_tuning" / "unsloth" / "export_gguf.py"
     release_manifest = args.release_bake_manifest_output.resolve()
     export_command = [
         args.release_bake_python,
-        str(export_script),
-        "--config-dir",
-        str((root / args.config_dir).resolve() if not args.config_dir.is_absolute() else args.config_dir.resolve()),
+        "-m",
+        "tools.fine_tuning.unsloth.export_gguf",
         "--agents",
         args.agents,
         "--quantization",
@@ -497,6 +504,15 @@ def build_command_queue(
         "--manifest-output",
         str(release_manifest),
     ]
+    if args.config_dir is not None:
+        config_dir = (
+            (root / args.config_dir).resolve()
+            if not args.config_dir.is_absolute()
+            else args.config_dir.resolve()
+        )
+        export_command.extend(["--config-dir", str(config_dir)])
+    elif not args.release_bake:
+        export_command.extend(["--config-dir", str(fine_tuning_output)])
     if args.release_bake:
         export_command.append("--release-bake")
         if args.skip_release_bake_existing:

@@ -11,6 +11,7 @@ from typing import Any
 from lumen_manifest_crawler.output.hashing import normalized_repo_path, sha256_file
 
 CODEBASE_HOME_SCHEMA_VERSION = "1.1.0"
+CODEBASE_HOME_ROOT_LABEL = "Lumen repository"
 
 INCLUDED_SUFFIXES = {
     ".csv",
@@ -284,7 +285,7 @@ def _overview_record(root: Path, corpus: list[dict[str, Any]], chunks: list[dict
     text = "\n".join(
         [
             "Lumen codebase home overview.",
-            f"Root: {root.name}",
+            f"Root: {CODEBASE_HOME_ROOT_LABEL}",
             "Scanned deterministic git-tracked text source, tests, docs, scripts, and configs. Generated outputs are excluded.",
             f"Files: {len(corpus)}",
             f"Source chunks: {len(chunks)}",

@@ -2,7 +2,14 @@
 
 # pylint: disable=missing-function-docstring,line-too-long
 
-from lumen_manifest_crawler.manifest import AgentBehaviorManifest, IntentManifest, ToolArgumentManifest, ToolManifest
+from lumen_manifest_crawler.manifest import (
+    AgentBehaviorManifest,
+    FleetManifest,
+    IntentManifest,
+    ModelSlotManifest,
+    ToolArgumentManifest,
+    ToolManifest,
+)
 from lumen_manifest_crawler.validators import validate_manifest
 
 
@@ -11,6 +18,22 @@ def test_duplicate_tool_id_failure():
     report = validate_manifest(manifest)
     assert not report.passed
     assert any(f.code == "duplicate_tool_id" for f in report.failures)
+
+
+def test_model_slot_without_source_grounded_responsibilities_fails_validation():
+    manifest = AgentBehaviorManifest(
+        fleet=FleetManifest(
+            slots=[ModelSlotManifest(id="embedding", role="embedding")]
+        )
+    )
+
+    report = validate_manifest(manifest)
+
+    assert any(
+        failure.code == "model_slot_missing_responsibilities"
+        and failure.path == "fleet.slots.embedding.responsibilities"
+        for failure in report.failures
+    )
 
 
 def test_unknown_intent_tool_failure():

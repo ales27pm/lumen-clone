@@ -17,6 +17,11 @@ See [`docs/UBUNTU_TRAINING.md`](../../../docs/UBUNTU_TRAINING.md) for host
 prerequisites, variants, capacity estimates, resume/overwrite behavior, output
 layout, and upload safety. The default is the optimized variant, all six roles,
 full frozen evaluation, no upload, private visibility, and no runtime promotion.
+Run it as a regular non-root user: the image maps that account's UID/GID to a
+real container passwd/group entry and validates its writable home before model
+training. The launcher requires a clean Git worktree, hashes the full Ubuntu
+orchestration closure, and bakes the verified source and frozen inputs into the
+image. Neither the training nor credential container mounts the host checkout.
 
 The commands below describe the individual components. Use them for inspection
 and targeted development; the full Ubuntu launcher is the canonical operator
@@ -37,11 +42,57 @@ python -m lumen_manifest_crawler generate \
 
 3. Train SFT with a run-scoped config that binds the explicit experiment variant, base-model
 lineage, phase-specific training-code digest, dependency lock, source Git commit, and observed
-container environment. The full Ubuntu host launcher builds the controlled image, derives its
+container environment. The source contract also binds the canonical working-tree and Ubuntu
+orchestration digests. The full Ubuntu host launcher builds the controlled image, derives its
 local image ID, and prepares those configs. The inner launcher handles one experiment variant at a
 time; `baseline-and-optimized` and `all` are expanded into isolated fail-fast variant batches by
 the host wrapper and do not themselves make a comparison/promotion decision. Direct
 `--resume-from-checkpoint` calls without the repository's run/checkpoint contract fail closed.
+Before any model or PEFT state is loaded, preparation verifies the exact pinned five-file tokenizer
+closure (`config.json`, `merges.txt`, `tokenizer.json`, `tokenizer_config.json`, and `vocab.json`),
+reconstructs the SFT and preference token-ID transcripts, and checks Fleet's exact optimizer-token
+share. `--prepare-only` is independently rechecked from an exact read-only run-root mount; nested
+mounts, path substitution, insufficient descriptor headroom, and any input mutation fail closed.
+After the prepare-only early-exit boundary, a full or resumed execution invokes the exact
+`train_sft --runtime-binding-smoke` loader before converter setup or any PEFT/trainer construction.
+It runs once per distinct prepared runtime-load contract (one load for the current six roles) and
+atomically retains a self-hashed `training/runtime_binding_smoke.json`; resume re-verifies that
+report against every current config rather than silently replacing it. The load proof binds the
+explicit compute dtype and sequence length, all 196 expected CUDA NF4 projections, every model
+parameter on CUDA, and a finite fixed four-token forward through the patched Qwen/BitsAndBytes
+kernel path. Verification reconstructs the expected module and parameter inventories from the
+pinned model config instead of trusting the runtime's self-hash alone.
+
+After regenerating Fleet artifacts and before rebuilding an image or launching a pilot, run the
+required exact-token gate against a previously verified tokenizer snapshot. The source proxy is a
+construction heuristic only: dense minified event-graph JSON can tokenize differently enough that
+the proxy passes while the authoritative aggregate or optimizer-window schedule fails. This gate
+loads the snapshot through the production closure verifier and independently checks root plus every
+advertised Fleet variant, both SFT and DPO, the strict four-epoch SFT schedule, and public/Fleet
+loss-share evidence. Required mode never converts missing dependencies or a missing snapshot into a
+skip:
+
+```bash
+ROOT="$(pwd -P)"
+SNAPSHOT="$ROOT/.local/ubuntu_finetune_runs/<verified-run>/training/global_tokenizer_snapshot"
+IMAGE="sha256:<verified-local-image-id>"
+docker run --rm --network none --read-only \
+  --tmpfs /tmp:rw,nosuid,nodev,size=1g,mode=1777 \
+  -v "$ROOT:/workspace:ro" \
+  -v "$SNAPSHOT:/run/lumen-tokenizer:ro" \
+  -e PYTHONPATH=/workspace \
+  -e HF_HUB_OFFLINE=1 \
+  -e TRANSFORMERS_OFFLINE=1 \
+  -e XDG_CACHE_HOME=/tmp/cache \
+  -e LUMEN_REQUIRE_FLEET_PINNED_TOKENIZER_GATE=1 \
+  -e LUMEN_FLEET_TOKENIZER_SNAPSHOT=/run/lumen-tokenizer \
+  -w /workspace \
+  --entrypoint python \
+  "$IMAGE" \
+  -m unittest -v \
+  tools.fine_tuning.unsloth.tests.test_fleet_generated_exact_token_gate
+```
+
 ```bash
 bash scripts/ubuntu_train_lumen_full_pipeline.sh \
   --variant internal_plus_public_baseline \
@@ -64,15 +115,33 @@ python tools/fine_tuning/unsloth/train_dpo.py \
 ```
 
 5. Merged-model release bake is intentionally outside the one-click Ubuntu contract. The
-run-scoped `<agent>.final.json` files bind the evaluated preference adapters but contain container
-paths. The older exporter selects `<agent>.json` from a directory and would therefore select the
-superseded SFT parents. Do not point it at the run config directory. A future merged-artifact
-workflow must consume explicit final configs inside the pinned image and rerun evaluation and
-release approval for the newly created artifact.
+standalone exporter accepts only the run-scoped `<agent>.final.json` files in release-bake
+directory mode, so it binds the evaluated preference adapters and never falls back to the
+superseded SFT parents. Run it inside the pinned image with the same `/outputs` mount because the
+configs contain attested container paths. The newly merged artifacts still require evaluation and
+release approval; completing the adapter pipeline does not promote them automatically.
 
 6. Optional Hub upload is owned by the full Ubuntu launcher. Use `--upload`; it keeps the
 destination private by default, scopes credentials to a separate upload container, re-verifies
-the allowlisted evidence, and requires `--public` for public visibility.
+the allowlisted evidence, and requires `--public` for public visibility. Ordinary upload requires
+a full quality-passed evaluation. A full pass with conversion disabled remains qualified as
+`complete_without_gguf`; smoke or unevaluated publication additionally requires
+`--allow-diagnostic-upload`, uses `diagnostic-runs/`, and records `promotionEligible=false`.
+An intentionally SFT-only run (`preference=false`) is a separate diagnostic state:
+`status=sft_only_diagnostic_complete`, `trainingScope=sft_only`, no evaluation or GGUF
+boundary, and `promotionEligible=false`. It can be published only with the same explicit
+diagnostic override, under `diagnostic-sft-runs/`; that path re-verifies and publishes SFT
+evidence only and never probes preference, evaluation, or GGUF paths.
+The uploader executes only the attested image copy under isolated Python, with no host source
+mount or repository `PYTHONPATH`; run artifacts are read-only and only the receipt path is
+writable. Before publication it independently re-verifies the pre-training runtime-binding
+smoke report and each included phase report, then binds their exact file digests and compact
+model, tokenizer, PEFT-base, adapter-tokenizer, and private-snapshot identities into the upload
+intent and receipt.
+Here `promotionEligible` means eligible for normal artifact publication after the frozen local
+quality gate. It is not proof of installation or behavior on an iPhone. Release promotion still
+requires fresh device/TestFlight evidence showing the intended shared-adapter path, adapter slot,
+and `adapterApplied=true` without fallback.
 
 7. Evaluate the final preference adapter. The Ubuntu launcher creates the
 final lineage config and runs this for every selected role automatically:
@@ -85,8 +154,32 @@ python -m tools.fine_tuning.unsloth.evaluate_adapter \
 ```
 The evaluator writes candidate outputs, a scored report, and a self-hashed run
 manifest. Malformed output and full-suite quality failures return nonzero.
+Before advancing to each next selected case it atomically and durably commits
+the completed candidate and every raw generation attempt to the private,
+self-hashed `evaluation_checkpoint.json`. Missing private directory components
+are created with an inode fsync followed by a parent-directory fsync before the
+initial journal write. That journal binds the exact adapter,
+config, evaluator code, frozen suite, behavior/tool manifest, execution plan,
+generation settings, and selected-record order. Resume accepts only an exact
+verified prefix; tamper, duplicates, reordering, or any binding drift fail
+closed. A complete verified journal is scored and finalized without reloading
+the model. The canonical candidate/report/run-manifest trio is published only
+after every selected case is present, then the journal is durably removed.
+If interruption lands between the three atomic final-file publications, the
+complete journal plus only the known private final-file subset is recoverable;
+those files are deterministically reconstructed and overwritten. After the
+existing journal verifies, resume may also discard an owned mode-0600 regular
+temp file whose basename exactly matches this evaluator's atomic writer for the
+journal or one of those three finals. Unsafe lookalikes, temps without a valid
+journal, any other unknown entry, or an incomplete journal mixed with final
+files are rejected. Resume independently reconstructs a terminal evidence trio
+without requiring it to have passed quality; verified failures are retained and
+stop the run. Any unclassified, invalid, or operational verifier failure also
+preserves the directory and aborts rather than authorizing deletion.
 Training completion alone is not a model-quality pass, and no local result is
-a TestFlight/device pass. `--eval-smoke N` is bounded smoke evidence only.
+a TestFlight/device pass. `--eval-smoke N` is bounded smoke evidence only; the
+prepared `N` is bound into the evaluation evidence and must be smaller than the
+frozen suite.
 
 8. Never train on private app exports unless explicitly sanitized.
 

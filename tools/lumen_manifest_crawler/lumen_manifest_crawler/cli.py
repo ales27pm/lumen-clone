@@ -29,7 +29,11 @@ from lumen_manifest_crawler.developer_framework import (
 from lumen_manifest_crawler.developer_cycle import DeveloperCycleConfig, run_developer_cycle
 from lumen_manifest_crawler.fleet_artifacts import generate_fleet_artifacts, generate_manifest_markdown
 from lumen_manifest_crawler.improvement_loop import AgentImprovementLoopConfig, run_agent_improvement_loop
-from lumen_manifest_crawler.output.writer import write_outputs
+from lumen_manifest_crawler.output.writer import (
+    cross_model_artifact_directory_matches_manifest,
+    cross_model_artifact_directories_match,
+    write_outputs,
+)
 from lumen_manifest_crawler.validators import validate_agent_fine_tuning_datasets, validate_manifest
 
 logger = logging.getLogger(__name__)
@@ -48,6 +52,20 @@ def _split_command(value: Optional[str]) -> tuple[str, ...]:
     return tuple(shlex.split(value))
 
 
+def _should_generate_full_fleet_artifacts(
+    *,
+    generate_system_prompts: bool,
+    cross_model_train_dir: Optional[Path],
+    generate_agent_fine_tuning: bool,
+) -> bool:
+    """Return whether downstream outputs require the complete Fleet corpus."""
+    return (
+        generate_system_prompts
+        or cross_model_train_dir is not None
+        or generate_agent_fine_tuning
+    )
+
+
 @generate_app.callback()
 def generate(
     root: Path = typer.Option(Path("."), "--root", help="Repository root to scan."),
@@ -57,7 +75,7 @@ def generate(
     deterministic: bool = typer.Option(True, "--deterministic/--non-deterministic", help="Use deterministic timestamps and splits for CI-stable generated files."),
     generate_system_prompts: bool = typer.Option(False, "--generate-system-prompts", help="Generate fleet_system_prompts.json, AgentBehaviorManifest.md, and cross-model training artifacts."),
     export_md: bool = typer.Option(False, "--export-md", help="Generate only AgentBehaviorManifest.md, unless full fleet artifact generation is also requested."),
-    cross_model_train_dir: Optional[Path] = typer.Option(None, "--cross-model-train-dir", help="Directory for cross_model_training.jsonl. Defaults to <output>/cross_model_training."),
+    cross_model_train_dir: Optional[Path] = typer.Option(None, "--cross-model-train-dir", help="Additional mirrored directory for cross-model artifacts. The canonical copy remains under <output>/cross_model_training."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Generate into a temporary directory and print a machine-readable diff without changing output."),
     diff: bool = typer.Option(False, "--diff", help="Alias for --dry-run."),
     incremental: bool = typer.Option(False, "--incremental", help="Skip generation when the current manifest fingerprint matches the previous output and no runtime audit is provided."),
@@ -77,16 +95,37 @@ def generate(
     manifest = generate_manifest(root)
     manifest_fingerprint = _manifest_fingerprint(manifest)
 
-    if incremental and not runtime_audit and not dry_run and _is_incremental_hit(output, manifest_fingerprint):
+    if (
+        incremental
+        and not runtime_audit
+        and not dry_run
+        and _incremental_outputs_are_current(
+            output,
+            manifest_fingerprint,
+            cross_model_train_dir=cross_model_train_dir,
+            require_cross_model_artifacts=(
+                generate_system_prompts
+                or cross_model_train_dir is not None
+            ),
+        )
+    ):
         console.print(f"[green]Incremental generation skipped; manifest fingerprint unchanged for {output}[/green]")
         return
 
     runtime_audit_reports = load_runtime_audit_reports(runtime_audit)
     datasets = generate_all_datasets(manifest, root=root, runtime_audit_paths=runtime_audit, deterministic=deterministic)
     report = validate_manifest(manifest, datasets, strict=strict)
-    should_generate_full_fleet_artifacts = generate_system_prompts or cross_model_train_dir is not None
+    should_generate_full_fleet_artifacts = _should_generate_full_fleet_artifacts(
+        generate_system_prompts=generate_system_prompts,
+        cross_model_train_dir=cross_model_train_dir,
+        generate_agent_fine_tuning=generate_agent_fine_tuning,
+    )
+    should_write_full_fleet_artifacts = (
+        generate_system_prompts or cross_model_train_dir is not None
+    )
     fleet_artifacts = generate_fleet_artifacts(manifest) if should_generate_full_fleet_artifacts else None
-    manifest_markdown = None if fleet_artifacts else (generate_manifest_markdown(manifest) if export_md else None)
+    output_fleet_artifacts = fleet_artifacts if should_write_full_fleet_artifacts else None
+    manifest_markdown = None if output_fleet_artifacts else (generate_manifest_markdown(manifest) if export_md else None)
 
     fine_tuning_datasets = None
     if generate_agent_fine_tuning:
@@ -109,10 +148,16 @@ def generate(
 
     target_output = output
     target_cross_dir = cross_model_train_dir.resolve() if cross_model_train_dir else None
+    explicit_fine_tuning_output = unsloth_output or fine_tuning_output
+    if explicit_fine_tuning_output is not None:
+        explicit_fine_tuning_output = explicit_fine_tuning_output.resolve()
+    target_fine_tuning_output = explicit_fine_tuning_output
     if dry_run:
         temp_root = Path(tempfile.mkdtemp(prefix="lumen-manifest-dry-run-"))
         target_output = temp_root / "agent_manifest"
         target_cross_dir = (temp_root / "cross_model_training") if cross_model_train_dir else None
+        if fine_tuning_datasets is not None and explicit_fine_tuning_output is not None:
+            target_fine_tuning_output = temp_root / "fine_tuning"
 
     write_outputs(
         target_output,
@@ -120,18 +165,39 @@ def generate(
         report,
         datasets,
         pretty=pretty,
-        fleet_artifacts=fleet_artifacts,
+        fleet_artifacts=output_fleet_artifacts,
         manifest_markdown=manifest_markdown,
         cross_model_train_dir=target_cross_dir,
         incremental_fingerprint=manifest_fingerprint,
         fine_tuning_datasets=fine_tuning_datasets,
-        fine_tuning_output_dir=(unsloth_output or fine_tuning_output),
+        fine_tuning_output_dir=target_fine_tuning_output,
     )
 
     if dry_run:
         diff_report = _diff_directories(output, target_output)
         if cross_model_train_dir and target_cross_dir:
-            diff_report["cross_model_training"] = _diff_directories(cross_model_train_dir.resolve(), target_cross_dir)
+            cross_model_diff = _diff_directories(
+                cross_model_train_dir.resolve(),
+                target_cross_dir,
+            )
+            diff_report["cross_model_training"] = cross_model_diff
+            diff_report["changed"] = bool(
+                diff_report.get("changed")
+                or cross_model_diff.get("changed")
+            )
+        if (
+            fine_tuning_datasets is not None
+            and explicit_fine_tuning_output is not None
+            and target_fine_tuning_output is not None
+        ):
+            fine_tuning_diff = _diff_directories(
+                explicit_fine_tuning_output,
+                target_fine_tuning_output,
+            )
+            diff_report["fine_tuning"] = fine_tuning_diff
+            diff_report["changed"] = bool(
+                diff_report.get("changed") or fine_tuning_diff.get("changed")
+            )
         console.print(json.dumps(diff_report, ensure_ascii=False, indent=2, sort_keys=True))
         if fail_on_change and diff_report.get("changed"):
             raise typer.Exit(code=1)
@@ -466,6 +532,33 @@ def _is_incremental_hit(output: Path, manifest_fingerprint: str) -> bool:
         return False
     existing = existing_hash_path.read_text(encoding="utf-8").strip()
     return existing == manifest_fingerprint
+
+
+def _incremental_outputs_are_current(
+    output: Path,
+    manifest_fingerprint: str,
+    *,
+    cross_model_train_dir: Path | None,
+    require_cross_model_artifacts: bool,
+) -> bool:
+    if not _is_incremental_hit(output, manifest_fingerprint):
+        return False
+    nested = output / "cross_model_training"
+    manifest_path = output / "AgentBehaviorManifest.json"
+    if require_cross_model_artifacts and not (
+        cross_model_artifact_directory_matches_manifest(
+            nested,
+            manifest_path,
+        )
+    ):
+        return False
+    if cross_model_train_dir is None:
+        return True
+    return cross_model_artifact_directories_match(
+        nested,
+        cross_model_train_dir.resolve(),
+        manifest_path=manifest_path,
+    )
 
 
 def _diff_directories(existing_dir: Path, generated_dir: Path) -> dict[str, Any]:

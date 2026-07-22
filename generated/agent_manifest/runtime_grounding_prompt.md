@@ -2,20 +2,20 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `04fc7ede31a84c1a834cd561defb5e00a565144d`
-- Working-tree digest: `44ae4c29a23c254e3fdce88775ce544c7636e8a1a58891df4b0c8b8014b5fe44`
+- Base commit: `d45cb92075345a99cdc9b4b19466e5f39102e801`
+- Working-tree digest: `4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `774`
+- Codebase-home records: `807`
 
 ## Top Modules
-- `ios/LumenTests`: 161 files
+- `ios/LumenTests`: 162 files
 - `Services`: 61 files
 - `docs`: 59 files
-- `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 44 files
-- `tools/lumen_manifest_crawler/tests`: 33 files
+- `tools/fine_tuning/unsloth`: 53 files
+- `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 47 files
+- `tools/lumen_manifest_crawler/tests`: 39 files
 - `Views`: 32 files
-- `tools/fine_tuning/unsloth`: 32 files
 - `Assistant`: 29 files
 - `scripts`: 23 files
 - `Diagnostics`: 21 files
@@ -31,8 +31,8 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `RAG`: 9 files
 - `Services/LLM/Models`: 9 files
 - `Services/LLM/Policy`: 9 files
+- `tools/pipeline/tests`: 9 files
 - `AppIntents`: 8 files
-- `Memory`: 8 files
 
 ## Key Files
 - `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` (Services/AgentGrounding): Compatibility accessor for code that predates the explicit base-commit provenance contract. Symbols: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, CodingKeys, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent.

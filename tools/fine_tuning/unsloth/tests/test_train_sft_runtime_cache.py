@@ -210,11 +210,16 @@ def test_training_environment_accepts_only_matching_cuda_wheel_local_tags(
         "zeroGPUSize": None,
         "zeroGPUDurationSeconds": None,
         "observedAccelerator": {"backend": "cuda"},
+        "baseModelTokenizerDigest": "e" * 64,
+        "baseModelTokenizerClosureSHA256": "f" * 64,
         "trainingEnvironmentLock": {
+            "schemaVersion": "lumen.adapter-training-environment-lock/1.1.0",
             "pythonVersion": "3.10",
             "cudaVersion": "12.8",
             "packageVersions": expected_packages,
             "unslothRevision": training_lineage.DEFAULT_UNSLOTH_REVISION,
+            "baseTokenizerSHA256": "e" * 64,
+            "baseTokenizerClosureSHA256": "f" * 64,
         },
     }
 

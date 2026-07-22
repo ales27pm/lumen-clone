@@ -4,6 +4,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+from collections import namedtuple
 from pathlib import Path
 
 import pytest
@@ -61,6 +62,14 @@ class _InstalledDistribution:
     def locate_file(self, filename: str) -> Path:
         return self.root / filename
 
+    @property
+    def files(self) -> list[str]:
+        return [
+            row.split(",", 1)[0]
+            for row in self.record_path.read_text(encoding="utf-8").splitlines()
+            if row and not row.split(",", 1)[0].endswith("/RECORD")
+        ]
+
 
 def _resign_resolved_environment(environment: dict[str, object]) -> None:
     distributions = environment["distributions"]
@@ -83,6 +92,248 @@ def _resign_resolved_environment(environment: dict[str, object]) -> None:
     )
 
 
+def _tokenizer_snapshot_fixture(
+    tmp_path: Path,
+) -> tuple[Path, dict[str, object], dict[str, bytes]]:
+    revision = "7" * 40
+    model_root = tmp_path / "models--example--model"
+    blobs = model_root / "blobs"
+    snapshot = model_root / "snapshots" / revision
+    blobs.mkdir(parents=True)
+    snapshot.mkdir(parents=True)
+    payloads = {
+        "config.json": b'{"model_type":"qwen3"}\n',
+        "merges.txt": b"a b\nc d\n",
+        "tokenizer.json": b'{"version":"1.0"}\n',
+        "tokenizer_config.json": b'{"chat_template":"test"}\n',
+        "vocab.json": b'{"a":0,"b":1}\n',
+    }
+    files: list[dict[str, object]] = []
+    for filename, payload in payloads.items():
+        digest = hashlib.sha256(payload).hexdigest()
+        (blobs / digest).write_bytes(payload)
+        (snapshot / filename).symlink_to(Path("../../blobs") / digest)
+        files.append(
+            {
+                "path": filename,
+                "sizeBytes": len(payload),
+                "sha256": digest,
+                "huggingFaceBlobID": digest,
+            }
+        )
+    closure = training_lineage.canonical_base_model_tokenizer_closure(
+        base_model_id="example/model",
+        base_model_revision=revision,
+        files=files,
+    )
+    contract: dict[str, object] = {
+        "base_model_id": "example/model",
+        "base_model_name": "example/model",
+        "base_model_revision": revision,
+        "tokenizer_files": closure["files"],
+        "tokenizer_digest": next(
+            item["sha256"]
+            for item in closure["files"]
+            if item["path"] == "tokenizer.json"
+        ),
+        "tokenizer_closure_sha256": training_lineage.canonical_sha256(
+            closure
+        ),
+    }
+    return snapshot, contract, payloads
+
+
+def _private_tokenizer_snapshot(
+    tmp_path: Path,
+    payloads: dict[str, bytes],
+) -> Path:
+    snapshot = tmp_path / "private-tokenizer"
+    snapshot.mkdir(mode=0o700)
+    for filename, payload in payloads.items():
+        path = snapshot / filename
+        path.write_bytes(payload)
+        path.chmod(0o400)
+    return snapshot
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ("config.json", "merges.txt", "tokenizer_config.json", "vocab.json"),
+)
+def test_hugging_face_tokenizer_snapshot_rejects_each_non_tokenizer_mutation(
+    tmp_path: Path,
+    filename: str,
+) -> None:
+    snapshot, contract, _ = _tokenizer_snapshot_fixture(tmp_path)
+    training_lineage.verify_base_model_tokenizer_snapshot(snapshot, **contract)
+
+    target = (snapshot / filename).resolve(strict=True)
+    target.chmod(0o600)
+    target.write_bytes(target.read_bytes() + b"tampered")
+
+    with pytest.raises(ValueError, match=filename):
+        training_lineage.verify_base_model_tokenizer_snapshot(
+            snapshot,
+            **contract,
+        )
+
+
+def test_private_tokenizer_snapshot_binds_regular_files_and_stability_signatures(
+    tmp_path: Path,
+) -> None:
+    _, contract, payloads = _tokenizer_snapshot_fixture(tmp_path)
+    private = _private_tokenizer_snapshot(tmp_path, payloads)
+
+    verification = training_lineage.verify_private_base_model_tokenizer_snapshot(
+        private,
+        **contract,
+    )
+
+    assert verification["snapshotPath"] == str(private.resolve())
+    assert [
+        item["path"] for item in verification["fileStabilitySignatures"]
+    ] == list(training_lineage.BASE_MODEL_TOKENIZER_REQUIRED_PATHS)
+    assert verification["snapshotVerificationSHA256"] == (
+        training_lineage.canonical_sha256(
+            {
+                key: value
+                for key, value in verification.items()
+                if key != "snapshotVerificationSHA256"
+            }
+        )
+    )
+
+
+def test_private_conversion_snapshot_retains_tokenizer_and_model_signatures(
+    tmp_path: Path,
+) -> None:
+    _, tokenizer_contract, payloads = _tokenizer_snapshot_fixture(tmp_path)
+    conversion = tmp_path / "private-conversion"
+    conversion.mkdir(mode=0o700)
+    for filename, payload in payloads.items():
+        path = conversion / filename
+        path.write_bytes(payload)
+        path.chmod(0o400)
+    shard_payloads = {
+        "model-00001-of-00002.safetensors": b"first-shard",
+        "model-00002-of-00002.safetensors": b"second-shard",
+    }
+    shard_root = tmp_path / "weight-blobs"
+    shard_root.mkdir()
+    generation_payload = b'{"do_sample":false}\n'
+    generation_path = conversion / "generation_config.json"
+    generation_path.write_bytes(generation_payload)
+    generation_path.chmod(0o400)
+    generation_config_file = {
+        "path": "generation_config.json",
+        "sizeBytes": len(generation_payload),
+        "sha256": hashlib.sha256(generation_payload).hexdigest(),
+        "huggingFaceBlobID": hashlib.sha256(generation_payload).hexdigest(),
+    }
+    shards: list[dict[str, object]] = []
+    for filename, payload in shard_payloads.items():
+        target = conversion / filename
+        target.write_bytes(payload)
+        target.chmod(0o400)
+        shards.append(
+            {
+                "filename": filename,
+                "size": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+        )
+    shards.sort(key=lambda item: str(item["filename"]))
+    index_payload = json.dumps(
+        {
+            "weight_map": {
+                "a": shards[0]["filename"],
+                "b": shards[1]["filename"],
+            }
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    index_path = conversion / "model.safetensors.index.json"
+    index_path.write_bytes(index_payload)
+    index_path.chmod(0o400)
+    artifact_digest = training_lineage.canonical_sha256(
+        {
+            "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
+            "shards": shards,
+        }
+    )
+    index_digest = hashlib.sha256(index_payload).hexdigest()
+    index_binding = training_lineage.canonical_sha256(
+        {
+            "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+            "indexDigest": index_digest,
+            "referencedShardNames": [item["filename"] for item in shards],
+            "shardContractDigest": artifact_digest,
+        }
+    )
+
+    verification = (
+        training_lineage.verify_private_base_model_conversion_snapshot(
+            conversion,
+            **tokenizer_contract,
+            model_index_digest=index_digest,
+            index_referenced_shard_names=[
+                item["filename"] for item in shards
+            ],
+            index_shard_binding_sha256=index_binding,
+            model_artifact_digest=artifact_digest,
+            weight_shards=shards,
+            generation_config_file=generation_config_file,
+        )
+    )
+
+    assert verification["snapshotPath"] == str(conversion.resolve())
+    assert len(verification["modelFileStabilitySignatures"]) == 4
+    assert verification["tokenizerSnapshotVerification"][
+        "fileStabilitySignatures"
+    ]
+
+
+def test_private_runtime_snapshot_fails_before_copy_when_space_is_insufficient(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, contract, payloads = _tokenizer_snapshot_fixture(tmp_path)
+    private = _private_tokenizer_snapshot(tmp_path, payloads)
+    source = tmp_path / "source-model"
+    source.mkdir()
+    DiskUsage = namedtuple("DiskUsage", ("total", "used", "free"))
+    monkeypatch.setattr(
+        training_lineage.shutil,
+        "disk_usage",
+        lambda _path: DiskUsage(1, 1, 0),
+    )
+
+    with pytest.raises(ValueError, match="Insufficient free space"):
+        training_lineage.create_private_base_model_runtime_snapshot(
+            source_snapshot_dir=source,
+            private_tokenizer_snapshot_dir=private,
+            destination=tmp_path / "private-model",
+            **contract,
+            generation_config_file={
+                "path": "generation_config.json",
+                "sizeBytes": 1,
+                "sha256": "1" * 64,
+                "huggingFaceBlobID": "1" * 64,
+            },
+            model_index_digest="2" * 64,
+            index_referenced_shard_names=["model.safetensors"],
+            index_shard_binding_sha256="3" * 64,
+            model_artifact_digest="4" * 64,
+            weight_shards=[
+                {
+                    "filename": "model.safetensors",
+                    "size": 1,
+                    "sha256": "5" * 64,
+                }
+            ],
+        )
+
+
 def test_repository_code_bundle_is_phase_specific_and_self_verifying() -> None:
     bundle = training_lineage.repository_training_code_bundle(ROOT)
 
@@ -94,6 +345,11 @@ def test_repository_code_bundle_is_phase_specific_and_self_verifying() -> None:
     )
     assert any(
         entry["path"] == "lumen_training/train_sft.py"
+        for entry in bundle["phases"]["sft"]["files"]
+    )
+    assert any(
+        entry["path"]
+        == "lumen_manifest_crawler/dataset/chat_template_contract.py"
         for entry in bundle["phases"]["sft"]["files"]
     )
     assert any(
@@ -451,6 +707,125 @@ def test_resolved_environment_snapshot_records_scan_metrics_and_authenticates_ca
             resolved,
             tampered,
             key=key,
+        )
+
+
+def _rewrite_distribution_record(
+    distribution: _InstalledDistribution,
+    source_paths: list[Path],
+) -> None:
+    rows: list[str] = []
+    for path in source_paths:
+        digest = base64.urlsafe_b64encode(
+            hashlib.sha256(path.read_bytes()).digest()
+        ).decode("ascii").rstrip("=")
+        rows.append(
+            f"{path.relative_to(distribution.root).as_posix()},"
+            f"sha256={digest},{path.stat().st_size}\n"
+        )
+    rows.append(
+        f"{distribution.record_path.parent.name}/RECORD,,\n"
+    )
+    distribution.record_path.write_text("".join(rows), encoding="utf-8")
+
+
+def test_installed_python_callable_identity_reconstructs_record_bound_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="callable-package",
+        version="1.2.3",
+    )
+    init_path = tmp_path / "callable_package" / "__init__.py"
+    source_path = tmp_path / "callable_package" / "loss_utils.py"
+    source_path.write_text(
+        "def selected_callable(value):\n    return value + 1\n",
+        encoding="utf-8",
+    )
+    _rewrite_distribution_record(distribution, [init_path, source_path])
+    resolved = training_lineage.build_resolved_training_environment(
+        [distribution]
+    )
+    monkeypatch.setattr(
+        training_lineage.importlib_metadata,
+        "distribution",
+        lambda name: distribution,
+    )
+
+    identity = (
+        training_lineage.installed_distribution_python_callable_identity(
+            distribution_name="callable-package",
+            source_logical_path="callable_package/loss_utils.py",
+            callable_name="selected_callable",
+            resolved_environment=resolved,
+        )
+    )
+
+    assert identity["distributionName"] == "callable-package"
+    assert identity["distributionVersion"] == "1.2.3"
+    assert identity["sourceFileSHA256"] == hashlib.sha256(
+        source_path.read_bytes()
+    ).hexdigest()
+    assert len(identity["codeSHA256"]) == 64
+    assert len(identity["installedCallableIdentitySHA256"]) == 64
+
+    source_path.write_text(
+        "def selected_callable(value):\n    return value + 2\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="RECORD content mismatch"):
+        training_lineage.installed_distribution_python_callable_identity(
+            distribution_name="callable-package",
+            source_logical_path="callable_package/loss_utils.py",
+            callable_name="selected_callable",
+            resolved_environment=resolved,
+        )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def another_callable():\n    return 1\n",
+        (
+            "def selected_callable():\n    return 1\n\n"
+            "def outer():\n"
+            "    def selected_callable():\n"
+            "        return 2\n"
+            "    return selected_callable()\n"
+        ),
+    ],
+)
+def test_installed_python_callable_identity_rejects_missing_or_ambiguous_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    distribution = _InstalledDistribution(
+        tmp_path,
+        name="callable-package",
+        version="1.2.3",
+    )
+    init_path = tmp_path / "callable_package" / "__init__.py"
+    source_path = tmp_path / "callable_package" / "loss_utils.py"
+    source_path.write_text(source, encoding="utf-8")
+    _rewrite_distribution_record(distribution, [init_path, source_path])
+    resolved = training_lineage.build_resolved_training_environment(
+        [distribution]
+    )
+    monkeypatch.setattr(
+        training_lineage.importlib_metadata,
+        "distribution",
+        lambda name: distribution,
+    )
+
+    with pytest.raises(ValueError, match="missing or ambiguous"):
+        training_lineage.installed_distribution_python_callable_identity(
+            distribution_name="callable-package",
+            source_logical_path="callable_package/loss_utils.py",
+            callable_name="selected_callable",
+            resolved_environment=resolved,
         )
 
 
@@ -1022,10 +1397,36 @@ def test_ubuntu_launcher_records_complete_local_git_source_audit() -> None:
     assert '"expectedRuntimeSourceRevision": revision' in launcher
     assert '"observedRepositoryRevision": revision' in launcher
     assert '"observedRuntimeRevision": revision' in launcher
-    assert '"runtimeSourceBindingStatus": "local_checkout_observed"' in launcher
+    assert '"runtimeSourceBindingStatus": "verified_clean_snapshot"' in launcher
     assert (
-        '"runtimeSourceBindingMethod": "git_head_plus_training_code_manifest"'
+        '"git_clean_worktree_plus_ubuntu_orchestration_manifest"'
         in launcher
     )
     assert "config.update(runtime_source)" in launcher
     assert "**runtime_source" in launcher
+
+
+def test_attested_local_runtime_source_accepts_only_the_exact_binding_pair() -> None:
+    revision = "e" * 40
+    audit = {
+        "runtimeSourceKind": "git",
+        "runtimeSourceRevision": revision,
+        "expectedRuntimeSourceRevision": revision,
+        "observedRepositoryRevision": revision,
+        "observedRuntimeRevision": revision,
+        "runtimeSourceBindingStatus": "verified_clean_snapshot",
+        "runtimeSourceBindingMethod": (
+            "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+        ),
+    }
+
+    assert training_lineage.validate_runtime_source_audit(
+        audit,
+        observed_local_revision=revision,
+    ) == audit
+    audit["runtimeSourceBindingMethod"] = "git_head_plus_training_code_manifest"
+    with pytest.raises(ValueError):
+        training_lineage.validate_runtime_source_audit(
+            audit,
+            observed_local_revision=revision,
+        )

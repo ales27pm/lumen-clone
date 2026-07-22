@@ -1,9 +1,9 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Base commit: `04fc7ede31a84c1a834cd561defb5e00a565144d`
-- Working-tree digest: `44ae4c29a23c254e3fdce88775ce544c7636e8a1a58891df4b0c8b8014b5fe44`
-- Dirty source state: `True`
+- Base commit: `d45cb92075345a99cdc9b4b19466e5f39102e801`
+- Working-tree digest: `4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f`
+- Dirty source state: `False`
 - Source files: 13
 - Source map:
   - `ios/Lumen/Models/AgentJSONValue.swift`: json_protocol
@@ -44,9 +44,12 @@
 ### `embedding`
 - Role: embedding
 - Source: `ios/Lumen/Services/ModelFleet.swift`
-- Purpose: Perform the embedding role defined by the Lumen model fleet contract.
-- Accepts: Role-specific input defined by the fleet contract and AgentBehaviorManifest.
-- Returns: Role-specific output defined by the fleet contract and AgentBehaviorManifest.
+- Purpose: Generate semantic vector representations for memory indexing and retrieval.
+- Responsibilities:
+  - embedding vector generation
+  - semantic memory embedding
+- Accepts: Text or content selected for semantic memory indexing or retrieval.
+- Returns: Embedding vector only; no user-facing text, tool call, or hidden reasoning.
 - Calls: none
 - Called by: cortex
 
@@ -784,9 +787,9 @@
 ## Memory Scopes
 - Scopes: backgroundOnly, conversation, currentTurn, person, preferenceOnly, project, referenceOnly, remCondensed, sourceOfTruth, task, toolObservation, userPreference
 - `durable`: durable; source: `ios/Lumen/Models/MemoryItem.swift`
-- `shortLived`: ttlSeconds=3600; source: `ios/Lumen/Models/MemoryItem.swift`
+- `shortLived`: ttlSeconds=21600; source: `ios/Lumen/Services/MemoryStore.swift`
 - `timeless`: durable; source: `ios/Lumen/Models/MemoryItem.swift`
-- `volatile`: ttlSeconds=300; source: `ios/Lumen/Models/MemoryItem.swift`
+- `volatile`: ttlSeconds=2700; source: `ios/Lumen/Services/MemoryStore.swift`
 
 ## Permissions
 - `alarm.authorization_status`: permission=NSAlarmKitUsageDescription, requiresApproval=False

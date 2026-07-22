@@ -381,6 +381,42 @@ struct LumenFleetTests {
     }
 }
 
+struct ImplicitLlamaGenerationSlotPolicyTests {
+    @Test func implicitPlainTextGenerationUsesMouth() {
+        let request = GenerateRequest(
+            systemPrompt: "Keep the caller's system prompt.",
+            history: [],
+            userMessage: "Hello",
+            temperature: 0.5,
+            topP: 0.9,
+            repetitionPenalty: 1.1,
+            maxTokens: 128,
+            modelName: "chat",
+            relevantMemories: []
+        )
+
+        #expect(AppLlamaService.defaultGenerationSlot(for: request) == .mouth)
+    }
+
+    @Test func implicitRawStructuredGenerationUsesExecutor() {
+        let request = GenerateRequest(
+            systemPrompt: "Return one JSON object.",
+            history: [],
+            userMessage: "Choose the next action.",
+            temperature: 0,
+            topP: 0.1,
+            repetitionPenalty: 1.1,
+            maxTokens: 128,
+            modelName: "chat",
+            relevantMemories: [],
+            responseFormat: .constrainedJSON(schema: #"{"type":"object"}"#)
+        )
+
+        #expect(request.preservesRawStructuredAgentOutput)
+        #expect(AppLlamaService.defaultGenerationSlot(for: request) == .executor)
+    }
+}
+
 private func materializeModelFiles(_ models: StoredModel...) throws {
     let fileManager = FileManager.default
     for model in models {

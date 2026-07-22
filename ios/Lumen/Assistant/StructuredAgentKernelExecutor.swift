@@ -18,6 +18,9 @@ struct StructuredAgentKernelExecutor {
     nonisolated static let structuredAgentResponseSchema = #"{"type":"object","oneOf":[{"required":["action"],"properties":{"thought":{"type":"string"},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}},"additionalProperties":false},{"required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}]}"#
     nonisolated static let structuredAgentActionResponseSchema = #"{"type":"object","required":["action"],"properties":{"thought":{"type":"string"},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}}},"additionalProperties":false}"#
     nonisolated static let structuredAgentFinalResponseSchema = #"{"type":"object","required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}"#
+    nonisolated static let executorRuntimeSystemPromptContract = """
+    You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {"action":{"tool":"<exact manifest tool id>","args":{...}}} or {"final":"<concise user-facing answer>"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.
+    """
 
     private let kernel: AssistantKernel
     private let modelContext: ModelContext?
@@ -1005,24 +1008,7 @@ private extension StructuredAgentKernelExecutor {
     }
 
     static func buildSystemPrompt(request: AgentKernelRequest, availableTools: [ToolDefinition]) -> String {
-        var sys = """
-        You are Lumen's structured routing executor. Emit one raw JSON object only.
-
-        The runtime attaches the active JSON schema for this turn. Follow that active schema exactly.
-        Possible schemas:
-        {"thought":"short","action":{"tool":"tool.id","args":{}}}
-        {"thought":"short","final":"user-facing answer"}
-
-        Rules:
-        - Start with { and stop after the matching }.
-        - No markdown, prose, code fences, XML, bullets, or hidden reasoning outside JSON.
-        - Use double-quoted JSON. Use {} for empty args.
-        - Choose exactly one of action or final.
-        - action must be a JSON object, never a string.
-        - action.tool must be one available tool.
-        - Use final when no tool is needed or observations already answer the user.
-        - Keep thought under 12 words and final concise.
-        """
+        var sys = executorRuntimeSystemPromptContract
         if !availableTools.isEmpty {
             sys += "\nAvailable tools:\n"
             sys += compactStructuredToolList(availableTools, userMessage: request.userMessage)
@@ -2076,6 +2062,13 @@ private extension StructuredAgentKernelExecutor {
 
 #if DEBUG
 extension StructuredAgentKernelExecutor {
+    static func executorRuntimeSystemPromptForTests(
+        request: AgentKernelRequest,
+        availableTools: [ToolDefinition]
+    ) -> String {
+        buildSystemPrompt(request: request, availableTools: availableTools)
+    }
+
     static func structuredAgentResponseSchemaForTests(
         request: AgentKernelRequest,
         availableTools: [ToolDefinition],

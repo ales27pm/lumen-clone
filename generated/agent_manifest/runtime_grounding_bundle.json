@@ -6,9 +6,9 @@
       "markdown": 74,
       "mixed": 1,
       "plist": 3,
-      "python": 140,
+      "python": 172,
       "shell": 17,
-      "swift": 505,
+      "swift": 506,
       "text": 4,
       "toml": 1,
       "xcode_project": 1,
@@ -62,26 +62,26 @@
       "ios": 2,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 161,
+      "ios/LumenTests": 162,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 10,
       "scripts": 23,
       "tools": 13,
-      "tools/fine_tuning/unsloth": 32,
+      "tools/fine_tuning/unsloth": 53,
       "tools/hf_artifacts": 2,
       "tools/hf_zerogpu": 1,
       "tools/hf_zerogpu/space_template": 3,
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 4,
-      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 44,
+      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 47,
       "tools/lumen_manifest_crawler/scripts": 1,
-      "tools/lumen_manifest_crawler/tests": 33,
+      "tools/lumen_manifest_crawler/tests": 39,
       "tools/pipeline": 7,
-      "tools/pipeline/tests": 7,
+      "tools/pipeline/tests": 9,
       "tools/security": 1
     },
-    "recordCount": 774,
+    "recordCount": 807,
     "selectedFiles": [
       {
         "imports": [
@@ -1172,7 +1172,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, AgentKernelSource, run, runLoop.",
-        "sha256": "fcba866eb06e3fbce470b2036699df5c77db392bbfcd62af6287856d8dfb910a",
+        "sha256": "eb5bc7de078172a0dea01d8537a02cf0957e09792b28f275e7c93d9be2280ac1",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -2197,9 +2197,16 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "04fc7ede31a84c1a834cd561defb5e00a565144d",
+  "manifestCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
+  "promptContract": {
+    "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
+    "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
+    "promptSHA256": "f2e5827b94fc661d7692ef24358632b02020ea986a3576815db277d5a134ac7b",
+    "promptUTF8ByteCount": 26334,
+    "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
+  },
   "schemaVersion": "1.0.0",
   "sourceFamilies": [
     "codebase_home_corpus",
@@ -2208,8 +2215,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "04fc7ede31a84c1a834cd561defb5e00a565144d",
-    "dirtyState": true,
-    "workingTreeDigest": "44ae4c29a23c254e3fdce88775ce544c7636e8a1a58891df4b0c8b8014b5fe44"
+    "baseCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
+    "dirtyState": false,
+    "workingTreeDigest": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
   }
 }

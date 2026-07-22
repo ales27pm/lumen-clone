@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections import Counter
 from collections.abc import Iterable
 from typing import Any
 
+from lumen_manifest_crawler.dataset.adapter_evaluation import mouth_final_text_is_complete
+from lumen_manifest_crawler.fleet_artifacts import generate_orchestration_evals
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ValidationFailure, ValidationReport, ValidationWarning
 
 DEFAULT_SUPPORTED_JSON_TYPES = {"string", "double", "int", "bool", "array", "object", "null", "number", "enum"}
@@ -98,6 +101,42 @@ FANOUT_INTENTS = {
     "weather",
     "webSearch",
 }
+CORTEX_ROUTE_SYSTEM_MARKER = "Task mode: Cortex route mode."
+CORTEX_ROUTE_BASE_FIELDS = {
+    "intent",
+    "selectedToolID",
+    "requiresApproval",
+    "nextModel",
+    "reasoningSummary",
+}
+
+
+class _DuplicateJSONKeyError(ValueError):
+    pass
+
+
+class _NonFiniteJSONNumberError(ValueError):
+    pass
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in payload:
+            raise _DuplicateJSONKeyError(key)
+        payload[key] = value
+    return payload
+
+
+def _reject_nonfinite_json_number(value: str) -> None:
+    raise _NonFiniteJSONNumberError(value)
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite_json_number(value)
+    return parsed
 
 
 def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str, list[dict]] | None = None, *, strict: bool = False) -> ValidationReport:  # NOSONAR
@@ -157,6 +196,14 @@ def validate_manifest(manifest: AgentBehaviorManifest, dataset_records: dict[str
     for slot in manifest.fleet.slots:
         if not slot.role:
             failures.append(ValidationFailure(code="model_slot_missing_role", message=f"Model slot {slot.id} has no role", path=f"fleet.slots.{slot.id}"))
+        if not slot.responsibilities:
+            failures.append(
+                ValidationFailure(
+                    code="model_slot_missing_responsibilities",
+                    message=f"Model slot {slot.id} has no source-grounded responsibilities",
+                    path=f"fleet.slots.{slot.id}.responsibilities",
+                )
+            )
 
     for entry in manifest.routingMatrix:
         if len(entry.allowedTools) > 1 and entry.intent not in FANOUT_INTENTS:
@@ -635,6 +682,11 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
                 failures.append(ValidationFailure(code="mouth_missing_sentinel_eval", message="Mouth eval is missing sentinel suppression coverage", path="fine_tuning.mouth.eval"))
         if agent == "fleet":
             _validate_fleet_slot_coverage(ds, slot_ids, failures)
+            _validate_fleet_orchestration_eval_coverage(
+                manifest=manifest,
+                ds=ds,
+                failures=failures,
+            )
 
         _validate_natural_intent_tool_leaks(agent=agent, ds=ds, failures=failures, known_tools=known_tools)
         _validate_boundary_coverage(agent=agent, ds=ds, approval_tools=approval_tools, permission_tools=permission_tools, failures=failures)
@@ -692,10 +744,199 @@ def _validate_sft_collection_integrity(
         if invalid_sources:
             failures.append(ValidationFailure(code="off_role_sft_source", message=f"{agent} contains off-role sources: {', '.join(invalid_sources)}", path=f"fine_tuning.{agent}"))
 
-    if agent in {"cortex", "fleet"} and records:
-        supplemental_count = sum(source_counts.get(source, 0) for source in ADAPTER_CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES)
-        if supplemental_count / len(records) > 0.251:
-            failures.append(ValidationFailure(code="supplemental_sft_ratio_exceeded", message=f"{agent} codebase grounding exceeds 25% of materialized SFT", path=f"fine_tuning.{agent}"))
+    constraints = (
+        ds.dataset_card.get("constraints")
+        if isinstance(ds.dataset_card, dict)
+        and isinstance(ds.dataset_card.get("constraints"), dict)
+        else {}
+    )
+    fleet_optimizer_only = (
+        agent == "fleet"
+        and constraints.get("fleetLossShareEnforcementScope")
+        == "optimizer_train_only"
+        and constraints.get("fleetValidationLossSharePolicy")
+        == "observed_not_enforced"
+    )
+    if agent == "fleet":
+        validation_policy = constraints.get("fleetValidationSamplingPolicy")
+        policy_path = (
+            f"fine_tuning.{agent}.dataset_card.constraints."
+            "fleetValidationSamplingPolicy"
+        )
+        if not isinstance(validation_policy, dict):
+            failures.append(
+                ValidationFailure(
+                    code="fleet_validation_sampling_contract_invalid",
+                    message="Fleet SFT validation sampling policy is missing",
+                    path=policy_path,
+                )
+            )
+        else:
+            maximum = validation_policy.get("maximumRecords")
+            selected_count = validation_policy.get("selectedRecordCount")
+            candidate_count = validation_policy.get(
+                "candidateBeforePublicSelectionRecordCount"
+            )
+            sampling_input_count = validation_policy.get(
+                "samplingInputRecordCount"
+            )
+            rejected_public = validation_policy.get(
+                "rejectedByPublicSelectionCount"
+            )
+            rejected_sampling = validation_policy.get(
+                "rejectedByValidationSamplingCount"
+            )
+            contract_valid = (
+                validation_policy.get("schemaVersion")
+                == "lumen.fleet-validation-sampling/1.0.0"
+                and validation_policy.get("status")
+                == "bounded_stratified_observation"
+                and validation_policy.get("lane") == "sft_validation"
+                and type(maximum) is int
+                and maximum > 0
+                and type(selected_count) is int
+                and type(candidate_count) is int
+                and type(sampling_input_count) is int
+                and type(rejected_public) is int
+                and type(rejected_sampling) is int
+                and 0 <= selected_count <= sampling_input_count <= candidate_count
+                and rejected_public == candidate_count - sampling_input_count
+                and rejected_sampling == sampling_input_count - selected_count
+                and validation_policy.get(
+                    "explicitValidationAssignmentsPreserved"
+                )
+                is True
+                and validation_policy.get("allSamplingInputStrataPreserved")
+                is True
+                and validation_policy.get("optimizerLossShareCapsApplied")
+                is False
+                and validation_policy.get("selectionStrategy")
+                == "least_represented_stratum_then_salted_stable_hash_v1"
+            )
+            cohort_digest = hashlib.sha256(
+                json.dumps(
+                    sorted(
+                        _canonical_sft_messages_key(record)
+                        for record in ds.val_sft
+                    ),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            if (
+                not contract_valid
+                or selected_count != len(ds.val_sft)
+                or len(ds.val_sft) > maximum
+                or validation_policy.get("selectedCohortSHA256")
+                != cohort_digest
+                or validation_policy.get("samplingInputStratumCount")
+                != validation_policy.get("selectedStratumCount")
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="fleet_validation_sampling_contract_invalid",
+                        message=(
+                            "Fleet SFT validation sampling policy does not "
+                            "match the selected cohort"
+                        ),
+                        path=policy_path,
+                    )
+                )
+
+        required_validation_keys = {
+            _canonical_sft_messages_key(record)
+            for record in ds.val_sft
+            if isinstance(record.get("metadata"), dict)
+            and record["metadata"].get("requiredSplit") == "validation"
+        }
+        for variant, payload in sorted(ds.experiment_variants.items()):
+            if not isinstance(payload, dict):
+                failures.append(
+                    ValidationFailure(
+                        code="fleet_variant_validation_sampling_invalid",
+                        message=f"Fleet variant {variant} payload is invalid",
+                        path=f"fine_tuning.{agent}.experiments.{variant}",
+                    )
+                )
+                continue
+            variant_train = payload.get("train_sft")
+            variant_validation = payload.get("val_sft")
+            variant_manifest = payload.get("variant_manifest")
+            variant_policy = (
+                variant_manifest.get("validationSamplingPolicy")
+                if isinstance(variant_manifest, dict)
+                else None
+            )
+            variant_path = (
+                f"fine_tuning.{agent}.experiments.{variant}."
+                "variant_manifest.validationSamplingPolicy"
+            )
+            if (
+                not isinstance(variant_train, list)
+                or not isinstance(variant_validation, list)
+                or not isinstance(variant_policy, dict)
+                or type(variant_policy.get("maximumRecords")) is not int
+                or len(variant_validation)
+                > variant_policy.get("maximumRecords", -1)
+                or variant_policy.get("selectedRecordCount")
+                != len(variant_validation)
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="fleet_variant_validation_sampling_invalid",
+                        message=(
+                            f"Fleet variant {variant} validation bound or "
+                            "manifest policy is invalid"
+                        ),
+                        path=variant_path,
+                    )
+                )
+                continue
+            variant_validation_keys = {
+                _canonical_sft_messages_key(record)
+                for record in variant_validation
+            }
+            variant_digest = hashlib.sha256(
+                json.dumps(
+                    sorted(variant_validation_keys),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            train_prompt_keys = {
+                _canonical_sft_prompt_key(record) for record in variant_train
+            }
+            validation_prompt_keys = {
+                _canonical_sft_prompt_key(record)
+                for record in variant_validation
+            }
+            if (
+                variant_policy.get("selectedCohortSHA256") != variant_digest
+                or not required_validation_keys <= variant_validation_keys
+                or train_prompt_keys.intersection(validation_prompt_keys)
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="fleet_variant_validation_sampling_invalid",
+                        message=(
+                            f"Fleet variant {variant} validation cohort "
+                            "digest, assignments, or split isolation is invalid"
+                        ),
+                        path=variant_path,
+                    )
+                )
+    limit_records = ds.train_sft if fleet_optimizer_only else records
+    if agent in {"cortex", "fleet"} and limit_records:
+        limit_source_counts = _sft_metadata_counts(limit_records, "sourceFamily")
+        supplemental_count = sum(
+            limit_source_counts.get(source, 0)
+            for source in ADAPTER_CODEBASE_SUPPLEMENTAL_SOURCE_FAMILIES
+        )
+        if supplemental_count / len(limit_records) > 0.251:
+            scope = "optimizer SFT" if fleet_optimizer_only else "materialized SFT"
+            failures.append(ValidationFailure(code="supplemental_sft_ratio_exceeded", message=f"{agent} codebase grounding exceeds 25% of {scope}", path=f"fine_tuning.{agent}"))
 
     max_sequence_length = ds.unsloth_config.get("max_seq_length")
     if isinstance(max_sequence_length, int) and max_sequence_length > 0:
@@ -709,10 +950,43 @@ def _validate_sft_collection_integrity(
 
     train_sources = _sft_metadata_counts(ds.train_sft, "sourceFamily")
     val_sources = _sft_metadata_counts(ds.val_sft, "sourceFamily")
+    fleet_registry = constraints.get("fleetSourceRoleRegistry")
+    registered_pairs = (
+        fleet_registry.get("registeredPairs")
+        if isinstance(fleet_registry, dict)
+        and isinstance(fleet_registry.get("registeredPairs"), list)
+        else []
+    )
+    fleet_supplemental_pairs = {
+        (str(item.get("sourceFamily") or ""), str(item.get("taskType") or ""))
+        for item in registered_pairs
+        if isinstance(item, dict) and item.get("category") == "supplemental_static"
+    }
     for source, count in source_counts.items():
+        source_records = [
+            record
+            for record in records
+            if isinstance(record.get("metadata"), dict)
+            and record["metadata"].get("sourceFamily") == source
+        ]
+        optimizer_pruned_static_source = (
+            fleet_optimizer_only
+            and source not in train_sources
+            and source in val_sources
+            and bool(source_records)
+            and all(
+                (
+                    str(record["metadata"].get("sourceFamily") or ""),
+                    str(record["metadata"].get("taskType") or ""),
+                )
+                in fleet_supplemental_pairs
+                for record in source_records
+            )
+        )
         if (
             count >= 2
             and not source.startswith(PUBLIC_ADAPTER_CORPUS_PREFIX)
+            and not optimizer_pruned_static_source
             and (source not in train_sources or source not in val_sources)
         ):
             failures.append(ValidationFailure(code="sft_source_split_missing", message=f"{agent} source {source} is not represented in both train and validation", path=f"fine_tuning.{agent}"))
@@ -781,8 +1055,28 @@ def _validate_agent_sft_records(  # NOSONAR
             continue
 
         assistant = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "assistant"), "")
+        system = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "system"), "")
         if not isinstance(assistant, str) or not assistant.strip():
             failures.append(ValidationFailure(code="empty_assistant_output", message=f"{agent} has empty assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
+        if agent == "cortex":
+            _validate_cortex_json_object_contract(
+                assistant=assistant,
+                failures=failures,
+                path=f"fine_tuning.{agent}.sft.{index}",
+                preference_chosen=False,
+                route_contract=(
+                    isinstance(system, str)
+                    and CORTEX_ROUTE_SYSTEM_MARKER in system
+                ),
+            )
+        if agent == "mouth" and not mouth_final_text_is_complete(assistant):
+            failures.append(
+                ValidationFailure(
+                    code="mouth_incomplete_sft_output",
+                    message="Mouth SFT output must be complete user-facing text",
+                    path=f"fine_tuning.{agent}.sft.{index}",
+                )
+            )
         for sentinel in forbidden:
             if sentinel in assistant:
                 failures.append(ValidationFailure(code="sentinel_leak", message=f"{agent} leaked sentinel `{sentinel}`", path=f"fine_tuning.{agent}.sft.{index}"))
@@ -829,6 +1123,123 @@ def _validate_agent_sft_records(  # NOSONAR
                     failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor sample for {tool_id} missing required args in assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
 
 
+def _validate_cortex_json_object_contract(
+    *,
+    assistant: Any,
+    failures: list[ValidationFailure],
+    path: str,
+    preference_chosen: bool,
+    route_contract: bool,
+) -> None:
+    prefix = "cortex_dpo" if preference_chosen else "cortex"
+    label = "Cortex DPO chosen output" if preference_chosen else "Cortex SFT output"
+    try:
+        payload = json.loads(
+            assistant,
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_nonfinite_json_number,
+            parse_float=_parse_finite_json_float,
+        )
+    except _DuplicateJSONKeyError as exc:
+        failures.append(
+            ValidationFailure(
+                code=f"{prefix}_duplicate_json_key",
+                message=f"{label} repeats JSON key `{exc.args[0]}`",
+                path=path,
+            )
+        )
+        return
+    except (json.JSONDecodeError, TypeError, _NonFiniteJSONNumberError):
+        failures.append(
+            ValidationFailure(
+                code=f"{prefix}_non_json_output",
+                message=f"{label} must be strict JSON",
+                path=path,
+            )
+        )
+        return
+    if not isinstance(payload, dict):
+        failures.append(
+            ValidationFailure(
+                code=f"{prefix}_non_object_output",
+                message=f"{label} must be a JSON object",
+                path=path,
+            )
+        )
+        return
+    if route_contract and not _valid_cortex_route_payload(payload):
+        failures.append(
+            ValidationFailure(
+                code=f"{prefix}_route_contract_invalid",
+                message=f"{label} does not match one exact Cortex route mode",
+                path=path,
+            )
+        )
+
+
+def _valid_cortex_route_payload(payload: dict[str, Any]) -> bool:
+    if (
+        not isinstance(payload.get("intent"), str)
+        or not payload["intent"].strip()
+        or type(payload.get("requiresApproval")) is not bool
+        or not isinstance(payload.get("nextModel"), str)
+        or not isinstance(payload.get("reasoningSummary"), str)
+        or not payload["reasoningSummary"].strip()
+        or "tool" in payload
+        or "arguments" in payload
+    ):
+        return False
+
+    selected_tool_id = payload.get("selectedToolID")
+    status = payload.get("status")
+    if status in {"no_tool_route", "invalid_tool"}:
+        return (
+            set(payload) == CORTEX_ROUTE_BASE_FIELDS | {"status"}
+            and selected_tool_id is None
+            and payload["requiresApproval"] is False
+            and payload["nextModel"] == "mouth"
+        )
+    if status == "needs_clarification":
+        missing_arguments = payload.get("missingArguments")
+        clarification = payload.get("clarification")
+        return (
+            set(payload)
+            == CORTEX_ROUTE_BASE_FIELDS
+            | {"status", "missingArguments", "clarification"}
+            and isinstance(selected_tool_id, str)
+            and bool(selected_tool_id)
+            and payload["nextModel"] == "mouth"
+            and isinstance(missing_arguments, list)
+            and bool(missing_arguments)
+            and all(
+                isinstance(argument, str) and bool(argument)
+                for argument in missing_arguments
+            )
+            and len(missing_arguments) == len(set(missing_arguments))
+            and isinstance(clarification, str)
+            and clarification.strip().endswith("?")
+        )
+    if not isinstance(selected_tool_id, str) or not selected_tool_id:
+        return False
+
+    expected_next_model = (
+        "approval" if payload["requiresApproval"] else "executor"
+    )
+    if payload["nextModel"] != expected_next_model:
+        return False
+    if set(payload) == CORTEX_ROUTE_BASE_FIELDS:
+        return True
+    action_step = payload.get("actionStep")
+    return (
+        set(payload) == CORTEX_ROUTE_BASE_FIELDS | {"actionStep"}
+        and isinstance(action_step, dict)
+        and set(action_step) == {"type", "toolID", "mustPersistBeforeFinal"}
+        and action_step.get("type") == "tool_call"
+        and action_step.get("toolID") == selected_tool_id
+        and action_step.get("mustPersistBeforeFinal") is True
+    )
+
+
 def _validate_executor_json_contract(
     *,
     assistant: str,
@@ -844,13 +1255,33 @@ def _validate_executor_json_contract(
     if not isinstance(payload, dict):
         failures.append(ValidationFailure(code="executor_non_object_output", message="Executor SFT output must be a JSON object", path=path))
         return
-    tool_id = payload.get("tool")
-    if not isinstance(tool_id, str) or tool_id not in tools_by_id:
-        failures.append(ValidationFailure(code="executor_invalid_payload_tool", message="Executor SFT output must contain one manifest tool id", path=path))
+
+    top_level_keys = set(payload)
+    if "thought" in payload and not isinstance(payload.get("thought"), str):
+        failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor thought must be a string when present", path=path))
         return
-    arguments = payload.get("arguments")
+    if "final" in payload:
+        if top_level_keys not in ({"final"}, {"final", "thought"}):
+            failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor final output may contain only final and optional thought", path=path))
+            return
+        final = payload.get("final")
+        if not isinstance(final, str) or not final.strip():
+            failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor final output must contain non-empty final text", path=path))
+        return
+    if top_level_keys not in ({"action"}, {"action", "thought"}):
+        failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor output must use the native action or final envelope without legacy metadata", path=path))
+        return
+    action = payload.get("action")
+    if not isinstance(action, dict) or set(action) != {"tool", "args"}:
+        failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor action must contain exactly tool and args", path=path))
+        return
+    tool_id = action.get("tool")
+    if not isinstance(tool_id, str) or tool_id not in tools_by_id:
+        failures.append(ValidationFailure(code="executor_invalid_payload_tool", message="Executor action must contain one manifest tool id", path=path))
+        return
+    arguments = action.get("args")
     if not isinstance(arguments, dict):
-        failures.append(ValidationFailure(code="executor_invalid_arguments", message=f"Executor payload for {tool_id} must contain an arguments object", path=path))
+        failures.append(ValidationFailure(code="executor_invalid_arguments", message=f"Executor action for {tool_id} must contain an args object", path=path))
         return
 
     tool = tools_by_id[tool_id]
@@ -873,10 +1304,7 @@ def _validate_executor_json_contract(
         if argument.required and argument.name not in arguments
     }
     if missing_required:
-        declared_missing = payload.get("missingArguments")
-        declared = {item for item in declared_missing if isinstance(item, str)} if isinstance(declared_missing, list) else set()
-        if payload.get("status") != "needs_clarification" or not missing_required.issubset(declared):
-            failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor payload for {tool_id} omits required arguments", path=path))
+        failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor action for {tool_id} omits required arguments", path=path))
 
 
 def _validate_executor_dpo_records(
@@ -937,7 +1365,8 @@ def _assistant_mentions_required_args(assistant: str, required_args: set[str]) -
         return all(arg.lower() in lowered for arg in required_args)
 
     if isinstance(parsed, dict):
-        args = parsed.get("arguments")
+        action = parsed.get("action")
+        args = action.get("args") if isinstance(action, dict) else None
         if isinstance(args, dict):
             return required_args.issubset(set(args.keys()))
     return False
@@ -950,10 +1379,7 @@ def _should_enforce_required_args(assistant: str) -> bool:
         return True
     if not isinstance(payload, dict):
         return True
-    status = payload.get("status")
-    if isinstance(status, str) and status in {"needs_clarification", "permission_unavailable", "cancelled_by_user"}:
-        return False
-    return True
+    return isinstance(payload.get("action"), dict)
 
 
 def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], failures: list[ValidationFailure]) -> None:
@@ -976,6 +1402,34 @@ def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], fa
         if not isinstance(chosen_text, str) or not isinstance(rejected_text, str):
             failures.append(ValidationFailure(code="invalid_dpo_pair", message=f"{agent} DPO chosen/rejected content missing", path=f"fine_tuning.{agent}.dpo.{index}"))
             continue
+        if agent == "cortex":
+            system = next(
+                (
+                    message.get("content", "")
+                    for message in prompt
+                    if isinstance(message, dict)
+                    and message.get("role") == "system"
+                ),
+                "",
+            )
+            _validate_cortex_json_object_contract(
+                assistant=chosen_text,
+                failures=failures,
+                path=f"fine_tuning.{agent}.dpo.{index}.chosen",
+                preference_chosen=True,
+                route_contract=(
+                    isinstance(system, str)
+                    and CORTEX_ROUTE_SYSTEM_MARKER in system
+                ),
+            )
+        if agent == "mouth" and not mouth_final_text_is_complete(chosen_text):
+            failures.append(
+                ValidationFailure(
+                    code="mouth_incomplete_dpo_chosen_output",
+                    message="Mouth DPO chosen output must be complete user-facing text",
+                    path=f"fine_tuning.{agent}.dpo.{index}.chosen",
+                )
+            )
         if chosen_text == rejected_text:
             failures.append(ValidationFailure(code="dpo_chosen_equals_rejected", message=f"{agent} DPO chosen == rejected", path=f"fine_tuning.{agent}.dpo.{index}"))
 
@@ -1068,6 +1522,20 @@ def _validate_agent_eval_records(
             value = expected.get(key)
             if isinstance(value, str) and value not in known_tools:
                 failures.append(ValidationFailure(code="unknown_tool_id", message=f"{agent} eval expected references unknown tool {value}", path=f"fine_tuning.{agent}.eval.{index}.expected.{key}"))
+        if agent == "mouth":
+            metrics = rec.get("metrics")
+            if not isinstance(metrics, list) or not any(
+                isinstance(metric, dict)
+                and metric.get("type") == "complete_final_text"
+                for metric in metrics
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="mouth_eval_missing_completeness_metric",
+                        message="Every Mouth evaluation must enforce complete final text",
+                        path=f"fine_tuning.{agent}.eval.{index}.metrics",
+                    )
+                )
 
 
 def _validate_unsloth_config(*, agent: str, config: dict[str, Any], failures: list[ValidationFailure]) -> None:
@@ -1079,12 +1547,25 @@ def _validate_unsloth_config(*, agent: str, config: dict[str, Any], failures: li
         "lora_r",
         "lora_alpha",
         "learning_rate",
+        "dpo_rpo_alpha",
         "dataset_dir",
         "output_dir",
     }
     for key in required:
         if key not in config:
             failures.append(ValidationFailure(code="missing_unsloth_config_key", message=f"{agent} missing unsloth key {key}", path=f"fine_tuning.{agent}.unsloth_config.{key}"))
+    expected_rpo_alpha = 1.0 if agent == "fleet" else None
+    if config.get("dpo_rpo_alpha") != expected_rpo_alpha:
+        failures.append(
+            ValidationFailure(
+                code="invalid_unsloth_dpo_rpo_alpha",
+                message=(
+                    f"{agent} dpo_rpo_alpha must be "
+                    f"{expected_rpo_alpha!r}"
+                ),
+                path=f"fine_tuning.{agent}.unsloth_config.dpo_rpo_alpha",
+            )
+        )
 
 
 def _validate_executor_tool_coverage(ds: Any, known_tools: set[str], failures: list[ValidationFailure]) -> None:
@@ -1135,6 +1616,67 @@ def _validate_fleet_slot_coverage(ds: Any, slot_ids: set[str], failures: list[Va
     for slot_id in sorted(slot_ids):
         if slot_id not in blob:
             failures.append(ValidationFailure(code="fleet_slot_coverage_missing", message=f"fleet missing role-card coverage for slot {slot_id}", path="fine_tuning.fleet"))
+
+
+def _validate_fleet_orchestration_eval_coverage(
+    *,
+    manifest: AgentBehaviorManifest,
+    ds: Any,
+    failures: list[ValidationFailure],
+) -> None:
+    expected_scenarios = {
+        str(record.get("metadata", {}).get("scenarioID") or "")
+        for record in generate_orchestration_evals(manifest)
+    }
+    expected_scenarios.discard("")
+    actual_scenarios = [
+        str(record.get("metadata", {}).get("scenarioID") or "")
+        for record in ds.eval
+        if record.get("metadata", {}).get("evalType")
+        == "fleet_orchestration_event_graph_eval"
+    ]
+    actual_scenario_set = {scenario for scenario in actual_scenarios if scenario}
+    constraints = (
+        ds.dataset_card.get("constraints")
+        if isinstance(ds.dataset_card, dict)
+        and isinstance(ds.dataset_card.get("constraints"), dict)
+        else {}
+    )
+    required = constraints.get("fleetOrchestrationEvaluationRequired")
+    if type(required) is not bool:
+        failures.append(
+            ValidationFailure(
+                code="fleet_orchestration_eval_requirement_missing",
+                message=(
+                    "Fleet dataset card must declare whether orchestration "
+                    "evaluation artifacts were provided"
+                ),
+                path=(
+                    "fine_tuning.fleet.dataset_card.constraints."
+                    "fleetOrchestrationEvaluationRequired"
+                ),
+            )
+        )
+        return
+    if (
+        actual_scenario_set != expected_scenarios
+        or len(actual_scenarios) != len(expected_scenarios)
+    ):
+        missing = sorted(expected_scenarios - actual_scenario_set)
+        unexpected = sorted(actual_scenario_set - expected_scenarios)
+        failures.append(
+            ValidationFailure(
+                code="fleet_orchestration_eval_coverage_missing",
+                message=(
+                    "Fleet orchestration eval coverage must exactly match the "
+                    "manifest-derived scenarios; "
+                    f"missing={missing}, unexpected={unexpected}, "
+                    f"actualCount={len(actual_scenarios)}, "
+                    f"expectedCount={len(expected_scenarios)}"
+                ),
+                path="fine_tuning.fleet.eval",
+            )
+        )
 
 
 def _validate_natural_intent_tool_leaks(*, agent: str, ds: Any, failures: list[ValidationFailure], known_tools: set[str]) -> None:  # NOSONAR

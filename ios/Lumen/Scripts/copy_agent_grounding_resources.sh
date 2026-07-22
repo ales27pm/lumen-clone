@@ -103,6 +103,31 @@ copy_required_file() {
   cp "$source_path" "$DEST_DIR/$relative_path"
 }
 
+verify_cross_model_mirrors() {
+  if [ ! -d "$LEGACY_CROSS_MODEL_DIR" ] \
+     || [ ! -d "$NESTED_CROSS_MODEL_DIR" ]; then
+    return 0
+  fi
+
+  for filename in \
+    cross_model_training.jsonl \
+    cross_model_training_index.csv \
+    dpo_train_cross.jsonl \
+    dpo_val_cross.jsonl \
+    orchestration_evals.jsonl \
+    train_sft_cross.jsonl \
+    val_sft_cross.jsonl
+  do
+    require_file "$LEGACY_CROSS_MODEL_DIR/$filename" "primary cross-model mirror/$filename"
+    require_file "$NESTED_CROSS_MODEL_DIR/$filename" "nested cross-model mirror/$filename"
+    if ! cmp -s \
+      "$LEGACY_CROSS_MODEL_DIR/$filename" \
+      "$NESTED_CROSS_MODEL_DIR/$filename"; then
+      fail "Cross-model resource mirrors diverged for $filename; regenerate both copies before bundling."
+    fi
+  done
+}
+
 if [ -d "$LEGACY_CROSS_MODEL_DIR" ]; then
   CROSS_MODEL_DIR="$LEGACY_CROSS_MODEL_DIR"
 elif [ -d "$NESTED_CROSS_MODEL_DIR" ]; then
@@ -140,6 +165,8 @@ if [ "$AGENT_GROUNDING_RESOURCE_MODE" = "skip" ]; then
   mkdir -p "$DEST_DIR/agent_manifest" "$DEST_DIR/cross_model_training"
   exit 0
 fi
+
+verify_cross_model_mirrors
 
 if [ "$AGENT_GROUNDING_RESOURCE_MODE" = "minimal" ]; then
   log "AGENT_GROUNDING_RESOURCE_MODE=minimal; copying only runtime-required grounding resources."

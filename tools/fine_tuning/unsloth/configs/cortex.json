@@ -23,5 +23,6 @@
   "gguf_quantization": "q4_k_m",
   "gguf_repo_id": "ales27pm/lumen-fleet-gguf",
   "dataset_dir": "generated/fine_tuning/cortex",
-  "preference_trainer": "dpo"
+  "preference_trainer": "dpo",
+  "dpo_rpo_alpha": null
 }

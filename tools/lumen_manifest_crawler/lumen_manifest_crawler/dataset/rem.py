@@ -31,10 +31,9 @@ def generate_rem_records(manifest: AgentBehaviorManifest) -> list[dict]:
                 {"role": "system", "content": "You are REM. Apply memory freshness and TTL policy from the manifest."},
                 {"role": "user", "content": f"Categorize a memory for freshness class {freshness.id}."},
                 {"role": "assistant", "content": {
-                    "memoryFreshnessClass": freshness.id,
+                    "freshnessClass": freshness.id,
                     "ttlSeconds": freshness.ttlSeconds,
                     "durable": freshness.durable,
-                    "action": "preserve" if freshness.durable else "prune_after_ttl"
                 }}
             ],
             "grounding": {"source": freshness.source or "AgentBehaviorManifest.json"}

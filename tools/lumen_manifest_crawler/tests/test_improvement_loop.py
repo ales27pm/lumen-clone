@@ -86,6 +86,49 @@ def test_improvement_loop_writes_state_gaps_prompts_and_testflight_artifacts(tmp
     assert result.state["triage"]["totalGaps"] == len(result.gaps)
 
 
+def test_fine_tuning_only_loop_preserves_complete_fleet_evaluation_corpus(tmp_path: Path):
+    output = tmp_path / "agent_manifest"
+
+    run_agent_improvement_loop(
+        AgentImprovementLoopConfig(
+            root=_repo_root(),
+            output=output,
+            loop_output=tmp_path / "loop",
+            deterministic=True,
+            strict=False,
+            dry_run_commands=True,
+            generate_agent_fine_tuning=True,
+            generate_system_prompts=False,
+        )
+    )
+
+    fleet_eval_path = output / "fine_tuning" / "fleet" / "eval.jsonl"
+    records = [
+        json.loads(line)
+        for line in fleet_eval_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    orchestration_behaviors = {
+        record["metadata"]["behaviorClass"]
+        for record in records
+        if record.get("metadata", {}).get("evalType")
+        == "fleet_orchestration_event_graph_eval"
+    }
+
+    assert len(records) == 15
+    assert orchestration_behaviors == {
+        "no-delegation",
+        "sequential-dependencies",
+        "parallel-dependencies",
+        "context-handoff",
+        "duplicate-suppression",
+        "aggregation-owner",
+        "approval-boundary",
+        "unavailable-boundary",
+        "nonexistent-slot-negative",
+    }
+
+
 def test_improvement_loop_can_require_testflight_runtime_audit(tmp_path: Path):
     result = run_agent_improvement_loop(
         AgentImprovementLoopConfig(

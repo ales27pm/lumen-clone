@@ -93,6 +93,11 @@ def test_release_bake_command_requires_explicit_flag(tmp_path: Path) -> None:
         [],
     )
     default_release = default_commands[-1]["command"]
+    assert default_release[:3] == [
+        default_args.release_bake_python,
+        "-m",
+        "tools.fine_tuning.unsloth.export_gguf",
+    ]
     assert "--release-bake" not in default_release
 
     bake_args = runner.parse_args(["--root", str(root), "--skip-tests", "--release-bake"])
@@ -106,6 +111,28 @@ def test_release_bake_command_requires_explicit_flag(tmp_path: Path) -> None:
     )
     bake_release = bake_commands[-1]["command"]
     assert "--release-bake" in bake_release
+    assert "--config-dir" not in bake_release
+
+    prepared_dir = root / "prepared-run" / "configs"
+    explicit_args = runner.parse_args([
+        "--root",
+        str(root),
+        "--skip-tests",
+        "--release-bake",
+        "--config-dir",
+        str(prepared_dir),
+    ])
+    explicit_commands = runner.build_command_queue(
+        explicit_args,
+        root,
+        runner.rooted_path(root, explicit_args.output),
+        runner.rooted_path(root, explicit_args.loop_output),
+        runner.rooted_path(root, explicit_args.fine_tuning_output),
+        [],
+    )
+    explicit_release = explicit_commands[-1]["command"]
+    config_dir_index = explicit_release.index("--config-dir") + 1
+    assert explicit_release[config_dir_index] == str(prepared_dir)
 
 
 def test_runtime_audit_discovery_accepts_realistic_export_and_rejects_loop_state(tmp_path: Path) -> None:
