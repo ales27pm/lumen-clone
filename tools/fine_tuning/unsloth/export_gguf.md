@@ -8,6 +8,10 @@ and filesystem verification evidence; do not copy or rebase them onto the host.
 When `--config` and `--config-dir` are omitted, release-bake mode resolves
 `$LUMEN_AIO_RUN_ROOT/configs` and requires `<agent>.final.json` for every selected
 agent. It never falls back to the pending/SFT `<agent>.json` config.
+Before creating any output, the exporter independently verifies the canonical
+completed run summary and requires full `quality_gate_passed` evaluation evidence
+bound to every selected final adapter. Smoke, interrupted, and unevaluated runs
+are not release-bake sources.
 
 ```bash
 export LUMEN_AIO_RUN_ROOT=/outputs/<exact-run-id-and-variant>

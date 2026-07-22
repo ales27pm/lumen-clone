@@ -4,7 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -236,6 +236,18 @@ def test_explicit_config_defines_default_selected_agents(tmp_path: Path) -> None
     assert [config["agent"] for config in configs] == ["fleet"]
 
 
+def test_release_bake_config_records_canonical_source_path(tmp_path: Path) -> None:
+    export_gguf = _load_export_module()
+    config_path = _write_config(tmp_path, prepared_release_bake=True)
+
+    config = export_gguf.load_config(
+        config_path,
+        require_release_bake_lineage=True,
+    )
+
+    assert config[export_gguf.CONFIG_SOURCE_PATH_KEY] == str(config_path.resolve())
+
+
 def test_release_bake_without_prepared_source_fails_before_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -350,7 +362,9 @@ def test_skip_existing_requires_matching_current_lineage(
     export_gguf = _load_export_module()
     config_path = _write_config(tmp_path, prepared_release_bake=True)
     cfg = export_gguf.load_config(config_path)
-    output_dir = tmp_path / "models" / "gguf_release_bake" / "cortex_merged_gguf"
+    output_root = tmp_path / "explicit_release_bake_root"
+    output_dir = output_root / "cortex_release_bake_gguf"
+    assert output_dir != Path(cfg["gguf_output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
     target = output_dir / "lumen-cortex-release-bake-q4_k_m.gguf"
     target.write_bytes(b"GGUF-current")
@@ -426,7 +440,7 @@ def test_skip_existing_requires_matching_current_lineage(
 
     summary = export_gguf.existing_summary_for_agent(
         cfg,
-        output_root=tmp_path / "unused",
+        output_root=output_root,
         quantization_override=None,
     )
 
@@ -437,9 +451,102 @@ def test_skip_existing_requires_matching_current_lineage(
     with pytest.raises(ValueError, match="does not match current (size_bytes|sha256)"):
         export_gguf.existing_summary_for_agent(
             cfg,
-            output_root=tmp_path / "unused",
+            output_root=output_root,
             quantization_override=None,
         )
+
+
+def test_release_bake_requires_verified_full_run_qualification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_gguf = _load_export_module()
+    from tools.fine_tuning.unsloth import ubuntu_pipeline
+
+    run_root = tmp_path / "prepared-run"
+    config_dir = run_root / "configs"
+    source = _write_config(
+        config_dir,
+        agent="cortex",
+        prepared_release_bake=True,
+    )
+    final_path = config_dir / "cortex.final.json"
+    final_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    config = export_gguf.load_config(
+        final_path,
+        require_release_bake_lineage=True,
+    )
+    (run_root / "aio_run_manifest.json").write_text(
+        json.dumps({"agents": [{"agent": "cortex"}]}),
+        encoding="utf-8",
+    )
+    adapter_sha = "4" * 64
+    summary = {
+        "status": "complete_without_gguf",
+        "evaluationStatus": "quality_gate_passed",
+        "evaluationScope": "full",
+        "qualification": "quality_gate_passed",
+        "promotionEligible": True,
+        "preferenceTraining": True,
+        "summarySHA256": "3" * 64,
+        "agents": {
+            "cortex": {"finalPhase": {"adapterSHA256": adapter_sha}},
+        },
+    }
+    monkeypatch.setattr(
+        ubuntu_pipeline,
+        "_verified_completed_summary",
+        lambda _run_root, _agents: summary,
+    )
+
+    evidence = export_gguf._verified_release_bake_qualification(
+        [config],
+        {"cortex": {"adapterSHA256": adapter_sha}},
+    )
+
+    assert evidence["sourceRunSummarySHA256"] == "3" * 64
+    assert evidence["sourceRunEvaluationStatus"] == "quality_gate_passed"
+    summary["evaluationScope"] = "smoke"
+    with pytest.raises(ValueError, match="verified full evaluation"):
+        export_gguf._verified_release_bake_qualification(
+            [config],
+            {"cortex": {"adapterSHA256": adapter_sha}},
+        )
+
+
+def test_release_bake_rejects_direct_upload_before_output_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_gguf = _load_export_module()
+    config_dir = tmp_path / "prepared-run" / "configs"
+    source = _write_config(config_dir, prepared_release_bake=True)
+    final_path = config_dir / "cortex.final.json"
+    final_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    output_root = tmp_path / "release-bake-output"
+    monkeypatch.setattr(
+        export_gguf,
+        "parse_args",
+        lambda: SimpleNamespace(
+            release_bake=True,
+            config=[str(final_path)],
+            config_dir=None,
+            agents=None,
+            output_root=str(output_root),
+            manifest_output=str(tmp_path / "manifest.json"),
+            hf_repo_id="example/repo",
+            hf_private=True,
+            skip_upload=False,
+            quantization=None,
+            max_memory_usage=None,
+            skip_existing=False,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Direct Hugging Face upload is unsupported"):
+        export_gguf.main()
+
+    assert not output_root.exists()
 
 
 def test_release_bake_rejects_rehashed_training_config_invariant_drift(

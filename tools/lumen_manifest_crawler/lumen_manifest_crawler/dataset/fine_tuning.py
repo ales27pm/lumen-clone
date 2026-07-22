@@ -696,7 +696,11 @@ def _cortex_route_json(payload: dict[str, Any]) -> str:
 def _ordered_cortex_route_text(value: str) -> str:
     try:
         payload = _strict_json_loads(value)
-    except json.JSONDecodeError:
+    except (
+        json.JSONDecodeError,
+        _DuplicateJSONKeyError,
+        _NonFiniteJSONNumberError,
+    ):
         return value
     return _cortex_route_json(payload) if isinstance(payload, dict) else value
 

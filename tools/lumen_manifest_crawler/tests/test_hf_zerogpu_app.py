@@ -713,6 +713,39 @@ def test_prepare_configs_selects_and_attests_optimized_variant(
     assert config["variantAttestation"]["runtimeImageBindingVerified"] is False
 
 
+def test_prepare_configs_supports_compact_dpo_dataset_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_app(tmp_path, monkeypatch)
+    source_root = tmp_path / "datasets"
+    source_root.mkdir()
+    variant_root, manifest = _write_variant_fixture(module, source_root)
+    datasets = manifest["datasets"]
+    datasets["dpo"] = datasets.pop("trainDPO")
+    datasets.pop("validationDPO")
+    manifest.pop("variantManifestSHA256")
+    manifest["variantManifestSHA256"] = module._canonical_sha256(manifest)
+    (variant_root / "variant_manifest.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+
+    prepared = module._prepare_configs(
+        source_root=source_root,
+        run_root=tmp_path / "run",
+        agents=["executor"],
+        base_model_override="",
+        seed=42,
+        variant="internal_plus_public_optimized",
+    )
+
+    config = json.loads(Path(prepared[0]["config"]).read_text(encoding="utf-8"))
+    assert config["variantAttestation"]["variantManifestSHA256"] == manifest[
+        "variantManifestSHA256"
+    ]
+
+
 def test_prepare_configs_replaces_unresolved_runtime_audit_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

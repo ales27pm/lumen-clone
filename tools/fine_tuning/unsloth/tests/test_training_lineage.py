@@ -4,7 +4,7 @@ import base64
 import hashlib
 import importlib.util
 import json
-import shutil
+from collections import namedtuple
 from pathlib import Path
 
 import pytest
@@ -301,10 +301,11 @@ def test_private_runtime_snapshot_fails_before_copy_when_space_is_insufficient(
     private = _private_tokenizer_snapshot(tmp_path, payloads)
     source = tmp_path / "source-model"
     source.mkdir()
+    DiskUsage = namedtuple("DiskUsage", ("total", "used", "free"))
     monkeypatch.setattr(
         training_lineage.shutil,
         "disk_usage",
-        lambda _path: shutil._ntuple_diskusage(1, 1, 0),
+        lambda _path: DiskUsage(1, 1, 0),
     )
 
     with pytest.raises(ValueError, match="Insufficient free space"):

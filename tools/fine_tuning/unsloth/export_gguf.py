@@ -47,6 +47,7 @@ AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 GGUF_MARKERS = {"gguf", "merged", "release", "bake", "finetune", "finetuned"}
 DEFAULT_ADAPTER_FIRST_CONFIG_DIR = "generated/fine_tuning"
 PREPARED_RUN_ROOT_ENV = "LUMEN_AIO_RUN_ROOT"
+CONFIG_SOURCE_PATH_KEY = "_lumenExportConfigPath"
 BASE_CONFIG_REQUIRED_KEYS = {
     "adapter_output_dir",
     "agent",
@@ -138,17 +139,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hf-repo-id",
         default=None,
-        help="Optional Hugging Face model repo id to upload GGUF files to.",
+        help=(
+            "Optional publication target to record in the manifest. Direct upload is "
+            "unsupported here and requires --skip-upload."
+        ),
     )
     parser.add_argument(
         "--hf-private",
         action="store_true",
-        help="Create HF repo as private if it does not exist.",
+        help="Retained for CLI compatibility; repo creation belongs to the isolated uploader.",
     )
     parser.add_argument(
         "--skip-upload",
         action="store_true",
-        help="Skip Hugging Face upload even if repo id is available.",
+        help="Required when --hf-repo-id is supplied; export never receives Hub credentials.",
     )
     parser.add_argument(
         "--max-memory-usage",
@@ -261,11 +265,15 @@ def load_config(
     cfg = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(cfg, dict):
         raise ValueError(f"{path} must contain a JSON object")
-    return _validate_config(
+    if CONFIG_SOURCE_PATH_KEY in cfg:
+        raise ValueError(f"{path} must not declare reserved key {CONFIG_SOURCE_PATH_KEY}")
+    validated = _validate_config(
         cfg,
         path=path,
         require_release_bake_lineage=require_release_bake_lineage,
     )
+    validated[CONFIG_SOURCE_PATH_KEY] = str(path.resolve())
+    return validated
 
 
 def _resolve_config_dir(
@@ -379,30 +387,6 @@ def gather_configs(
         raise ValueError("Config coverage does not match --agents: " + "; ".join(details))
     filtered = [by_agent[agent] for agent in selected_agents]
     return filtered
-
-
-def ensure_hf_repo(repo_id: str, private: bool) -> None:
-    try:
-        from huggingface_hub import HfApi
-    except ImportError as exc:
-        raise RuntimeError("huggingface_hub is required for upload. Install it in your Python environment.") from exc
-    api = HfApi()
-    api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
-
-
-def upload_file(repo_id: str, local_path: Path, remote_name: str) -> None:
-    try:
-        from huggingface_hub import HfApi
-    except ImportError as exc:
-        raise RuntimeError("huggingface_hub is required for upload. Install it in your Python environment.") from exc
-    api = HfApi()
-    api.upload_file(
-        path_or_fileobj=str(local_path),
-        path_in_repo=remote_name,
-        repo_id=repo_id,
-        repo_type="model",
-        commit_message=f"Upload release-baked GGUF: {remote_name}",
-    )
 
 
 def sha256sum(path: Path) -> str:
@@ -636,6 +620,103 @@ def _verified_release_bake_lineage(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _prepared_run_root(cfg: dict[str, Any]) -> Path:
+    agent = str(cfg["agent"]).strip().lower()
+    source_value = cfg.get(CONFIG_SOURCE_PATH_KEY)
+    if not isinstance(source_value, str) or not source_value:
+        raise ValueError("Release bake config lacks its verified source path")
+    source_path = Path(source_value).resolve()
+    if (
+        source_path.name != f"{agent}.final.json"
+        or source_path.parent.name != "configs"
+    ):
+        raise ValueError(
+            "Release bake requires the canonical prepared config at "
+            f"<run-root>/configs/{agent}.final.json"
+        )
+    run_root = source_path.parent.parent.resolve()
+    if source_path != run_root / "configs" / f"{agent}.final.json":
+        raise ValueError("Release bake config escaped its prepared run root")
+    return run_root
+
+
+def _verified_release_bake_qualification(
+    configs: list[dict[str, Any]],
+    lineages: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    run_roots = {_prepared_run_root(cfg) for cfg in configs}
+    if len(run_roots) != 1:
+        raise ValueError("A release bake cannot mix prepared configs from multiple runs")
+    run_root = next(iter(run_roots))
+    run_manifest_path = run_root / "aio_run_manifest.json"
+    if not run_manifest_path.is_file() or run_manifest_path.is_symlink():
+        raise FileNotFoundError(
+            f"Prepared run manifest not found for release bake: {run_manifest_path}"
+        )
+    run_manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+    manifest_agents = run_manifest.get("agents") if isinstance(run_manifest, dict) else None
+    if not isinstance(manifest_agents, list):
+        raise ValueError("Prepared run manifest lacks its agent list")
+    run_agents = [
+        str(item.get("agent") or "").strip().lower()
+        for item in manifest_agents
+        if isinstance(item, dict)
+    ]
+    if len(run_agents) != len(manifest_agents) or any(agent not in AGENTS for agent in run_agents):
+        raise ValueError("Prepared run manifest has an invalid agent list")
+
+    try:
+        from .ubuntu_pipeline import _verified_completed_summary
+    except ImportError:
+        from tools.fine_tuning.unsloth.ubuntu_pipeline import (
+            _verified_completed_summary,
+        )
+
+    summary = _verified_completed_summary(run_root, run_agents)
+    if (
+        summary.get("status") not in {"complete", "complete_without_gguf"}
+        or summary.get("evaluationStatus") != "quality_gate_passed"
+        or summary.get("evaluationScope") != "full"
+        or summary.get("qualification") != "quality_gate_passed"
+        or summary.get("promotionEligible") is not True
+        or summary.get("preferenceTraining") is not True
+    ):
+        raise ValueError(
+            "Release bake requires a verified full evaluation with "
+            "quality_gate_passed qualification"
+        )
+    summary_agents = summary.get("agents")
+    if not isinstance(summary_agents, dict):
+        raise ValueError("Completed run summary lacks agent qualification evidence")
+    for cfg in configs:
+        agent = str(cfg["agent"]).strip().lower()
+        item = summary_agents.get(agent)
+        lineage = lineages.get(agent)
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("finalPhase"), dict)
+            or not isinstance(lineage, dict)
+            or item["finalPhase"].get("adapterSHA256")
+            != lineage.get("adapterSHA256")
+        ):
+            raise ValueError(
+                f"Completed run qualification is not bound to the selected {agent} adapter"
+            )
+    return {
+        "sourceRunRoot": str(run_root),
+        "sourceRunSummarySHA256": summary["summarySHA256"],
+        "sourceRunStatus": summary["status"],
+        "sourceRunEvaluationStatus": summary["evaluationStatus"],
+        "sourceRunEvaluationScope": summary["evaluationScope"],
+        "sourceRunQualification": summary["qualification"],
+        "sourceRunPromotionEligible": summary["promotionEligible"],
+    }
+
+
+def _agent_output_dir(output_root: Path, agent: str) -> Path:
+    return (output_root / f"{agent}_release_bake_gguf").resolve()
+
+
 def _release_bake_skipped_manifest(configs: list[dict[str, Any]], args: argparse.Namespace) -> dict[str, Any]:
     return {
         "mode": "adapter_first",
@@ -662,6 +743,8 @@ def export_agent_gguf(
     output_root: Path,
     quantization_override: str | None,
     max_memory_usage_override: float | None,
+    verified_lineage: dict[str, Any] | None = None,
+    qualification_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
         from unsloth import FastLanguageModel  # type: ignore
@@ -674,7 +757,7 @@ def export_agent_gguf(
 
     agent = str(cfg["agent"]).strip().lower()
     adapter_dir = _adapter_dir(cfg)
-    lineage = _verified_release_bake_lineage(cfg)
+    lineage = verified_lineage or _verified_release_bake_lineage(cfg)
 
     quantization = str(
         quantization_override
@@ -683,9 +766,7 @@ def export_agent_gguf(
         or "q4_k_m"
     ).lower()
 
-    agent_output_dir = Path(
-        str(cfg.get("gguf_output_dir") or (output_root / f"{agent}_release_bake_gguf"))
-    ).resolve()
+    agent_output_dir = _agent_output_dir(output_root, agent)
     _validate_path_tokens(
         path=str(agent_output_dir),
         required_token=agent,
@@ -782,6 +863,7 @@ def export_agent_gguf(
         "size_bytes": target_path.stat().st_size,
         "sha256": sha256sum(target_path),
         "base_model_name": cfg["base_model_name"],
+        **(qualification_evidence or {}),
         **runtime_tokenizer_evidence,
         **lineage,
     }
@@ -797,6 +879,8 @@ def existing_summary_for_agent(
     *,
     output_root: Path,
     quantization_override: str | None,
+    verified_lineage: dict[str, Any] | None = None,
+    qualification_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     agent = str(cfg["agent"]).strip().lower()
     quantization = str(
@@ -805,9 +889,7 @@ def existing_summary_for_agent(
         or cfg.get("quantization_method")
         or "q4_k_m"
     ).lower()
-    agent_output_dir = Path(
-        str(cfg.get("gguf_output_dir") or (output_root / f"{agent}_release_bake_gguf"))
-    ).resolve()
+    agent_output_dir = _agent_output_dir(output_root, agent)
     _validate_path_tokens(
         path=str(agent_output_dir),
         required_token=agent,
@@ -818,7 +900,7 @@ def existing_summary_for_agent(
     target_path = agent_output_dir / target_name
     if not target_path.exists():
         return None
-    lineage = _verified_release_bake_lineage(cfg)
+    lineage = verified_lineage or _verified_release_bake_lineage(cfg)
     report_path = agent_output_dir / "gguf_release_bake_report.json"
     if not report_path.is_file():
         raise ValueError(f"Cannot reuse GGUF without its lineage report: {report_path}")
@@ -846,6 +928,7 @@ def existing_summary_for_agent(
         "size_bytes": target_path.stat().st_size,
         "sha256": sha256sum(target_path),
         "base_model_name": cfg["base_model_name"],
+        **(qualification_evidence or {}),
         **runtime_evidence,
         **lineage,
     }
@@ -893,9 +976,6 @@ def main() -> None:
         selected_agents,
         require_release_bake_lineage=args.release_bake,
     )
-    output_root = Path(args.output_root).resolve()
-    output_root.mkdir(parents=True, exist_ok=True)
-
     if not args.release_bake:
         manifest_path = _write_manifest(args.manifest_output, _release_bake_skipped_manifest(configs, args))
         _emit(f"Skipped GGUF release bake by default. Wrote adapter-first manifest: {manifest_path}")
@@ -903,13 +983,29 @@ def main() -> None:
         return
 
     if args.hf_repo_id and not args.skip_upload:
-        ensure_hf_repo(args.hf_repo_id, args.hf_private)
+        raise ValueError(
+            "Direct Hugging Face upload is unsupported in the GGUF exporter. "
+            "Use --skip-upload, verify the completed manifest, then publish with "
+            "the isolated credential-scoped Ubuntu uploader"
+        )
+
+    verified_lineages = {
+        str(cfg["agent"]).strip().lower(): _verified_release_bake_lineage(cfg)
+        for cfg in configs
+    }
+    qualification_evidence = _verified_release_bake_qualification(
+        configs,
+        verified_lineages,
+    )
+    output_root = Path(args.output_root).resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
 
     manifest: dict[str, Any] = {
         "mode": "optional_release_bake",
         "release_bake_requested": True,
         "repo_id": args.hf_repo_id,
         "quantization_override": args.quantization,
+        **qualification_evidence,
         "agents": {},
     }
 
@@ -920,6 +1016,10 @@ def main() -> None:
                 cfg,
                 output_root=output_root,
                 quantization_override=args.quantization,
+                verified_lineage=verified_lineages[
+                    str(cfg["agent"]).strip().lower()
+                ],
+                qualification_evidence=qualification_evidence,
             )
         if summary is None:
             summary = export_agent_gguf(
@@ -927,16 +1027,12 @@ def main() -> None:
                 output_root=output_root,
                 quantization_override=args.quantization,
                 max_memory_usage_override=args.max_memory_usage,
+                verified_lineage=verified_lineages[
+                    str(cfg["agent"]).strip().lower()
+                ],
+                qualification_evidence=qualification_evidence,
             )
         agent = summary["agent"]
-        if args.hf_repo_id and not args.skip_upload:
-            upload_file(
-                repo_id=args.hf_repo_id,
-                local_path=Path(summary["gguf_path"]),
-                remote_name=summary["gguf_file"],
-            )
-            summary["hf_repo_id"] = args.hf_repo_id
-            summary["hf_file_name"] = summary["gguf_file"]
         manifest["agents"][agent] = summary
 
     manifest_path = _write_manifest(args.manifest_output, manifest)
