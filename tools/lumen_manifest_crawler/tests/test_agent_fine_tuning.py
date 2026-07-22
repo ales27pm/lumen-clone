@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from lumen_manifest_crawler.crawler import generate_manifest
+from lumen_manifest_crawler.dataset import fine_tuning as fine_tuning_module
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.adapter_evaluation import (
     EVALUATION_SCHEMA_VERSION,
@@ -6118,6 +6119,61 @@ def test_cortex_sft_rejects_non_strict_raw_json_before_canonicalization(
 )
 def test_cortex_route_ordering_preserves_invalid_json(value: str) -> None:
     assert _ordered_cortex_route_text(value) == value
+    assert fine_tuning_module._ordered_cortex_rejected_route_text(value) == value
+
+
+@pytest.mark.parametrize(
+    "helper_name",
+    (
+        "_canonical_strict_json_object",
+        "_manifest_valid_executor_payload",
+        "_public_cortex_route_is_safe",
+        "_ordered_cortex_route_text",
+        "_ordered_cortex_rejected_route_text",
+    ),
+)
+@pytest.mark.parametrize(
+    "exception_type",
+    (TypeError, ValueError, RecursionError),
+)
+def test_strict_json_helpers_propagate_unexpected_parser_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    helper_name: str,
+    exception_type: type[Exception],
+) -> None:
+    def raise_unexpected_parser_error(_value: str) -> Any:
+        raise exception_type("unexpected parser failure")
+
+    monkeypatch.setattr(
+        fine_tuning_module,
+        "_strict_json_loads",
+        raise_unexpected_parser_error,
+    )
+    manifest = object()
+    invocations = {
+        "_canonical_strict_json_object": lambda: (
+            fine_tuning_module._canonical_strict_json_object("{}")
+        ),
+        "_manifest_valid_executor_payload": lambda: (
+            fine_tuning_module._manifest_valid_executor_payload(manifest, "{}")
+        ),
+        "_public_cortex_route_is_safe": lambda: (
+            fine_tuning_module._public_cortex_route_is_safe(
+                manifest,
+                "{}",
+                public_corpus={},
+            )
+        ),
+        "_ordered_cortex_route_text": lambda: (
+            fine_tuning_module._ordered_cortex_route_text("{}")
+        ),
+        "_ordered_cortex_rejected_route_text": lambda: (
+            fine_tuning_module._ordered_cortex_rejected_route_text("{}")
+        ),
+    }
+
+    with pytest.raises(exception_type, match="unexpected parser failure"):
+        invocations[helper_name]()
 
 
 @pytest.mark.parametrize(

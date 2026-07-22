@@ -8,7 +8,7 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -37,8 +37,8 @@ class _RuntimeTokenizer:
     pad_token_id = 2
     unk_token_id = 0
     mask_token_id = None
-    all_special_ids = [0, 2]
-    all_special_tokens = ["<unk>", "<eos>"]
+    all_special_ids: ClassVar[list[int]] = [0, 2]
+    all_special_tokens: ClassVar[list[str]] = ["<unk>", "<eos>"]
     padding_side = "left"
     truncation_side = "right"
 

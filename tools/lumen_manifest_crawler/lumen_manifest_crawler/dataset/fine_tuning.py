@@ -710,7 +710,11 @@ def _ordered_cortex_rejected_route_text(value: str) -> str:
 
     try:
         payload = _strict_json_loads(value)
-    except (ValueError, TypeError, RecursionError):
+    except (
+        json.JSONDecodeError,
+        _DuplicateJSONKeyError,
+        _NonFiniteJSONNumberError,
+    ):
         return value
     return _cortex_route_json(payload) if isinstance(payload, dict) else value
 
@@ -3820,9 +3824,6 @@ def _canonical_strict_json_object(
         json.JSONDecodeError,
         _DuplicateJSONKeyError,
         _NonFiniteJSONNumberError,
-        TypeError,
-        ValueError,
-        RecursionError,
     ):
         return None
     if not isinstance(payload, dict):
@@ -7425,9 +7426,6 @@ def _manifest_valid_executor_payload(
         json.JSONDecodeError,
         _DuplicateJSONKeyError,
         _NonFiniteJSONNumberError,
-        TypeError,
-        ValueError,
-        RecursionError,
     ):
         return None
     if not isinstance(payload, dict):
