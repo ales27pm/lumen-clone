@@ -45,6 +45,44 @@ except ImportError:
 
 AGENTS = ("cortex", "executor", "mouth", "mimicry", "rem", "fleet")
 GGUF_MARKERS = {"gguf", "merged", "release", "bake", "finetune", "finetuned"}
+DEFAULT_ADAPTER_FIRST_CONFIG_DIR = "generated/fine_tuning"
+PREPARED_RUN_ROOT_ENV = "LUMEN_AIO_RUN_ROOT"
+BASE_CONFIG_REQUIRED_KEYS = {
+    "adapter_output_dir",
+    "agent",
+    "artifact_mode",
+    "base_model_name",
+    "baseModelID",
+    "baseModelRevision",
+    "baseModelIndexDigest",
+    "baseModelIndexReferencedShardNames",
+    "baseModelIndexShardBindingSHA256",
+    "baseModelArtifactDigest",
+    "baseModelWeightShards",
+    "baseModelTokenizerDigest",
+    "baseModelTokenizerFiles",
+    "baseModelTokenizerClosureSHA256",
+    "default_export_artifact",
+    "max_seq_length",
+    "merge_adapters_by_default",
+    "output_dir",
+    "release_bake_enabled_by_default",
+}
+PREPARED_RELEASE_BAKE_REQUIRED_KEYS = {
+    "adapter_training_phase",
+    "baseModelGenerationConfigFile",
+    "baseModelTokenizerSnapshotPath",
+    "baseModelTokenizerSnapshotVerification",
+    "baseModelRuntimeSnapshotPath",
+    "baseModelRuntimeSnapshotVerification",
+    "bf16",
+    "finalized_variant_manifest",
+    "fp16",
+    "trainingEnvironmentSHA256",
+    "variant",
+    "variantAttestation",
+    "variantManifestSHA256",
+}
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 
@@ -72,16 +110,20 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--config-dir",
-        default="generated/fine_tuning",
+        default=None,
         help=(
-            "Directory containing generated per-agent configs (used when --config is omitted). "
-            "Each config is read from <agent>/unsloth_config.json."
+            "Config directory used when --config is omitted. Adapter-first mode defaults to "
+            "generated/fine_tuning/<agent>/unsloth_config.json. Release-bake mode defaults to "
+            "$LUMEN_AIO_RUN_ROOT/configs/<agent>.final.json and never falls back to the SFT config."
         ),
     )
     parser.add_argument(
         "--agents",
-        default=",".join(AGENTS),
-        help="Comma-separated agents to process.",
+        default=None,
+        help=(
+            "Comma-separated agents to process. Defaults to the agents declared by explicit "
+            "--config files, or all six agents in directory mode."
+        ),
     )
     parser.add_argument(
         "--quantization",
@@ -152,31 +194,25 @@ def _portable_manifest_path(value: str | Path) -> str:
         return path.as_posix()
 
 
-def _validate_config(cfg: dict[str, Any], *, path: Path) -> dict[str, Any]:
-    required = {
-        "agent",
-        "base_model_name",
-        "baseModelID",
-        "baseModelRevision",
-        "baseModelIndexDigest",
-        "baseModelIndexReferencedShardNames",
-        "baseModelIndexShardBindingSHA256",
-        "baseModelArtifactDigest",
-        "baseModelWeightShards",
-        "baseModelGenerationConfigFile",
-        "baseModelTokenizerDigest",
-        "baseModelTokenizerFiles",
-        "baseModelTokenizerClosureSHA256",
-        "baseModelTokenizerSnapshotPath",
-        "baseModelTokenizerSnapshotVerification",
-        "baseModelRuntimeSnapshotPath",
-        "baseModelRuntimeSnapshotVerification",
-        "max_seq_length",
-        "output_dir",
-    }
+def _validate_config(
+    cfg: dict[str, Any],
+    *,
+    path: Path,
+    require_release_bake_lineage: bool = False,
+) -> dict[str, Any]:
+    required = set(BASE_CONFIG_REQUIRED_KEYS)
+    if require_release_bake_lineage:
+        required.update(PREPARED_RELEASE_BAKE_REQUIRED_KEYS)
     missing = [key for key in sorted(required) if key not in cfg]
     if missing:
-        raise ValueError(f"{path} missing required keys: {', '.join(missing)}")
+        detail = f"{path} missing required keys: {', '.join(missing)}"
+        if require_release_bake_lineage:
+            detail += (
+                ". Release bake requires the prepared <agent>.final.json config from the "
+                "Ubuntu run root; checked-in generated configs intentionally omit run-scoped "
+                "snapshot and finalized-adapter evidence"
+            )
+        raise ValueError(detail)
     if cfg["baseModelID"] != cfg["base_model_name"]:
         raise ValueError(
             f"{path} baseModelID must exactly match base_model_name"
@@ -194,29 +230,154 @@ def _validate_config(cfg: dict[str, Any], *, path: Path) -> dict[str, Any]:
         raise ValueError(f"{path} must set merge_adapters_by_default=false for adapter-first training")
     if cfg.get("release_bake_enabled_by_default") is not False:
         raise ValueError(f"{path} must set release_bake_enabled_by_default=false")
+    if cfg.get("artifact_mode") != "adapter_first":
+        raise ValueError(f"{path} must set artifact_mode=adapter_first")
+    if cfg.get("default_export_artifact") != "lora_adapter":
+        raise ValueError(f"{path} must set default_export_artifact=lora_adapter")
+    if require_release_bake_lineage:
+        phase = cfg["adapter_training_phase"]
+        if phase not in {"sft", "sft_dpo"}:
+            raise ValueError(
+                f"{path} adapter_training_phase must be explicitly sft or sft_dpo for release bake"
+            )
+        if phase == "sft_dpo" and re.fullmatch(
+            r"[0-9a-f]{64}", str(cfg.get("parent_sft_adapter_sha256") or "")
+        ) is None:
+            raise ValueError(
+                f"{path} sft_dpo release bake requires parent_sft_adapter_sha256"
+            )
+        if phase == "sft" and cfg.get("parent_sft_adapter_sha256") is not None:
+            raise ValueError(
+                f"{path} sft release bake must not declare parent_sft_adapter_sha256"
+            )
     return cfg
 
 
-def load_config(path: Path) -> dict[str, Any]:
+def load_config(
+    path: Path,
+    *,
+    require_release_bake_lineage: bool = False,
+) -> dict[str, Any]:
     cfg = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(cfg, dict):
         raise ValueError(f"{path} must contain a JSON object")
-    return _validate_config(cfg, path=path)
+    return _validate_config(
+        cfg,
+        path=path,
+        require_release_bake_lineage=require_release_bake_lineage,
+    )
 
 
-def gather_configs(config_paths: list[str], config_dir: str, selected_agents: list[str]) -> list[dict[str, Any]]:
+def _resolve_config_dir(
+    *,
+    config_paths: list[str],
+    config_dir: str | None,
+    release_bake: bool,
+) -> str | None:
+    """Resolve a deterministic mode-appropriate config source.
+
+    Prepared snapshot evidence is run-scoped, so release bake must never discover a
+    recent run or silently reuse the checked-in adapter-first configs.
+    """
+
+    if config_paths and config_dir is not None:
+        raise ValueError("Use either --config or --config-dir, not both")
+    if config_paths or config_dir is not None:
+        return config_dir
+    if not release_bake:
+        return DEFAULT_ADAPTER_FIRST_CONFIG_DIR
+    run_root = os.environ.get(PREPARED_RUN_ROOT_ENV, "").strip()
+    if not run_root:
+        raise ValueError(
+            "--release-bake requires prepared final configs. Pass --config "
+            "<run-root>/configs/<agent>.final.json, pass --config-dir "
+            "<run-root>/configs, or set LUMEN_AIO_RUN_ROOT; the exporter will not "
+            "guess a recent run or use checked-in generated configs"
+        )
+    return str(Path(run_root) / "configs")
+
+
+def _selected_agents(
+    *,
+    agents_arg: str | None,
+    config_paths: list[str],
+) -> list[str]:
+    if agents_arg is not None:
+        return [item.strip().lower() for item in agents_arg.split(",") if item.strip()]
+    if not config_paths:
+        return list(AGENTS)
+
+    selected: list[str] = []
+    for raw in config_paths:
+        path = Path(raw).resolve()
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(cfg, dict):
+            raise ValueError(f"{path} must contain a JSON object")
+        agent = str(cfg.get("agent") or "").strip().lower()
+        if not agent:
+            raise ValueError(f"{path} must declare an agent")
+        selected.append(agent)
+    return selected
+
+
+def gather_configs(
+    config_paths: list[str],
+    config_dir: str | None,
+    selected_agents: list[str],
+    *,
+    require_release_bake_lineage: bool = False,
+) -> list[dict[str, Any]]:
+    if not selected_agents:
+        raise ValueError("At least one agent must be selected")
+    if len(selected_agents) != len(set(selected_agents)):
+        raise ValueError("Selected agents must be unique")
     configs: list[dict[str, Any]] = []
     if config_paths:
         for raw in config_paths:
-            configs.append(load_config(Path(raw).resolve()))
+            configs.append(
+                load_config(
+                    Path(raw).resolve(),
+                    require_release_bake_lineage=require_release_bake_lineage,
+                )
+            )
     else:
+        if config_dir is None:
+            raise ValueError("Config directory was not resolved")
         root = Path(config_dir).resolve()
         for agent in selected_agents:
-            nested = root / agent / "unsloth_config.json"
-            configs.append(load_config(nested if nested.is_file() else root / f"{agent}.json"))
+            if require_release_bake_lineage:
+                config_path = root / f"{agent}.final.json"
+                if not config_path.is_file():
+                    raise FileNotFoundError(
+                        "Prepared final config not found for release bake: "
+                        f"{config_path}. The exporter will not fall back to {agent}.json"
+                    )
+            else:
+                nested = root / agent / "unsloth_config.json"
+                config_path = nested if nested.is_file() else root / f"{agent}.json"
+            configs.append(
+                load_config(
+                    config_path,
+                    require_release_bake_lineage=require_release_bake_lineage,
+                )
+            )
 
-    filtered = [cfg for cfg in configs if str(cfg["agent"]).strip().lower() in set(selected_agents)]
-    filtered.sort(key=lambda item: selected_agents.index(str(item["agent"]).strip().lower()))
+    by_agent: dict[str, dict[str, Any]] = {}
+    for cfg in configs:
+        agent = str(cfg["agent"]).strip().lower()
+        if agent in by_agent:
+            raise ValueError(f"Duplicate config supplied for selected agent: {agent}")
+        by_agent[agent] = cfg
+    missing_agents = [agent for agent in selected_agents if agent not in by_agent]
+    unexpected_agents = sorted(set(by_agent).difference(selected_agents))
+    if missing_agents or unexpected_agents:
+        details: list[str] = []
+        if missing_agents:
+            details.append("missing " + ", ".join(missing_agents))
+        if unexpected_agents:
+            details.append("unexpected " + ", ".join(unexpected_agents))
+        raise ValueError("Config coverage does not match --agents: " + "; ".join(details))
+    filtered = [by_agent[agent] for agent in selected_agents]
     return filtered
 
 
@@ -713,12 +874,25 @@ def _write_manifest(path: str, manifest: dict[str, Any]) -> Path:
 
 def main() -> None:
     args = parse_args()
-    selected_agents = [item.strip().lower() for item in args.agents.split(",") if item.strip()]
+    selected_agents = _selected_agents(
+        agents_arg=args.agents,
+        config_paths=args.config,
+    )
     for agent in selected_agents:
         if agent not in AGENTS:
             raise ValueError(f"Unsupported agent in --agents: {agent}")
 
-    configs = gather_configs(args.config, args.config_dir, selected_agents)
+    config_dir = _resolve_config_dir(
+        config_paths=args.config,
+        config_dir=args.config_dir,
+        release_bake=args.release_bake,
+    )
+    configs = gather_configs(
+        args.config,
+        config_dir,
+        selected_agents,
+        require_release_bake_lineage=args.release_bake,
+    )
     output_root = Path(args.output_root).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
 

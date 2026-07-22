@@ -344,6 +344,16 @@ def check_export_policy() -> None:
         "merge_adapters_by_default" in text and "release_bake_enabled_by_default" in text,
         "export_gguf.py must validate adapter-first config flags.",
     )
+    require(
+        'config_path = root / f"{agent}.final.json"' in text
+        and "The exporter will not fall back" in text,
+        "Release bake must require prepared final configs and never fall back to SFT configs.",
+    )
+    require(
+        'PREPARED_RUN_ROOT_ENV = "LUMEN_AIO_RUN_ROOT"' in text
+        and "guess a recent run or use checked-in generated configs" in text,
+        "Release-bake config discovery must bind an exact prepared run root.",
+    )
 
 
 def check_docs() -> None:
