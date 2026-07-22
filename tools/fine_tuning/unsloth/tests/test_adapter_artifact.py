@@ -7,9 +7,15 @@ from pathlib import Path
 import pytest
 
 from tools.fine_tuning.unsloth.adapter_artifact import (
+    portable_adapter_model_card,
     verify_adapter_artifact,
     write_adapter_artifact_manifest,
+    write_portable_adapter_model_card,
 )
+
+
+BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
+BASE_MODEL_REVISION = "a" * 40
 
 
 def _safetensors_bytes(data: bytes = b"\x00\x00\x00\x00") -> bytes:
@@ -33,7 +39,8 @@ def _write_adapter(path: Path, *, weights: bytes | None = None) -> None:
         json.dumps(
             {
                 "peft_type": "LORA",
-                "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+                "base_model_name_or_path": BASE_MODEL_ID,
+                "revision": BASE_MODEL_REVISION,
                 "target_modules": ["q_proj"],
             }
         ),
@@ -44,6 +51,68 @@ def _write_adapter(path: Path, *, weights: bytes | None = None) -> None:
     )
     (path / "tokenizer.json").write_text("{}", encoding="utf-8")
     (path / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+    write_portable_adapter_model_card(
+        path,
+        base_model_id=BASE_MODEL_ID,
+        base_model_revision=BASE_MODEL_REVISION,
+    )
+
+
+def test_portable_adapter_model_card_is_deterministic_and_path_free(
+    tmp_path: Path,
+) -> None:
+    adapter = tmp_path / "adapter"
+    adapter.mkdir()
+    private_path = "/outputs/run/training/base_model_runtime_snapshot"
+    (adapter / "README.md").write_text(private_path, encoding="utf-8")
+
+    first = write_portable_adapter_model_card(
+        adapter,
+        base_model_id=BASE_MODEL_ID,
+        base_model_revision=BASE_MODEL_REVISION,
+    )
+    second = write_portable_adapter_model_card(
+        adapter,
+        base_model_id=BASE_MODEL_ID,
+        base_model_revision=BASE_MODEL_REVISION,
+    )
+
+    assert first == second == portable_adapter_model_card(
+        BASE_MODEL_ID,
+        BASE_MODEL_REVISION,
+    )
+    assert (adapter / "README.md").read_text(encoding="utf-8") == first
+    assert private_path not in first
+    assert BASE_MODEL_ID in first
+    assert BASE_MODEL_REVISION in first
+
+
+@pytest.mark.parametrize(
+    "drift",
+    (
+        "/outputs/run/training/base_model_runtime_snapshot",
+        "f" * 40,
+    ),
+)
+def test_adapter_artifact_rejects_private_path_or_wrong_revision_in_readme(
+    tmp_path: Path,
+    drift: str,
+) -> None:
+    adapter = tmp_path / "adapter"
+    _write_adapter(adapter)
+    manifest = write_adapter_artifact_manifest(adapter, training_phase="sft")
+    readme = (adapter / "README.md").read_text(encoding="utf-8")
+    source = BASE_MODEL_REVISION if drift == "f" * 40 else BASE_MODEL_ID
+    (adapter / "README.md").write_text(
+        readme.replace(source, drift),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="base model and exact revision"):
+        verify_adapter_artifact(
+            adapter,
+            expected_adapter_sha256=manifest["adapterSHA256"],
+        )
 
 
 def test_adapter_artifact_manifest_rejects_missing_extra_and_modified_files(
@@ -104,6 +173,75 @@ def test_dpo_artifact_binds_parent_sft_digest(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("revision", (None, "main", "f" * 40))
+def test_adapter_artifact_requires_exact_base_revision(
+    tmp_path: Path,
+    revision: str | None,
+) -> None:
+    adapter = tmp_path / "adapter"
+    _write_adapter(adapter)
+    config_path = adapter / "adapter_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["revision"] = BASE_MODEL_REVISION
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    write_adapter_artifact_manifest(
+        adapter,
+        training_phase="sft",
+        expected_base_model=BASE_MODEL_ID,
+        expected_base_revision=BASE_MODEL_REVISION,
+    )
+    config["revision"] = revision
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="revision"):
+        verify_adapter_artifact(
+            adapter,
+            expected_base_model=BASE_MODEL_ID,
+            expected_base_revision=BASE_MODEL_REVISION,
+        )
+
+
+@pytest.mark.parametrize(
+    "payload,error",
+    [
+        ('{"schemaVersion":"first","schemaVersion":"second"}', "strict JSON"),
+        ('{"adapterSHA256":NaN}', "strict JSON"),
+        ('{"adapterSHA256":Infinity}', "strict JSON"),
+        ('{"adapterSHA256":-Infinity}', "strict JSON"),
+        ('{"adapterSHA256":1e400}', "strict JSON"),
+    ],
+)
+def test_adapter_artifact_manifest_requires_strict_json(
+    tmp_path: Path,
+    payload: str,
+    error: str,
+) -> None:
+    adapter = tmp_path / "adapter"
+    _write_adapter(adapter)
+    write_adapter_artifact_manifest(adapter, training_phase="sft")
+    (adapter / "adapter_artifact_manifest.json").write_text(
+        payload,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=error):
+        verify_adapter_artifact(adapter)
+
+
+def test_adapter_artifact_manifest_must_not_be_a_symlink(tmp_path: Path) -> None:
+    adapter = tmp_path / "adapter"
+    _write_adapter(adapter)
+    write_adapter_artifact_manifest(adapter, training_phase="sft")
+    manifest_path = adapter / "adapter_artifact_manifest.json"
+    manifest_copy = tmp_path / "manifest.json"
+    manifest_copy.write_bytes(manifest_path.read_bytes())
+    manifest_path.unlink()
+    manifest_path.symlink_to(manifest_copy)
+
+    with pytest.raises(ValueError, match="regular file"):
+        verify_adapter_artifact(adapter)
+
+
 @pytest.mark.parametrize(
     "weights,error",
     [
@@ -132,7 +270,8 @@ def test_adapter_artifact_rejects_weights_outside_declared_lora_targets(
         json.dumps(
             {
                 "peft_type": "LORA",
-                "base_model_name_or_path": "Qwen/Qwen3-1.7B",
+                "base_model_name_or_path": BASE_MODEL_ID,
+                "revision": BASE_MODEL_REVISION,
                 "target_modules": ["k_proj"],
             }
         ),

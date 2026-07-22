@@ -603,6 +603,15 @@ def preflight(term: Terminal, root: Path, args: argparse.Namespace, state: Pipel
 
 
 def crawl_ingest_generate(term: Terminal, root: Path, args: argparse.Namespace, state: PipelineState | None = None) -> list[RunResult]:
+    release_bake_config_dir: Path | None = None
+    if args.release_bake:
+        prepared_run_root = os.environ.get("LUMEN_AIO_RUN_ROOT", "").strip()
+        if not prepared_run_root:
+            raise SystemExit(
+                "--release-bake requires LUMEN_AIO_RUN_ROOT for exact prepared "
+                "<agent>.final.json configs; no recent run will be guessed"
+            )
+        release_bake_config_dir = Path(prepared_run_root) / "configs"
     audits = discover_runtime_jsons(root, args.runtime_audit)
     print_runtime_jsons(term, root, audits)
 
@@ -687,9 +696,8 @@ def crawl_ingest_generate(term: Terminal, root: Path, args: argparse.Namespace, 
 
     export = [
         sys.executable,
-        "tools/fine_tuning/unsloth/export_gguf.py",
-        "--config-dir",
-        str(resolve(root, args.config_dir)),
+        "-m",
+        "tools.fine_tuning.unsloth.export_gguf",
         "--agents",
         args.agents,
         "--quantization",
@@ -701,7 +709,20 @@ def crawl_ingest_generate(term: Terminal, root: Path, args: argparse.Namespace, 
         "--skip-upload",
     ]
     if args.release_bake:
-        export.append("--release-bake")
+        if release_bake_config_dir is None:
+            raise RuntimeError("Release-bake config directory was not resolved")
+        export.extend(
+            [
+                "--release-bake",
+                "--config-dir",
+                str(release_bake_config_dir),
+            ]
+        )
+        export_inputs = [release_bake_config_dir]
+    else:
+        adapter_first_configs = resolve(root, args.fine_tuning_output)
+        export.extend(["--config-dir", str(adapter_first_configs)])
+        export_inputs = [adapter_first_configs]
     results.append(
         run(
             term,
@@ -710,7 +731,7 @@ def crawl_ingest_generate(term: Terminal, root: Path, args: argparse.Namespace, 
             export,
             args=args,
             state=state,
-            inputs=[resolve(root, args.config_dir)],
+            inputs=export_inputs,
             outputs=[resolve(root, args.release_manifest)],
         )
     )

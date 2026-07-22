@@ -342,6 +342,22 @@ def validate_repository_alignment(
     return errors
 
 
+def write_contract_json(path: Path) -> None:
+    """Write the canonical pipeline contract as deterministic UTF-8 JSON."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            CONTRACT.as_dict(),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 if __name__ == "__main__":
     import argparse
 

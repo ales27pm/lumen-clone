@@ -24,6 +24,7 @@
   "gguf_repo_id": "ales27pm/lumen-fleet-gguf",
   "dataset_dir": "generated/fine_tuning/fleet",
   "preference_trainer": "dpo",
+  "dpo_rpo_alpha": 1.0,
   "fleet_strategy": "train_first",
   "merge_target": "cortex"
 }

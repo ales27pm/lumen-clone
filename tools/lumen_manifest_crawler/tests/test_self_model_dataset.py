@@ -1,11 +1,19 @@
 import json
+from pathlib import Path
 
+import pytest
+
+from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset.compiler import (
     MIN_SELF_MODEL_EVAL_SCENARIOS,
     SELF_MODEL_CARD_TYPES,
     compile_state_of_art_datasets,
 )
-from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
+from lumen_manifest_crawler.dataset.fine_tuning import (
+    FineTuningDatasetConfig,
+    _route_record_agents,
+    compile_agent_fine_tuning_datasets,
+)
 from lumen_manifest_crawler.improvement_loop import _build_testflight_scenario_queue
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ToolArgumentManifest, ToolManifest, ValidationReport
 from lumen_manifest_crawler.output.writer import write_outputs
@@ -27,6 +35,21 @@ def _manifest() -> AgentBehaviorManifest:
             ToolManifest(id="device.status", displayName="Device Status", description="Summarize safe device status"),
             ToolManifest(id="rag.search.secure", displayName="Secure RAG Search", description="Search approved RAG sources"),
         ],
+    )
+
+
+@pytest.fixture(scope="module")
+def diagnostic_manifest() -> AgentBehaviorManifest:
+    """Use production topology for optimizer-aware repair routing checks."""
+
+    root = Path(__file__).resolve().parents[3]
+    manifest = generate_manifest(root)
+    return manifest.model_copy(
+        update={
+            "sourceIntegrity": manifest.sourceIntegrity.model_copy(
+                update={"baseCommit": "test-commit"}
+            )
+        }
     )
 
 
@@ -75,20 +98,28 @@ def test_self_model_eval_has_twenty_plus_scenarios_and_enters_testflight_queue()
     assert all(scenario["taskType"] == "self_model_grounding" for scenario in self_model_scenarios)
 
 
-def test_self_model_sft_routes_to_fleet_adapter() -> None:
+def test_self_model_sft_routes_only_to_fleet_adapter() -> None:
     manifest = _manifest()
     compiled = compile_state_of_art_datasets(manifest, {})
 
-    fine_tuning = compile_agent_fine_tuning_datasets(manifest, compiled.records)
-    fleet_records = fine_tuning["fleet"].train_sft + fine_tuning["fleet"].val_sft
-    source_families = {(record.get("metadata") or {}).get("sourceFamily") for record in fleet_records}
+    for source_family in ("self_model_cards", "self_model_sft"):
+        records = compiled.records[source_family]
+        assert records
+        for record in records:
+            assert _route_record_agents(
+                source_family=source_family,
+                record=record,
+                task_type=str(record.get("taskType") or source_family),
+                tool_ids=list(record.get("toolIDs") or []),
+                slot_ids={slot.id for slot in manifest.fleet.slots},
+                slot_roles={slot.role for slot in manifest.fleet.slots},
+            ) == ["fleet"]
 
-    assert "self_model_cards" in source_families
-    assert "self_model_sft" in source_families
 
-
-def test_self_model_runtime_failure_ingests_as_rem_repair() -> None:
-    manifest = _manifest()
+def test_self_model_runtime_failure_ingests_as_rem_repair(
+    diagnostic_manifest: AgentBehaviorManifest,
+) -> None:
+    manifest = diagnostic_manifest
     runtime_reports = [
         {
             "_source": "agent-grounding-export-self-model.json",
@@ -118,6 +149,7 @@ def test_self_model_runtime_failure_ingests_as_rem_repair() -> None:
         manifest,
         compiled.records,
         runtime_audit_reports=runtime_reports,
+        config=FineTuningDatasetConfig(include_unsloth_config=False),
     )
     rem_records = fine_tuning["rem"].train_sft + fine_tuning["rem"].val_sft
     matching = [

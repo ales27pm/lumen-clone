@@ -3,17 +3,24 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
 
 ADAPTER_ARTIFACT_SCHEMA_VERSION = "lumen.peft-lora-adapter-artifact/1.0.0"
 ADAPTER_ARTIFACT_MANIFEST_FILENAME = "adapter_artifact_manifest.json"
-_REQUIRED_FILES = {"adapter_config.json", "tokenizer.json", "tokenizer_config.json"}
+PORTABLE_ADAPTER_MODEL_CARD_FILENAME = "README.md"
+_REQUIRED_FILES = {
+    PORTABLE_ADAPTER_MODEL_CARD_FILENAME,
+    "adapter_config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+}
 _WEIGHT_FILES = {"adapter_model.safetensors"}
 _OPTIONAL_FILES = {
-    "README.md",
     "added_tokens.json",
     "chat_template.jinja",
     "generation_config.json",
@@ -37,6 +44,143 @@ _SAFETENSORS_DTYPE_BYTES = {
     "U32": 4,
     "U64": 8,
 }
+_HUB_REPO_COMPONENT_RE = re.compile(
+    r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?"
+)
+
+
+def _portable_base_model_identity(
+    base_model_id: str,
+    base_model_revision: str,
+) -> tuple[str, str]:
+    if (
+        not isinstance(base_model_id, str)
+        or base_model_id != base_model_id.strip()
+        or len(base_model_id) > 96
+        or len(base_model_id.split("/")) != 2
+        or any(
+            _HUB_REPO_COMPONENT_RE.fullmatch(component) is None
+            for component in base_model_id.split("/")
+        )
+        or ".." in base_model_id
+        or "--" in base_model_id
+    ):
+        raise ValueError(
+            "Portable adapter base model must be a canonical Hugging Face repository ID"
+        )
+    if (
+        not isinstance(base_model_revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", base_model_revision) is None
+    ):
+        raise ValueError(
+            "Portable adapter base-model revision must be a full commit SHA"
+        )
+    return base_model_id, base_model_revision
+
+
+def portable_adapter_model_card(
+    base_model_id: str,
+    base_model_revision: str,
+) -> str:
+    """Return the one canonical, path-free model card for a finalized adapter."""
+
+    base_model_id, base_model_revision = _portable_base_model_identity(
+        base_model_id,
+        base_model_revision,
+    )
+    yaml_base_model_id = json.dumps(base_model_id, ensure_ascii=True)
+    yaml_base_model_tag = json.dumps(
+        f"base_model:adapter:{base_model_id}",
+        ensure_ascii=True,
+    )
+    return (
+        "---\n"
+        f"base_model: {yaml_base_model_id}\n"
+        f'base_model_revision: "{base_model_revision}"\n'
+        "library_name: peft\n"
+        "pipeline_tag: text-generation\n"
+        "tags:\n"
+        f"- {yaml_base_model_tag}\n"
+        "- lora\n"
+        "- transformers\n"
+        "---\n"
+        "\n"
+        "# Lumen LoRA adapter\n"
+        "\n"
+        f"This adapter is bound to `{base_model_id}` at revision "
+        f"`{base_model_revision}`.\n"
+    )
+
+
+def write_portable_adapter_model_card(
+    adapter_dir: Path,
+    *,
+    base_model_id: str,
+    base_model_revision: str,
+) -> str:
+    """Atomically replace PEFT's generated card with the canonical portable card."""
+
+    if adapter_dir.is_symlink() or not adapter_dir.is_dir():
+        raise ValueError(
+            f"Portable adapter output must be a regular directory: {adapter_dir}"
+        )
+    destination = adapter_dir / PORTABLE_ADAPTER_MODEL_CARD_FILENAME
+    if destination.is_symlink() or (
+        destination.exists() and not destination.is_file()
+    ):
+        raise ValueError("Portable adapter README destination is unsafe")
+    text = portable_adapter_model_card(base_model_id, base_model_revision)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=adapter_dir,
+            prefix=f".{PORTABLE_ADAPTER_MODEL_CARD_FILENAME}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600, follow_symlinks=False)
+        os.replace(temporary, destination)
+        temporary = None
+        directory_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        directory_flags |= getattr(os, "O_DIRECTORY", 0)
+        directory_descriptor = os.open(adapter_dir, directory_flags)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+    if destination.read_text(encoding="utf-8") != text:
+        raise RuntimeError("Portable adapter README changed after publication")
+    return text
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number: {value}")
+
+
+def _parse_finite_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        _reject_nonfinite_json_constant(value)
+    return parsed
 
 
 def canonical_sha256(value: Any) -> str:
@@ -59,9 +203,14 @@ def hash_file(path: Path) -> str:
 
 def _load_json_object(value: bytes, *, label: str) -> dict[str, Any]:
     try:
-        parsed = json.loads(value.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"{label} is not valid JSON") from exc
+        parsed = json.loads(
+            value.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_nonfinite_json_constant,
+            parse_float=_parse_finite_json_float,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"{label} is not valid strict JSON") from exc
     if not isinstance(parsed, dict):
         raise ValueError(f"{label} must be a JSON object")
     return parsed
@@ -138,12 +287,23 @@ def _validate_lora_config(
     config: Mapping[str, Any],
     *,
     tensor_names: set[str] | None,
+    expected_base_model: str | None = None,
+    expected_base_revision: str | None = None,
 ) -> None:
     base_model = config.get("base_model_name_or_path")
-    if base_model is not None and (
-        not isinstance(base_model, str) or not base_model.strip()
-    ):
+    if not isinstance(base_model, str) or not base_model.strip():
         raise ValueError("adapter_config.json base_model_name_or_path must be non-empty")
+    revision = config.get("revision")
+    if (
+        not isinstance(revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", revision) is None
+    ):
+        raise ValueError("adapter_config.json revision must be a full commit SHA")
+    _portable_base_model_identity(base_model, revision)
+    if expected_base_model is not None and base_model != expected_base_model:
+        raise ValueError("adapter_config.json base model does not match exact lineage")
+    if expected_base_revision is not None and revision != expected_base_revision:
+        raise ValueError("adapter_config.json revision does not match exact lineage")
 
     raw_targets = config.get("target_modules")
     target_modules: list[str] | None
@@ -171,7 +331,12 @@ def _validate_lora_config(
         )
 
 
-def _artifact_files(adapter_dir: Path) -> list[Path]:
+def _artifact_files(
+    adapter_dir: Path,
+    *,
+    expected_base_model: str | None = None,
+    expected_base_revision: str | None = None,
+) -> list[Path]:
     if not adapter_dir.is_dir():
         raise ValueError(f"Adapter artifact directory does not exist: {adapter_dir}")
     entries = list(adapter_dir.iterdir())
@@ -208,11 +373,29 @@ def _artifact_files(adapter_dir: Path) -> list[Path]:
             "Finalized adapter artifacts require adapter_model.safetensors"
         )
 
-    config = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
-    if not isinstance(config, dict) or str(config.get("peft_type") or "").upper() != "LORA":
+    config = _load_json_object(
+        (adapter_dir / "adapter_config.json").read_bytes(),
+        label="adapter_config.json",
+    )
+    if str(config.get("peft_type") or "").upper() != "LORA":
         raise ValueError("adapter_config.json must declare peft_type=LORA")
     tensor_names = _validate_weight_file(adapter_dir / weights[0])
-    _validate_lora_config(config, tensor_names=tensor_names)
+    _validate_lora_config(
+        config,
+        tensor_names=tensor_names,
+        expected_base_model=expected_base_model,
+        expected_base_revision=expected_base_revision,
+    )
+    expected_model_card = portable_adapter_model_card(
+        config["base_model_name_or_path"],
+        config["revision"],
+    ).encode("utf-8")
+    if (
+        adapter_dir / PORTABLE_ADAPTER_MODEL_CARD_FILENAME
+    ).read_bytes() != expected_model_card:
+        raise ValueError(
+            "README.md does not match the canonical adapter base model and exact revision"
+        )
     return files
 
 
@@ -221,6 +404,8 @@ def build_adapter_artifact_manifest(
     *,
     training_phase: str,
     parent_sft_adapter_sha256: str | None = None,
+    expected_base_model: str | None = None,
+    expected_base_revision: str | None = None,
 ) -> dict[str, Any]:
     if training_phase not in {"sft", "sft_dpo"}:
         raise ValueError("training_phase must be sft or sft_dpo")
@@ -230,7 +415,11 @@ def build_adapter_artifact_manifest(
     elif parent_sft_adapter_sha256 is not None:
         raise ValueError("sft artifacts cannot declare a parent SFT adapter")
 
-    files = _artifact_files(adapter_dir)
+    files = _artifact_files(
+        adapter_dir,
+        expected_base_model=expected_base_model,
+        expected_base_revision=expected_base_revision,
+    )
     payload: dict[str, Any] = {
         "schemaVersion": ADAPTER_ARTIFACT_SCHEMA_VERSION,
         "artifactType": "peft_lora_directory",
@@ -254,11 +443,15 @@ def write_adapter_artifact_manifest(
     *,
     training_phase: str,
     parent_sft_adapter_sha256: str | None = None,
+    expected_base_model: str | None = None,
+    expected_base_revision: str | None = None,
 ) -> dict[str, Any]:
     manifest = build_adapter_artifact_manifest(
         adapter_dir,
         training_phase=training_phase,
         parent_sft_adapter_sha256=parent_sft_adapter_sha256,
+        expected_base_model=expected_base_model,
+        expected_base_revision=expected_base_revision,
     )
     (adapter_dir / ADAPTER_ARTIFACT_MANIFEST_FILENAME).write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -273,13 +466,18 @@ def verify_adapter_artifact(
     expected_adapter_sha256: str | None = None,
     expected_training_phase: str | None = None,
     expected_parent_sft_adapter_sha256: str | None = None,
+    expected_base_model: str | None = None,
+    expected_base_revision: str | None = None,
 ) -> dict[str, Any]:
     manifest_path = adapter_dir / ADAPTER_ARTIFACT_MANIFEST_FILENAME
-    if not manifest_path.is_file():
-        raise ValueError(f"Adapter artifact manifest is missing: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if not isinstance(manifest, Mapping):
-        raise ValueError("Adapter artifact manifest must be a JSON object")
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError(
+            f"Adapter artifact manifest must be a regular file: {manifest_path}"
+        )
+    manifest = _load_json_object(
+        manifest_path.read_bytes(),
+        label="Adapter artifact manifest",
+    )
     phase = str(manifest.get("trainingPhase") or "")
     rebuilt = build_adapter_artifact_manifest(
         adapter_dir,
@@ -289,6 +487,8 @@ def verify_adapter_artifact(
             if manifest.get("parentSFTAdapterSHA256") is not None
             else None
         ),
+        expected_base_model=expected_base_model,
+        expected_base_revision=expected_base_revision,
     )
     if dict(manifest) != rebuilt:
         raise ValueError("Adapter artifact files do not match the canonical manifest")

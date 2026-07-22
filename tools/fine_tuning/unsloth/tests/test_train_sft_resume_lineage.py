@@ -43,9 +43,11 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "validationDPO": "4" * 64,
     }
     attestation = {
+        "schema": train_sft.TRAINING_VARIANT_ATTESTATION_SCHEMA,
         "laneHashes": lane_hashes,
         "trainingCorpusSHA256": "5" * 64,
         "effectiveTrainingConfigSHA256": "6" * 64,
+        "trainingConfigInvariantSHA256": "8" * 64,
         "trainingEnvironmentLockSHA256": "7" * 64,
     }
     config: dict[str, object] = {
@@ -54,12 +56,20 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "base_model_name": "Qwen/Qwen3-1.7B",
         "baseModelRevision": "a" * 40,
         "baseModelIndexDigest": "8" * 64,
+        "baseModelIndexReferencedShardNames": ["model.safetensors"],
         "baseModelIndexShardBindingSHA256": "9" * 64,
         "baseModelArtifactDigest": "a" * 64,
         "baseModelWeightShards": [
             {"filename": "model.safetensors", "size": 1, "sha256": "b" * 64}
         ],
         "baseModelTokenizerDigest": "c" * 64,
+        "baseModelTokenizerFiles": [],
+        "baseModelTokenizerClosureSHA256": "1" * 64,
+        "baseModelTokenizerSnapshotPath": str(run_root / "base_tokenizer"),
+        "baseModelTokenizerSnapshotVerification": {"status": "verified"},
+        "baseModelGenerationConfigFile": {"path": "generation_config.json"},
+        "baseModelRuntimeSnapshotPath": str(run_root / "base_model_runtime"),
+        "baseModelRuntimeSnapshotVerification": {"status": "verified"},
         "variant": "internal_plus_public_optimized",
         "variantManifestSHA256": "d" * 64,
         "variantAttestation": attestation,
@@ -70,6 +80,9 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "resolvedTrainingEnvironment": {"schema": "synthetic"},
         "resolvedTrainingEnvironmentSHA256": "2" * 64,
         "spaceConfigurationSHA256": "1" * 64,
+        "zeroGPUSize": "large",
+        "zeroGPUDurationSeconds": 1200,
+        "observedAccelerator": {"backend": "cuda"},
         "runtimeSourceKind": "huggingface_space",
         "runtimeSourceRevision": "b" * 40,
         "expectedRuntimeSourceRevision": "b" * 40,
@@ -78,6 +91,10 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "runtimeSourceBindingStatus": "operator_declared_unverified",
         "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
         "dataset_dir": str(dataset_dir),
+        "datasetRepository": "user/dataset",
+        "datasetRevision": "c" * 40,
+        "datasetPath": "runs/run/fine_tuning",
+        "localDatasetSnapshot": str(run_root / "generated/fine_tuning"),
         "output_dir": str(output_dir),
         "adapter_output_dir": str(adapter_dir),
         "checkpointLineagePath": str(checkpoint_lineage_path),
@@ -93,15 +110,34 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "controlledTrainingConfigSHA256": attestation[
             "effectiveTrainingConfigSHA256"
         ],
+        "trainingConfigInvariantSHA256": attestation[
+            "trainingConfigInvariantSHA256"
+        ],
         "baseModelID": config["baseModelID"],
         "baseModelRevision": config["baseModelRevision"],
         "baseModelIndexDigest": config["baseModelIndexDigest"],
+        "baseModelIndexReferencedShardNames": config[
+            "baseModelIndexReferencedShardNames"
+        ],
         "baseModelIndexShardBindingSHA256": config[
             "baseModelIndexShardBindingSHA256"
         ],
         "baseModelArtifactDigest": config["baseModelArtifactDigest"],
         "baseModelWeightShards": config["baseModelWeightShards"],
         "baseModelTokenizerDigest": config["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": config["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": config[
+            "baseModelTokenizerClosureSHA256"
+        ],
+        "baseModelTokenizerSnapshotPath": config[
+            "baseModelTokenizerSnapshotPath"
+        ],
+        "baseModelGenerationConfigFile": config[
+            "baseModelGenerationConfigFile"
+        ],
+        "baseModelRuntimeSnapshotPath": config[
+            "baseModelRuntimeSnapshotPath"
+        ],
         "seed": 42,
         "trainingEnvironmentLockSHA256": attestation[
             "trainingEnvironmentLockSHA256"
@@ -114,7 +150,7 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
     }
     run_payload = {
         "schema": train_sft.RUN_RESUME_LINEAGE_SCHEMA,
-        "runID": "run-internal_plus_public_optimized",
+        "runID": "run",
         "datasetRepository": "user/dataset",
         "datasetRevision": "c" * 40,
         "datasetPath": "runs/run/fine_tuning",
@@ -133,6 +169,9 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "resolvedTrainingEnvironmentSHA256": config[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": config["zeroGPUSize"],
+        "zeroGPUDurationSeconds": config["zeroGPUDurationSeconds"],
+        "observedAccelerator": config["observedAccelerator"],
         "spaceConfigurationSHA256": config["spaceConfigurationSHA256"],
         "runtimeSourceKind": config["runtimeSourceKind"],
         "runtimeSourceRevision": config["runtimeSourceRevision"],
@@ -170,6 +209,11 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, object], Path, Path]:
         "resolvedTrainingEnvironmentSHA256": run_lineage[
             "resolvedTrainingEnvironmentSHA256"
         ],
+        "zeroGPUSize": run_lineage["zeroGPUSize"],
+        "zeroGPUDurationSeconds": run_lineage[
+            "zeroGPUDurationSeconds"
+        ],
+        "observedAccelerator": run_lineage["observedAccelerator"],
         "spaceConfigurationSHA256": run_lineage[
             "spaceConfigurationSHA256"
         ],
@@ -246,6 +290,115 @@ def test_resume_rejects_snapshot_drift_before_checkpoint_use(tmp_path: Path) -> 
         )
 
 
+def test_resume_rejects_training_config_invariant_drift(tmp_path: Path) -> None:
+    config, config_path, _ = _fixture(tmp_path)
+    attestation = dict(config["variantAttestation"])
+    attestation["trainingConfigInvariantSHA256"] = "9" * 64
+    config["variantAttestation"] = attestation
+
+    with pytest.raises(RuntimeError, match="Agent training config drifted"):
+        train_sft._validate_checkpoint_lineage(
+            config,
+            cfg_path=config_path,
+            require_checkpoint=True,
+        )
+
+
+def test_resume_rejects_rehashed_run_lineage_invariant_drift(
+    tmp_path: Path,
+) -> None:
+    config, config_path, _ = _fixture(tmp_path)
+    run_lineage = dict(config["runResumeLineage"])
+    agents = [dict(item) for item in run_lineage["agents"]]
+    agents[0]["trainingConfigInvariantSHA256"] = "9" * 64
+    run_lineage["agents"] = agents
+    run_lineage.pop("runResumeLineageSHA256")
+    run_lineage["runResumeLineageSHA256"] = train_sft._canonical_sha256(
+        run_lineage
+    )
+    config["runResumeLineage"] = run_lineage
+    config["runResumeLineageSHA256"] = run_lineage[
+        "runResumeLineageSHA256"
+    ]
+
+    with pytest.raises(RuntimeError, match="Agent training config drifted"):
+        train_sft._validate_run_resume_config(
+            config,
+            cfg_path=config_path,
+            assistant_only_loss=False,
+        )
+
+
+def test_resume_rejects_missing_invariant_on_both_lineage_sides(
+    tmp_path: Path,
+) -> None:
+    config, config_path, _ = _fixture(tmp_path)
+    attestation = dict(config["variantAttestation"])
+    attestation.pop("trainingConfigInvariantSHA256")
+    config["variantAttestation"] = attestation
+    run_lineage = dict(config["runResumeLineage"])
+    agents = [dict(item) for item in run_lineage["agents"]]
+    agents[0].pop("trainingConfigInvariantSHA256")
+    run_lineage["agents"] = agents
+    run_lineage.pop("runResumeLineageSHA256")
+    run_lineage["runResumeLineageSHA256"] = train_sft._canonical_sha256(
+        run_lineage
+    )
+    config["runResumeLineage"] = run_lineage
+    config["runResumeLineageSHA256"] = run_lineage[
+        "runResumeLineageSHA256"
+    ]
+
+    with pytest.raises(
+        RuntimeError,
+        match="agent fields do not match its schema",
+    ):
+        train_sft._validate_run_resume_config(
+            config,
+            cfg_path=config_path,
+            assistant_only_loss=False,
+        )
+
+
+def test_resume_rejects_wrong_variant_attestation_schema(tmp_path: Path) -> None:
+    config, config_path, _ = _fixture(tmp_path)
+    attestation = dict(config["variantAttestation"])
+    attestation["schema"] = "lumen.training-variant-attestation/1.2.0"
+    config["variantAttestation"] = attestation
+
+    with pytest.raises(RuntimeError, match="missing its variant attestation"):
+        train_sft._validate_run_resume_config(
+            config,
+            cfg_path=config_path,
+            assistant_only_loss=False,
+        )
+
+
+def test_resume_rejects_omitted_dataset_hash(tmp_path: Path) -> None:
+    config, config_path, _ = _fixture(tmp_path)
+    run_lineage = dict(config["runResumeLineage"])
+    agents = [dict(item) for item in run_lineage["agents"]]
+    dataset_hashes = dict(agents[0]["datasetFileSHA256"])
+    dataset_hashes.pop("train_dpo.jsonl")
+    agents[0]["datasetFileSHA256"] = dataset_hashes
+    run_lineage["agents"] = agents
+    run_lineage.pop("runResumeLineageSHA256")
+    run_lineage["runResumeLineageSHA256"] = train_sft._canonical_sha256(
+        run_lineage
+    )
+    config["runResumeLineage"] = run_lineage
+    config["runResumeLineageSHA256"] = run_lineage[
+        "runResumeLineageSHA256"
+    ]
+
+    with pytest.raises(RuntimeError, match="missing dataset file hashes"):
+        train_sft._validate_run_resume_config(
+            config,
+            cfg_path=config_path,
+            assistant_only_loss=False,
+        )
+
+
 def test_resume_rejects_missing_checkpoint_lineage(tmp_path: Path) -> None:
     config, config_path, lineage_path = _fixture(tmp_path)
     lineage_path.unlink()
@@ -270,7 +423,13 @@ def test_resume_rejects_missing_checkpoint_lineage(tmp_path: Path) -> None:
         ("observedRepositoryRevision", "e" * 40),
         ("runtimeSourceBindingStatus", "verified"),
         ("runtimeSourceBindingMethod", "self_declared"),
+        ("datasetRepository", "other/dataset"),
+        ("datasetRevision", "d" * 40),
+        ("datasetPath", "other/path"),
         ("baseModelRevision", "d" * 40),
+        ("baseModelIndexReferencedShardNames", ["other.safetensors"]),
+        ("baseModelTokenizerSnapshotPath", "/tmp/other-tokenizer"),
+        ("baseModelRuntimeSnapshotPath", "/tmp/other-runtime"),
         ("variantManifestSHA256", "3" * 64),
     ],
 )

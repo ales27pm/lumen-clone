@@ -1,6 +1,11 @@
-FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04@sha256:a99a1860ba8e2916e5c3e73b72ec4c4301653a84586e05bfc9a2aa2d58027e97
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG LUMEN_RUNTIME_UID=1000
+ARG LUMEN_RUNTIME_GID=1000
+ARG LUMEN_SOURCE_BASE_COMMIT
+ARG LUMEN_WORKING_TREE_DIGEST
+ARG LUMEN_UBUNTU_ORCHESTRATION_SHA256
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -9,7 +14,8 @@ ENV LANG=C.UTF-8 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     VIRTUAL_ENV=/opt/lumen-venv \
-    PATH=/opt/lumen-venv/bin:${PATH}
+    PATH=/opt/lumen-venv/bin:${PATH} \
+    LUMEN_UBUNTU_SOURCE_ATTESTATION_PATH=/opt/lumen/ubuntu-source-integrity.json
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
@@ -18,6 +24,7 @@ RUN apt-get update \
         cmake \
         git \
         ninja-build \
+        passwd \
         pkg-config \
         python3.10 \
         python3.10-dev \
@@ -104,6 +111,142 @@ if (
 print(json.dumps(scan, sort_keys=True))
 PY
 
-WORKDIR /workspace
+# Docker's numeric --user mapping does not synthesize passwd/group entries.
+# Create a real identity for the invoking Ubuntu operator only after the
+# expensive dependency layers so UID/GID-specific builds retain those caches.
+RUN set -eu; \
+    case "${LUMEN_RUNTIME_UID}" in \
+        ''|*[!0-9]*) echo "LUMEN_RUNTIME_UID must be a positive integer" >&2; exit 1 ;; \
+    esac; \
+    case "${LUMEN_RUNTIME_GID}" in \
+        ''|*[!0-9]*) echo "LUMEN_RUNTIME_GID must be a positive integer" >&2; exit 1 ;; \
+    esac; \
+    [ "${LUMEN_RUNTIME_UID}" -gt 0 ] \
+        || { echo "LUMEN_RUNTIME_UID must not be root" >&2; exit 1; }; \
+    [ "${LUMEN_RUNTIME_GID}" -gt 0 ] \
+        || { echo "LUMEN_RUNTIME_GID must not be root" >&2; exit 1; }; \
+    if ! getent group "${LUMEN_RUNTIME_GID}" >/dev/null; then \
+        groupadd --gid "${LUMEN_RUNTIME_GID}" lumen-runtime; \
+    fi; \
+    if ! getent passwd "${LUMEN_RUNTIME_UID}" >/dev/null; then \
+        useradd \
+            --no-log-init \
+            --uid "${LUMEN_RUNTIME_UID}" \
+            --gid "${LUMEN_RUNTIME_GID}" \
+            --home-dir /home/lumen-runtime \
+            --no-create-home \
+            --shell /bin/bash \
+            lumen-runtime; \
+    fi; \
+    install -d -m 0555 -o root -g root /outputs; \
+    install -d -m 0700 \
+        -o "${LUMEN_RUNTIME_UID}" \
+        -g "${LUMEN_RUNTIME_GID}" \
+        /home/lumen-runtime \
+        /home/lumen-runtime/.cache \
+        /home/lumen-runtime/.cache/unsloth_compiled_cache \
+        /home/lumen-runtime/.cache/torch/inductor \
+        /home/lumen-runtime/.cache/triton
+
+ENV HOME=/home/lumen-runtime \
+    XDG_CACHE_HOME=/home/lumen-runtime/.cache \
+    UNSLOTH_COMPILE_LOCATION=/home/lumen-runtime/.cache/unsloth_compiled_cache \
+    TORCHINDUCTOR_CACHE_DIR=/home/lumen-runtime/.cache/torch/inductor \
+    TRITON_CACHE_DIR=/home/lumen-runtime/.cache/triton
+
+# Bake the exact clean execution closure and frozen inputs into the image. The
+# host checkout is never mounted into either the GPU or credential container.
+COPY scripts/ubuntu_train_lumen_full_pipeline.sh /opt/lumen/source/scripts/ubuntu_train_lumen_full_pipeline.sh
+COPY scripts/ubuntu_train_lumen_adapters_aio.sh /opt/lumen/source/scripts/ubuntu_train_lumen_adapters_aio.sh
+COPY lumen_manifest_crawler/__init__.py /opt/lumen/source/lumen_manifest_crawler/__init__.py
+COPY tools/fine_tuning/unsloth /opt/lumen/source/tools/fine_tuning/unsloth
+COPY tools/lumen_manifest_crawler/lumen_manifest_crawler /opt/lumen/source/tools/lumen_manifest_crawler/lumen_manifest_crawler
+COPY tools/hf_zerogpu/space_template /opt/lumen/source/tools/hf_zerogpu/space_template
+COPY generated/fine_tuning /opt/lumen/source/generated/fine_tuning
+COPY generated/agent_manifest/AgentBehaviorManifest.json /opt/lumen/source/generated/agent_manifest/AgentBehaviorManifest.json
+
+# Prove that the baked source layout supports the imports used by the inner
+# launcher and by the isolated postcondition/uploader entry points before an
+# expensive GPU container can be created.
+RUN cd /opt/lumen/source \
+    && env -u PYTHONPATH python - <<'PY'
+from pathlib import Path
+
+import lumen_manifest_crawler
+from lumen_manifest_crawler.dataset import chat_template_contract
+from tools.fine_tuning.unsloth import runtime_binding_smoke_gate, ubuntu_pipeline
+
+source_root = Path("/opt/lumen/source").resolve()
+assert Path(lumen_manifest_crawler.__file__).resolve() == (
+    source_root / "lumen_manifest_crawler/__init__.py"
+)
+assert Path(chat_template_contract.__file__).resolve().is_relative_to(
+    source_root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
+)
+assert Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)
+assert Path(runtime_binding_smoke_gate.__file__).resolve().is_relative_to(source_root)
+PY
+
+RUN python -I - <<'PY'
+import sys
+from pathlib import Path
+
+source_root = Path("/opt/lumen/source").resolve()
+sys.path.insert(0, str(source_root))
+import lumen_manifest_crawler
+from lumen_manifest_crawler.dataset import chat_template_contract
+from tools.fine_tuning.unsloth import runtime_binding_smoke_gate, ubuntu_pipeline
+
+assert Path(lumen_manifest_crawler.__file__).resolve() == (
+    source_root / "lumen_manifest_crawler/__init__.py"
+)
+assert Path(chat_template_contract.__file__).resolve().is_relative_to(
+    source_root / "tools/lumen_manifest_crawler/lumen_manifest_crawler"
+)
+assert Path(ubuntu_pipeline.__file__).resolve().is_relative_to(source_root)
+assert Path(runtime_binding_smoke_gate.__file__).resolve().is_relative_to(source_root)
+PY
+
+RUN python -I \
+        /opt/lumen/source/tools/fine_tuning/unsloth/ubuntu_source_integrity.py \
+        build-image-record \
+        --root /opt/lumen/source \
+        --base-commit "${LUMEN_SOURCE_BASE_COMMIT}" \
+        --working-tree-digest "${LUMEN_WORKING_TREE_DIGEST}" \
+        --orchestration-digest "${LUMEN_UBUNTU_ORCHESTRATION_SHA256}" \
+        --output "${LUMEN_UBUNTU_SOURCE_ATTESTATION_PATH}" \
+    && chmod -R a-w /opt/lumen/source \
+    && chmod a-w "${LUMEN_UBUNTU_SOURCE_ATTESTATION_PATH}"
+
+# Exercise Python's passwd fallback and cache writes under the exact runtime
+# UID/GID. This catches the getpwuid failure during image construction.
+RUN setpriv \
+        --reuid="${LUMEN_RUNTIME_UID}" \
+        --regid="${LUMEN_RUNTIME_GID}" \
+        --clear-groups \
+        env -u LOGNAME -u USER -u LNAME -u USERNAME \
+        python - <<'PY'
+import getpass
+import grp
+import os
+import pwd
+import tempfile
+from pathlib import Path
+
+uid = os.getuid()
+gid = os.getgid()
+assert pwd.getpwuid(uid).pw_uid == uid
+assert grp.getgrgid(gid).gr_gid == gid
+assert getpass.getuser()
+home = Path.home()
+assert home == Path("/home/lumen-runtime") and home.is_dir()
+tempfile.TemporaryFile(dir=home).close()
+tempfile.TemporaryFile(dir=Path(os.environ["UNSLOTH_COMPILE_LOCATION"])).close()
+tempfile.TemporaryFile(dir=Path(os.environ["TORCHINDUCTOR_CACHE_DIR"])).close()
+PY
+
+WORKDIR /opt/lumen/source
+
+USER ${LUMEN_RUNTIME_UID}:${LUMEN_RUNTIME_GID}
 
 CMD ["/bin/bash"]

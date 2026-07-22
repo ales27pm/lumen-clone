@@ -100,6 +100,10 @@ embedding and reranker datasets must be symlinks to the canonical
 `generated/agent_manifest/embedding/` and `generated/agent_manifest/reranker/`
 files, so checkout size does not double while older tooling paths still work.
 
+Role-adapter training and frozen evaluation use offline qualification contracts. Cortex's five-field route and `actionStep` shapes do not replace the Release iOS wire contract: the app continues to request its current constrained `action` or `final` JSON object, while runtime code owns routing, clarification, manifest validation, approval, and persistence. A trained adapter or GGUF is not considered wired into the app until installation, selection, and live runtime evidence establish that separately.
+
+Contamination reports use the hash-only schema 1.1 contract with exact record/segment, 13-token near-overlap, and 4-token short-window checks over non-system content. Validation also binds the report self-hash, corpus hashes/counts, public-evaluation fingerprint bundle SHA/count, variant manifest, and zero-match result. Grounded text evaluation uses finite audited relation frames and rejects semantic-symbol, markup, control-character, relation-inversion, qualifier, and appended-clause drift. JSON-mode evaluation prompts retain the same structured-output instruction as training. Bounded smoke accounting derives generated failures from generated count minus passed count and keeps ungenerated cases separate. The scorer covers only the generated cohort; its `missingOutputCount` does not include cases that were never generated. Even a future verified `603/603` offline result would be artifact-lineage evidence, not device or TestFlight proof.
+
 ## Reference Docs
 
 - `AGENTS.md`

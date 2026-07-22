@@ -140,7 +140,17 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         deterministic=config.deterministic,
     )
     validation_report = validate_manifest(manifest, datasets, strict=config.strict)
-    fleet_artifacts = generate_fleet_artifacts(manifest) if config.generate_system_prompts else None
+    should_write_full_fleet_artifacts = (
+        config.generate_system_prompts or config.cross_model_train_dir is not None
+    )
+    fleet_artifacts = (
+        generate_fleet_artifacts(manifest)
+        if should_write_full_fleet_artifacts or config.generate_agent_fine_tuning
+        else None
+    )
+    output_fleet_artifacts = (
+        fleet_artifacts if should_write_full_fleet_artifacts else None
+    )
 
     fine_tuning_datasets = None
     if config.generate_agent_fine_tuning:
@@ -167,7 +177,7 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         validation_report,
         datasets,
         pretty=config.pretty,
-        fleet_artifacts=fleet_artifacts,
+        fleet_artifacts=output_fleet_artifacts,
         cross_model_train_dir=config.cross_model_train_dir,
         incremental_fingerprint=_manifest_fingerprint(manifest),
         fine_tuning_datasets=fine_tuning_datasets,

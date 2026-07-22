@@ -1,12 +1,19 @@
 {
   "counts": {
-    "corpus": 5108,
-    "evalRetrieval": 503,
-    "hardNegatives": 4768,
-    "trainPairs": 4286,
-    "trainTriplets": 4286,
-    "valPairs": 482,
-    "valTriplets": 482
+    "corpus": 6790,
+    "evalRetrieval": 1034,
+    "hardNegatives": 5918,
+    "trainPairs": 5311,
+    "trainTriplets": 5311,
+    "valPairs": 607,
+    "valTriplets": 607
+  },
+  "evaluationIsolation": {
+    "contentPolicy": "normalized_eval_user_segment_documents_are_evaluation_only",
+    "policy": "evaluation_only_with_connected_query_groups",
+    "sourceFamilies": [
+      "eval_scenarios"
+    ]
   },
   "families": [
     "agent_role_question_to_fleet_slot",
@@ -31,6 +38,7 @@
   "model": "Qwen/Qwen3-Embedding-0.6B",
   "nonGoals": [
     "Do not train embedding model on chat SFT records.",
+    "Do not place eval-scenario documents, eval-containing source documents, or connected query groups in training or validation artifacts.",
     "Do not expose raw private runtime state or hidden reasoning.",
     "Do not treat static scenario checks as live E2E model evidence."
   ],

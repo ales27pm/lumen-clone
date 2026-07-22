@@ -7,9 +7,14 @@ import hmac
 import importlib.metadata as importlib_metadata
 import io
 import json
+import os
 import re
+import shutil
+import stat
 import sys
+import tempfile
 import time
+import types
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, NamedTuple
@@ -27,6 +32,10 @@ RESOLVED_TRAINING_ENVIRONMENT_SCHEMA_VERSION = (
 RESOLVED_TRAINING_ENVIRONMENT_CACHE_SCHEMA_VERSION = (
     "lumen.resolved-training-environment-cache/1.0.0"
 )
+RUN_RESUME_LINEAGE_SCHEMA = "lumen.zerogpu.run_resume_lineage/1.2.0"
+TRAINING_VARIANT_ATTESTATION_SCHEMA = (
+    "lumen.training-variant-attestation/1.3.0"
+)
 ZERO_GPU_ALLOWED_SIZES = frozenset({"large", "xlarge"})
 RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY = {
     "hashAlgorithm": "sha256",
@@ -38,6 +47,31 @@ RESOLVED_TRAINING_ENVIRONMENT_RECORD_POLICY = {
     "rejectOtherUnhashedFiles": True,
 }
 SPACE_CONFIGURATION_SCHEMA_VERSION = "lumen.zerogpu.space-configuration/1.0.0"
+BASE_MODEL_TOKENIZER_CLOSURE_SCHEMA_VERSION = (
+    "lumen.base-model-tokenizer-closure/1.0.0"
+)
+BASE_MODEL_TOKENIZER_SNAPSHOT_VERIFICATION_SCHEMA_VERSION = (
+    "lumen.base-model-tokenizer-snapshot-verification/1.0.0"
+)
+PRIVATE_BASE_MODEL_TOKENIZER_SNAPSHOT_VERIFICATION_SCHEMA_VERSION = (
+    "lumen.private-base-model-tokenizer-snapshot-verification/1.0.0"
+)
+PRIVATE_BASE_MODEL_CONVERSION_SNAPSHOT_VERIFICATION_SCHEMA_VERSION = (
+    "lumen.private-base-model-conversion-snapshot-verification/1.1.0"
+)
+BASE_MODEL_TOKENIZER_REQUIRED_PATHS = (
+    "config.json",
+    "merges.txt",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.json",
+)
+DEFAULT_BASE_MODEL_GENERATION_CONFIG_FILE = {
+    "path": "generation_config.json",
+    "sizeBytes": 239,
+    "sha256": "2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2",
+    "huggingFaceBlobID": "20a8a9156fc8c3f25295ca067f61fdf120d517c5",
+}
 
 DEFAULT_PYTHON_VERSION = "3.10"
 DEFAULT_CUDA_VERSION = "12.8"
@@ -85,6 +119,10 @@ RUNTIME_SOURCE_BINDING_SPACE_REPOSITORY_HEAD = (
 RUNTIME_SOURCE_BINDING_SPACE_DECLARATION = "operator_declared_only"
 RUNTIME_SOURCE_BINDING_LOCAL = "local_checkout_observed"
 RUNTIME_SOURCE_BINDING_LOCAL_METHOD = "git_head_plus_training_code_manifest"
+RUNTIME_SOURCE_BINDING_ATTESTED = "verified_clean_snapshot"
+RUNTIME_SOURCE_BINDING_ATTESTED_METHOD = (
+    "git_clean_worktree_plus_ubuntu_orchestration_manifest"
+)
 _PHASES = ("sft", "dpo", "orpo")
 _TRAINING_CODE_EXTENSIONS = (
     ".cfg",
@@ -135,6 +173,92 @@ def canonical_sha256(value: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _canonical_python_code_constant(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {"type": "none"}
+    if value is Ellipsis:
+        return {"type": "ellipsis"}
+    if value is NotImplemented:
+        return {"type": "not_implemented"}
+    if type(value) is bool:
+        return {"type": "bool", "value": value}
+    if type(value) is int:
+        return {"type": "int", "value": str(value)}
+    if type(value) is float:
+        return {"type": "float", "value": value.hex()}
+    if type(value) is complex:
+        return {
+            "type": "complex",
+            "real": value.real.hex(),
+            "imag": value.imag.hex(),
+        }
+    if isinstance(value, str):
+        return {"type": "str", "value": value}
+    if isinstance(value, bytes):
+        return {"type": "bytes", "valueHex": value.hex()}
+    if isinstance(value, tuple):
+        return {
+            "type": "tuple",
+            "items": [
+                _canonical_python_code_constant(item) for item in value
+            ],
+        }
+    if isinstance(value, frozenset):
+        items = [
+            _canonical_python_code_constant(item) for item in value
+        ]
+        items.sort(
+            key=lambda item: json.dumps(
+                item,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        return {"type": "frozenset", "items": items}
+    if isinstance(value, types.CodeType):
+        return {"type": "code", "value": _canonical_python_code_payload(value)}
+    raise ValueError(
+        "Python code object contains an unsupported constant type: "
+        f"{type(value).__module__}.{type(value).__name__}"
+    )
+
+
+def _canonical_python_code_payload(code: types.CodeType) -> dict[str, Any]:
+    if not isinstance(code, types.CodeType):
+        raise ValueError("Python callable identity requires a code object")
+    return {
+        "schemaVersion": "lumen.python-code-object/1.0.0",
+        "pythonMajorMinor": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "argCount": code.co_argcount,
+        "positionalOnlyArgCount": code.co_posonlyargcount,
+        "keywordOnlyArgCount": code.co_kwonlyargcount,
+        "localCount": code.co_nlocals,
+        "stackSize": code.co_stacksize,
+        "flags": code.co_flags,
+        "bytecodeHex": code.co_code.hex(),
+        "constants": [
+            _canonical_python_code_constant(value) for value in code.co_consts
+        ],
+        "names": list(code.co_names),
+        "variableNames": list(code.co_varnames),
+        "filename": code.co_filename,
+        "name": code.co_name,
+        "qualname": getattr(code, "co_qualname", code.co_name),
+        "firstLineNumber": code.co_firstlineno,
+        "lineTableHex": getattr(code, "co_linetable", b"").hex(),
+        "exceptionTableHex": getattr(code, "co_exceptiontable", b"").hex(),
+        "freeVariables": list(code.co_freevars),
+        "cellVariables": list(code.co_cellvars),
+    }
+
+
+def canonical_python_code_sha256(code: types.CodeType) -> str:
+    """Return a reference-stable digest for an exact Python code object."""
+
+    return canonical_sha256(_canonical_python_code_payload(code))
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -145,6 +269,892 @@ def file_sha256(path: Path) -> str:
 
 def requirements_sha256(path: Path) -> str:
     return file_sha256(path)
+
+
+def canonical_base_model_tokenizer_closure(
+    *,
+    base_model_id: str,
+    base_model_revision: str,
+    files: Any,
+) -> dict[str, Any]:
+    """Validate and canonicalize the exact tokenizer/config closure."""
+
+    if (
+        not isinstance(base_model_id, str)
+        or not base_model_id
+        or re.fullmatch(_REVISION_PATTERN, base_model_revision) is None
+        or not isinstance(files, list)
+    ):
+        raise ValueError(
+            "Base-model tokenizer closure requires an ID, full revision, and files"
+        )
+    normalized: list[dict[str, Any]] = []
+    for item in files:
+        if not isinstance(item, Mapping) or set(item) != {
+            "path",
+            "sizeBytes",
+            "sha256",
+            "huggingFaceBlobID",
+        }:
+            raise ValueError("Base-model tokenizer files have an invalid schema")
+        logical_path = item.get("path")
+        size = item.get("sizeBytes")
+        digest = item.get("sha256")
+        blob_id = item.get("huggingFaceBlobID")
+        if (
+            logical_path not in BASE_MODEL_TOKENIZER_REQUIRED_PATHS
+            or type(size) is not int
+            or size <= 0
+            or not isinstance(digest, str)
+            or re.fullmatch(_SHA256_PATTERN, digest) is None
+            or not isinstance(blob_id, str)
+            or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", blob_id) is None
+        ):
+            raise ValueError("Base-model tokenizer file binding is invalid")
+        normalized.append(
+            {
+                "path": logical_path,
+                "sizeBytes": size,
+                "sha256": digest,
+                "huggingFaceBlobID": blob_id,
+            }
+        )
+    normalized.sort(key=lambda item: item["path"])
+    if [item["path"] for item in normalized] != list(
+        BASE_MODEL_TOKENIZER_REQUIRED_PATHS
+    ):
+        raise ValueError(
+            "Base-model tokenizer closure must bind the exact required files"
+        )
+    return {
+        "schemaVersion": BASE_MODEL_TOKENIZER_CLOSURE_SCHEMA_VERSION,
+        "baseModelID": base_model_id,
+        "baseModelRevision": base_model_revision,
+        "files": normalized,
+    }
+
+
+def _stat_identity(value: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def verify_base_model_tokenizer_snapshot(
+    snapshot_dir: Path,
+    *,
+    base_model_id: str,
+    base_model_name: str,
+    base_model_revision: str,
+    tokenizer_files: Any,
+    tokenizer_digest: str,
+    tokenizer_closure_sha256: str,
+) -> dict[str, Any]:
+    """Verify the exact Hugging Face snapshot that a converter will consume.
+
+    Hugging Face cache snapshots are symlink farms whose targets are immutable
+    blob names. Requiring that layout binds both the selected revision and each
+    configured blob identity, while descriptor-stability checks reject a file
+    replacement during verification.
+    """
+
+    if base_model_id != base_model_name:
+        raise ValueError("baseModelID must exactly match base_model_name")
+    closure = canonical_base_model_tokenizer_closure(
+        base_model_id=base_model_id,
+        base_model_revision=base_model_revision,
+        files=tokenizer_files,
+    )
+    if (
+        re.fullmatch(_SHA256_PATTERN, str(tokenizer_digest or "")) is None
+        or re.fullmatch(
+            _SHA256_PATTERN,
+            str(tokenizer_closure_sha256 or ""),
+        )
+        is None
+        or canonical_sha256(closure) != tokenizer_closure_sha256
+    ):
+        raise ValueError("Base-model tokenizer closure digest drifted")
+    tokenizer_json = next(
+        item for item in closure["files"] if item["path"] == "tokenizer.json"
+    )
+    if tokenizer_json["sha256"] != tokenizer_digest:
+        raise ValueError("tokenizer.json digest drifted from the tokenizer closure")
+
+    snapshot = Path(snapshot_dir)
+    if snapshot.is_symlink() or not snapshot.is_dir():
+        raise ValueError("Base-model snapshot must be a regular directory")
+    snapshot = snapshot.resolve(strict=True)
+    if snapshot.name != base_model_revision or snapshot.parent.name != "snapshots":
+        raise ValueError(
+            "Base-model snapshot is not bound to the requested immutable revision"
+        )
+    blob_root = snapshot.parent.parent / "blobs"
+    if blob_root.is_symlink() or not blob_root.is_dir():
+        raise ValueError("Base-model snapshot blob store is unavailable")
+    blob_root = blob_root.resolve(strict=True)
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise ValueError("Tokenizer snapshot verification requires O_NOFOLLOW")
+
+    verified_files: list[dict[str, Any]] = []
+    for expected in closure["files"]:
+        logical_path = str(expected["path"])
+        candidate = snapshot / logical_path
+        if not candidate.is_symlink():
+            raise ValueError(
+                f"Base-model tokenizer snapshot entry is not a cache link: {logical_path}"
+            )
+        link_before = candidate.lstat()
+        try:
+            target = candidate.resolve(strict=True)
+        except OSError as exc:
+            raise ValueError(
+                f"Base-model tokenizer snapshot entry is unavailable: {logical_path}"
+            ) from exc
+        if target.parent != blob_root or target.name != expected["huggingFaceBlobID"]:
+            raise ValueError(
+                f"Base-model tokenizer snapshot blob identity drifted: {logical_path}"
+            )
+        try:
+            descriptor = os.open(
+                target,
+                os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow,
+            )
+        except OSError as exc:
+            raise ValueError(
+                f"Base-model tokenizer snapshot blob is unavailable: {logical_path}"
+            ) from exc
+        try:
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise ValueError(
+                    f"Base-model tokenizer snapshot blob is not regular: {logical_path}"
+                )
+            sha256 = hashlib.sha256()
+            git_blob_sha1 = hashlib.sha1(
+                f"blob {before.st_size}\0".encode("ascii")
+            )
+            offset = 0
+            while True:
+                chunk = os.pread(descriptor, 1 << 20, offset)
+                if not chunk:
+                    break
+                sha256.update(chunk)
+                git_blob_sha1.update(chunk)
+                offset += len(chunk)
+            after = os.fstat(descriptor)
+            rebound = target.stat(follow_symlinks=False)
+            link_after = candidate.lstat()
+            rebound_target = candidate.resolve(strict=True)
+            if (
+                _stat_identity(before) != _stat_identity(after)
+                or _stat_identity(before) != _stat_identity(rebound)
+                or _stat_identity(link_before) != _stat_identity(link_after)
+                or rebound_target != target
+            ):
+                raise ValueError(
+                    f"Base-model tokenizer snapshot entry changed: {logical_path}"
+                )
+        finally:
+            os.close(descriptor)
+        observed_sha256 = sha256.hexdigest()
+        blob_id = str(expected["huggingFaceBlobID"])
+        if (
+            before.st_size != expected["sizeBytes"]
+            or observed_sha256 != expected["sha256"]
+            or (len(blob_id) == 64 and observed_sha256 != blob_id)
+            or (len(blob_id) == 40 and git_blob_sha1.hexdigest() != blob_id)
+        ):
+            raise ValueError(
+                f"Base-model tokenizer snapshot content drifted: {logical_path}"
+            )
+        verified_files.append(dict(expected))
+
+    payload = {
+        "schemaVersion": (
+            BASE_MODEL_TOKENIZER_SNAPSHOT_VERIFICATION_SCHEMA_VERSION
+        ),
+        "baseModelID": base_model_id,
+        "baseModelRevision": base_model_revision,
+        "baseModelTokenizerDigest": tokenizer_digest,
+        "baseModelTokenizerFiles": verified_files,
+        "baseModelTokenizerClosureSHA256": tokenizer_closure_sha256,
+        "snapshotPath": str(snapshot),
+        "verificationMethod": (
+            "huggingface_snapshot_revision_and_blob_identity"
+        ),
+    }
+    return {
+        **payload,
+        "snapshotVerificationSHA256": canonical_sha256(payload),
+    }
+
+
+def verify_private_base_model_tokenizer_snapshot(
+    snapshot_dir: Path,
+    *,
+    base_model_id: str,
+    base_model_name: str,
+    base_model_revision: str,
+    tokenizer_files: Any,
+    tokenizer_digest: str,
+    tokenizer_closure_sha256: str,
+    allowed_extra_paths: Any = (),
+) -> dict[str, Any]:
+    """Verify a private copied tokenizer closure used by a trainer process."""
+
+    if base_model_id != base_model_name:
+        raise ValueError("baseModelID must exactly match base_model_name")
+    closure = canonical_base_model_tokenizer_closure(
+        base_model_id=base_model_id,
+        base_model_revision=base_model_revision,
+        files=tokenizer_files,
+    )
+    if (
+        re.fullmatch(_SHA256_PATTERN, str(tokenizer_digest or "")) is None
+        or re.fullmatch(
+            _SHA256_PATTERN,
+            str(tokenizer_closure_sha256 or ""),
+        )
+        is None
+        or canonical_sha256(closure) != tokenizer_closure_sha256
+    ):
+        raise ValueError("Private tokenizer closure digest drifted")
+    tokenizer_json = next(
+        item for item in closure["files"] if item["path"] == "tokenizer.json"
+    )
+    if tokenizer_json["sha256"] != tokenizer_digest:
+        raise ValueError("Private tokenizer.json digest drifted from the closure")
+
+    snapshot = Path(snapshot_dir)
+    if snapshot.is_symlink() or not snapshot.is_dir():
+        raise ValueError("Private tokenizer snapshot must be a regular directory")
+    snapshot = snapshot.resolve(strict=True)
+    root_stat = snapshot.stat(follow_symlinks=False)
+    if root_stat.st_uid != os.geteuid() or stat.S_IMODE(root_stat.st_mode) != 0o700:
+        raise ValueError("Private tokenizer snapshot ownership or mode drifted")
+    if (
+        not isinstance(allowed_extra_paths, (list, tuple))
+        or any(
+            not isinstance(value, str)
+            or not value
+            or value != Path(value).name
+            or value in BASE_MODEL_TOKENIZER_REQUIRED_PATHS
+            for value in allowed_extra_paths
+        )
+        or len(set(allowed_extra_paths)) != len(allowed_extra_paths)
+    ):
+        raise ValueError("Private tokenizer snapshot allowlist is invalid")
+    entries = list(snapshot.iterdir())
+    expected_names = {
+        *BASE_MODEL_TOKENIZER_REQUIRED_PATHS,
+        *allowed_extra_paths,
+    }
+    if {entry.name for entry in entries} != expected_names:
+        raise ValueError("Private tokenizer snapshot has an unexpected file set")
+
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    if nofollow == 0:
+        raise ValueError("Private tokenizer verification requires O_NOFOLLOW")
+    verified_files: list[dict[str, Any]] = []
+    file_signatures: list[dict[str, Any]] = []
+    for expected in closure["files"]:
+        logical_path = str(expected["path"])
+        candidate = snapshot / logical_path
+        if candidate.is_symlink() or not candidate.is_file():
+            raise ValueError(
+                f"Private tokenizer snapshot entry is not regular: {logical_path}"
+            )
+        try:
+            descriptor = os.open(
+                candidate,
+                os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow,
+            )
+        except OSError as exc:
+            raise ValueError(
+                f"Private tokenizer snapshot entry is unavailable: {logical_path}"
+            ) from exc
+        try:
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid()
+                or stat.S_IMODE(before.st_mode) not in {0o400, 0o600}
+            ):
+                raise ValueError(
+                    f"Private tokenizer snapshot entry ownership or mode drifted: {logical_path}"
+                )
+            sha256 = hashlib.sha256()
+            git_blob_sha1 = hashlib.sha1(
+                f"blob {before.st_size}\0".encode("ascii")
+            )
+            offset = 0
+            while True:
+                chunk = os.pread(descriptor, 1 << 20, offset)
+                if not chunk:
+                    break
+                sha256.update(chunk)
+                git_blob_sha1.update(chunk)
+                offset += len(chunk)
+            after = os.fstat(descriptor)
+            rebound = candidate.stat(follow_symlinks=False)
+            if (
+                _stat_identity(before) != _stat_identity(after)
+                or _stat_identity(before) != _stat_identity(rebound)
+            ):
+                raise ValueError(
+                    f"Private tokenizer snapshot entry changed: {logical_path}"
+                )
+        finally:
+            os.close(descriptor)
+        observed_sha256 = sha256.hexdigest()
+        blob_id = str(expected["huggingFaceBlobID"])
+        if (
+            before.st_size != expected["sizeBytes"]
+            or observed_sha256 != expected["sha256"]
+            or (len(blob_id) == 64 and observed_sha256 != blob_id)
+            or (len(blob_id) == 40 and git_blob_sha1.hexdigest() != blob_id)
+        ):
+            raise ValueError(
+                f"Private tokenizer snapshot content drifted: {logical_path}"
+            )
+        verified_files.append(dict(expected))
+        file_signatures.append(
+            {
+                "path": logical_path,
+                "device": before.st_dev,
+                "inode": before.st_ino,
+                "mode": stat.S_IMODE(before.st_mode),
+                "sizeBytes": before.st_size,
+                "mtimeNS": before.st_mtime_ns,
+                "ctimeNS": before.st_ctime_ns,
+            }
+        )
+
+    payload = {
+        "schemaVersion": (
+            PRIVATE_BASE_MODEL_TOKENIZER_SNAPSHOT_VERIFICATION_SCHEMA_VERSION
+        ),
+        "baseModelID": base_model_id,
+        "baseModelRevision": base_model_revision,
+        "baseModelTokenizerDigest": tokenizer_digest,
+        "baseModelTokenizerFiles": verified_files,
+        "baseModelTokenizerClosureSHA256": tokenizer_closure_sha256,
+        "snapshotPath": str(snapshot),
+        "verificationMethod": "private_regular_file_closure",
+        "snapshotDirectorySignature": {
+            "device": root_stat.st_dev,
+            "inode": root_stat.st_ino,
+            "mode": stat.S_IMODE(root_stat.st_mode),
+            "mtimeNS": root_stat.st_mtime_ns,
+            "ctimeNS": root_stat.st_ctime_ns,
+        },
+        "fileStabilitySignatures": file_signatures,
+    }
+    return {
+        **payload,
+        "snapshotVerificationSHA256": canonical_sha256(payload),
+    }
+
+
+def verify_private_base_model_conversion_snapshot(
+    snapshot_dir: Path,
+    *,
+    base_model_id: str,
+    base_model_name: str,
+    base_model_revision: str,
+    tokenizer_files: Any,
+    tokenizer_digest: str,
+    tokenizer_closure_sha256: str,
+    generation_config_file: Any,
+    model_index_digest: str,
+    index_referenced_shard_names: Any,
+    index_shard_binding_sha256: str,
+    model_artifact_digest: str,
+    weight_shards: Any,
+) -> dict[str, Any]:
+    """Verify the exact run-private base directory passed to GGUF conversion."""
+
+    if not isinstance(weight_shards, list) or not weight_shards:
+        raise ValueError("Private conversion snapshot weight shards are missing")
+    normalized_shards: list[dict[str, Any]] = []
+    for item in weight_shards:
+        if not isinstance(item, Mapping) or set(item) != {
+            "filename",
+            "size",
+            "sha256",
+        }:
+            raise ValueError("Private conversion snapshot shard schema is invalid")
+        filename = item.get("filename")
+        size = item.get("size")
+        digest = item.get("sha256")
+        if (
+            not isinstance(filename, str)
+            or not filename
+            or filename != Path(filename).name
+            or filename in BASE_MODEL_TOKENIZER_REQUIRED_PATHS
+            or filename == "model.safetensors.index.json"
+            or type(size) is not int
+            or size <= 0
+            or not isinstance(digest, str)
+            or re.fullmatch(_SHA256_PATTERN, digest) is None
+        ):
+            raise ValueError("Private conversion snapshot shard binding is invalid")
+        normalized_shards.append(
+            {"filename": filename, "size": size, "sha256": digest}
+        )
+    normalized_shards.sort(key=lambda item: item["filename"])
+    shard_names = [item["filename"] for item in normalized_shards]
+    if len(set(shard_names)) != len(shard_names):
+        raise ValueError("Private conversion snapshot shards are not unique")
+    shard_contract = {
+        "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
+        "shards": normalized_shards,
+    }
+    if canonical_sha256(shard_contract) != model_artifact_digest:
+        raise ValueError("Private conversion snapshot shard contract drifted")
+    if (
+        not isinstance(index_referenced_shard_names, list)
+        or index_referenced_shard_names != shard_names
+        or re.fullmatch(_SHA256_PATTERN, str(model_index_digest or "")) is None
+        or re.fullmatch(
+            _SHA256_PATTERN,
+            str(index_shard_binding_sha256 or ""),
+        )
+        is None
+    ):
+        raise ValueError("Private conversion snapshot index binding is invalid")
+    index_binding = {
+        "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+        "indexDigest": model_index_digest,
+        "referencedShardNames": shard_names,
+        "shardContractDigest": model_artifact_digest,
+    }
+    if canonical_sha256(index_binding) != index_shard_binding_sha256:
+        raise ValueError("Private conversion snapshot index binding drifted")
+
+    if (
+        not isinstance(generation_config_file, Mapping)
+        or set(generation_config_file) != {
+            "path",
+            "sizeBytes",
+            "sha256",
+            "huggingFaceBlobID",
+        }
+        or generation_config_file.get("path") != "generation_config.json"
+        or type(generation_config_file.get("sizeBytes")) is not int
+        or generation_config_file["sizeBytes"] <= 0
+        or re.fullmatch(
+            _SHA256_PATTERN,
+            str(generation_config_file.get("sha256") or ""),
+        )
+        is None
+        or re.fullmatch(
+            r"[0-9a-f]{40}|[0-9a-f]{64}",
+            str(generation_config_file.get("huggingFaceBlobID") or ""),
+        )
+        is None
+    ):
+        raise ValueError("Private conversion generation-config binding is invalid")
+    generation_config = dict(generation_config_file)
+    extra_paths = [
+        "generation_config.json",
+        "model.safetensors.index.json",
+        *shard_names,
+    ]
+    tokenizer_verification = verify_private_base_model_tokenizer_snapshot(
+        snapshot_dir,
+        base_model_id=base_model_id,
+        base_model_name=base_model_name,
+        base_model_revision=base_model_revision,
+        tokenizer_files=tokenizer_files,
+        tokenizer_digest=tokenizer_digest,
+        tokenizer_closure_sha256=tokenizer_closure_sha256,
+        allowed_extra_paths=extra_paths,
+    )
+    snapshot = Path(tokenizer_verification["snapshotPath"])
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    model_signatures: list[dict[str, Any]] = []
+
+    generation_path = snapshot / "generation_config.json"
+    if generation_path.is_symlink() or not generation_path.is_file():
+        raise ValueError("Private generation config must be a regular file")
+    generation_descriptor = os.open(
+        generation_path,
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow,
+    )
+    try:
+        generation_before = os.fstat(generation_descriptor)
+        generation_payload = b""
+        offset = 0
+        while True:
+            chunk = os.pread(generation_descriptor, 1 << 20, offset)
+            if not chunk:
+                break
+            generation_payload += chunk
+            offset += len(chunk)
+        generation_after = os.fstat(generation_descriptor)
+        generation_rebound = generation_path.stat(follow_symlinks=False)
+        if (
+            not stat.S_ISREG(generation_before.st_mode)
+            or generation_before.st_uid != os.geteuid()
+            or stat.S_IMODE(generation_before.st_mode) not in {0o400, 0o600}
+            or _stat_identity(generation_before) != _stat_identity(generation_after)
+            or _stat_identity(generation_before) != _stat_identity(generation_rebound)
+        ):
+            raise ValueError("Private generation config ownership or stability drifted")
+    finally:
+        os.close(generation_descriptor)
+    generation_sha256 = hashlib.sha256(generation_payload).hexdigest()
+    generation_blob = str(generation_config["huggingFaceBlobID"])
+    generation_git_sha1 = hashlib.sha1(
+        f"blob {len(generation_payload)}\0".encode("ascii") + generation_payload
+    ).hexdigest()
+    if (
+        len(generation_payload) != generation_config["sizeBytes"]
+        or generation_sha256 != generation_config["sha256"]
+        or (len(generation_blob) == 64 and generation_sha256 != generation_blob)
+        or (len(generation_blob) == 40 and generation_git_sha1 != generation_blob)
+    ):
+        raise ValueError("Private generation config content drifted")
+    model_signatures.append(
+        {
+            "path": "generation_config.json",
+            "kind": "private_regular_generation_config",
+            "device": generation_before.st_dev,
+            "inode": generation_before.st_ino,
+            "mode": stat.S_IMODE(generation_before.st_mode),
+            "sizeBytes": generation_before.st_size,
+            "mtimeNS": generation_before.st_mtime_ns,
+            "ctimeNS": generation_before.st_ctime_ns,
+        }
+    )
+
+    index_path = snapshot / "model.safetensors.index.json"
+    if index_path.is_symlink() or not index_path.is_file():
+        raise ValueError("Private conversion snapshot index must be a regular file")
+    index_descriptor = os.open(
+        index_path,
+        os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow,
+    )
+    try:
+        index_before = os.fstat(index_descriptor)
+        if (
+            not stat.S_ISREG(index_before.st_mode)
+            or index_before.st_uid != os.geteuid()
+            or stat.S_IMODE(index_before.st_mode) not in {0o400, 0o600}
+        ):
+            raise ValueError("Private conversion snapshot index mode drifted")
+        chunks: list[bytes] = []
+        offset = 0
+        while True:
+            chunk = os.pread(index_descriptor, 1 << 20, offset)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            offset += len(chunk)
+        index_payload = b"".join(chunks)
+        index_after = os.fstat(index_descriptor)
+        index_rebound = index_path.stat(follow_symlinks=False)
+        if (
+            _stat_identity(index_before) != _stat_identity(index_after)
+            or _stat_identity(index_before) != _stat_identity(index_rebound)
+        ):
+            raise ValueError("Private conversion snapshot index changed")
+    finally:
+        os.close(index_descriptor)
+    if hashlib.sha256(index_payload).hexdigest() != model_index_digest:
+        raise ValueError("Private conversion snapshot index digest drifted")
+    try:
+        parsed_index = json.loads(index_payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Private conversion snapshot index is invalid") from exc
+    referenced = sorted(set((parsed_index.get("weight_map") or {}).values()))
+    if referenced != shard_names:
+        raise ValueError("Private conversion snapshot index shard set drifted")
+    model_signatures.append(
+        {
+            "path": "model.safetensors.index.json",
+            "kind": "private_regular_file",
+            "device": index_before.st_dev,
+            "inode": index_before.st_ino,
+            "mode": stat.S_IMODE(index_before.st_mode),
+            "sizeBytes": index_before.st_size,
+            "mtimeNS": index_before.st_mtime_ns,
+            "ctimeNS": index_before.st_ctime_ns,
+        }
+    )
+
+    for expected in normalized_shards:
+        filename = expected["filename"]
+        link = snapshot / filename
+        if link.is_symlink() or not link.is_file():
+            raise ValueError(
+                f"Private conversion snapshot shard is not a private regular file: {filename}"
+            )
+        descriptor = os.open(
+            link,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | nofollow,
+        )
+        try:
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid()
+                or stat.S_IMODE(before.st_mode) not in {0o400, 0o600}
+            ):
+                raise ValueError(
+                    f"Private conversion snapshot shard ownership or mode drifted: {filename}"
+                )
+            digest = hashlib.sha256()
+            offset = 0
+            while True:
+                chunk = os.pread(descriptor, 1 << 20, offset)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                offset += len(chunk)
+            after = os.fstat(descriptor)
+            rebound = link.stat(follow_symlinks=False)
+            if (
+                _stat_identity(before) != _stat_identity(after)
+                or _stat_identity(before) != _stat_identity(rebound)
+            ):
+                raise ValueError(
+                    f"Private conversion snapshot shard changed: {filename}"
+                )
+        finally:
+            os.close(descriptor)
+        if before.st_size != expected["size"] or digest.hexdigest() != expected["sha256"]:
+            raise ValueError(
+                f"Private conversion snapshot shard content drifted: {filename}"
+            )
+        model_signatures.append(
+            {
+                "path": filename,
+                "kind": "private_regular_weight_shard",
+                "device": before.st_dev,
+                "inode": before.st_ino,
+                "mode": stat.S_IMODE(before.st_mode),
+                "sizeBytes": before.st_size,
+                "mtimeNS": before.st_mtime_ns,
+                "ctimeNS": before.st_ctime_ns,
+            }
+        )
+
+    payload = {
+        "schemaVersion": (
+            PRIVATE_BASE_MODEL_CONVERSION_SNAPSHOT_VERIFICATION_SCHEMA_VERSION
+        ),
+        "baseModelID": base_model_id,
+        "baseModelRevision": base_model_revision,
+        "baseModelIndexDigest": model_index_digest,
+        "baseModelIndexReferencedShardNames": shard_names,
+        "baseModelIndexShardBindingSHA256": index_shard_binding_sha256,
+        "baseModelArtifactDigest": model_artifact_digest,
+        "baseModelWeightShards": normalized_shards,
+        "baseModelGenerationConfigFile": generation_config,
+        "baseModelTokenizerDigest": tokenizer_digest,
+        "baseModelTokenizerFiles": tokenizer_verification[
+            "baseModelTokenizerFiles"
+        ],
+        "baseModelTokenizerClosureSHA256": tokenizer_closure_sha256,
+        "snapshotPath": str(snapshot),
+        "tokenizerSnapshotVerification": tokenizer_verification,
+        "modelFileStabilitySignatures": model_signatures,
+        "verificationMethod": "private_regular_full_model_snapshot",
+    }
+    return {
+        **payload,
+        "snapshotVerificationSHA256": canonical_sha256(payload),
+    }
+
+
+def private_base_model_runtime_snapshot_required_bytes(
+    *,
+    weight_shards: Any,
+    tokenizer_files: Any,
+    generation_config_file: Any,
+) -> int:
+    try:
+        weight_bytes = sum(int(item["size"]) for item in weight_shards)
+        tokenizer_bytes = sum(int(item["sizeBytes"]) for item in tokenizer_files)
+        generation_bytes = int(generation_config_file["sizeBytes"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Private base-model snapshot sizes are invalid") from exc
+    if weight_bytes <= 0 or tokenizer_bytes <= 0 or generation_bytes <= 0:
+        raise ValueError("Private base-model snapshot sizes must be positive")
+    return weight_bytes + tokenizer_bytes + generation_bytes + (1 << 30)
+
+
+def create_private_base_model_runtime_snapshot(
+    *,
+    source_snapshot_dir: Path,
+    private_tokenizer_snapshot_dir: Path,
+    destination: Path,
+    base_model_id: str,
+    base_model_name: str,
+    base_model_revision: str,
+    tokenizer_files: Any,
+    tokenizer_digest: str,
+    tokenizer_closure_sha256: str,
+    generation_config_file: Any,
+    model_index_digest: str,
+    index_referenced_shard_names: Any,
+    index_shard_binding_sha256: str,
+    model_artifact_digest: str,
+    weight_shards: Any,
+) -> dict[str, Any]:
+    """Atomically copy one immutable, process-owned full model snapshot."""
+
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("Private base-model runtime snapshot already exists")
+    tokenizer_verification = verify_private_base_model_tokenizer_snapshot(
+        private_tokenizer_snapshot_dir,
+        base_model_id=base_model_id,
+        base_model_name=base_model_name,
+        base_model_revision=base_model_revision,
+        tokenizer_files=tokenizer_files,
+        tokenizer_digest=tokenizer_digest,
+        tokenizer_closure_sha256=tokenizer_closure_sha256,
+    )
+    source = Path(source_snapshot_dir).resolve(strict=True)
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    required_bytes = private_base_model_runtime_snapshot_required_bytes(
+        weight_shards=weight_shards,
+        tokenizer_files=tokenizer_files,
+        generation_config_file=generation_config_file,
+    )
+    if shutil.disk_usage(destination.parent).free < required_bytes:
+        raise ValueError(
+            "Insufficient free space for private base-model runtime snapshot"
+        )
+    staging = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}.", dir=destination.parent)
+    )
+    try:
+        staging.chmod(0o700)
+        for expected in tokenizer_verification["baseModelTokenizerFiles"]:
+            filename = expected["path"]
+            target = staging / filename
+            shutil.copyfile(
+                Path(private_tokenizer_snapshot_dir) / filename,
+                target,
+                follow_symlinks=False,
+            )
+            target.chmod(0o400)
+            descriptor = os.open(target, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        index_target = staging / "model.safetensors.index.json"
+        shutil.copyfile(
+            source / "model.safetensors.index.json",
+            index_target,
+            follow_symlinks=True,
+        )
+        index_target.chmod(0o400)
+        descriptor = os.open(index_target, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        generation_target = staging / "generation_config.json"
+        shutil.copyfile(
+            source / "generation_config.json",
+            generation_target,
+            follow_symlinks=True,
+        )
+        generation_target.chmod(0o400)
+        descriptor = os.open(generation_target, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        for shard in weight_shards:
+            filename = shard["filename"]
+            target = staging / filename
+            shutil.copyfile(
+                (source / filename).resolve(strict=True),
+                target,
+                follow_symlinks=False,
+            )
+            target.chmod(0o400)
+            descriptor = os.open(target, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        verify_private_base_model_conversion_snapshot(
+            staging,
+            base_model_id=base_model_id,
+            base_model_name=base_model_name,
+            base_model_revision=base_model_revision,
+            tokenizer_files=tokenizer_files,
+            tokenizer_digest=tokenizer_digest,
+            tokenizer_closure_sha256=tokenizer_closure_sha256,
+            generation_config_file=generation_config_file,
+            model_index_digest=model_index_digest,
+            index_referenced_shard_names=index_referenced_shard_names,
+            index_shard_binding_sha256=index_shard_binding_sha256,
+            model_artifact_digest=model_artifact_digest,
+            weight_shards=weight_shards,
+        )
+        if verify_private_base_model_tokenizer_snapshot(
+            private_tokenizer_snapshot_dir,
+            base_model_id=base_model_id,
+            base_model_name=base_model_name,
+            base_model_revision=base_model_revision,
+            tokenizer_files=tokenizer_files,
+            tokenizer_digest=tokenizer_digest,
+            tokenizer_closure_sha256=tokenizer_closure_sha256,
+        ) != tokenizer_verification:
+            raise ValueError(
+                "Private tokenizer snapshot changed during runtime snapshot copy"
+            )
+        directory_descriptor = os.open(
+            staging,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+        os.replace(staging, destination)
+        staging = None
+        parent_descriptor = os.open(
+            destination.parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(parent_descriptor)
+        finally:
+            os.close(parent_descriptor)
+        return verify_private_base_model_conversion_snapshot(
+            destination,
+            base_model_id=base_model_id,
+            base_model_name=base_model_name,
+            base_model_revision=base_model_revision,
+            tokenizer_files=tokenizer_files,
+            tokenizer_digest=tokenizer_digest,
+            tokenizer_closure_sha256=tokenizer_closure_sha256,
+            generation_config_file=generation_config_file,
+            model_index_digest=model_index_digest,
+            index_referenced_shard_names=index_referenced_shard_names,
+            index_shard_binding_sha256=index_shard_binding_sha256,
+            model_artifact_digest=model_artifact_digest,
+            weight_shards=weight_shards,
+        )
+    finally:
+        if staging is not None and staging.exists():
+            shutil.rmtree(staging)
 
 
 def _space_front_matter(path: Path) -> dict[str, str]:
@@ -1222,6 +2232,128 @@ def _installed_distribution_entry(
     return {**payload, "distributionSHA256": canonical_sha256(payload)}
 
 
+def installed_distribution_python_callable_identity(
+    *,
+    distribution_name: str,
+    source_logical_path: str,
+    callable_name: str,
+    resolved_environment: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Reconstruct one installed Python callable without importing its package.
+
+    The complete distribution is first revalidated against its installed
+    ``RECORD`` manifest and the run's resolved-environment closure. Compiling
+    the exact installed source path preserves ``co_filename``, so the canonical
+    code-object digest is directly comparable with the live imported callable.
+    This is intentionally import-free for CUDA-gated packages such as Unsloth.
+    """
+
+    normalized_distribution_name = _normalized_distribution_name(
+        distribution_name
+    )
+    logical_path = PurePosixPath(source_logical_path)
+    if (
+        not source_logical_path
+        or logical_path.is_absolute()
+        or any(part in {"", ".", ".."} for part in logical_path.parts)
+        or logical_path.suffix != ".py"
+        or source_logical_path != logical_path.as_posix()
+        or not isinstance(callable_name, str)
+        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", callable_name) is None
+    ):
+        raise ValueError("Installed Python callable identity is malformed")
+
+    environment_digest = verify_resolved_training_environment(
+        resolved_environment
+    )
+    resolved_entries = resolved_environment["distributions"]
+    expected_entries = [
+        entry
+        for entry in resolved_entries
+        if entry.get("name") == normalized_distribution_name
+    ]
+    if len(expected_entries) != 1:
+        raise ValueError(
+            "Resolved environment lacks the installed callable distribution"
+        )
+
+    try:
+        distribution = importlib_metadata.distribution(distribution_name)
+    except importlib_metadata.PackageNotFoundError as exc:
+        raise ValueError(
+            "Installed Python callable distribution is unavailable"
+        ) from exc
+    installed_entry = _installed_distribution_entry(distribution)
+    if installed_entry != dict(expected_entries[0]):
+        raise ValueError(
+            "Installed callable distribution drifted from the resolved environment"
+        )
+
+    declared_files = distribution.files
+    matches = [
+        item
+        for item in (declared_files or ())
+        if PurePosixPath(str(item).replace("\\", "/")) == logical_path
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "Installed callable source is missing or duplicated in RECORD"
+        )
+    source_candidate = Path(distribution.locate_file(matches[0]))
+    if source_candidate.is_symlink() or not source_candidate.is_file():
+        raise ValueError("Installed callable source is not a regular file")
+    source_path = source_candidate.resolve()
+    source_bytes = source_path.read_bytes()
+    source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+
+    try:
+        module_code = compile(
+            source_bytes,
+            str(source_path),
+            "exec",
+            dont_inherit=True,
+            optimize=-1,
+        )
+    except (SyntaxError, ValueError) as exc:
+        raise ValueError("Installed callable source cannot be compiled") from exc
+    pending = [module_code]
+    matches_code: list[types.CodeType] = []
+    while pending:
+        code = pending.pop()
+        if code.co_name == callable_name:
+            matches_code.append(code)
+        pending.extend(
+            value for value in code.co_consts if isinstance(value, types.CodeType)
+        )
+    if len(matches_code) != 1:
+        raise ValueError(
+            "Installed callable source has a missing or ambiguous code object"
+        )
+    callable_code = matches_code[0]
+    unsigned = {
+        "schemaVersion": "lumen.installed-python-callable-identity/1.0.0",
+        "resolvedTrainingEnvironmentSHA256": environment_digest,
+        "distributionName": installed_entry["name"],
+        "distributionVersion": installed_entry["version"],
+        "distributionSHA256": installed_entry["distributionSHA256"],
+        "sourceLogicalPath": source_logical_path,
+        "sourceFileSize": len(source_bytes),
+        "sourceFileSHA256": source_sha256,
+        "callableName": callable_name,
+        "callableQualname": getattr(
+            callable_code,
+            "co_qualname",
+            callable_code.co_name,
+        ),
+        "callableFirstLineNumber": callable_code.co_firstlineno,
+        "codeSHA256": canonical_python_code_sha256(callable_code),
+    }
+    return {
+        **unsigned,
+        "installedCallableIdentitySHA256": canonical_sha256(unsigned),
+    }
+
+
 def build_resolved_training_environment(
     distributions: Any | None = None,
 ) -> dict[str, Any]:
@@ -1540,16 +2672,17 @@ def validate_runtime_source_audit(
             raise ValueError(
                 "Local runtime-source observations must equal the current Git HEAD"
             )
-        if status != RUNTIME_SOURCE_BINDING_LOCAL:
-            raise ValueError(
-                "Local Git runtime source binding status must be "
-                "local_checkout_observed"
-            )
-        if method != RUNTIME_SOURCE_BINDING_LOCAL_METHOD:
-            raise ValueError(
-                "Local Git runtime source binding method must be "
-                "git_head_plus_training_code_manifest"
-            )
+        if (status, method) not in {
+            (
+                RUNTIME_SOURCE_BINDING_LOCAL,
+                RUNTIME_SOURCE_BINDING_LOCAL_METHOD,
+            ),
+            (
+                RUNTIME_SOURCE_BINDING_ATTESTED,
+                RUNTIME_SOURCE_BINDING_ATTESTED_METHOD,
+            ),
+        }:
+            raise ValueError("Unsupported local Git runtime-source binding evidence")
 
     return {
         field: value.get(field)

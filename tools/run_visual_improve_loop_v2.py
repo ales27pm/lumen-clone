@@ -183,7 +183,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--release-bake", action="store_true", help="Explicitly run optional GGUF release bake.")
     parser.add_argument("--skip-release-bake-existing", action="store_true", help="Reuse existing release-baked GGUF files.")
     parser.add_argument("--release-bake-python", default=sys.executable, help="Python interpreter for export_gguf.py.")
-    parser.add_argument("--config-dir", type=Path, default=None, help="Optional Unsloth config directory override. Defaults to the freshly generated fine-tuning output.")
+    parser.add_argument(
+        "--config-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Optional Unsloth config directory override. Adapter-first mode defaults to the "
+            "freshly generated output; release bake defaults to $LUMEN_AIO_RUN_ROOT/configs "
+            "and requires prepared <agent>.final.json files."
+        ),
+    )
     parser.add_argument("--agents", default=DEFAULT_AGENTS, help="Comma-separated agents.")
     parser.add_argument("--quantization", default="q4_k_m", help="GGUF quantization.")
     parser.add_argument("--release-bake-output-root", type=Path, default=Path("models/gguf_release_bake"), help="Release-bake GGUF output root.")
@@ -300,9 +309,8 @@ def _build_release_export_command(
     """Build the release-bake/export command and step name."""
     export = [
         args.release_bake_python,
-        str(root / "tools" / "fine_tuning" / "unsloth" / "export_gguf.py"),
-        "--config-dir",
-        str(rooted_path(root, args.config_dir) if args.config_dir is not None else fine_tuning_output),
+        "-m",
+        "tools.fine_tuning.unsloth.export_gguf",
         "--agents",
         args.agents,
         "--quantization",
@@ -312,6 +320,10 @@ def _build_release_export_command(
         "--manifest-output",
         str(release_manifest),
     ]
+    if args.config_dir is not None:
+        export.extend(["--config-dir", str(rooted_path(root, args.config_dir))])
+    elif not args.release_bake:
+        export.extend(["--config-dir", str(fine_tuning_output)])
     if not args.release_bake:
         return "adapter-first release-bake manifest", export
 

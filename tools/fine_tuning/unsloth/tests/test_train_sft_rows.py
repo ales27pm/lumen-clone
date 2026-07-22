@@ -9,6 +9,7 @@ from tools.fine_tuning.unsloth.train_sft import build_sft_rows
 class FallbackTokenizer:
     def __init__(self) -> None:
         self.last_messages = None
+        self.last_enable_thinking = None
 
     def apply_chat_template(
         self,
@@ -18,9 +19,11 @@ class FallbackTokenizer:
         add_generation_prompt=False,
         return_dict=False,
         return_assistant_tokens_mask=False,
+        enable_thinking=None,
     ):
         del add_generation_prompt, return_assistant_tokens_mask
         self.last_messages = messages
+        self.last_enable_thinking = enable_thinking
         rendered = []
         masks = []
         token_id = 1
@@ -40,6 +43,7 @@ class FallbackTokenizer:
 
 class SftRowsTests(unittest.TestCase):
     def test_assistant_only_loss_pretokenizes_with_masked_labels(self) -> None:
+        tokenizer = FallbackTokenizer()
         rows = build_sft_rows(
             [
                 {
@@ -50,7 +54,7 @@ class SftRowsTests(unittest.TestCase):
                     ]
                 }
             ],
-            tokenizer=FallbackTokenizer(),
+            tokenizer=tokenizer,
             assistant_only_loss=True,
             path=Path("train_sft.jsonl"),
         )
@@ -60,8 +64,10 @@ class SftRowsTests(unittest.TestCase):
         self.assertTrue(all(mask == 1 for mask in rows[0]["attention_mask"]))
         self.assertIn(-100, rows[0]["labels"])
         self.assertEqual(rows[0]["input_ids"][-1], rows[0]["labels"][-1])
+        self.assertIs(tokenizer.last_enable_thinking, False)
 
     def test_non_assistant_only_loss_renders_text_column(self) -> None:
+        tokenizer = FallbackTokenizer()
         rows = build_sft_rows(
             [
                 {
@@ -71,13 +77,14 @@ class SftRowsTests(unittest.TestCase):
                     ]
                 }
             ],
-            tokenizer=FallbackTokenizer(),
+            tokenizer=tokenizer,
             assistant_only_loss=False,
             path=Path("train_sft.jsonl"),
         )
 
         self.assertEqual(["text"], list(rows[0].keys()))
         self.assertIn("assistant: done", rows[0]["text"])
+        self.assertIs(tokenizer.last_enable_thinking, False)
 
     def test_non_string_content_is_normalized_for_chat_templates(self) -> None:
         tokenizer = FallbackTokenizer()

@@ -28,6 +28,65 @@ def generate_executor_records(manifest: AgentBehaviorManifest) -> list[dict]:
                 {"role": "assistant", "content": content},
             ],
             "grounding": _tool_contract(tool),
+            "metadata": {
+                "requiredSplit": "train",
+                "contractCase": "manifest_native_action",
+            },
+        })
+    if manifest.tools:
+        # Keep this source family represented in validation without moving any
+        # of the two optimizer-visible direct-action examples per tool out of
+        # training. The wording and value binding are distinct from frozen eval.
+        tool = min(manifest.tools, key=lambda item: item.id)
+        args = _sample_arguments(tool)
+        records.append({
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Tool Executor. Output valid JSON only. Use exact "
+                        "manifest tool IDs and argument names."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Validate a held-out native action envelope for `{tool.id}` "
+                        f"with these supplied values: "
+                        f"{json.dumps(args, ensure_ascii=False, sort_keys=True)}."
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": {
+                        "status": (
+                            "requires_user_approval"
+                            if tool.requiresApproval
+                            else "ready_to_execute"
+                        ),
+                        "tool": tool.id,
+                        "arguments": args,
+                        "requiresApproval": tool.requiresApproval,
+                        "permissionKey": tool.permissionKey,
+                        "permissionKind": tool.permissionKind,
+                        "confirmationMode": tool.confirmationMode,
+                        **(
+                            {
+                                "approvalPrompt": (
+                                    f"Run {tool.displayName or tool.id}?"
+                                )
+                            }
+                            if tool.requiresApproval
+                            else {}
+                        ),
+                    },
+                },
+            ],
+            "grounding": _tool_contract(tool),
+            "metadata": {
+                "requiredSplit": "validation",
+                "contractCase": "manifest_native_action_validation",
+            },
         })
     return records
 

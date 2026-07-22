@@ -10,14 +10,22 @@ from lumen_manifest_crawler.dataset.adapter_evaluation import (
     DEFAULT_BASE_MODEL_INDEX_SHARD_BINDING_SHA256,
     DEFAULT_BASE_MODEL_REVISION,
     DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+    DEFAULT_BASE_MODEL_TOKENIZER_FILES,
+    DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256,
     DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
     EXPERIMENT_VARIANTS,
     RUNTIME_SOURCE_AUDIT_FIELDS,
     default_training_lineage_contract,
     promotion_contract,
 )
+from lumen_manifest_crawler.runtime_prompt_contract import (
+    RUNTIME_PROMPT_COMPOSER_POLICY_ID,
+    RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+    SHIPPED_RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+    prompt_sha256,
+)
 
-ADAPTER_EXPORT_SCHEMA_VERSION = "1.4.0"
+ADAPTER_EXPORT_SCHEMA_VERSION = "1.6.0"
 DEFAULT_AGENT_BASE_MODEL_ID = "Qwen/Qwen3-1.7B"
 DEFAULT_LORA_OUTPUT_ROOT = "models/lora_qwen3_bootstrap"
 DEFAULT_TRAINING_OUTPUT_ROOT = "models/training_runs_qwen3_bootstrap"
@@ -77,6 +85,30 @@ def base_model_id_from_config(config: dict[str, Any] | None) -> str:
     return DEFAULT_AGENT_BASE_MODEL_ID
 
 
+def _require_pinned_base_model_lineage(config: dict[str, Any] | None) -> str:
+    """Fail closed instead of applying Qwen lineage defaults to another model."""
+
+    config = config or {}
+    aliases = (
+        "baseModelID",
+        "base_model_id",
+        "base_model",
+        "base_model_name",
+        "model_name",
+        "modelName",
+    )
+    declared = {
+        value.strip()
+        for key in aliases
+        if isinstance((value := config.get(key)), str) and value.strip()
+    }
+    if declared and declared != {DEFAULT_AGENT_BASE_MODEL_ID}:
+        raise ValueError(
+            "Adapter export supports only the pinned Qwen base-model lineage"
+        )
+    return DEFAULT_AGENT_BASE_MODEL_ID
+
+
 def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any] | None) -> dict[str, Any]:
     """Return an adapter-first training/export config without mutating the input config.
 
@@ -85,7 +117,7 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     step after an adapter passes role-specific eval gates.
     """
     out = dict(config or {})
-    base_model_id = base_model_id_from_config(out)
+    base_model_id = _require_pinned_base_model_lineage(out)
     out.setdefault("baseModelID", base_model_id)
     out.setdefault("baseModelRevision", DEFAULT_BASE_MODEL_REVISION)
     out.setdefault("baseModelIndexDigest", DEFAULT_BASE_MODEL_INDEX_DIGEST)
@@ -100,6 +132,14 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
     out.setdefault("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST)
     out.setdefault("baseModelWeightShards", [dict(item) for item in DEFAULT_BASE_MODEL_WEIGHT_SHARDS])
     out.setdefault("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST)
+    out.setdefault(
+        "baseModelTokenizerFiles",
+        [dict(item) for item in DEFAULT_BASE_MODEL_TOKENIZER_FILES],
+    )
+    out.setdefault(
+        "baseModelTokenizerClosureSHA256",
+        DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256,
+    )
     for key, value in default_training_lineage_contract().items():
         out.setdefault(key, value)
     out["artifactMode"] = "adapter_first"
@@ -129,6 +169,10 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
         "baseModelArtifactDigest": out["baseModelArtifactDigest"],
         "baseModelWeightShards": out["baseModelWeightShards"],
         "baseModelTokenizerDigest": out["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": out["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": out[
+            "baseModelTokenizerClosureSHA256"
+        ],
         "trainingCodeSHA256": out["trainingCodeSHA256"],
         "trainingCodeSHA256ByPhase": dict(out["trainingCodeSHA256ByPhase"]),
         "trainingCodeBundleSHA256": out["trainingCodeBundleSHA256"],
@@ -157,7 +201,7 @@ def augment_unsloth_config_for_adapter_export(agent: str, config: dict[str, Any]
 
 
 def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_config: dict[str, Any] | None) -> dict[str, Any]:
-    base_model_id = base_model_id_from_config(unsloth_config)
+    base_model_id = _require_pinned_base_model_lineage(unsloth_config)
     config = unsloth_config or {}
     return {
         "schemaVersion": ADAPTER_EXPORT_SCHEMA_VERSION,
@@ -177,6 +221,14 @@ def agent_adapter_export_plan(agent: str, dataset_card: dict[str, Any], unsloth_
         "baseModelArtifactDigest": config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
         "baseModelWeightShards": config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
         "baseModelTokenizerDigest": config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
+        "baseModelTokenizerFiles": config.get(
+            "baseModelTokenizerFiles",
+            DEFAULT_BASE_MODEL_TOKENIZER_FILES,
+        ),
+        "baseModelTokenizerClosureSHA256": config.get(
+            "baseModelTokenizerClosureSHA256",
+            DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256,
+        ),
         "trainingCodeSHA256": config.get("trainingCodeSHA256"),
         "trainingCodeSHA256ByPhase": dict(
             config.get("trainingCodeSHA256ByPhase") or {}
@@ -261,7 +313,7 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
     for agent, dataset in sorted(datasets.items()):
         unsloth_config = getattr(dataset, "unsloth_config", {}) or {}
         dataset_card = getattr(dataset, "dataset_card", {}) or {}
-        base_model_id = base_model_id_from_config(unsloth_config)
+        base_model_id = _require_pinned_base_model_lineage(unsloth_config)
         base_model_ids.add(base_model_id)
         for values, key in (
             (training_code_digests, "trainingCodeSHA256"),
@@ -276,6 +328,44 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         training_code_phase_digests.append(
             dict(phase_digests) if isinstance(phase_digests, dict) else None
         )
+        system_prompt = dataset_card.get("systemPrompt")
+        role_contract_prompt = (
+            system_prompt.strip()
+            if isinstance(system_prompt, str) and system_prompt.strip()
+            else None
+        )
+        offline_frozen_evaluation = dataset_card.get("evaluation", {})
+        runtime_prompt_contract = {
+            "schemaVersion": SHIPPED_RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+            "composerPolicyID": RUNTIME_PROMPT_COMPOSER_POLICY_ID,
+            "composerPolicySHA256": RUNTIME_PROMPT_COMPOSER_POLICY_SHA256,
+            "roleContractPromptSHA256": (
+                prompt_sha256(role_contract_prompt)
+                if role_contract_prompt is not None
+                else None
+            ),
+            "roleContractPromptCharacterCount": (
+                len(role_contract_prompt)
+                if role_contract_prompt is not None
+                else None
+            ),
+            "privacy": "hashes_and_character_counts_only",
+            "requiredObservedEvidence": [
+                "componentPromptSHA256",
+                "sourcePromptSHA256",
+                "effectivePromptSHA256",
+                "composerPolicySHA256",
+            ],
+        }
+        qualification_reasons = [
+            "offline_frozen_evaluation_is_not_shipped_runtime_evidence",
+            "missing_component_prompt_sha256",
+            "missing_source_prompt_sha256",
+            "missing_effective_prompt_sha256",
+            "missing_observed_composer_policy_sha256",
+        ]
+        if role_contract_prompt is None:
+            qualification_reasons.append("missing_role_contract_prompt_sha256")
         adapters.append(
             {
                 "agent": agent,
@@ -298,6 +388,14 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                 "baseModelArtifactDigest": unsloth_config.get("baseModelArtifactDigest", DEFAULT_BASE_MODEL_ARTIFACT_DIGEST),
                 "baseModelWeightShards": unsloth_config.get("baseModelWeightShards", DEFAULT_BASE_MODEL_WEIGHT_SHARDS),
                 "baseModelTokenizerDigest": unsloth_config.get("baseModelTokenizerDigest", DEFAULT_BASE_MODEL_TOKENIZER_DIGEST),
+                "baseModelTokenizerFiles": unsloth_config.get(
+                    "baseModelTokenizerFiles",
+                    DEFAULT_BASE_MODEL_TOKENIZER_FILES,
+                ),
+                "baseModelTokenizerClosureSHA256": unsloth_config.get(
+                    "baseModelTokenizerClosureSHA256",
+                    DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256,
+                ),
                 "trainingCodeSHA256": unsloth_config.get("trainingCodeSHA256"),
                 "trainingCodeSHA256ByPhase": dict(
                     unsloth_config.get("trainingCodeSHA256ByPhase") or {}
@@ -309,9 +407,28 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
                     field: unsloth_config.get(field)
                     for field in RUNTIME_SOURCE_AUDIT_FIELDS
                 },
-                "systemPrompt": dataset_card.get("systemPrompt"),
+                "systemPrompt": system_prompt,
+                "runtimePromptContract": runtime_prompt_contract,
                 "recordCounts": dataset_card.get("recordCounts", {}),
-                "evaluation": dataset_card.get("evaluation", {}),
+                "offlineFrozenEvaluation": {
+                    "scope": "offline_frozen_adapter_suite",
+                    "evidenceType": "frozen_suite_contract",
+                    "executionStatus": "not_executed_by_runtime_manifest_exporter",
+                    "qualifiesShippedRuntime": False,
+                    "contract": offline_frozen_evaluation,
+                },
+                "shippedRuntimeQualification": {
+                    "schemaVersion": SHIPPED_RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+                    "qualified": False,
+                    "status": "unqualified_missing_runtime_evidence",
+                    "reasonCodes": sorted(qualification_reasons),
+                    "observedEvidence": {
+                        "componentPromptSHA256": None,
+                        "sourcePromptSHA256": None,
+                        "effectivePromptSHA256": None,
+                        "composerPolicySHA256": None,
+                    },
+                },
                 "preferenceTraining": dataset_card.get("preferenceTraining", {}),
                 "experimentPolicy": dataset_card.get("experimentPolicy", {}),
             }
@@ -333,6 +450,12 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
         "sharedBaseModelArtifactDigest": DEFAULT_BASE_MODEL_ARTIFACT_DIGEST,
         "sharedBaseModelWeightShards": DEFAULT_BASE_MODEL_WEIGHT_SHARDS,
         "sharedBaseModelTokenizerDigest": DEFAULT_BASE_MODEL_TOKENIZER_DIGEST,
+        "sharedBaseModelTokenizerFiles": [
+            dict(item) for item in DEFAULT_BASE_MODEL_TOKENIZER_FILES
+        ],
+        "sharedBaseModelTokenizerClosureSHA256": (
+            DEFAULT_BASE_MODEL_TOKENIZER_CLOSURE_SHA256
+        ),
         "sharedTrainingCodeSHA256": (
             next(iter(training_code_digests))
             if len(training_code_digests) == 1
@@ -373,6 +496,16 @@ def adapter_runtime_manifest(datasets: dict[str, Any]) -> dict[str, Any]:
             "mergeAdaptersByDefault": False,
             "mergedExportPhase": "optional_release_bake",
             "fallbackUnit": "adapter",
+        },
+        "runtimeQualificationPolicy": {
+            "schemaVersion": SHIPPED_RUNTIME_QUALIFICATION_SCHEMA_VERSION,
+            "offlineFrozenEvaluationQualifiesShippedRuntime": False,
+            "requiresExactComponentPromptSHA256": True,
+            "requiresExactSourcePromptSHA256": True,
+            "requiresExactEffectivePromptSHA256": True,
+            "requiresExactComposerPolicySHA256": True,
+            "missingOrMismatchedEvidence": "unqualified",
+            "privacy": "hashes_and_character_counts_only",
         },
         "adapters": adapters,
         "releaseBakePolicy": {

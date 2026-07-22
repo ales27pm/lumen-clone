@@ -36,6 +36,11 @@ def compile_reranker_datasets(datasets: dict[str, list[dict[str, Any]]]) -> Rera
     """
     corpus = [record for record in datasets.get("embedding_corpus", []) if isinstance(record, dict)]
     docs = {str(record.get("id")): record for record in corpus if record.get("id")}
+    training_docs = {
+        document_id: record
+        for document_id, record in docs.items()
+        if not _is_evaluation_only(record)
+    }
     hard_negatives = [
         record for record in datasets.get("embedding_hard_negatives", [])
         if isinstance(record, dict)
@@ -45,19 +50,19 @@ def compile_reranker_datasets(datasets: dict[str, list[dict[str, Any]]]) -> Rera
 
     train_pairs = _compile_pair_split(
         datasets.get("embedding_train_pairs", []),
-        docs,
+        training_docs,
         hard_negative_index,
         known_positive_ids,
     )
     val_pairs = _compile_pair_split(
         datasets.get("embedding_val_pairs", []),
-        docs,
+        training_docs,
         hard_negative_index,
         known_positive_ids,
     )
     hard_negative_pairs = _compile_hard_negative_pairs(
         hard_negatives,
-        docs,
+        training_docs,
         known_positive_ids,
     )
     eval_reranking = _compile_eval_records(
@@ -80,9 +85,13 @@ def compile_reranker_datasets(datasets: dict[str, list[dict[str, Any]]]) -> Rera
         ],
         "nonGoals": [
             "Do not train the reranker on chat SFT records.",
+            "Do not use evaluation-only corpus documents as positive or negative training candidates.",
             "Do not use generated private runtime payloads as document text.",
             "Do not promote a reranker without hard-negative accuracy evidence.",
         ],
+        "evaluationIsolation": {
+            "policy": "exclude_evaluation_only_documents_from_all_training_candidates",
+        },
         "counts": {
             "trainPairs": len(train_pairs),
             "valPairs": len(val_pairs),
@@ -330,14 +339,22 @@ def _negative_for_pair(
         doc for doc in docs.values()
         if doc.get("id") != positive_id
         and str(doc.get("id") or "") not in query_positives
+        and not _is_evaluation_only(doc)
         and doc.get("objectType") == positive_type
     ] or [
         doc for doc in docs.values()
-        if doc.get("id") != positive_id and str(doc.get("id") or "") not in query_positives
+        if doc.get("id") != positive_id
+        and str(doc.get("id") or "") not in query_positives
+        and not _is_evaluation_only(doc)
     ]
     if not candidates:
         return None
     return str(sorted(candidates, key=lambda doc: str(doc.get("id") or ""))[0].get("id"))
+
+
+def _is_evaluation_only(document: dict[str, Any]) -> bool:
+    metadata = document.get("metadata")
+    return isinstance(metadata, dict) and metadata.get("evaluationOnly") is True
 
 
 def _clean(value: str) -> str:

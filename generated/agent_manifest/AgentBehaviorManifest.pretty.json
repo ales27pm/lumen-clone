@@ -7,9 +7,9 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "baseCommit": "04fc7ede31a84c1a834cd561defb5e00a565144d",
-    "workingTreeDigest": "44ae4c29a23c254e3fdce88775ce544c7636e8a1a58891df4b0c8b8014b5fe44",
-    "dirtyState": true,
+    "baseCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
+    "workingTreeDigest": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f",
+    "dirtyState": false,
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -136,7 +136,10 @@
         "id": "embedding",
         "role": "embedding",
         "modelFamily": null,
-        "responsibilities": [],
+        "responsibilities": [
+          "semantic memory embedding",
+          "embedding vector generation"
+        ],
         "source": "ios/Lumen/Services/ModelFleet.swift"
       }
     ]
@@ -181,9 +184,9 @@
       },
       "embedding": {
         "role": "embedding",
-        "purpose": "Perform the embedding role defined by the Lumen model fleet contract.",
-        "inputSignature": "Role-specific input defined by the fleet contract and AgentBehaviorManifest.",
-        "outputSignature": "Role-specific output defined by the fleet contract and AgentBehaviorManifest.",
+        "purpose": "Generate semantic vector representations for memory indexing and retrieval.",
+        "inputSignature": "Text or content selected for semantic memory indexing or retrieval.",
+        "outputSignature": "Embedding vector only; no user-facing text, tool call, or hidden reasoning.",
         "calls": [],
         "calledBy": [
           "cortex"
@@ -202,7 +205,10 @@
           "toolObservation",
           "userPreference"
         ],
-        "responsibilities": []
+        "responsibilities": [
+          "embedding vector generation",
+          "semantic memory embedding"
+        ]
       },
       "executor": {
         "role": "tool_executor",
@@ -2853,9 +2859,9 @@
       },
       {
         "id": "shortLived",
-        "ttlSeconds": 3600,
+        "ttlSeconds": 21600,
         "durable": false,
-        "source": "ios/Lumen/Models/MemoryItem.swift"
+        "source": "ios/Lumen/Services/MemoryStore.swift"
       },
       {
         "id": "timeless",
@@ -2865,9 +2871,9 @@
       },
       {
         "id": "volatile",
-        "ttlSeconds": 300,
+        "ttlSeconds": 2700,
         "durable": false,
-        "source": "ios/Lumen/Models/MemoryItem.swift"
+        "source": "ios/Lumen/Services/MemoryStore.swift"
       }
     ]
   },
@@ -2960,9 +2966,9 @@
       },
       "embedding": {
         "role": "embedding",
-        "purpose": "Perform the embedding role defined by the Lumen model fleet contract.",
-        "input_signature": "Role-specific input defined by the fleet contract and AgentBehaviorManifest.",
-        "output_signature": "Role-specific output defined by the fleet contract and AgentBehaviorManifest.",
+        "purpose": "Generate semantic vector representations for memory indexing and retrieval.",
+        "input_signature": "Text or content selected for semantic memory indexing or retrieval.",
+        "output_signature": "Embedding vector only; no user-facing text, tool call, or hidden reasoning.",
         "calls": [],
         "called_by": [
           "cortex"
@@ -2981,7 +2987,10 @@
           "toolObservation",
           "userPreference"
         ],
-        "responsibilities": []
+        "responsibilities": [
+          "embedding vector generation",
+          "semantic memory embedding"
+        ]
       },
       "executor": {
         "role": "tool_executor",

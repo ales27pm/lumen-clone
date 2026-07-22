@@ -50,6 +50,10 @@ def compile_embedding_datasets(
     corpus: list[dict[str, Any]] = []
     pairs: list[dict[str, Any]] = []
     hard_negatives: list[dict[str, Any]] = []
+    evaluation_user_segments = _evaluation_user_segments(
+        datasets.get("eval_scenarios", [])
+    )
+    evaluation_only_document_ids: set[str] = set()
 
     def add_doc(object_type: str, object_id: str, title: str, text: str, metadata: dict[str, Any] | None = None) -> str:
         doc_id = _stable_id("doc", object_type, object_id)
@@ -57,28 +61,55 @@ def compile_embedding_datasets(
             text_value = title
         else:
             text_value = text.strip()
+        doc_metadata = dict(metadata or {})
+        evaluation_matches = _contained_evaluation_segments(
+            f"{title}\n{text_value}",
+            evaluation_user_segments,
+        )
+        if evaluation_matches:
+            evaluation_only_document_ids.add(doc_id)
+            doc_metadata.update(
+                {
+                    "evaluationOnly": True,
+                    "evaluationIsolationReason": "contains_normalized_eval_user_segment",
+                    "evaluationSegmentSHA256": [
+                        hashlib.sha256(segment.encode("utf-8")).hexdigest()
+                        for segment in evaluation_matches
+                    ],
+                }
+            )
         corpus.append({
             "id": doc_id,
             "objectType": object_type,
             "objectID": object_id,
             "title": title.strip() or object_id,
             "text": text_value,
-            "metadata": metadata or {},
+            "metadata": doc_metadata,
         })
         return doc_id
 
-    def add_pair(query: str, doc_id: str, family: str, metadata: dict[str, Any] | None = None) -> None:
+    def add_pair(
+        query: str,
+        doc_id: str,
+        family: str,
+        metadata: dict[str, Any] | None = None,
+        *,
+        evaluation_only: bool = False,
+    ) -> None:
         cleaned = _clean(query)
         if not cleaned:
             return
-        pairs.append({
+        pair = {
             "id": _stable_id("pair", family, cleaned, doc_id),
             "query": cleaned,
             "documentID": doc_id,
             "label": 1.0,
             "family": family,
             "metadata": metadata or {},
-        })
+        }
+        if evaluation_only or doc_id in evaluation_only_document_ids:
+            pair["_evaluationOnly"] = True
+        pairs.append(pair)
 
     tool_doc_ids: dict[str, str] = {}
     for tool in sorted(manifest.tools, key=lambda item: item.id):
@@ -181,7 +212,13 @@ def compile_embedding_datasets(
             doc_id = _record_to_corpus(add_doc, family, index, record)
             query = _query_for_dataset_record(family, record)
             if query:
-                add_pair(query, doc_id, f"{family}_retrieval", {"sourceFamily": family})
+                add_pair(
+                    query,
+                    doc_id,
+                    f"{family}_retrieval",
+                    {"sourceFamily": family},
+                    evaluation_only=family == "eval_scenarios",
+                )
 
     train_pairs, val_pairs, eval_pairs = _split_pair_groups(pairs)
     known_positive_ids = _known_positive_documents(pairs)
@@ -249,9 +286,15 @@ def compile_embedding_datasets(
         "task": "retrieval_similarity_ranking",
         "nonGoals": [
             "Do not train embedding model on chat SFT records.",
+            "Do not place eval-scenario documents, eval-containing source documents, or connected query groups in training or validation artifacts.",
             "Do not expose raw private runtime state or hidden reasoning.",
             "Do not treat static scenario checks as live E2E model evidence.",
         ],
+        "evaluationIsolation": {
+            "sourceFamilies": ["eval_scenarios"],
+            "policy": "evaluation_only_with_connected_query_groups",
+            "contentPolicy": "normalized_eval_user_segment_documents_are_evaluation_only",
+        },
         "counts": {
             "corpus": len(corpus),
             "trainPairs": len(train_pairs),
@@ -415,6 +458,9 @@ def _split_pair_groups(
     A connected component keeps every normalized query and every positive
     document in exactly one split, including cases where query variants point
     at the same document or one query has multiple valid positive documents.
+    If any pair in a component is marked evaluation-only, the entire connected
+    component is reserved for evaluation so the same query cannot leak through
+    a different source family.
     """
     if not records:
         return [], [], []
@@ -465,19 +511,38 @@ def _split_pair_groups(
         "validation": [],
         "evaluation": [],
     }
-    for group_id, records_in_group in ordered_groups:
+    evaluation_only_groups = [
+        (group_id, records_in_group)
+        for group_id, records_in_group in ordered_groups
+        if any(record.get("_evaluationOnly") is True for record in records_in_group)
+    ]
+    splittable_groups = [
+        (group_id, records_in_group)
+        for group_id, records_in_group in ordered_groups
+        if not any(record.get("_evaluationOnly") is True for record in records_in_group)
+    ]
+    for group_id, records_in_group in splittable_groups:
         bucket = int(_stable_id("pair_group_split", group_id)[:8], 16) % 10
         split = "evaluation" if bucket == 0 else "validation" if bucket == 1 else "train"
         assignments[split].append((group_id, records_in_group))
 
-    if len(ordered_groups) >= 3:
+    if len(splittable_groups) >= 3:
         _ensure_nonempty_group_splits(assignments)
+    assignments["evaluation"].extend(evaluation_only_groups)
 
     def records_for(split: str) -> list[dict[str, Any]]:
         output: list[dict[str, Any]] = []
         for group_id, records_in_group in assignments[split]:
             output.extend(
-                {**record, "split": split, "groupID": group_id}
+                {
+                    **{
+                        key: value
+                        for key, value in record.items()
+                        if key != "_evaluationOnly"
+                    },
+                    "split": split,
+                    "groupID": group_id,
+                }
                 for record in sorted(records_in_group, key=lambda item: str(item.get("id") or ""))
             )
         return sorted(output, key=lambda item: str(item.get("id") or ""))
@@ -559,6 +624,42 @@ def _clean(value: str) -> str:
 
 def _normalize_query(value: str) -> str:
     return _clean(value).casefold()
+
+
+def _evaluation_user_segments(
+    records: list[dict[str, Any]],
+) -> tuple[str, ...]:
+    segments: set[str] = set()
+    for record in records:
+        messages = record.get("messages")
+        if not isinstance(messages, list):
+            continue
+        for message in messages:
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            normalized = _normalize_evaluation_text(str(message.get("content") or ""))
+            if normalized:
+                segments.add(normalized)
+    return tuple(sorted(segments))
+
+
+def _contained_evaluation_segments(
+    value: str,
+    normalized_segments: tuple[str, ...],
+) -> tuple[str, ...]:
+    normalized_value = _normalize_evaluation_text(value)
+    if not normalized_value:
+        return ()
+    padded_value = f" {normalized_value} "
+    return tuple(
+        segment
+        for segment in normalized_segments
+        if f" {segment} " in padded_value
+    )
+
+
+def _normalize_evaluation_text(value: str) -> str:
+    return " ".join(re.findall(r"\w+", value.casefold(), flags=re.UNICODE))
 
 
 def _stable_id(*parts: Any) -> str:

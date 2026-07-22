@@ -1,11 +1,94 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 21,
-  "candidateSFTRecords": 525,
+  "availableSFTRecords": 61,
+  "candidateSFTRecords": 561,
   "constraints": {
     "agentSpecific": true,
+    "fleetLossShareContract": null,
+    "fleetLossShareEnforcementScope": null,
+    "fleetOrchestrationEvaluationRequired": null,
+    "fleetSourceRoleRegistry": null,
+    "fleetValidationLossSharePolicy": null,
+    "fleetValidationSamplingPolicy": null,
     "manifestOnlyTools": true,
-    "maxPublicCorpusSFTTokenShare": 0.35,
+    "maxCortexPublicSFTRecordsPerTool": null,
+    "maxCortexSupplementalAssistantCharShare": null,
+    "maxFleetSupplementalAssistantCharShare": null,
+    "maxFleetSupplementalAssistantTokenProxySelectionShare": null,
+    "maxFleetSupplementalAssistantTokenShare": null,
+    "maxFleetSupplementalDPOChosenCharShare": null,
+    "maxFleetSupplementalDPOChosenTokenProxySelectionShare": null,
+    "maxFleetSupplementalDPOChosenTokenShare": null,
+    "maxPublicCorpusSFTTokenProxyShare": 0.3,
+    "publicCorpusLossShareContract": {
+      "authoritativeCapEncoding": "integer_basis_points",
+      "basisPointDenominator": 10000,
+      "capBasisPoints": {
+        "hard": 3500,
+        "requested": 3500
+      },
+      "dpoTokenizationPolicy": {
+        "appendedEOSTokensPerCompletion": 1,
+        "completionSuffix": "append_tokenizer_eos_token_id",
+        "completionTokenization": "add_special_tokens_false",
+        "trainerImplementation": "trl.DPOTrainer.tokenize_row",
+        "trlVersion": "0.24.0"
+      },
+      "enforcementPhase": "post_tokenizer_load_pre_optimizer",
+      "enforcementRequired": true,
+      "exactTokenEvidenceContract": {
+        "comparisonRule": "numeratorTokenCount*basisPointDenominator<=denominatorTokenCount*capBasisPoints",
+        "lanes": {
+          "dpo": {
+            "denominatorTokenCount": "chosenTargetTokenCount",
+            "publicNumeratorTokenCount": "publicChosenTargetTokenCount"
+          },
+          "sft": {
+            "denominatorTokenCount": "assistantTargetTokenCount",
+            "publicNumeratorTokenCount": "publicAssistantTargetTokenCount"
+          }
+        },
+        "required": true,
+        "schemaVersion": "lumen.public-corpus-loss-share-evidence/1.0.0",
+        "statusAtGeneration": "pending_exact_tokenizer_preflight",
+        "tokenizer": "pinned_qwen_tokenizer"
+      },
+      "failurePolicy": "abort_before_optimizer",
+      "requiredLanes": [
+        "sft",
+        "dpo"
+      ],
+      "rowMetadataContract": {
+        "classificationRule": "prefix_and_nonempty_lineage_required",
+        "mismatch": "hard_fail",
+        "publicCorpusField": "publicCorpus",
+        "publicSourceFamilyPrefix": "public_adapter_corpus_"
+      },
+      "schemaVersion": "lumen.public-corpus-loss-share/1.0.0",
+      "sourceSelectionProxy": {
+        "contract": {
+          "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+          "exactPinnedTokenizerAuthoritative": true,
+          "maxCharsPerToken": 4,
+          "schemaVersion": "lumen.source-token-proxy/1.0.0",
+          "status": "source_side_selection_proxy_not_exact_token_count",
+          "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+        },
+        "maximumPublicShareBasisPoints": 3000,
+        "status": "safety_budget_not_exact_token_count"
+      },
+      "tokenAccounting": {
+        "dpo": "rendered_chosen_completion_tokens_add_special_tokens_false_plus_one_trl_0_24_0_appended_eos",
+        "sft": "assistant_mask_non_ignored_token_count"
+      },
+      "tokenizer": {
+        "baseModelID": "Qwen/Qwen3-1.7B",
+        "baseModelRevision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+        "tokenizerClosureSHA256": "ef6d799ce1ba7094fc40f8d5bf011d6ff3c549598ed1b06dbe46207ae9c1d13b",
+        "tokenizerSHA256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+      }
+    },
+    "requestedMaxPublicCorpusAssistantTargetTokenShare": 0.35,
     "sentinelSafe": true,
     "ultraSpecificAdapterCorpus": true
   },
@@ -15,18 +98,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "ef8d253c5bd9e037c87682de15e3c4f03cb12b8629fcbf1ec25f0b7b6e10b847"
+      "reportSHA256": "3ec0c382f1f6feef66f5311ca34ff0d2a9043379bd84a108392a7b3fddc07ddc"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "f83369f9fd2a46b45f22a15ab69e461b1b63607184b51e2e2feab992f28ba0d1",
+    "frozenEvaluationSHA256": "a0f17f9f085c58d4fa4cc0fad01a689809af084d30fbf52118e53cd6a81fd194",
     "recordCount": 6,
-    "schemaVersion": "lumen.adapter-eval/1.0.0"
+    "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "9912013b44e3f6f212747bcffd91e05dc6d658e7b36977e75038cac81a6c519a",
-      "optimizedTrainingCorpusSHA256": "a32516dc7c0d028e0e187b19e62522973e0b03748e49cf418af70ff920b3cf34",
+      "baselineTrainingCorpusSHA256": "67223adf11fd1e2f44d1bc0a7c21cc7d110284e0d7428ea8534bb168607eb31c",
+      "optimizedTrainingCorpusSHA256": "d042c2ea0eb06cdb379a55ba0ccc0511349eea40da007e21f10d8ee9f19bf384",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -42,6 +125,8 @@
       "baseModelArtifactDigest",
       "baseModelWeightShards",
       "baseModelTokenizerDigest",
+      "baseModelTokenizerFiles",
+      "baseModelTokenizerClosureSHA256",
       "trainingEnvironmentLockSHA256",
       "trainingCodeSHA256",
       "trainingCodeSHA256ByPhase",
@@ -49,11 +134,11 @@
       "trainingDependencyLockSHA256",
       "requirementsSHA256",
       "seed",
-      "trainingConfigSHA256",
+      "trainingConfigInvariantSHA256",
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "6d5d52aadb853b317fc6009d1db5671341b91154c87d84efd1960fa8db6c16be",
+    "experimentManifestSHA256": "73699f0f0cc69bd72b221a87f780c734a120d34ba987180e0e428bfd7f6c9823",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -66,6 +151,7 @@
       "requiresBaselineAndOptimizedContaminationReports": true,
       "requiresCompleteEvidence": true,
       "requiresHonestRuntimeSourceBindingAudit": true,
+      "requiresIdenticalInvariantTrainingConfig": true,
       "requiresIdenticalTrainingCode": true,
       "requiresIdenticalTrainingDependencyLock": true,
       "requiresIdenticalTrainingEnvironment": true,
@@ -75,7 +161,24 @@
       "runtimePointerPolicy": "unchanged_until_promoted",
       "runtimeSourceBindingCanSatisfyTrustedAttestation": false,
       "runtimeSourceRevisionIsAuditOnly": true,
-      "schemaVersion": "lumen.adapter-promotion/1.0.0"
+      "schemaVersion": "lumen.adapter-promotion/1.2.0",
+      "variantDerivedTrainingConfigPaths": [
+        "dpo_num_train_epochs",
+        "num_train_epochs",
+        "optimizationStepPolicy.dpo.effectiveStepsPerEpoch",
+        "optimizationStepPolicy.dpo.projectedEffectiveSteps",
+        "optimizationStepPolicy.dpo.selectedEpochs",
+        "optimizationStepPolicy.dpo.trainRecordCount",
+        "optimizationStepPolicy.sft.effectiveStepsPerEpoch",
+        "optimizationStepPolicy.sft.projectedEffectiveSteps",
+        "optimizationStepPolicy.sft.selectedEpochs",
+        "optimizationStepPolicy.sft.trainRecordCount"
+      ],
+      "variantSpecificTrainingConfigFields": [
+        "dpo_num_train_epochs",
+        "num_train_epochs",
+        "optimizationStepPolicy"
+      ]
     },
     "requiredVariants": [
       "internal_only",
@@ -83,10 +186,10 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "04fc7ede31a84c1a834cd561defb5e00a565144d",
+  "manifestCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
   "preferenceTraining": {
     "includedInCheckpoint": false,
-    "recordCount": 3,
+    "recordCount": 39,
     "requiredPhase": "post_sft_preference_training",
     "status": "generated_not_trained"
   },
@@ -132,26 +235,49 @@
       "Apache-2.0",
       "MIT"
     ],
-    "maxDPOTokenShare": 0.35,
-    "maxSFTTokenShare": 0.35,
+    "maxDPOTokenProxyShare": 0.3,
+    "maxSFTTokenProxyShare": 0.3,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 5,
+      "train_sft": 9,
       "val_dpo": 0,
       "val_sft": 1
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 422,
+      "train_sft": 418,
       "val_dpo": 0,
       "val_sft": 77
     },
+    "rejectedByValidationSampling": {
+      "train_dpo": 0,
+      "train_sft": 0,
+      "val_dpo": 0,
+      "val_sft": 0
+    },
+    "requestedMaxDPOChosenTargetTokenShare": 0.35,
+    "requestedMaxSFTAssistantTargetTokenShare": 0.35,
     "selectionContract": {
-      "maxTokenShare": 0.35,
+      "laneTargetTokenProxyModes": {
+        "train_dpo": "dpo_chosen",
+        "train_sft": "all_assistant",
+        "val_dpo": "dpo_chosen",
+        "val_sft": "all_assistant"
+      },
+      "maxTokenProxyShare": 0.3,
       "policyVersions": [
         "2026-07-12.3"
       ],
-      "sha256": "96274a1447057e40d32f59cf3fed6daec721b2ee33b97daaf52eb83771d3591d",
+      "requestedExactPublicAssistantTargetShare": 0.35,
+      "sha256": "39666d0f65e6a5335afd9886a1fdc0270532dff39ab51bf8c1417d97557b61ca",
+      "sourceTokenProxyContract": {
+        "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+        "exactPinnedTokenizerAuthoritative": true,
+        "maxCharsPerToken": 4,
+        "schemaVersion": "lumen.source-token-proxy/1.0.0",
+        "status": "source_side_selection_proxy_not_exact_token_count",
+        "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+      },
       "strategy": "group_atomic_quality_ranked_source_stratified_v2"
     },
     "selectionScoreSummary": {
@@ -162,9 +288,9 @@
         "minimum": 0.78375
       },
       "selected": {
-        "count": 6,
+        "count": 10,
         "maximum": 0.942625,
-        "mean": 0.848077,
+        "mean": 0.844472,
         "minimum": 0.78375
       }
     },
@@ -246,71 +372,94 @@
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "Team-ACE/ToolACE": 3,
-      "grammarly/coedit": 1,
-      "json-schema-org/JSON-Schema-Test-Suite": 2
+      "Team-ACE/ToolACE": 4,
+      "grammarly/coedit": 3,
+      "json-schema-org/JSON-Schema-Test-Suite": 3
     },
     "sourceSplitCounts": {
       "Team-ACE/ToolACE": {
         "train_dpo": 0,
-        "train_sft": 2,
+        "train_sft": 3,
         "val_dpo": 0,
         "val_sft": 1
       },
       "grammarly/coedit": {
         "train_dpo": 0,
-        "train_sft": 1,
+        "train_sft": 3,
         "val_dpo": 0,
         "val_sft": 0
       },
       "json-schema-org/JSON-Schema-Test-Suite": {
         "train_dpo": 0,
-        "train_sft": 2,
+        "train_sft": 3,
         "val_dpo": 0,
         "val_sft": 0
       }
     },
-    "tokenShares": {
+    "tokenProxyShares": {
       "train_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.215159,
-        "total": 0.327468
+        "target": 0.289197,
+        "total": 0.233085
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.148148,
-        "total": 0.266667
+        "target": 0.212963,
+        "total": 0.121415
       }
     }
   },
   "quality": {
+    "assistantTargetCharCount": 7988,
+    "assistantTargetTokenProxyCount": 2021,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
     "cortexCodebaseSelfAwarenessCoverage": null,
     "cortexCodebaseSelfAwarenessRecordCount": 0,
     "cortexCodebaseSelfAwarenessSourceFamily": null,
+    "cortexPublicBalanceDroppedRecordCount": 0,
+    "fleetDPOChosenTargetCharCount": 0,
+    "fleetDPOChosenTargetTokenProxyCount": 0,
+    "fleetSourceRoleDPORecordCounts": {},
+    "fleetSourceRoleSFTRecordCounts": {},
+    "fleetSupplementalDPOChosenTargetCharCount": 0,
+    "fleetSupplementalDPOChosenTargetCharShare": 0.0,
+    "fleetSupplementalDPOChosenTargetTokenProxyCount": 0,
+    "fleetSupplementalDPOChosenTargetTokenProxyShare": 0.0,
     "sequenceBudgetDroppedRecordCount": 0,
+    "sourceTokenProxyContract": {
+      "authoritativeEnforcementPhase": "post_tokenizer_load_pre_optimizer",
+      "exactPinnedTokenizerAuthoritative": true,
+      "maxCharsPerToken": 4,
+      "schemaVersion": "lumen.source-token-proxy/1.0.0",
+      "status": "source_side_selection_proxy_not_exact_token_count",
+      "strategy": "max_whitespace_terms_utf8_byte_ceiling"
+    },
+    "supplementalAssistantTargetCharCount": 0,
+    "supplementalAssistantTargetCharShare": 0.0,
+    "supplementalAssistantTargetTokenProxyCount": 0,
+    "supplementalAssistantTargetTokenProxyShare": 0.0,
     "supplementalBalanceDroppedRecordCount": 0,
     "supplementalSFTRecordCount": 0,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
-    "ultraSpecificRecordCount": 10,
+    "ultraSpecificRecordCount": 46,
     "ultraSpecificSourceFamily": "adapter_ultra_specific"
   },
   "recordCounts": {
     "eval": 6,
-    "train_dpo": 2,
-    "train_sft": 17,
-    "val_dpo": 1,
-    "val_sft": 4
+    "train_dpo": 32,
+    "train_sft": 51,
+    "val_dpo": 7,
+    "val_sft": 10
   },
-  "sourceDirty": true,
+  "sourceDirty": false,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "public_adapter_corpus_coedit_train",
@@ -319,23 +468,29 @@
     "rem_reflection"
   ],
   "sourceFamilyCounts": {
-    "adapter_ultra_specific": 10,
-    "public_adapter_corpus_coedit_train": 1,
-    "public_adapter_corpus_json_schema_test_suite_draft_2020_12": 2,
-    "public_adapter_corpus_toolace_train": 3,
+    "adapter_ultra_specific": 46,
+    "public_adapter_corpus_coedit_train": 3,
+    "public_adapter_corpus_json_schema_test_suite_draft_2020_12": 3,
+    "public_adapter_corpus_toolace_train": 4,
     "rem_reflection": 5
   },
   "sourceIntegrity": {
-    "baseCommit": "04fc7ede31a84c1a834cd561defb5e00a565144d",
-    "dirtyState": true,
-    "workingTreeDigest": "44ae4c29a23c254e3fdce88775ce544c7636e8a1a58891df4b0c8b8014b5fe44"
+    "baseCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
+    "dirtyState": false,
+    "workingTreeDigest": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
   },
-  "systemPrompt": "You are REM, Lumen’s reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
+  "systemPrompt": "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
   "taskTypeCounts": {
-    "public_schema_failure_diagnosis": 2,
-    "public_text_repair": 1,
-    "public_tool_boundary_repair": 3,
-    "rem_reflection": 5,
+    "critical_contract_action_step_repair": 6,
+    "critical_contract_audit_failure_diagnosis": 6,
+    "critical_contract_manifest_drift_repair": 6,
+    "critical_contract_memory_ttl_classification": 6,
+    "critical_contract_ultra_specific_no_thinking_root_cause": 6,
+    "critical_contract_ultra_specific_training_evidence_root_cause": 6,
+    "public_schema_failure_diagnosis": 3,
+    "public_text_repair": 3,
+    "public_tool_boundary_repair": 4,
+    "reflection_and_memory_policy": 5,
     "ultra_specific_argument_extraction_repair": 1,
     "ultra_specific_manifest_tool_repair": 1,
     "ultra_specific_memory_ttl_policy": 4,
@@ -345,10 +500,16 @@
     "ultra_specific_training_evidence_repair": 1
   },
   "taskTypes": [
+    "critical_contract_action_step_repair",
+    "critical_contract_audit_failure_diagnosis",
+    "critical_contract_manifest_drift_repair",
+    "critical_contract_memory_ttl_classification",
+    "critical_contract_ultra_specific_no_thinking_root_cause",
+    "critical_contract_ultra_specific_training_evidence_root_cause",
     "public_schema_failure_diagnosis",
     "public_text_repair",
     "public_tool_boundary_repair",
-    "rem_reflection",
+    "reflection_and_memory_policy",
     "ultra_specific_argument_extraction_repair",
     "ultra_specific_manifest_tool_repair",
     "ultra_specific_memory_ttl_policy",
@@ -357,5 +518,5 @@
     "ultra_specific_runtime_repair",
     "ultra_specific_training_evidence_repair"
   ],
-  "worktreeFingerprint": "44ae4c29a23c254e3fdce88775ce544c7636e8a1a58891df4b0c8b8014b5fe44"
+  "worktreeFingerprint": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
 }

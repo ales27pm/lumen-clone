@@ -239,23 +239,16 @@ Remove `--dry-run-commands` when the build/train environment is ready and the co
 
 ## Explicit GGUF release bake
 
-Only run this after adapter eval gates pass or when the runtime cannot load adapters dynamically:
+Only run this after adapter evaluation gates pass or when the runtime cannot
+load adapters dynamically. The visual runner can delegate to the exporter, but
+it is not the release-container entrypoint: it also writes generation and
+dashboard outputs, while the pinned training source is read-only.
 
-```bash
-python tools/run_visual_improve_loop_v2.py \
-  --release-bake \
-  --release-bake-python .venv-unsloth/bin/python \
-  --skip-release-bake-existing
-```
-
-With Hugging Face upload:
-
-```bash
-python tools/run_visual_improve_loop_v2.py \
-  --release-bake \
-  --release-bake-python .venv-unsloth/bin/python \
-  --hf-repo-id ales27pm/lumen-fleet-gguf
-```
+Perform the actual bake with the direct exporter procedure in
+`tools/fine_tuning/unsloth/export_gguf.md`. That procedure uses the original
+`/outputs` mount, selects exact `configs/<agent>.final.json` files, writes to a
+separate export directory, and keeps credentials out of the GPU/export
+container. The exporter refuses to guess a recent run or fall back to SFT.
 
 ## Important runtime boundary
 
@@ -300,6 +293,7 @@ The generated HTML dashboard includes:
 - relative output paths are rooted under `--root`;
 - the improve-loop command receives repo-rooted output paths;
 - GGUF release bake requires explicit `--release-bake`;
+- release bake requires exact prepared `<agent>.final.json` configs and never falls back to SFT;
 - realistic TestFlight exports are auto-discoverable;
 - loop-state JSON is not mistaken for a runtime audit export;
 - dynamic dashboard content is HTML-escaped.

@@ -3,16 +3,22 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import math
 import os
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from lumen_manifest_crawler.dataset import adapter_evaluation
 from tools.fine_tuning.unsloth import train_dpo, train_sft
-from tools.fine_tuning.unsloth.adapter_artifact import write_adapter_artifact_manifest
+from tools.fine_tuning.unsloth.adapter_artifact import (
+    portable_adapter_model_card,
+    write_adapter_artifact_manifest,
+    write_portable_adapter_model_card,
+)
 
 
 QWEN_MODEL_ID = "Qwen/Qwen3-1.7B"
@@ -32,6 +38,144 @@ OBSERVED_ACCELERATOR = {
         }
     ],
 }
+
+
+class _AllocatorProbe:
+    def __init__(self, events: list[object], address: int = 1024) -> None:
+        self._events = events
+        self._address = address
+
+    def data_ptr(self) -> int:
+        return self._address
+
+    def __del__(self) -> None:
+        self._events.append("released")
+
+
+class _CudaAllocatorProbe:
+    def __init__(
+        self,
+        events: list[object],
+        *,
+        is_available: bool = True,
+        is_expandable: bool = True,
+    ) -> None:
+        self._events = events
+        self._is_available = is_available
+        self._is_expandable = is_expandable
+
+    def is_available(self) -> bool:
+        return self._is_available
+
+    def memory_snapshot(self) -> list[dict[str, object]]:
+        return [
+            {
+                "address": 1000,
+                "total_size": 100,
+                "is_expandable": self._is_expandable,
+            }
+        ]
+
+    def empty_cache(self) -> None:
+        self._events.append("empty_cache")
+
+
+class _TorchAllocatorProbe:
+    def __init__(
+        self,
+        events: list[object],
+        *,
+        is_available: bool = True,
+        is_expandable: bool = True,
+    ) -> None:
+        self._events = events
+        self.cuda = _CudaAllocatorProbe(
+            events,
+            is_available=is_available,
+            is_expandable=is_expandable,
+        )
+
+    def empty(self, size: int, *, device: str) -> _AllocatorProbe:
+        self._events.append(("empty", size, device))
+        return _AllocatorProbe(self._events)
+
+
+def test_dpo_latches_and_verifies_expandable_cuda_allocator() -> None:
+    events: list[object] = []
+    result = train_dpo._latch_expandable_cuda_allocator(
+        environ={
+            train_dpo.CUDA_ALLOCATOR_CONFIG_ENV: (
+                "expandable_segments:True,max_split_size_mb:128"
+            )
+        },
+        torch_module=_TorchAllocatorProbe(events),
+    )
+
+    assert result == {
+        "configurationEnvironmentVariable": (
+            train_dpo.CUDA_ALLOCATOR_CONFIG_ENV
+        ),
+        "configuration": "expandable_segments:True,max_split_size_mb:128",
+        "expandableSegmentsVerified": True,
+    }
+    assert events == [("empty", 1, "cuda"), "released", "empty_cache"]
+
+
+def test_dpo_allocator_verification_fails_closed_and_releases_probe() -> None:
+    events: list[object] = []
+    with pytest.raises(RuntimeError, match="did not enable expandable segments"):
+        train_dpo._latch_expandable_cuda_allocator(
+            environ={
+                train_dpo.CUDA_ALLOCATOR_CONFIG_ENV: "expandable_segments:True"
+            },
+            torch_module=_TorchAllocatorProbe(
+                events,
+                is_expandable=False,
+            ),
+        )
+
+    assert events == [("empty", 1, "cuda"), "released", "empty_cache"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        None,
+        "",
+        "expandable_segments:False",
+        "expandable_segments:True,expandable_segments:True",
+        "expandable_segments",
+    ),
+)
+def test_dpo_allocator_requires_exact_expandable_configuration(
+    value: str | None,
+) -> None:
+    environment = (
+        {} if value is None else {train_dpo.CUDA_ALLOCATOR_CONFIG_ENV: value}
+    )
+    with pytest.raises(RuntimeError, match="PYTORCH_CUDA_ALLOC_CONF"):
+        train_dpo._latch_expandable_cuda_allocator(
+            environ=environment,
+            torch_module=_TorchAllocatorProbe([]),
+        )
+
+
+def test_dpo_allocator_requires_cuda() -> None:
+    with pytest.raises(RuntimeError, match="requires a CUDA accelerator"):
+        train_dpo._latch_expandable_cuda_allocator(
+            environ={
+                train_dpo.CUDA_ALLOCATOR_CONFIG_ENV: "expandable_segments:True"
+            },
+            torch_module=_TorchAllocatorProbe([], is_available=False),
+        )
+
+
+def test_dpo_allocator_rejects_generic_only_configuration() -> None:
+    with pytest.raises(RuntimeError, match="PYTORCH_CUDA_ALLOC_CONF"):
+        train_dpo._latch_expandable_cuda_allocator(
+            environ={"PYTORCH_ALLOC_CONF": "expandable_segments:True"},
+            torch_module=_TorchAllocatorProbe([]),
+        )
 
 
 def _resolved_environment() -> dict:
@@ -90,6 +234,7 @@ def _write_sft_adapter(
     path: Path,
     *,
     base_model_name: str = QWEN_MODEL_ID,
+    base_model_revision: str | None = QWEN_REVISION,
 ) -> dict:
     path.mkdir()
     (path / "adapter_config.json").write_text(
@@ -97,6 +242,7 @@ def _write_sft_adapter(
             {
                 "peft_type": "LORA",
                 "base_model_name_or_path": base_model_name,
+                "revision": base_model_revision,
                 "target_modules": ["q_proj"],
             }
         ),
@@ -105,6 +251,11 @@ def _write_sft_adapter(
     (path / "adapter_model.safetensors").write_bytes(_safetensors_bytes())
     (path / "tokenizer.json").write_text("{}", encoding="utf-8")
     (path / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+    write_portable_adapter_model_card(
+        path,
+        base_model_id=base_model_name,
+        base_model_revision=base_model_revision,
+    )
     return write_adapter_artifact_manifest(path, training_phase="sft")
 
 
@@ -112,6 +263,7 @@ def _sft_parent_fixture(
     tmp_path: Path,
     *,
     adapter_base_model_name: str = QWEN_MODEL_ID,
+    adapter_base_model_revision: str | None = QWEN_REVISION,
 ) -> tuple[Path, Path, dict, dict]:
     pending = adapter_evaluation.build_experiment_variant_manifest(
         agent="executor",
@@ -129,6 +281,7 @@ def _sft_parent_fixture(
     artifact = _write_sft_adapter(
         adapter,
         base_model_name=adapter_base_model_name,
+        base_model_revision=adapter_base_model_revision,
     )
     resolved_environment = _resolved_environment()
     environment = {
@@ -186,6 +339,10 @@ def _sft_parent_fixture(
         "baseModelArtifactDigest": pending["baseModelArtifactDigest"],
         "baseModelWeightShards": pending["baseModelWeightShards"],
         "baseModelTokenizerDigest": pending["baseModelTokenizerDigest"],
+        "baseModelTokenizerFiles": pending["baseModelTokenizerFiles"],
+        "baseModelTokenizerClosureSHA256": pending[
+            "baseModelTokenizerClosureSHA256"
+        ],
         "trainingEnvironmentLock": pending["trainingEnvironmentLock"],
         "trainingEnvironmentLockSHA256": pending[
             "trainingEnvironmentLockSHA256"
@@ -211,6 +368,13 @@ def _sft_parent_fixture(
         "runtimeSourceBindingStatus": "operator_declared_unverified",
         "runtimeSourceBindingMethod": "huggingface_repository_head_supplemental",
         "variantAttestation": {
+            "schema": train_dpo.TRAINING_VARIANT_ATTESTATION_SCHEMA,
+            "effectiveTrainingConfigSHA256": pending[
+                "trainingConfigSHA256"
+            ],
+            "trainingConfigInvariantSHA256": pending[
+                "trainingConfigInvariantSHA256"
+            ],
             "trainingEnvironmentLockSHA256": pending[
                 "trainingEnvironmentLockSHA256"
             ]
@@ -230,6 +394,24 @@ def test_verified_sft_parent_returns_complete_audit_lineage(tmp_path: Path) -> N
     assert lineage["variantManifestSHA256"] == payload["variantManifestSHA256"]
     assert lineage["runtimeSourceRevision"] == RUNTIME_SOURCE_REVISION
     assert lineage["baseModelWeightShards"] == cfg["baseModelWeightShards"]
+    assert lineage["trainingConfigSHA256"] == payload[
+        "trainingConfigSHA256"
+    ]
+    assert lineage["trainingConfigInvariantSHA256"] == payload[
+        "trainingConfigInvariantSHA256"
+    ]
+
+
+def test_expected_sft_parent_rejects_wrong_attestation_schema(
+    tmp_path: Path,
+) -> None:
+    _, _, cfg, _ = _sft_parent_fixture(tmp_path)
+    attestation = dict(cfg["variantAttestation"])
+    attestation["schema"] = "lumen.training-variant-attestation/1.2.0"
+    cfg["variantAttestation"] = attestation
+
+    with pytest.raises(RuntimeError, match="missing its variant attestation"):
+        train_dpo._expected_sft_parent_lineage(cfg)
 
 
 @pytest.mark.parametrize(
@@ -247,6 +429,10 @@ def test_verified_sft_parent_returns_complete_audit_lineage(tmp_path: Path) -> N
         "baseModelArtifactDigest",
         "baseModelWeightShards",
         "baseModelTokenizerDigest",
+        "baseModelTokenizerFiles",
+        "baseModelTokenizerClosureSHA256",
+        "trainingConfigSHA256",
+        "trainingConfigInvariantSHA256",
         "trainingEnvironmentLockSHA256",
         "trainingDependencyLockSHA256",
         "requirementsSHA256",
@@ -305,15 +491,57 @@ def test_verified_sft_parent_rejects_invalid_artifact_lineage(
         )
 
 
-def test_verified_sft_parent_rejects_adapter_base_model_mismatch(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "adapter_base_model_name",
+    (
+        "unsloth/qwen3-1.7b-unsloth-bnb-4bit",
+        "Qwen/Another-Model",
+    ),
+)
+def test_verified_sft_parent_rejects_adapter_base_model_mismatch(
+    tmp_path: Path,
+    adapter_base_model_name: str,
+) -> None:
     adapter, finalized, cfg, _ = _sft_parent_fixture(
         tmp_path,
-        adapter_base_model_name="Qwen/Another-Model",
+        adapter_base_model_name=adapter_base_model_name,
     )
     with pytest.raises(RuntimeError, match="adapter base model"):
         train_dpo._verified_sft_parent(
             cfg, adapter_dir=adapter, finalized_manifest_path=finalized
         )
+
+
+@pytest.mark.parametrize("adapter_revision", (None, "f" * 40))
+def test_verified_sft_parent_rejects_floating_or_wrong_base_revision(
+    tmp_path: Path,
+    adapter_revision: str | None,
+) -> None:
+    if adapter_revision is None:
+        with pytest.raises(ValueError, match="revision"):
+            _sft_parent_fixture(
+                tmp_path,
+                adapter_base_model_revision=adapter_revision,
+            )
+        return
+    adapter, finalized, cfg, _ = _sft_parent_fixture(
+        tmp_path,
+        adapter_base_model_revision=adapter_revision,
+    )
+
+    with pytest.raises((RuntimeError, ValueError), match="revision"):
+        train_dpo._verified_sft_parent(
+            cfg,
+            adapter_dir=adapter,
+            finalized_manifest_path=finalized,
+        )
+
+
+def test_adapter_artifact_rejects_floating_main_revision(tmp_path: Path) -> None:
+    adapter = tmp_path / "sft"
+
+    with pytest.raises(ValueError, match="full commit SHA"):
+        _write_sft_adapter(adapter, base_model_revision="main")
 
 
 @pytest.mark.parametrize("mutation", ("modified", "missing"))
@@ -378,11 +606,14 @@ def _valid_preference_row() -> dict:
 def test_preference_rows_remain_conversational_for_trl_chat_templates() -> None:
     source = _valid_preference_row()
     normalized = train_dpo.row_to_preference(source)
+    expected_prompt = [dict(message) for message in source["prompt"]]
+    expected_prompt[-1]["content"] += "\n\n/no_think"
 
     assert normalized == {
-        "prompt": source["prompt"],
+        "prompt": expected_prompt,
         "chosen": [source["chosen"]],
         "rejected": [source["rejected"]],
+        "chat_template_kwargs": {"enable_thinking": False},
     }
     assert isinstance(normalized["prompt"], list)
     assert normalized["prompt"][-1]["role"] == "user"
@@ -507,23 +738,28 @@ def test_pinned_qwen_trl_chat_template_preserves_assistant_boundaries() -> None:
 
     normalized = train_dpo.row_to_preference(_valid_preference_row())
     prepared = maybe_apply_chat_template(normalized, tokenizer)
-    without_generation_boundary = tokenizer.apply_chat_template(
+    expected_prompt = tokenizer.apply_chat_template(
         normalized["prompt"],
         tokenize=False,
-        add_generation_prompt=False,
+        add_generation_prompt=True,
+        enable_thinking=False,
     )
-    generation_boundary = prepared["prompt"][len(without_generation_boundary) :]
 
-    assert prepared["prompt"].startswith(without_generation_boundary)
-    assert generation_boundary
-    assert "assistant" in generation_boundary
+    assert prepared["prompt"] == expected_prompt
+    assert prepared["prompt"].endswith("<think>\n\n</think>\n\n")
+    assert not prepared["chosen"].lstrip().startswith("<think>")
+    assert not prepared["rejected"].lstrip().startswith("<think>")
     assert prepared["chosen"].rstrip().endswith(tokenizer.eos_token)
     assert prepared["rejected"].rstrip().endswith(tokenizer.eos_token)
     assert "The tool reported success." in prepared["chosen"]
     assert "I guessed that it worked." in prepared["rejected"]
 
     old_flattened = {
-        "prompt": without_generation_boundary,
+        "prompt": tokenizer.apply_chat_template(
+            normalized["prompt"],
+            tokenize=False,
+            add_generation_prompt=False,
+        ),
         "chosen": normalized["chosen"][0]["content"],
         "rejected": normalized["rejected"][0]["content"],
     }
@@ -531,7 +767,7 @@ def test_pinned_qwen_trl_chat_template_preserves_assistant_boundaries() -> None:
     assert prepared != old_flattened
 
 
-def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
+def test_pinned_trl_024_dpo_constructor_contract_is_fail_closed() -> None:
     class ConfigProbe:
         def __init__(self, **kwargs: object) -> None:
             self.kwargs = kwargs
@@ -562,12 +798,25 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
             self.inputs = (model, args, train_dataset, eval_dataset, processing_class)
 
     cfg = {
+        "agent": "fleet",
         "batch_size": 1,
         "gradient_accumulation_steps": 2,
         "learning_rate": 1e-5,
+        "dpo_learning_rate": 2e-6,
         "num_train_epochs": 1,
+        "dpo_num_train_epochs": 0.5,
+        "dpo_beta": 0.1,
+        "dpo_rpo_alpha": 1.0,
         "warmup_steps": 0,
         "max_seq_length": 512,
+        "max_prompt_length": 384,
+        "preference_trainer": "dpo",
+        "gradient_checkpointing": True,
+        "use_logits_to_keep": True,
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "bf16": False,
+        "fp16": True,
     }
     common = {
         "seed": 42,
@@ -590,14 +839,240 @@ def test_pinned_trl_024_dpo_and_orpo_constructor_contracts() -> None:
     assert dpo_args.kwargs["ref_adapter_name"] == train_dpo.REFERENCE_ADAPTER_NAME
     assert dpo_args.kwargs["seed"] == dpo_args.kwargs["data_seed"] == 42
     assert dpo_args.kwargs["eval_strategy"] == "no"
-    assert dpo_args.kwargs["save_strategy"] == "epoch"
+    assert dpo_args.kwargs["save_strategy"] == "steps"
+    assert dpo_args.kwargs["save_steps"] == 5
+    assert dpo_args.kwargs["save_total_limit"] == 2
+    assert dpo_args.kwargs["save_only_model"] is False
+    assert dpo_args.kwargs["learning_rate"] == 2e-6
+    assert dpo_args.kwargs["num_train_epochs"] == 0.5
+    assert dpo_args.kwargs["max_prompt_length"] == 384
+    assert dpo_args.kwargs["max_completion_length"] is None
+    assert dpo_args.kwargs["use_logits_to_keep"] is True
+    assert dpo_args.kwargs["precompute_ref_log_probs"] is True
+    assert dpo_args.kwargs["precompute_ref_batch_size"] == 1
+    assert dpo_args.kwargs["rpo_alpha"] == 1.0
+    assert dpo_args.kwargs["gradient_checkpointing"] is True
+    assert dpo_args.kwargs["torch_empty_cache_steps"] == 1
 
-    orpo_trainer, orpo_args = train_dpo._build_preference_trainer(
-        cfg, preference_trainer="orpo", **common
+    cfg["dpo_rpo_alpha"] = None
+    cfg["agent"] = "executor"
+    _, ordinary_dpo_args = train_dpo._build_preference_trainer(
+        cfg, preference_trainer="dpo", **common
     )
-    assert isinstance(orpo_trainer, ORPOTrainerProbe)
-    assert "model_adapter_name" not in orpo_args.kwargs
-    assert orpo_args.kwargs["seed"] == orpo_args.kwargs["data_seed"] == 42
+    assert ordinary_dpo_args.kwargs["rpo_alpha"] is None
+    cfg["dpo_rpo_alpha"] = 1.0
+    cfg["agent"] = "fleet"
+
+    with pytest.raises(ValueError, match="drifted from the config"):
+        train_dpo._build_preference_trainer(
+            cfg, preference_trainer="orpo", **common
+        )
+
+    cfg["precompute_ref_batch_size"] = 0
+    with pytest.raises(ValueError, match="precompute_ref_batch_size"):
+        train_dpo._build_preference_trainer(
+            cfg, preference_trainer="dpo", **common
+        )
+    cfg["precompute_ref_batch_size"] = 1
+    for field, invalid, message in (
+        ("gradient_checkpointing", "true", "gradient_checkpointing"),
+        ("gradient_checkpointing", False, "gradient_checkpointing=true"),
+        ("use_logits_to_keep", "false", "use_logits_to_keep"),
+        ("use_logits_to_keep", False, "use_logits_to_keep=true"),
+        ("precompute_ref_log_probs", "false", "precompute_ref_log_probs"),
+        ("precompute_ref_log_probs", False, "precompute_ref_log_probs=true"),
+        ("precompute_ref_batch_size", True, "precompute_ref_batch_size"),
+        ("precompute_ref_batch_size", 1.5, "precompute_ref_batch_size"),
+    ):
+        original = cfg[field]
+        cfg[field] = invalid
+        with pytest.raises(ValueError, match=message):
+            train_dpo._build_preference_trainer(
+                cfg, preference_trainer="dpo", **common
+            )
+        cfg[field] = original
+
+
+def _valid_preference_controls() -> dict[str, object]:
+    return {
+        "agent": "executor",
+        "preference_trainer": "dpo",
+        "dpo_learning_rate": 5e-6,
+        "dpo_num_train_epochs": 2,
+        "dpo_beta": 0.1,
+        "dpo_rpo_alpha": None,
+        "max_seq_length": 4096,
+        "max_prompt_length": 2048,
+        "batch_size": 2,
+        "gradient_accumulation_steps": 4,
+        "warmup_steps": 0,
+        "gradient_checkpointing": True,
+        "use_logits_to_keep": True,
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "bf16": False,
+        "fp16": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid", "message"),
+    (
+        ("preference_trainer", "orpo", "exactly 'dpo'"),
+        ("dpo_learning_rate", None, "dpo_learning_rate"),
+        ("dpo_learning_rate", True, "dpo_learning_rate"),
+        ("dpo_learning_rate", math.inf, "dpo_learning_rate"),
+        ("dpo_num_train_epochs", 0, "dpo_num_train_epochs"),
+        ("dpo_num_train_epochs", "2", "dpo_num_train_epochs"),
+        ("dpo_beta", None, "dpo_beta"),
+        ("dpo_beta", -0.1, "dpo_beta"),
+        ("dpo_rpo_alpha", None, "dpo_rpo_alpha"),
+        ("dpo_rpo_alpha", True, "dpo_rpo_alpha"),
+        ("dpo_rpo_alpha", 0.0, "dpo_rpo_alpha"),
+        ("dpo_rpo_alpha", -0.1, "dpo_rpo_alpha"),
+        ("dpo_rpo_alpha", math.inf, "dpo_rpo_alpha"),
+        ("max_prompt_length", 4096, "max_prompt_length"),
+        ("max_prompt_length", 2048.0, "max_prompt_length"),
+        ("bf16", True, "Exactly one"),
+        ("fp16", "true", "explicit booleans"),
+    ),
+)
+def test_preference_controls_reject_missing_coerced_or_fallback_values(
+    field: str,
+    invalid: object,
+    message: str,
+) -> None:
+    config = _valid_preference_controls()
+    if invalid is None:
+        config.pop(field)
+    else:
+        config[field] = invalid
+
+    with pytest.raises(ValueError, match=message):
+        train_dpo._validate_preference_training_config(config)
+
+
+def test_preference_controls_resolve_explicit_fp16_without_sft_fallbacks() -> None:
+    config = _valid_preference_controls()
+
+    assert train_dpo._validate_preference_training_config(config) == {
+        "preferenceTrainer": "dpo",
+        "learningRate": 5e-6,
+        "numTrainEpochs": 2.0,
+        "beta": 0.1,
+        "rpoAlpha": None,
+        "maxPromptLength": 2048,
+        "gradientCheckpointing": True,
+        "useLogitsToKeep": True,
+        "precomputeRefLogProbs": True,
+        "precomputeRefBatchSize": 1,
+        "precision": {
+            "schemaVersion": train_sft.TRAINING_PRECISION_SCHEMA,
+            "bf16": False,
+            "fp16": True,
+            "dtype": "float16",
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("agent", "rpo_alpha"),
+    (
+        ("fleet", None),
+        ("cortex", 1.0),
+        ("executor", 1.0),
+        ("mouth", 1.0),
+        ("mimicry", 1.0),
+        ("rem", 1.0),
+    ),
+)
+def test_preference_controls_bind_rpo_exactly_to_fleet(
+    agent: str,
+    rpo_alpha: float | None,
+) -> None:
+    config = _valid_preference_controls()
+    config["agent"] = agent
+    config["dpo_rpo_alpha"] = rpo_alpha
+
+    with pytest.raises(ValueError, match="exactly 1.0 for Fleet"):
+        train_dpo._validate_preference_training_config(config)
+
+    config["agent"] = "fleet"
+    config["dpo_rpo_alpha"] = 1.0
+    assert train_dpo._validate_preference_training_config(config)[
+        "rpoAlpha"
+    ] == 1.0
+
+
+def test_rpo_runtime_capability_evidence_is_hash_bound_when_not_applicable() -> None:
+    evidence = train_dpo._verify_rpo_runtime_capability(
+        dpo_config_class=object,
+        dpo_trainer_class=object,
+        rpo_alpha=None,
+    )
+    assert train_dpo._valid_rpo_runtime_capability_evidence(
+        evidence,
+        rpo_alpha=None,
+    )
+    tampered = {**evidence, "status": "verified"}
+    assert not train_dpo._valid_rpo_runtime_capability_evidence(
+        tampered,
+        rpo_alpha=None,
+    )
+
+
+def test_constructed_rpo_binding_and_finite_evaluation_are_fail_closed() -> None:
+    args = SimpleNamespace(rpo_alpha=1.0)
+    trainer = SimpleNamespace(args=args)
+    evidence = train_dpo._verify_constructed_rpo_binding(
+        trainer,
+        args,
+        rpo_alpha=1.0,
+    )
+    assert train_dpo._valid_constructed_rpo_binding_evidence(
+        evidence,
+        rpo_alpha=1.0,
+    )
+    assert train_dpo._verified_rpo_evaluation_metrics(
+        {"rpoAlpha": 1.0},
+        {"eval_nll_loss": 0.25},
+    ) == {
+        "rpoAlpha": 1.0,
+        "metric": "eval_nll_loss",
+        "value": 0.25,
+    }
+    assert train_dpo._verified_rpo_evaluation_metrics(
+        {"rpoAlpha": None},
+        {},
+    ) is None
+
+    for invalid in (None, True, 1, 0.5, float("inf")):
+        with pytest.raises(RuntimeError, match="retain the configured RPO alpha"):
+            train_dpo._verify_constructed_rpo_binding(
+                SimpleNamespace(args=SimpleNamespace(rpo_alpha=invalid)),
+                args,
+                rpo_alpha=1.0,
+            )
+        with pytest.raises(RuntimeError, match="retain the configured RPO alpha"):
+            train_dpo._verify_constructed_rpo_binding(
+                trainer,
+                SimpleNamespace(rpo_alpha=invalid),
+                rpo_alpha=1.0,
+            )
+
+    for invalid in (
+        None,
+        True,
+        "0.25",
+        -0.1,
+        float("nan"),
+        float("inf"),
+    ):
+        with pytest.raises(RuntimeError, match="finite eval_nll_loss"):
+            train_dpo._verified_rpo_evaluation_metrics(
+                {"rpoAlpha": 1.0},
+                {"eval_nll_loss": invalid},
+            )
 
 
 @pytest.mark.e2e
@@ -611,6 +1086,16 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
             f"Pinned constructor integration requires trl==0.24.0, found {trl.__version__}"
         )
 
+    capability = train_dpo._verify_rpo_runtime_capability(
+        dpo_config_class=trl.DPOConfig,
+        dpo_trainer_class=trl.DPOTrainer,
+        rpo_alpha=1.0,
+    )
+    assert train_dpo._valid_rpo_runtime_capability_evidence(
+        capability,
+        rpo_alpha=1.0,
+    )
+
     class DPOConstructorBinding:
         def __init__(self, **kwargs: object) -> None:
             inspect.signature(trl.DPOTrainer.__init__).bind(object(), **kwargs)
@@ -620,13 +1105,25 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
             inspect.signature(trl.ORPOTrainer.__init__).bind(object(), **kwargs)
 
     cfg = {
+        "agent": "fleet",
         "batch_size": 1,
         "gradient_accumulation_steps": 2,
         "learning_rate": 1e-5,
+        "dpo_learning_rate": 2e-6,
         "num_train_epochs": 1,
+        "dpo_num_train_epochs": 0.5,
+        "dpo_beta": 0.1,
+        "dpo_rpo_alpha": 1.0,
         "warmup_steps": 0,
         "max_seq_length": 512,
-        "fp16": False,
+        "max_prompt_length": 384,
+        "preference_trainer": "dpo",
+        "gradient_checkpointing": True,
+        "use_logits_to_keep": True,
+        "precompute_ref_log_probs": True,
+        "precompute_ref_batch_size": 1,
+        "bf16": False,
+        "fp16": True,
     }
     common = {
         "seed": 42,
@@ -646,24 +1143,139 @@ def test_actual_pinned_trl_024_config_and_trainer_constructor_apis() -> None:
         preference_trainer="dpo",
         **common,
     )
-    _, orpo_args = train_dpo._build_preference_trainer(
-        cfg,
-        preference_trainer="orpo",
-        **common,
-    )
-
     assert isinstance(dpo_args, trl.DPOConfig)
-    assert isinstance(orpo_args, trl.ORPOConfig)
     assert dpo_args.model_adapter_name == train_dpo.POLICY_ADAPTER_NAME
     assert dpo_args.ref_adapter_name == train_dpo.REFERENCE_ADAPTER_NAME
+    assert dpo_args.use_logits_to_keep is True
+    assert dpo_args.precompute_ref_log_probs is True
+    assert dpo_args.precompute_ref_batch_size == 1
+    assert dpo_args.rpo_alpha == 1.0
+    assert dpo_args.gradient_checkpointing is True
+    assert dpo_args.torch_empty_cache_steps == 1
     assert dpo_args.seed == dpo_args.data_seed == 42
-    assert orpo_args.seed == orpo_args.data_seed == 42
+
+    cfg["dpo_rpo_alpha"] = None
+    cfg["agent"] = "executor"
+    _, ordinary_dpo_args = train_dpo._build_preference_trainer(
+        cfg,
+        preference_trainer="dpo",
+        **common,
+    )
+    assert ordinary_dpo_args.rpo_alpha is None
+
+
+def test_reference_logps_precompute_before_checkpoint_graph_initialization() -> None:
+    events: list[object] = []
+
+    class Model:
+        def gradient_checkpointing_disable(self) -> None:
+            events.append("disable")
+
+        def gradient_checkpointing_enable(self, **kwargs: object) -> None:
+            events.append(("enable", kwargs))
+
+    class Trainer:
+        model = Model()
+        _precomputed_train_ref_log_probs = False
+        _precomputed_eval_ref_log_probs = False
+
+        def get_train_dataloader(self) -> object:
+            events.append("precompute_train")
+            self._precomputed_train_ref_log_probs = True
+            return object()
+
+        def get_eval_dataloader(self) -> object:
+            events.append("precompute_eval")
+            self._precomputed_eval_ref_log_probs = True
+            return object()
+
+    class Args:
+        precompute_ref_log_probs = True
+        gradient_checkpointing = True
+        gradient_checkpointing_kwargs = {"use_reentrant": False}
+
+    result = train_dpo._precompute_reference_log_probs_before_training(
+        Trainer(),
+        Args(),
+        has_eval_dataset=True,
+    )
+
+    assert result == {"train": True, "evaluation": True}
+    assert events == [
+        "disable",
+        "precompute_train",
+        "precompute_eval",
+        (
+            "enable",
+            {
+                "gradient_checkpointing_kwargs": {
+                    "use_reentrant": False
+                }
+            },
+        ),
+    ]
+
+
+def test_reference_logps_precompute_fails_if_trainer_does_not_bind_columns() -> None:
+    class Model:
+        def gradient_checkpointing_disable(self) -> None:
+            pass
+
+        def gradient_checkpointing_enable(self, **_kwargs: object) -> None:
+            pass
+
+    class Trainer:
+        model = Model()
+        _precomputed_train_ref_log_probs = False
+
+        def get_train_dataloader(self) -> object:
+            return object()
+
+    class Args:
+        precompute_ref_log_probs = True
+        gradient_checkpointing = True
+        gradient_checkpointing_kwargs = None
+
+    with pytest.raises(RuntimeError, match="did not bind"):
+        train_dpo._precompute_reference_log_probs_before_training(
+            Trainer(),
+            Args(),
+            has_eval_dataset=False,
+        )
 
 
 def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) -> None:
     events: list[tuple[str, object]] = []
+    private_path = "/outputs/run/training/base_model_runtime_snapshot"
+
+    class RuntimeConfig:
+        def __init__(self) -> None:
+            self._name_or_path = private_path
+            self.name_or_path = private_path
+
+        def to_dict(self) -> dict[str, str]:
+            return {"_name_or_path": self._name_or_path}
+
+    runtime_config = RuntimeConfig()
+    runtime_base_model = types.SimpleNamespace(
+        config=runtime_config,
+        name_or_path=private_path,
+    )
 
     class Model:
+        def __init__(self) -> None:
+            self.peft_config = {
+                train_dpo.POLICY_ADAPTER_NAME: types.SimpleNamespace(
+                    base_model_name_or_path=private_path,
+                    revision="main",
+                )
+            }
+            self.base_model = runtime_base_model
+            self.config = runtime_config
+
+        def get_base_model(self) -> object:
+            return runtime_base_model
+
         def load_adapter(self, path: str, *, adapter_name: str, is_trainable: bool) -> None:
             events.append(("load", (path, adapter_name, is_trainable)))
 
@@ -672,6 +1284,13 @@ def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) ->
 
         def save_pretrained(self, path: str, **kwargs: object) -> None:
             events.append(("save", (path, kwargs)))
+            output_dir = Path(path)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "README.md").write_text(
+                f"base_model: {self.config.to_dict()['_name_or_path']}\n"
+                f"tag: base_model:adapter:{self.base_model.name_or_path}\n",
+                encoding="utf-8",
+            )
 
     class PeftModelProbe:
         @staticmethod
@@ -689,12 +1308,18 @@ def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) ->
 
     adapter_dir = tmp_path / "executor-sft-adapter"
     model = train_dpo._load_sft_policy(
-        object(),
+        runtime_base_model,
         peft_model_class=PeftModelProbe,
         sft_adapter_dir=adapter_dir,
         preference_trainer="dpo",
     )
-    train_dpo._save_policy_adapter(model, tmp_path / "executor-dpo-adapter")
+    output_dir = tmp_path / "executor-dpo-adapter"
+    cfg = {
+        "base_model_name": QWEN_MODEL_ID,
+        "baseModelID": QWEN_MODEL_ID,
+        "baseModelRevision": QWEN_REVISION,
+    }
+    evidence = train_dpo._save_policy_adapter(model, output_dir, cfg)
 
     assert events[0][1][2:] == (train_dpo.POLICY_ADAPTER_NAME, True)
     assert events[1] == (
@@ -705,164 +1330,196 @@ def test_dpo_loads_frozen_sft_reference_and_saves_only_policy(tmp_path: Path) ->
         "safe_serialization": True,
         "selected_adapters": [train_dpo.POLICY_ADAPTER_NAME],
     }
+    assert evidence["baseModelID"] == QWEN_MODEL_ID
+    assert evidence["baseModelRevision"] == QWEN_REVISION
+    assert (output_dir / "README.md").read_text(
+        encoding="utf-8"
+    ) == portable_adapter_model_card(QWEN_MODEL_ID, QWEN_REVISION)
+    assert private_path not in (output_dir / "README.md").read_text(
+        encoding="utf-8"
+    )
 
 
-def test_verify_base_model_lineage_checks_pinned_artifacts(
+def _tokenizer_closure_fixture(
+    payloads: dict[str, bytes],
+) -> tuple[list[dict[str, object]], str]:
+    files = [
+        {
+            "path": filename,
+            "sizeBytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "huggingFaceBlobID": train_sft._git_blob_sha1(payload),
+        }
+        for filename, payload in sorted(payloads.items())
+    ]
+    closure = {
+        "schemaVersion": "lumen.base-model-tokenizer-closure/1.0.0",
+        "baseModelID": "example/model",
+        "baseModelRevision": "a" * 40,
+        "files": files,
+    }
+    return files, train_sft._canonical_sha256(closure)
+
+
+def _private_runtime_snapshot_fixture(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+) -> tuple[dict[str, object], Path, Path]:
     revision = "a" * 40
     shard_name = "weights.safetensors"
-    artifacts = {
-        "model.safetensors.index.json": json.dumps(
-            {"weight_map": {"layer.weight": shard_name}}, sort_keys=True
-        ).encode(),
-        "tokenizer.json": b"tokenizer",
-        shard_name: b"weights",
+    tokenizer_payloads = {
+        "config.json": b'{"model_type":"qwen3"}',
+        "merges.txt": b"#version: 0.2\n",
+        "tokenizer.json": b'{"version":"1.0"}',
+        "tokenizer_config.json": b'{"chat_template":"pinned"}',
+        "vocab.json": b'{"token":0}',
     }
-    downloaded: list[tuple[str, str, str]] = []
-    for filename, content in artifacts.items():
-        (tmp_path / filename).write_bytes(content)
-
-    def hf_hub_download(*, repo_id: str, filename: str, revision: str) -> str:
-        downloaded.append((repo_id, filename, revision))
-        return str(tmp_path / filename)
-
-    monkeypatch.setitem(
-        sys.modules,
-        "huggingface_hub",
-        types.SimpleNamespace(hf_hub_download=hf_hub_download),
+    tokenizer_files, tokenizer_closure_sha256 = _tokenizer_closure_fixture(
+        tokenizer_payloads
     )
+    generation_payload = b'{"eos_token_id":2}\n'
+    generation_file = {
+        "path": "generation_config.json",
+        "sizeBytes": len(generation_payload),
+        "sha256": hashlib.sha256(generation_payload).hexdigest(),
+        "huggingFaceBlobID": train_sft._git_blob_sha1(generation_payload),
+    }
+    index_payload = json.dumps(
+        {"weight_map": {"layer.weight": shard_name}},
+        sort_keys=True,
+    ).encode()
+    shared_cache = tmp_path / "writable-hf-cache"
+    shared_cache.mkdir()
+    shared_shard = shared_cache / shard_name
+    shared_shard.write_bytes(b"weights")
+    tokenizer_snapshot = tmp_path / "private-tokenizer-snapshot"
+    tokenizer_snapshot.mkdir(mode=0o700)
+    tokenizer_snapshot.chmod(0o700)
+    for filename, payload in tokenizer_payloads.items():
+        path = tokenizer_snapshot / filename
+        path.write_bytes(payload)
+        path.chmod(0o400)
+    runtime = tmp_path / "private-runtime-snapshot"
+    runtime.mkdir(mode=0o700)
+    runtime.chmod(0o700)
+    payloads = {
+        **tokenizer_payloads,
+        "generation_config.json": generation_payload,
+        "model.safetensors.index.json": index_payload,
+        shard_name: shared_shard.read_bytes(),
+    }
+    for filename, payload in payloads.items():
+        path = runtime / filename
+        path.write_bytes(payload)
+        path.chmod(0o400)
+    shards = [
+        {
+            "filename": shard_name,
+            "size": len(payloads[shard_name]),
+            "sha256": hashlib.sha256(payloads[shard_name]).hexdigest(),
+        }
+    ]
     shard_contract = {
         "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-        "shards": [
-            {
-                "filename": shard_name,
-                "size": len(artifacts[shard_name]),
-                "sha256": hashlib.sha256(artifacts[shard_name]).hexdigest(),
-            }
-        ],
+        "shards": shards,
     }
-    index_digest = hashlib.sha256(artifacts["model.safetensors.index.json"]).hexdigest()
-    artifact_digest = train_dpo._canonical_sha256(shard_contract)
-    train_dpo._verify_base_model_lineage(
+    index_digest = hashlib.sha256(index_payload).hexdigest()
+    artifact_digest = train_sft._canonical_sha256(shard_contract)
+    index_binding = train_sft._canonical_sha256(
         {
-            "base_model_name": "example/model",
-            "baseModelRevision": revision,
-            "baseModelIndexDigest": index_digest,
-            "baseModelIndexReferencedShardNames": [shard_name],
-            "baseModelIndexShardBindingSHA256": train_dpo._canonical_sha256(
-                {
-                    "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
-                    "indexDigest": index_digest,
-                    "referencedShardNames": [shard_name],
-                    "shardContractDigest": artifact_digest,
-                }
-            ),
-            "baseModelWeightShards": shard_contract["shards"],
-            "baseModelTokenizerDigest": hashlib.sha256(artifacts["tokenizer.json"]).hexdigest(),
-            "baseModelArtifactDigest": artifact_digest,
+            "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
+            "indexDigest": index_digest,
+            "referencedShardNames": [shard_name],
+            "shardContractDigest": artifact_digest,
         }
     )
-
-    assert downloaded == [
-        ("example/model", "model.safetensors.index.json", revision),
-        ("example/model", "tokenizer.json", revision),
-        ("example/model", shard_name, revision),
-    ]
-
-
-def test_verify_base_model_lineage_rejects_digest_mismatch(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    artifact = tmp_path / "model.safetensors.index.json"
-    artifact.write_bytes(b"unexpected")
-
-    monkeypatch.setitem(
-        sys.modules,
-        "huggingface_hub",
-        types.SimpleNamespace(hf_hub_download=lambda **_: str(artifact)),
-    )
-
-    with pytest.raises(RuntimeError, match="Pinned base-model artifact digest mismatch"):
-        train_dpo._verify_base_model_lineage(
-            {
-                "base_model_name": "example/model",
-                "baseModelRevision": "a" * 40,
-                "baseModelIndexDigest": "0" * 64,
-                "baseModelArtifactDigest": train_dpo._canonical_sha256(
-                    {
-                        "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-                        "shards": [
-                            {
-                                "filename": "weights.safetensors",
-                                "size": 1,
-                                "sha256": "2" * 64,
-                            }
-                        ],
-                    }
-                ),
-                "baseModelWeightShards": [
-                    {
-                        "filename": "weights.safetensors",
-                        "size": 1,
-                        "sha256": "2" * 64,
-                    }
-                ],
-                "baseModelTokenizerDigest": "1" * 64,
-            }
+    cfg: dict[str, object] = {
+        "base_model_name": "example/model",
+        "baseModelID": "example/model",
+        "baseModelRevision": revision,
+        "baseModelIndexDigest": index_digest,
+        "baseModelIndexReferencedShardNames": [shard_name],
+        "baseModelIndexShardBindingSHA256": index_binding,
+        "baseModelWeightShards": shards,
+        "baseModelArtifactDigest": artifact_digest,
+        "baseModelGenerationConfigFile": generation_file,
+        "baseModelTokenizerDigest": hashlib.sha256(
+            tokenizer_payloads["tokenizer.json"]
+        ).hexdigest(),
+        "baseModelTokenizerFiles": tokenizer_files,
+        "baseModelTokenizerClosureSHA256": tokenizer_closure_sha256,
+        "baseModelTokenizerSnapshotPath": str(tokenizer_snapshot),
+        "baseModelRuntimeSnapshotPath": str(runtime),
+    }
+    tokenizer_verification = (
+        train_sft.verify_private_base_model_tokenizer_snapshot(
+            tokenizer_snapshot,
+            base_model_id="example/model",
+            base_model_name="example/model",
+            base_model_revision=revision,
+            tokenizer_files=tokenizer_files,
+            tokenizer_digest=str(cfg["baseModelTokenizerDigest"]),
+            tokenizer_closure_sha256=tokenizer_closure_sha256,
         )
+    )
+    cfg["baseModelTokenizerSnapshotVerification"] = tokenizer_verification
+    verification = train_sft.verify_private_base_model_conversion_snapshot(
+        runtime,
+        base_model_id="example/model",
+        base_model_name="example/model",
+        base_model_revision=revision,
+        tokenizer_files=tokenizer_files,
+        tokenizer_digest=str(cfg["baseModelTokenizerDigest"]),
+        tokenizer_closure_sha256=tokenizer_closure_sha256,
+        generation_config_file=generation_file,
+        model_index_digest=index_digest,
+        index_referenced_shard_names=[shard_name],
+        index_shard_binding_sha256=index_binding,
+        model_artifact_digest=artifact_digest,
+        weight_shards=shards,
+    )
+    cfg["baseModelRuntimeSnapshotVerification"] = verification
+    return cfg, shared_shard, runtime / shard_name
 
 
-def test_sft_lineage_rejects_modified_weight_shard(
+def test_verify_base_model_lineage_uses_only_private_full_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    index = tmp_path / "model.safetensors.index.json"
-    tokenizer = tmp_path / "tokenizer.json"
-    shard = tmp_path / "weights.safetensors"
-    index.write_text(
-        json.dumps({"weight_map": {"layer.weight": shard.name}}),
-        encoding="utf-8",
-    )
-    tokenizer.write_bytes(b"tokenizer")
-    shard.write_bytes(b"modified")
-    files = {path.name: path for path in (index, tokenizer, shard)}
+    cfg, shared_shard, private_shard = _private_runtime_snapshot_fixture(tmp_path)
     monkeypatch.setitem(
         sys.modules,
         "huggingface_hub",
         types.SimpleNamespace(
-            hf_hub_download=lambda **kwargs: str(files[kwargs["filename"]])
+            hf_hub_download=lambda **_: pytest.fail("runtime re-entered HF cache")
         ),
     )
-    declared_shards = [
-        {"filename": shard.name, "size": 8, "sha256": hashlib.sha256(b"expected").hexdigest()}
-    ]
-    index_digest = hashlib.sha256(index.read_bytes()).hexdigest()
-    artifact_digest = train_sft._canonical_sha256(
-        {
-            "schemaVersion": "lumen.base-model-weight-shards/1.0.0",
-            "shards": declared_shards,
-        }
-    )
-    with pytest.raises(RuntimeError, match="weight shard digest mismatch"):
-        train_sft._verify_base_model_lineage(
-            {
-                "base_model_name": "example/model",
-                "baseModelRevision": "a" * 40,
-                "baseModelIndexDigest": index_digest,
-                "baseModelIndexReferencedShardNames": [shard.name],
-                "baseModelIndexShardBindingSHA256": train_sft._canonical_sha256(
-                    {
-                        "schemaVersion": "lumen.base-model-index-shard-binding/1.0.0",
-                        "indexDigest": index_digest,
-                        "referencedShardNames": [shard.name],
-                        "shardContractDigest": artifact_digest,
-                    }
-                ),
-                "baseModelArtifactDigest": artifact_digest,
-                "baseModelWeightShards": declared_shards,
-                "baseModelTokenizerDigest": hashlib.sha256(tokenizer.read_bytes()).hexdigest(),
-            }
-        )
+
+    shared_shard.write_bytes(b"malware")
+    train_dpo._verify_base_model_lineage(cfg)
+    shared_shard.write_bytes(b"weights")
+    train_dpo._verify_base_model_lineage(cfg)
+
+    assert private_shard.read_bytes() == b"weights"
+    assert private_shard.stat().st_ino != shared_shard.stat().st_ino
+
+
+def test_verify_base_model_lineage_rejects_digest_mismatch(
+    tmp_path: Path,
+) -> None:
+    cfg, _, _ = _private_runtime_snapshot_fixture(tmp_path)
+    cfg["baseModelIndexDigest"] = "0" * 64
+
+    with pytest.raises(RuntimeError, match="runtime snapshot verification failed"):
+        train_dpo._verify_base_model_lineage(cfg)
+
+
+def test_sft_lineage_rejects_modified_weight_shard(
+    tmp_path: Path,
+) -> None:
+    cfg, _, private_shard = _private_runtime_snapshot_fixture(tmp_path)
+    private_shard.chmod(0o600)
+    private_shard.write_bytes(b"modified")
+    private_shard.chmod(0o400)
+
+    with pytest.raises(RuntimeError, match="runtime snapshot verification failed"):
+        train_sft._verify_base_model_lineage(cfg)

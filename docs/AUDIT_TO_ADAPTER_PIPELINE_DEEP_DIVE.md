@@ -246,8 +246,13 @@ bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
 
 For an explicit private upload, add `--upload --token-file
-/secure/path/lumen-hf-token`. See `docs/UBUNTU_TRAINING.md`; no training result
-is an iOS runtime promotion or real-device proof.
+/secure/path/lumen-hf-token`. Ordinary upload requires a complete frozen
+quality pass; `--no-gguf` remains qualified as `complete_without_gguf`. Smoke
+or unevaluated publication requires the additional
+`--allow-diagnostic-upload` acknowledgement and is isolated below
+`diagnostic-runs/` with `promotionEligible=false`. See
+`docs/UBUNTU_TRAINING.md`; no training result is an iOS runtime promotion or
+real-device proof.
 
 ## What still needs real-device proof
 
