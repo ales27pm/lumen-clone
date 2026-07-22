@@ -45,7 +45,7 @@ TOKENIZER_CLOSURE_SHA256 = ubuntu_pipeline.canonical_sha256(
 def _contract() -> dict[str, Any]:
     fields = train_sft.FLEET_LOSS_SHARE_FIELD_NAMES
     return {
-        "schemaVersion": "lumen.fleet-loss-share/1.8.0",
+        "schemaVersion": "lumen.fleet-loss-share/1.9.0",
         "enforcementRequired": True,
         "enforcementPhase": "post_tokenizer_load_pre_optimizer",
         "requiredLanes": ["sft", "dpo"],
@@ -97,6 +97,23 @@ def _contract() -> dict[str, Any]:
                 "skip_first_batches"
             ),
             "failurePolicy": "abort_before_optimizer",
+        },
+        "sftOptimizerRecordGeometryContract": {
+            "schemaVersion": (
+                "lumen.fleet-sft-optimizer-record-geometry/1.0.0"
+            ),
+            "lane": "sft",
+            "maximumTrainRecords": 615,
+            "protectedSourceRole": "behavioral_primary",
+            "removableSourceRoles": [
+                "supplemental_static",
+                "public_behavioral",
+            ],
+            "selectionPolicy": (
+                "largest_deterministic_cap_valid_cohort_from_immutable_"
+                "candidates"
+            ),
+            "failurePolicy": "abort_generation_before_optimizer",
         },
         "failurePolicy": "abort_before_optimizer",
         "sourceSelectionProxy": {
@@ -314,6 +331,9 @@ def _config() -> dict[str, Any]:
         "gradient_accumulation_steps": 8,
         "num_train_epochs": 4,
         "packing": False,
+        "optimizationStepPolicy": {
+            "sft": {"trainRecordCount": 5},
+        },
         "base_model_name": BASE_MODEL_ID,
         "baseModelID": BASE_MODEL_ID,
         "baseModelRevision": BASE_MODEL_REVISION,
@@ -574,6 +594,9 @@ def _sft_preflight(
     validation_specification: list[tuple[str, int]] = HAPPY_SPECIFICATION,
 ) -> dict[str, Any]:
     config = _config()
+    config["optimizationStepPolicy"]["sft"]["trainRecordCount"] = len(
+        train_specification
+    )
     return train_sft._preflight_sft_token_lengths(
         {
             "train": (_sft_rows(train_specification), Path("train_sft.jsonl")),
@@ -591,6 +614,65 @@ def _sft_preflight(
         ],
         fleet_config=config,
     )
+
+
+def test_sft_preflight_binds_loaded_train_rows_to_declared_geometry() -> None:
+    config = _config()
+    train_rows = _sft_rows(HAPPY_SPECIFICATION)
+    train_rows.append(copy.deepcopy(train_rows[0]))
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"actual=6 declared=5",
+    ):
+        train_sft._preflight_sft_token_lengths(
+            {
+                "train": (train_rows, Path("train_sft.jsonl")),
+                "validation": (
+                    _sft_rows(HAPPY_SPECIFICATION),
+                    Path("val_sft.jsonl"),
+                ),
+            },
+            tokenizer=_ExactMaskTokenizer(),
+            max_sequence_length=512,
+            agent="fleet",
+            fleet_loss_share_contract=config["fleetLossShareContract"],
+            public_corpus_loss_share_contract=config[
+                "publicCorpusLossShareContract"
+            ],
+            fleet_config=config,
+        )
+
+
+def test_sft_preflight_rejects_loaded_train_rows_above_geometry_cap() -> None:
+    config = _config()
+    config["optimizationStepPolicy"]["sft"]["trainRecordCount"] = 615
+    row = _sft_rows(HAPPY_SPECIFICATION)[0]
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"actual=616 maximum=615",
+    ):
+        train_sft._preflight_sft_token_lengths(
+            {
+                "train": (
+                    [copy.deepcopy(row) for _ in range(616)],
+                    Path("train_sft.jsonl"),
+                ),
+                "validation": (
+                    _sft_rows(HAPPY_SPECIFICATION),
+                    Path("val_sft.jsonl"),
+                ),
+            },
+            tokenizer=_ExactMaskTokenizer(),
+            max_sequence_length=512,
+            agent="fleet",
+            fleet_loss_share_contract=config["fleetLossShareContract"],
+            public_corpus_loss_share_contract=config[
+                "publicCorpusLossShareContract"
+            ],
+            fleet_config=config,
+        )
 
 
 def _dpo_preflight(
@@ -1701,6 +1783,9 @@ def test_compiler_contract_is_accepted_by_both_independent_validators() -> None:
         "baseModelTokenizerClosureSHA256": tokenizer[
             "tokenizerClosureSHA256"
         ],
+        "optimizationStepPolicy": {
+            "sft": {"trainRecordCount": 615},
+        },
     }
 
     for lane in ("sft", "dpo"):

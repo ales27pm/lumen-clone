@@ -8503,6 +8503,7 @@ def _pipeline_validated_fleet_loss_share_contract(
             "exactTokenEvidenceContract",
             "failurePolicy",
             "optimizerFamilyShareBands",
+            "sftOptimizerRecordGeometryContract",
             "sftOptimizerWindowScheduleContract",
             "rowMetadataContract",
             "sourceSelectionProxy",
@@ -8513,7 +8514,7 @@ def _pipeline_validated_fleet_loss_share_contract(
         label="Fleet loss-share contract",
     )
     if (
-        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.8.0"
+        contract.get("schemaVersion") != "lumen.fleet-loss-share/1.9.0"
         or contract.get("enforcementRequired") is not True
         or contract.get("enforcementPhase")
         != "post_tokenizer_load_pre_optimizer"
@@ -8821,6 +8822,59 @@ def _pipeline_validated_fleet_loss_share_contract(
     ):
         raise RuntimeError(
             "Fleet SFT optimizer-window schedule contract drifted"
+        )
+    record_geometry = _pipeline_exact_mapping(
+        contract.get("sftOptimizerRecordGeometryContract"),
+        {
+            "schemaVersion",
+            "lane",
+            "maximumTrainRecords",
+            "protectedSourceRole",
+            "removableSourceRoles",
+            "selectionPolicy",
+            "failurePolicy",
+        },
+        label="Fleet SFT optimizer-record geometry contract",
+    )
+    if dict(record_geometry) != {
+        "schemaVersion": (
+            "lumen.fleet-sft-optimizer-record-geometry/1.0.0"
+        ),
+        "lane": "sft",
+        "maximumTrainRecords": 615,
+        "protectedSourceRole": "behavioral_primary",
+        "removableSourceRoles": [
+            "supplemental_static",
+            "public_behavioral",
+        ],
+        "selectionPolicy": (
+            "largest_deterministic_cap_valid_cohort_from_immutable_"
+            "candidates"
+        ),
+        "failurePolicy": "abort_generation_before_optimizer",
+    }:
+        raise RuntimeError(
+            "Fleet SFT optimizer-record geometry contract drifted"
+        )
+    optimization_policy = config.get("optimizationStepPolicy")
+    sft_optimization_policy = (
+        optimization_policy.get("sft")
+        if isinstance(optimization_policy, Mapping)
+        else None
+    )
+    train_record_count = (
+        sft_optimization_policy.get("trainRecordCount")
+        if isinstance(sft_optimization_policy, Mapping)
+        else None
+    )
+    if (
+        type(train_record_count) is not int
+        or train_record_count <= 0
+        or train_record_count > 615
+    ):
+        raise RuntimeError(
+            "Fleet SFT optimizer-record geometry drifted from the training "
+            "config"
         )
     if contract.get("tokenAccounting") != {
         "sft": "assistant_mask_non_ignored_token_count",

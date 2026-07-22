@@ -86,7 +86,7 @@ FLEET_PUBLIC_BEHAVIORAL_TOKEN_SHARE_HARD_MAX = (
 )
 FLEET_SUPPLEMENTAL_SOURCE_FAMILY_TOKEN_SHARE_HARD_MAX = 0.10
 FLEET_LOSS_SHARE_BASIS_POINTS_DENOMINATOR = 10_000
-FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.8.0"
+FLEET_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = "lumen.fleet-loss-share/1.9.0"
 FLEET_LOSS_SHARE_EVIDENCE_SCHEMA_VERSION = (
     "lumen.fleet-loss-share-evidence/1.4.0"
 )
@@ -131,6 +131,17 @@ FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MIN_BASIS_POINTS = 6_000
 FLEET_ALL_POLICY_SFT_TOKEN_SHARE_MAX_BASIS_POINTS = 6_500
 FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MIN_BASIS_POINTS = 7_500
 FLEET_NATIVE_ORCHESTRATION_DPO_TOKEN_SHARE_MAX_BASIS_POINTS = 8_500
+# Keep Fleet recovery corrections inside the optimizer geometry established by
+# the last fully executed canary. Token-share caps alone are insufficient here:
+# a prompt compaction can admit many more short public rows without increasing
+# target-token mass, silently changing optimizer-step exposure and run cost.
+# The finalizer searches public behavioral group ceilings and may apply the
+# existing supplemental-static cap, but it must never remove protected
+# behavioral-primary/native rows to conceal an expansion.
+FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS = 615
+FLEET_SFT_OPTIMIZER_RECORD_GEOMETRY_SCHEMA_VERSION = (
+    "lumen.fleet-sft-optimizer-record-geometry/1.0.0"
+)
 PUBLIC_CORPUS_LOSS_SHARE_CONTRACT_SCHEMA_VERSION = (
     "lumen.public-corpus-loss-share/1.0.0"
 )
@@ -957,6 +968,9 @@ class FineTuningDatasetConfig:
     max_cortex_supplemental_assistant_char_share: float = 0.15
     max_fleet_supplemental_assistant_char_share: float = 0.25
     max_fleet_supplemental_assistant_token_share: float = 0.25
+    max_fleet_sft_optimizer_records: int = (
+        FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
+    )
     max_fleet_validation_sft_records: int = 128
     max_cortex_public_sft_records_per_tool: int = 8
 
@@ -3169,6 +3183,11 @@ def _public_corpus_loss_share_contract(
 def _fleet_loss_share_contract(
     config: FineTuningDatasetConfig,
 ) -> dict[str, Any]:
+    maximum_sft_records = config.max_fleet_sft_optimizer_records
+    if type(maximum_sft_records) is not int or maximum_sft_records <= 0:
+        raise ValueError(
+            "max_fleet_sft_optimizer_records must be a positive integer"
+        )
     requested_cap = min(
         max(config.max_fleet_supplemental_assistant_token_share, 0.0),
         FLEET_SUPPLEMENTAL_ASSISTANT_SHARE_HARD_MAX,
@@ -3278,6 +3297,23 @@ def _fleet_loss_share_contract(
                 "skip_first_batches"
             ),
             "failurePolicy": "abort_before_optimizer",
+        },
+        "sftOptimizerRecordGeometryContract": {
+            "schemaVersion": (
+                FLEET_SFT_OPTIMIZER_RECORD_GEOMETRY_SCHEMA_VERSION
+            ),
+            "lane": "sft",
+            "maximumTrainRecords": maximum_sft_records,
+            "protectedSourceRole": FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY,
+            "removableSourceRoles": [
+                FLEET_SOURCE_ROLE_SUPPLEMENTAL_STATIC,
+                FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL,
+            ],
+            "selectionPolicy": (
+                "largest_deterministic_cap_valid_cohort_from_immutable_"
+                "candidates"
+            ),
+            "failurePolicy": "abort_generation_before_optimizer",
         },
         "sourceSelectionProxy": {
             "status": "safety_budget_not_exact_token_count",
@@ -14823,6 +14859,13 @@ def _balanced_fleet_contract_dpo_pairs(
         ]
         for scope, groups in retry_groups_by_scope.items()
     }
+    has_train_tool_boundary_retry_candidate = any(
+        isinstance(pair.get("metadata"), dict)
+        and pair["metadata"].get("requiredSplit") == "train"
+        and pair["metadata"].get("taskType")
+        == "fleet_contract_tool_boundary"
+        for pair in pairs
+    )
     expected_retry_scopes = {
         (
             "fleet_contract_delegation",
@@ -14831,8 +14874,11 @@ def _balanced_fleet_contract_dpo_pairs(
         for owner in manifested_agents
     } | {
         ("fleet_contract_known_slots", "contract_family"),
-        ("fleet_contract_tool_boundary", "contract_family"),
     }
+    if has_train_tool_boundary_retry_candidate:
+        expected_retry_scopes.add(
+            ("fleet_contract_tool_boundary", "contract_family")
+        )
     if set(selected_retry_group_by_scope) != expected_retry_scopes:
         raise ValueError(
             "Balanced Fleet preferences lack retry candidates for every owner "
@@ -16608,7 +16654,11 @@ def _cap_public_corpus_token_share(
     if not public_records:
         return _unique_sorted_records(records)
     internal_records = [record for record in records if _public_corpus_metadata(record) is None]
-    if max_public_groups == 0 or max_share == 0.0 or (max_share is not None and not internal_records):
+    if (
+        max_public_groups == 0
+        or max_share == 0.0
+        or (max_share is not None and not internal_records)
+    ):
         return _unique_sorted_records(internal_records)
 
     public_total = sum(
@@ -18000,57 +18050,178 @@ def _finalize_fleet_optimizer_lane(
 
     Both selectors only remove records. Iterating is necessary because removing
     public behavior raises the static share, while removing static grounding can
-    raise the public share. Validation lanes intentionally never enter here.
+    raise the public share. SFT additionally preserves the calibrated optimizer
+    geometry by searching public-group ceilings from the immutable candidate
+    cohort. Validation lanes intentionally never enter here.
     """
 
     if lane not in {"sft", "dpo"}:
         raise ValueError(f"Unsupported Fleet optimizer lane: {lane!r}")
-    current = (
+    immutable = (
         _unique_sorted_sft_records(records)
         if lane == "sft"
         else _unique_sorted_records(records)
     )
     public_cap = _public_corpus_source_proxy_selection_share(config)
-    for _ in range(len(current) + 1):
-        public_bounded = _cap_public_corpus_token_share(
-            current,
-            public_cap,
-            prefer_quality=prefer_public_quality,
-            max_public_groups=max_public_groups,
-            max_chars_per_token=config.max_chars_per_token,
-            target_mode=(
-                "dpo_chosen" if lane == "dpo" else "all_assistant"
-            ),
+
+    def converge(public_group_limit: int | None) -> list[dict[str, Any]]:
+        current = list(immutable)
+        for _ in range(len(current) + 1):
+            public_bounded = _cap_public_corpus_token_share(
+                current,
+                public_cap,
+                prefer_quality=prefer_public_quality,
+                max_public_groups=public_group_limit,
+                max_chars_per_token=config.max_chars_per_token,
+                target_mode=(
+                    "dpo_chosen" if lane == "dpo" else "all_assistant"
+                ),
+            )
+            bounded = (
+                _limit_supplemental_sft_records(
+                    "fleet",
+                    public_bounded,
+                    config,
+                )
+                if lane == "sft"
+                else _limit_fleet_supplemental_dpo_records(
+                    public_bounded,
+                    config,
+                )
+            )
+            if lane == "sft":
+                bounded = _bound_fleet_native_sft_source_proxy_share(
+                    bounded,
+                    config=config,
+                    prefer_public_quality=prefer_public_quality,
+                    max_public_groups=public_group_limit,
+                )
+            current_keys = {
+                _canonical_record_key(record) for record in current
+            }
+            bounded_keys = {
+                _canonical_record_key(record) for record in bounded
+            }
+            if not bounded_keys <= current_keys:
+                raise RuntimeError(
+                    f"Fleet {lane} optimizer finalization added or replaced "
+                    "records"
+                )
+            if bounded_keys == current_keys:
+                _assert_fleet_optimizer_proxy_caps(
+                    bounded,
+                    lane=lane,
+                    config=config,
+                )
+                return bounded
+            current = bounded
+        raise RuntimeError(
+            f"Fleet {lane} optimizer finalization did not converge after "
+            "bounded removal"
         )
-        bounded = (
-            _limit_supplemental_sft_records("fleet", public_bounded, config)
-            if lane == "sft"
-            else _limit_fleet_supplemental_dpo_records(public_bounded, config)
+
+    finalized = converge(max_public_groups)
+    if lane == "dpo":
+        return finalized
+
+    maximum_train_records = config.max_fleet_sft_optimizer_records
+    if (
+        type(maximum_train_records) is not int
+        or maximum_train_records <= 0
+    ):
+        raise ValueError(
+            "max_fleet_sft_optimizer_records must be a positive integer"
         )
-        if lane == "sft":
-            bounded = _bound_fleet_native_sft_source_proxy_share(
-                bounded,
-                config=config,
-                prefer_public_quality=prefer_public_quality,
-                max_public_groups=max_public_groups,
-            )
-        current_keys = {_canonical_record_key(record) for record in current}
-        bounded_keys = {_canonical_record_key(record) for record in bounded}
-        if not bounded_keys <= current_keys:
-            raise RuntimeError(
-                f"Fleet {lane} optimizer finalization added or replaced records"
-            )
-        if bounded_keys == current_keys:
-            _assert_fleet_optimizer_proxy_caps(
-                bounded,
-                lane=lane,
-                config=config,
-            )
-            return bounded
-        current = bounded
-    raise RuntimeError(
-        f"Fleet {lane} optimizer finalization did not converge after bounded removal"
+    if len(finalized) <= maximum_train_records:
+        return finalized
+
+    protected_keys = {
+        _canonical_record_key(record)
+        for record in immutable
+        if _fleet_source_role(record)
+        == FLEET_SOURCE_ROLE_BEHAVIORAL_PRIMARY
+    }
+    if len(protected_keys) > maximum_train_records:
+        raise ValueError(
+            "Fleet SFT protected behavioral geometry exceeds its calibrated "
+            "train-record ceiling: "
+            f"protected={len(protected_keys)} "
+            f"maximum={maximum_train_records}"
+        )
+    available_public_group_count = len(
+        {
+            _public_group_key(record)
+            for record in immutable
+            if _fleet_source_role(record)
+            == FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL
+        }
     )
+    if available_public_group_count == 0:
+        raise ValueError(
+            "Fleet SFT optimizer geometry exceeds its calibrated ceiling "
+            "without removable public behavioral groups"
+        )
+    search_upper_bound = min(
+        available_public_group_count,
+        maximum_train_records - len(protected_keys),
+        (
+            max_public_groups
+            if max_public_groups is not None
+            else available_public_group_count
+        ),
+    )
+    best: list[dict[str, Any]] | None = None
+    best_score: tuple[int, int, int] | None = None
+    expected_balance_failures = (
+        "Fleet native SFT source-proxy share exceeds its safety maximum",
+        "Fleet native SFT source-proxy safety band is unsatisfied",
+    )
+    # Cohort size is intentionally not assumed to be monotonic in the public
+    # group ceiling. The coupled source-proxy limiter can change supplemental
+    # selection when a public group is added, so enumerate the small bounded
+    # search space and select the largest deterministic cap-valid cohort.
+    for public_group_limit in range(search_upper_bound + 1):
+        try:
+            candidate = converge(public_group_limit)
+        except ValueError as error:
+            if str(error).startswith(expected_balance_failures):
+                continue
+            raise
+        candidate_keys = {
+            _canonical_record_key(record) for record in candidate
+        }
+        if not protected_keys <= candidate_keys:
+            raise RuntimeError(
+                "Fleet SFT optimizer geometry removed protected behavioral "
+                "records"
+            )
+        if len(candidate) > maximum_train_records:
+            continue
+        public_record_count = sum(
+            _fleet_source_role(record)
+            == FLEET_SOURCE_ROLE_PUBLIC_BEHAVIORAL
+            for record in candidate
+        )
+        score = (
+            len(candidate),
+            public_record_count,
+            public_group_limit,
+        )
+        if best_score is None or score > best_score:
+            best = candidate
+            best_score = score
+    if best is None:
+        raise ValueError(
+            "Fleet SFT optimizer geometry has no cap-valid deterministic "
+            "public cohort"
+        )
+    if len(best) != maximum_train_records:
+        raise ValueError(
+            "Fleet SFT optimizer geometry cannot preserve its calibrated "
+            "train-record count after public selection: "
+            f"selected={len(best)} maximum={maximum_train_records}"
+        )
+    return best
 
 
 def _stable_stratified_sample(
