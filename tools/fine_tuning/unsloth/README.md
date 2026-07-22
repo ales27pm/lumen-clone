@@ -115,11 +115,11 @@ python tools/fine_tuning/unsloth/train_dpo.py \
 ```
 
 5. Merged-model release bake is intentionally outside the one-click Ubuntu contract. The
-run-scoped `<agent>.final.json` files bind the evaluated preference adapters but contain container
-paths. The older exporter selects `<agent>.json` from a directory and would therefore select the
-superseded SFT parents. Do not point it at the run config directory. A future merged-artifact
-workflow must consume explicit final configs inside the pinned image and rerun evaluation and
-release approval for the newly created artifact.
+standalone exporter accepts only the run-scoped `<agent>.final.json` files in release-bake
+directory mode, so it binds the evaluated preference adapters and never falls back to the
+superseded SFT parents. Run it inside the pinned image with the same `/outputs` mount because the
+configs contain attested container paths. The newly merged artifacts still require evaluation and
+release approval; completing the adapter pipeline does not promote them automatically.
 
 6. Optional Hub upload is owned by the full Ubuntu launcher. Use `--upload`; it keeps the
 destination private by default, scopes credentials to a separate upload container, re-verifies

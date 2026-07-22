@@ -23,7 +23,14 @@ def _load_export_module() -> ModuleType:
     return module
 
 
-def _write_config(tmp_path: Path, *, agent: str = "cortex", merge_by_default: bool = False) -> Path:
+def _write_config(
+    tmp_path: Path,
+    *,
+    agent: str = "cortex",
+    merge_by_default: bool = False,
+    prepared_release_bake: bool = False,
+) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     tokenizer_files = [
         {
             "path": filename,
@@ -51,25 +58,12 @@ def _write_config(tmp_path: Path, *, agent: str = "cortex", merge_by_default: bo
         "baseModelWeightShards": [
             {"filename": "model.safetensors", "size": 1, "sha256": "d" * 64}
         ],
-        "baseModelGenerationConfigFile": {
-            "path": "generation_config.json",
-            "sizeBytes": 1,
-            "sha256": "9" * 64,
-            "huggingFaceBlobID": "8" * 40,
-        },
         "baseModelTokenizerDigest": "e" * 64,
         "baseModelTokenizerFiles": tokenizer_files,
-        "baseModelTokenizerSnapshotPath": str(tmp_path / "tokenizer_snapshot"),
-        "baseModelTokenizerSnapshotVerification": {
-            "snapshotPath": str(tmp_path / "tokenizer_snapshot"),
-        },
-        "baseModelRuntimeSnapshotPath": str(tmp_path / "runtime_snapshot"),
-        "baseModelRuntimeSnapshotVerification": {
-            "snapshotPath": str(tmp_path / "runtime_snapshot"),
-        },
         "max_seq_length": 4096,
         "load_in_4bit": True,
         "output_dir": f"{tmp_path}/models/lora/{agent}",
+        "adapter_output_dir": f"{tmp_path}/models/lora/{agent}",
         "artifact_mode": "adapter_first",
         "default_export_artifact": "lora_adapter",
         "merge_adapters_by_default": merge_by_default,
@@ -88,6 +82,38 @@ def _write_config(tmp_path: Path, *, agent: str = "cortex", merge_by_default: bo
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
+    if prepared_release_bake:
+        config.update(
+            {
+                "adapter_training_phase": "sft_dpo",
+                "baseModelGenerationConfigFile": {
+                    "path": "generation_config.json",
+                    "sizeBytes": 1,
+                    "sha256": "9" * 64,
+                    "huggingFaceBlobID": "8" * 40,
+                },
+                "baseModelTokenizerSnapshotPath": str(
+                    tmp_path / "tokenizer_snapshot"
+                ),
+                "baseModelTokenizerSnapshotVerification": {
+                    "snapshotPath": str(tmp_path / "tokenizer_snapshot"),
+                },
+                "baseModelRuntimeSnapshotPath": str(tmp_path / "runtime_snapshot"),
+                "baseModelRuntimeSnapshotVerification": {
+                    "snapshotPath": str(tmp_path / "runtime_snapshot"),
+                },
+                "bf16": True,
+                "finalized_variant_manifest": str(
+                    tmp_path / "finalized_variant_manifest.json"
+                ),
+                "fp16": False,
+                "parent_sft_adapter_sha256": "7" * 64,
+                "trainingEnvironmentSHA256": "6" * 64,
+                "variant": "internal_plus_public_optimized",
+                "variantAttestation": {"schema": "fixture/1.0.0"},
+                "variantManifestSHA256": "5" * 64,
+            }
+        )
     path = tmp_path / f"{agent}.json"
     path.write_text(json.dumps(config), encoding="utf-8")
     return path
@@ -156,6 +182,134 @@ def test_gather_configs_prefers_generated_nested_configs(tmp_path: Path) -> None
     assert [config["agent"] for config in configs] == ["cortex"]
 
 
+def test_checked_in_generated_configs_load_for_adapter_first_default() -> None:
+    export_gguf = _load_export_module()
+    repo_root = Path(__file__).resolve().parents[3]
+    config_dir = repo_root / "generated" / "fine_tuning"
+
+    configs = export_gguf.gather_configs(
+        [],
+        str(config_dir),
+        list(AGENTS),
+    )
+
+    assert [config["agent"] for config in configs] == list(AGENTS)
+    assert all("baseModelRuntimeSnapshotPath" not in config for config in configs)
+
+
+def test_release_bake_default_resolves_prepared_run_configs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_gguf = _load_export_module()
+    monkeypatch.setenv("LUMEN_AIO_RUN_ROOT", str(tmp_path / "run"))
+
+    resolved = export_gguf._resolve_config_dir(
+        config_paths=[],
+        config_dir=None,
+        release_bake=True,
+    )
+
+    assert resolved == str(tmp_path / "run" / "configs")
+
+
+def test_explicit_config_defines_default_selected_agents(tmp_path: Path) -> None:
+    export_gguf = _load_export_module()
+    config_path = _write_config(
+        tmp_path,
+        agent="fleet",
+        prepared_release_bake=True,
+    )
+
+    selected_agents = export_gguf._selected_agents(
+        agents_arg=None,
+        config_paths=[str(config_path)],
+    )
+    configs = export_gguf.gather_configs(
+        [str(config_path)],
+        None,
+        selected_agents,
+        require_release_bake_lineage=True,
+    )
+
+    assert selected_agents == ["fleet"]
+    assert [config["agent"] for config in configs] == ["fleet"]
+
+
+def test_release_bake_without_prepared_source_fails_before_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_gguf = _load_export_module()
+    monkeypatch.delenv("LUMEN_AIO_RUN_ROOT", raising=False)
+
+    with pytest.raises(ValueError, match="will not guess a recent run"):
+        export_gguf._resolve_config_dir(
+            config_paths=[],
+            config_dir=None,
+            release_bake=True,
+        )
+
+
+def test_release_bake_directory_requires_and_selects_final_config(
+    tmp_path: Path,
+) -> None:
+    export_gguf = _load_export_module()
+    prepared_path = _write_config(tmp_path, prepared_release_bake=True)
+    final_path = tmp_path / "cortex.final.json"
+    final_path.write_text(prepared_path.read_text(encoding="utf-8"), encoding="utf-8")
+    _write_config(tmp_path, prepared_release_bake=False)
+
+    configs = export_gguf.gather_configs(
+        [],
+        str(tmp_path),
+        ["cortex"],
+        require_release_bake_lineage=True,
+    )
+
+    assert configs[0]["adapter_training_phase"] == "sft_dpo"
+    assert configs[0]["parent_sft_adapter_sha256"] == "7" * 64
+
+
+def test_release_bake_directory_never_falls_back_to_sft_config(
+    tmp_path: Path,
+) -> None:
+    export_gguf = _load_export_module()
+    _write_config(tmp_path)
+
+    with pytest.raises(FileNotFoundError, match="will not fall back to cortex.json"):
+        export_gguf.gather_configs(
+            [],
+            str(tmp_path),
+            ["cortex"],
+            require_release_bake_lineage=True,
+        )
+
+
+def test_release_bake_rejects_static_generated_config(tmp_path: Path) -> None:
+    export_gguf = _load_export_module()
+    config_path = _write_config(tmp_path)
+
+    with pytest.raises(ValueError, match="prepared <agent>.final.json"):
+        export_gguf.load_config(
+            config_path,
+            require_release_bake_lineage=True,
+        )
+
+
+def test_release_bake_dpo_config_requires_parent_sft_digest(tmp_path: Path) -> None:
+    export_gguf = _load_export_module()
+    config_path = _write_config(tmp_path, prepared_release_bake=True)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config.pop("parent_sft_adapter_sha256")
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="requires parent_sft_adapter_sha256"):
+        export_gguf.load_config(
+            config_path,
+            require_release_bake_lineage=True,
+        )
+
+
 def test_release_bake_skipped_manifest_is_adapter_first(tmp_path: Path) -> None:
     export_gguf = _load_export_module()
     config_path = _write_config(tmp_path, merge_by_default=False)
@@ -194,7 +348,7 @@ def test_skip_existing_requires_matching_current_lineage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     export_gguf = _load_export_module()
-    config_path = _write_config(tmp_path)
+    config_path = _write_config(tmp_path, prepared_release_bake=True)
     cfg = export_gguf.load_config(config_path)
     output_dir = tmp_path / "models" / "gguf_release_bake" / "cortex_merged_gguf"
     output_dir.mkdir(parents=True, exist_ok=True)

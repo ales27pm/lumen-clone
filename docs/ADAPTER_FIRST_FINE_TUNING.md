@@ -64,12 +64,14 @@ export merged GGUF
 ```
 
 The current one-click Ubuntu workflow does not implement a merged release
-bake. Its run directory contains final preference configs, while the legacy
-directory exporter selects pending/SFT config names and must not be pointed at
-that run. Any future release bake must accept explicit `<agent>.final.json`
-inputs inside the pinned container, produce new lineage, and rerun evaluation
-and release approval. Running the legacy exporter without `--release-bake`
-continues to write only a skipped adapter-first manifest.
+bake. Its run directory does contain final preference configs, and the explicit
+release-bake exporter selects only `<agent>.final.json` inside the pinned
+container. It never falls back to the pending/SFT config. The original
+`/outputs` mount is required because snapshot paths and filesystem evidence are
+attested. Every merged artifact receives new lineage and must rerun evaluation
+and release approval. Running the exporter without `--release-bake` continues
+to read the portable generated configs and write only a skipped adapter-first
+manifest.
 
 ## Why this matters
 

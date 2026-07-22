@@ -227,13 +227,14 @@ The default improve-loop must keep:
 }
 ```
 
-The legacy directory exporter must continue to skip merging unless
-`--release-bake` is explicit, but it does not consume the run-scoped final DPO
-configs and is not a supported post-training shortcut. A future release-bake
-workflow must take explicit `<agent>.final.json` inputs inside the pinned
-container, produce new artifact lineage, and rerun evaluation and release
-approval. Its outputs must not become Qwen3 default downloads merely because a
-training run completed.
+The directory exporter must continue to skip merging unless `--release-bake` is
+explicit. In release-bake mode it consumes only run-scoped
+`<agent>.final.json` configs inside the pinned container and never falls back to
+pending/SFT `<agent>.json` configs. The prepared paths and snapshot verification
+objects must be used with the original `/outputs` mount; rebasing them would
+invalidate the attestation. A merged artifact receives new lineage and must
+rerun evaluation and release approval. It must not become a Qwen3 default
+download merely because adapter training completed.
 
 ## Runtime audit export contract
 
