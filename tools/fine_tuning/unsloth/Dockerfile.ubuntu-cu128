@@ -156,6 +156,7 @@ ENV HOME=/home/lumen-runtime \
 
 # Bake the exact clean execution closure and frozen inputs into the image. The
 # host checkout is never mounted into either the GPU or credential container.
+COPY scripts/ubuntu_run_fleet_canary.sh /opt/lumen/source/scripts/ubuntu_run_fleet_canary.sh
 COPY scripts/ubuntu_train_lumen_full_pipeline.sh /opt/lumen/source/scripts/ubuntu_train_lumen_full_pipeline.sh
 COPY scripts/ubuntu_train_lumen_adapters_aio.sh /opt/lumen/source/scripts/ubuntu_train_lumen_adapters_aio.sh
 COPY lumen_manifest_crawler/__init__.py /opt/lumen/source/lumen_manifest_crawler/__init__.py

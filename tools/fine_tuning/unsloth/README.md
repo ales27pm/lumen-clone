@@ -13,6 +13,12 @@ adapter-only GGUFs by default:
 bash scripts/ubuntu_train_lumen_full_pipeline.sh
 ```
 
+For the strict Fleet-first qualification gate on a shared Ubuntu host, use
+`bash scripts/ubuntu_run_fleet_canary.sh --help`. That evidence-bound wrapper
+manages the explicitly confirmed Ollama stop/restore lifecycle and fixes the
+canonical launcher to a fresh optimized Fleet run with full evaluation, no
+GGUF, and no upload.
+
 See [`docs/UBUNTU_TRAINING.md`](../../../docs/UBUNTU_TRAINING.md) for host
 prerequisites, variants, capacity estimates, resume/overwrite behavior, output
 layout, and upload safety. The default is the optimized variant, all six roles,

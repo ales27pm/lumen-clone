@@ -1,5 +1,6 @@
 **
 !scripts/
+!scripts/ubuntu_run_fleet_canary.sh
 !scripts/ubuntu_train_lumen_full_pipeline.sh
 !scripts/ubuntu_train_lumen_adapters_aio.sh
 !lumen_manifest_crawler/

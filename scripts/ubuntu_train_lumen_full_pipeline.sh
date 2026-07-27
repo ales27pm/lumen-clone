@@ -9,12 +9,15 @@ DOCKERFILE_RELATIVE="tools/fine_tuning/unsloth/Dockerfile.ubuntu-cu128"
 DOCKERFILE="$ROOT/$DOCKERFILE_RELATIVE"
 SOURCE_ATTESTOR="$ROOT/tools/fine_tuning/unsloth/ubuntu_source_integrity.py"
 SAFE_REPO_OUTPUT_ROOT="$ROOT/.local/ubuntu_finetune_runs"
+HOST_STATE_ROOT="/var/tmp/lumen-fleet-canary-state"
 
 IMAGE_TAG="${LUMEN_UBUNTU_IMAGE_TAG:-lumen-training:cu128-py310}"
 OUTPUT_ROOT="${LUMEN_UBUNTU_OUTPUT_ROOT:-$SAFE_REPO_OUTPUT_ROOT}"
 HF_CACHE="${LUMEN_UBUNTU_HF_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}}"
 TOKEN_FILE="${LUMEN_UBUNTU_HF_TOKEN_FILE:-}"
 RUN_ID="${LUMEN_UBUNTU_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x%04x' "$RANDOM" "$RANDOM")}"
+EXPECTED_SOURCE_COMMIT="${LUMEN_UBUNTU_EXPECTED_SOURCE_COMMIT:-}"
+HOST_RESERVATION_FD="${LUMEN_UBUNTU_HOST_RESERVATION_FD:-}"
 AGENTS_CSV="${LUMEN_UBUNTU_AGENTS:-fleet,executor,mouth,rem,mimicry,cortex}"
 VARIANT_SELECTOR="${LUMEN_UBUNTU_VARIANT:-optimized}"
 SHM_SIZE="${LUMEN_UBUNTU_SHM_SIZE:-8g}"
@@ -31,6 +34,11 @@ EVALUATE="${LUMEN_UBUNTU_EVALUATE:-1}"
 EVAL_MAX_EXAMPLES="${LUMEN_UBUNTU_EVAL_MAX_EXAMPLES:-}"
 NO_EVALUATE_OPTION_SEEN=0
 EVAL_SMOKE_OPTION_SEEN=0
+HOST_STATE_DIR=""
+HOST_RESERVATION_LOCK=""
+HOST_RESTORE_MARKER=""
+HOST_RESERVATION_INHERITED=0
+EXACT_EXISTING_RESUME_REQUIRED=0
 RUNTIME_HOME="/home/lumen-runtime"
 IMAGE_SOURCE_ROOT="/opt/lumen/source"
 IMAGE_SOURCE_ATTESTATION="/opt/lumen/ubuntu-source-integrity.json"
@@ -59,6 +67,9 @@ Options:
   --hf-cache DIR       Persistent Hugging Face cache (default: $HF_HOME or ~/.cache/huggingface)
   --image-tag TAG      Local Docker image tag (default: lumen-training:cu128-py310)
   --run-id ID          Safe run identifier; the variant suffix is added automatically
+  --expected-source-commit SHA
+                       Require the clean source attestation to match this exact
+                       40-character commit
   --agents CSV         Comma-separated agents (default: all six Lumen agents)
   --upload             Upload verified outputs after training (off by default)
   --allow-diagnostic-upload
@@ -129,6 +140,11 @@ while (($#)); do
     --run-id)
       (($# >= 2)) || die "--run-id requires a value"
       RUN_ID="$2"
+      shift 2
+      ;;
+    --expected-source-commit)
+      (($# >= 2)) || die "--expected-source-commit requires a value"
+      EXPECTED_SOURCE_COMMIT="$2"
       shift 2
       ;;
     --agents)
@@ -224,6 +240,8 @@ RUNTIME_GID="$(id -g)"
   || die "the invoking user's primary group must be non-root"
 PRIVATE_UPLOAD_TMPFS="/tmp:rw,noexec,nosuid,nodev,mode=700,uid=$RUNTIME_UID,gid=$RUNTIME_GID"
 [[ "$RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || die "run ID must contain only letters, digits, dot, underscore, and hyphen"
+[[ -z "$EXPECTED_SOURCE_COMMIT" || "$EXPECTED_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] \
+  || die "--expected-source-commit must be a lowercase 40-character Git commit"
 [[ "$AGENTS_CSV" =~ ^[a-z]+(,[a-z]+)*$ ]] || die "agents must be a comma-separated lowercase list without spaces"
 [[ "$OVERWRITE" == "0" || "$RESUME" == "0" ]] || die "--overwrite and --resume are mutually exclusive"
 [[ "$UPLOAD" == "0" || "$PREPARE_ONLY" == "0" ]] || die "--upload cannot be combined with --prepare-only"
@@ -270,6 +288,8 @@ esac
 
 command -v git >/dev/null 2>&1 || die "git not found"
 command -v python3 >/dev/null 2>&1 || die "python3 not found"
+command -v flock >/dev/null 2>&1 || die "flock not found; install util-linux"
+command -v stat >/dev/null 2>&1 || die "stat not found; install GNU coreutils"
 command -v docker >/dev/null 2>&1 || die "docker not found; install Docker Engine before running this script"
 command -v nvidia-smi >/dev/null 2>&1 || die "nvidia-smi not found; install a compatible NVIDIA driver before running this script"
 docker info >/dev/null 2>&1 || die "Docker daemon is unavailable for the current user"
@@ -279,19 +299,24 @@ read_source_attestation_fields() {
     | python3 -I -c 'import json, sys; value = json.load(sys.stdin); print(value["baseCommit"]); print(value["workingTreeDigest"]); print(value["ubuntuOrchestrationCodeSHA256"]); print(value["sourceIntegritySHA256"])'
 }
 
-mapfile -t SOURCE_ATTESTATION_FIELDS < <(read_source_attestation_fields) \
+SOURCE_ATTESTATION_OUTPUT="$(read_source_attestation_fields)" \
   || die "unable to attest the clean Ubuntu pipeline source"
+mapfile -t SOURCE_ATTESTATION_FIELDS <<< "$SOURCE_ATTESTATION_OUTPUT"
 [[ "${#SOURCE_ATTESTATION_FIELDS[@]}" == "4" ]] \
   || die "source-integrity helper returned an incomplete attestation"
 SOURCE_BASE_COMMIT="${SOURCE_ATTESTATION_FIELDS[0]}"
 SOURCE_WORKING_TREE_DIGEST="${SOURCE_ATTESTATION_FIELDS[1]}"
 SOURCE_ORCHESTRATION_DIGEST="${SOURCE_ATTESTATION_FIELDS[2]}"
 SOURCE_INTEGRITY_DIGEST="${SOURCE_ATTESTATION_FIELDS[3]}"
+[[ -z "$EXPECTED_SOURCE_COMMIT" || "$SOURCE_BASE_COMMIT" == "$EXPECTED_SOURCE_COMMIT" ]] \
+  || die "source attestation commit $SOURCE_BASE_COMMIT does not match --expected-source-commit $EXPECTED_SOURCE_COMMIT"
 
 verify_clean_source_unchanged() {
   local -a current=()
-  mapfile -t current < <(read_source_attestation_fields) \
+  local current_output
+  current_output="$(read_source_attestation_fields)" \
     || die "Ubuntu pipeline source is no longer a clean checkout"
+  mapfile -t current <<< "$current_output"
   [[ "${#current[@]}" == "4" \
       && "${current[0]}" == "$SOURCE_BASE_COMMIT" \
       && "${current[1]}" == "$SOURCE_WORKING_TREE_DIGEST" \
@@ -321,6 +346,7 @@ archive_attested_build_context() {
     -u GIT_WORK_TREE
   )
   local -a context_paths=(
+    scripts/ubuntu_run_fleet_canary.sh
     scripts/ubuntu_train_lumen_full_pipeline.sh
     scripts/ubuntu_train_lumen_adapters_aio.sh
     lumen_manifest_crawler/__init__.py
@@ -353,11 +379,212 @@ path_contains() {
   [[ "$child" == "$parent" || "$child" == "$parent/"* ]]
 }
 
+prepare_host_reservation_paths() {
+  python3 -I - "$HOST_STATE_ROOT" "$EUID" <<'PY'
+import os
+import pathlib
+import stat
+import sys
+
+state = pathlib.Path(sys.argv[1])
+expected_uid = int(sys.argv[2])
+try:
+    state.mkdir(mode=0o700)
+except FileExistsError:
+    pass
+metadata = state.lstat()
+if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+    raise SystemExit(f"host state path is not a regular directory: {state}")
+if metadata.st_uid != expected_uid:
+    raise SystemExit(f"host state path is not owned by the invoking user: {state}")
+if stat.S_IMODE(metadata.st_mode) != 0o700:
+    raise SystemExit(f"host state path mode is not 0700: {state}")
+
+lock = state / "fleet-canary.lock"
+flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+descriptor = os.open(lock, flags, 0o600)
+try:
+    lock_metadata = os.fstat(descriptor)
+    if not stat.S_ISREG(lock_metadata.st_mode):
+        raise SystemExit(f"host lock path is not a regular file: {lock}")
+    if lock_metadata.st_uid != expected_uid:
+        raise SystemExit(f"host lock path is not owned by the invoking user: {lock}")
+    if stat.S_IMODE(lock_metadata.st_mode) != 0o600:
+        raise SystemExit(f"host lock path mode is not 0600: {lock}")
+finally:
+    os.close(descriptor)
+
+resolved_state = state.resolve(strict=True)
+print(resolved_state)
+print(lock.resolve(strict=True))
+print(resolved_state / "ollama-restore-required")
+PY
+}
+
+acquire_host_reservation() {
+  local reservation_output expected_identity descriptor_identity
+  local -a reservation_fields=()
+  reservation_output="$(prepare_host_reservation_paths)" \
+    || die "unable to prepare persistent host-global training state"
+  mapfile -t reservation_fields <<< "$reservation_output"
+  [[ "${#reservation_fields[@]}" == "3" ]] \
+    || die "host reservation helper returned incomplete state"
+  HOST_STATE_DIR="${reservation_fields[0]}"
+  HOST_RESERVATION_LOCK="${reservation_fields[1]}"
+  HOST_RESTORE_MARKER="${reservation_fields[2]}"
+
+  if [[ -n "$HOST_RESERVATION_FD" ]]; then
+    [[ "$HOST_RESERVATION_FD" == "8" ]] \
+      || die "inherited host reservation must use file descriptor 8"
+    expected_identity="$(stat -Lc '%d:%i:%u:%a:%F' "$HOST_RESERVATION_LOCK")" \
+      || die "unable to inspect the host reservation lock"
+    descriptor_identity="$(stat -Lc '%d:%i:%u:%a:%F' "/proc/$$/fd/8")" \
+      || die "inherited host reservation descriptor 8 is unavailable"
+    [[ "$descriptor_identity" == "$expected_identity" ]] \
+      || die "inherited host reservation descriptor does not match $HOST_RESERVATION_LOCK"
+    HOST_RESERVATION_INHERITED=1
+  else
+    exec 8<>"$HOST_RESERVATION_LOCK" \
+      || die "unable to open host reservation lock: $HOST_RESERVATION_LOCK"
+  fi
+  flock -n 8 \
+    || die "another Ubuntu training entry point holds $HOST_RESERVATION_LOCK"
+}
+
+verify_host_restore_marker() {
+  local expected_run_root="$1"
+  local marker_identity marker_container_id marker_container_name marker_restart_policy
+  local current_identity current_container_id current_container_name current_status
+  local current_running current_restart_policy
+  marker_identity="$(python3 -I - \
+    "$HOST_RESTORE_MARKER" \
+    "$EUID" \
+    "$EXPECTED_SOURCE_COMMIT" \
+    "$RUN_ID" \
+    "$expected_run_root" <<'PY'
+import json
+import pathlib
+import re
+import stat
+import sys
+
+path = pathlib.Path(sys.argv[1])
+expected_uid = int(sys.argv[2])
+expected_commit = sys.argv[3]
+expected_run_id = sys.argv[4]
+expected_run_root = sys.argv[5]
+metadata = path.lstat()
+if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+    raise SystemExit(f"restore marker is not a regular file: {path}")
+if metadata.st_uid != expected_uid or stat.S_IMODE(metadata.st_mode) != 0o600:
+    raise SystemExit(f"restore marker ownership or mode drifted: {path}")
+value = json.loads(path.read_text(encoding="utf-8"))
+if value.get("schemaVersion") != "lumen.ollama-restore-required/1.0.0":
+    raise SystemExit("restore marker schema is unsupported")
+if re.fullmatch(r"[0-9a-f]{64}", value.get("containerID", "")) is None:
+    raise SystemExit("restore marker container ID is invalid")
+if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", value.get("containerName", "")) is None:
+    raise SystemExit("restore marker container name is invalid")
+if value.get("restartPolicy") != "unless-stopped":
+    raise SystemExit("restore marker restart policy is invalid")
+if (
+    value.get("sourceCommit") != expected_commit
+    or value.get("runID") != expected_run_id
+    or value.get("expectedRunRoot") != expected_run_root
+):
+    raise SystemExit("restore marker does not match the requested training run")
+print(
+    "|".join(
+        (
+            value["containerID"],
+            value["containerName"],
+            value["restartPolicy"],
+        )
+    )
+)
+PY
+)" || return 1
+  IFS='|' read -r marker_container_id marker_container_name marker_restart_policy \
+    <<< "$marker_identity"
+  [[ -n "$marker_container_id" && -n "$marker_container_name" \
+      && -n "$marker_restart_policy" ]] \
+    || return 1
+
+  current_identity="$(docker inspect \
+    --format '{{.Id}}|{{.Name}}|{{.State.Status}}|{{.State.Running}}|{{.HostConfig.RestartPolicy.Name}}' \
+    "$marker_container_id" 2>/dev/null)" \
+    || return 1
+  IFS='|' read -r \
+    current_container_id current_container_name current_status current_running current_restart_policy \
+    <<< "$current_identity"
+  [[ "$current_container_id" == "$marker_container_id" \
+      && "$current_container_name" == "/$marker_container_name" \
+      && "$current_status" == "exited" \
+      && "$current_running" == "false" \
+      && "$current_restart_policy" == "$marker_restart_policy" ]]
+}
+
 training_container_name() {
   local host_run_root="$1"
   python3 -I -c \
     'import hashlib, sys; print("lumen-ubuntu-" + hashlib.sha256(sys.argv[1].encode("utf-8")).hexdigest()[:24])' \
     "$host_run_root"
+}
+
+verify_running_training_reservation() {
+  local running_output active_id active_inspect expected_name expected_run_root
+  local -a active_ids=()
+  running_output="$(docker ps \
+    --no-trunc \
+    --filter label=ai.lumen.purpose=ubuntu-training \
+    --format '{{.ID}}')" \
+    || die "unable to inspect running durable Lumen training containers"
+  [[ -z "$running_output" ]] || mapfile -t active_ids <<< "$running_output"
+  ((${#active_ids[@]} > 0)) || return 0
+
+  [[ "$HOST_RESERVATION_INHERITED" != "1" ]] \
+    || die "the wrapper cannot launch while a durable Lumen training container is running"
+  [[ "$RESUME" == "1" ]] \
+    || die "a running durable Lumen training container permits only an exact --resume"
+  [[ "${#variants[@]}" == "1" ]] \
+    || die "a running durable Lumen training container permits only one exact variant"
+  [[ "${#active_ids[@]}" == "1" ]] \
+    || die "more than one durable Lumen training container is running"
+
+  active_id="${active_ids[0]}"
+  [[ "$active_id" =~ ^[0-9a-f]{64}$ ]] \
+    || die "Docker returned a malformed durable Lumen training container ID"
+  expected_run_root="$OUTPUT_ROOT/$RUN_ID-${variants[0]}"
+  [[ -d "$expected_run_root" && ! -L "$expected_run_root" ]] \
+    || die "running-container resume requires the existing exact run root: $expected_run_root"
+  expected_name="$(training_container_name "$expected_run_root")" \
+    || die "unable to derive the expected training container name"
+  active_inspect="$(docker container inspect "$active_id")" \
+    || die "unable to inspect the running durable Lumen training container"
+  printf '%s' "$active_inspect" | python3 -I -c '
+import json
+import sys
+
+expected_id, expected_name, expected_run_root = sys.argv[1:]
+value = json.load(sys.stdin)
+if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], dict):
+    raise SystemExit("Docker returned malformed active-container inspection")
+container = value[0]
+state = container.get("State")
+labels = container.get("Config", {}).get("Labels")
+if not isinstance(state, dict) or not isinstance(labels, dict):
+    raise SystemExit("active-container inspection omitted state or labels")
+if (
+    container.get("Id") != expected_id
+    or container.get("Name") != "/" + expected_name
+    or state.get("Status") not in {"running", "restarting"}
+    or labels.get("ai.lumen.purpose") != "ubuntu-training"
+    or labels.get("ai.lumen.host-run-root") != expected_run_root
+):
+    raise SystemExit("active training container does not match the exact resume")
+' "$active_id" "$expected_name" "$expected_run_root" \
+    || die "running durable Lumen training container identity validation failed"
+  EXACT_EXISTING_RESUME_REQUIRED=1
 }
 
 training_launch_contract_digest() {
@@ -750,6 +977,35 @@ fi
 if path_contains "$OUTPUT_ROOT" "$HF_CACHE" || path_contains "$HF_CACHE" "$OUTPUT_ROOT"; then
   die "--output-dir and --hf-cache must not overlap"
 fi
+if path_contains "$OUTPUT_ROOT" "$HOST_STATE_ROOT" \
+  || path_contains "$HOST_STATE_ROOT" "$OUTPUT_ROOT" \
+  || path_contains "$HF_CACHE" "$HOST_STATE_ROOT" \
+  || path_contains "$HOST_STATE_ROOT" "$HF_CACHE"; then
+  die "output and Hugging Face cache paths must not overlap persistent host state"
+fi
+
+acquire_host_reservation
+if [[ -e "$HOST_RESTORE_MARKER" || -L "$HOST_RESTORE_MARKER" ]]; then
+  [[ "${#variants[@]}" == "1" ]] \
+    || die "an Ollama restore marker permits only one exact variant"
+  marker_run_root="$OUTPUT_ROOT/$RUN_ID-${variants[0]}"
+  if [[ "$HOST_RESERVATION_INHERITED" != "1" ]]; then
+    [[ "$RESUME" == "1" ]] \
+      || die "an unresolved Ollama restore marker permits only an exact --resume run"
+    [[ -n "$EXPECTED_SOURCE_COMMIT" ]] \
+      || die "marker-bound resume requires --expected-source-commit"
+    [[ -d "$marker_run_root" && ! -L "$marker_run_root" ]] \
+      || die "marker-bound resume requires the existing exact run root: $marker_run_root"
+    [[ "$(realpath -e -- "$marker_run_root")" == "$marker_run_root" ]] \
+      || die "marker-bound resume run root changed identity: $marker_run_root"
+    EXACT_EXISTING_RESUME_REQUIRED=1
+  fi
+  verify_host_restore_marker "$marker_run_root" \
+    || die "Ollama restore marker or stopped-container validation failed"
+elif [[ "$HOST_RESERVATION_INHERITED" == "1" ]]; then
+  die "wrapper-inherited host reservation is missing its Ollama restore marker"
+fi
+verify_running_training_reservation
 
 mkdir -p -- "$OUTPUT_ROOT" "$HF_CACHE/hub" "$HF_CACHE/xet" "$HF_CACHE/assets"
 resolved_output_root="$(realpath -e -- "$OUTPUT_ROOT")"
@@ -898,6 +1154,10 @@ for variant in "${variants[@]}"; do
   host_run_root_preexisted=0
   if [[ -d "$host_run_root" ]]; then
     host_run_root_preexisted=1
+  fi
+  if [[ "$EXACT_EXISTING_RESUME_REQUIRED" == "1" \
+    && "$host_run_root_preexisted" != "1" ]]; then
+    die "exact recovery run root disappeared before bind reservation: $host_run_root"
   fi
   if [[ "$host_run_root_preexisted" == "1" \
     && "$RESUME" != "1" && "$OVERWRITE" != "1" ]]; then

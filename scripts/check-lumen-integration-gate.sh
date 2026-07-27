@@ -23,6 +23,7 @@ run_git_diff_check() {
 
 run_check "Agent kernel boundary" python3 tools/check_agent_kernel_boundary.py
 run_check "Ubuntu training launcher syntax" bash -n \
+  scripts/ubuntu_run_fleet_canary.sh \
   scripts/ubuntu_train_lumen_adapters_aio.sh \
   scripts/ubuntu_train_lumen_full_pipeline.sh
 run_check "Agent kernel boundary strict" python3 tools/check_agent_kernel_boundary.py --strict

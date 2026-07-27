@@ -66,6 +66,7 @@ def test_clean_repository_attestation_binds_worktree_and_orchestration(
     orchestration_paths = {
         item["path"] for item in record["orchestrationManifest"]["files"]
     }
+    assert "scripts/ubuntu_run_fleet_canary.sh" in orchestration_paths
     assert "lumen_manifest_crawler/__init__.py" in orchestration_paths
     assert "lumen_manifest_crawler/__main__.py" not in orchestration_paths
     assert ubuntu_source_integrity.validate_attestation_record(record) == record

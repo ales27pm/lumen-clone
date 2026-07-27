@@ -31,6 +31,7 @@ _GIT_INDEX_ENTRY = re.compile(
 # helper, crawler scoring package, and the ZeroGPU dependency/runtime sources.
 ORCHESTRATION_EXACT_PATHS = frozenset(
     {
+        "scripts/ubuntu_run_fleet_canary.sh",
         "scripts/ubuntu_train_lumen_full_pipeline.sh",
         "scripts/ubuntu_train_lumen_adapters_aio.sh",
         "lumen_manifest_crawler/__init__.py",

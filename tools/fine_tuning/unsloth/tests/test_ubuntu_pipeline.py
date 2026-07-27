@@ -1647,6 +1647,7 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
     assert "lineage.verify_resolved_training_environment(environment)" in dockerfile
     assert dockerignore[0] == "**"
     assert {
+        "!scripts/ubuntu_run_fleet_canary.sh",
         "!scripts/ubuntu_train_lumen_full_pipeline.sh",
         "!scripts/ubuntu_train_lumen_adapters_aio.sh",
         "!lumen_manifest_crawler/__init__.py",
@@ -1668,6 +1669,7 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
     assert {
         "tools/fine_tuning/unsloth/training_lineage.py",
         "tools/hf_zerogpu/space_template/requirements.txt",
+        "scripts/ubuntu_run_fleet_canary.sh",
         "scripts/ubuntu_train_lumen_full_pipeline.sh",
         "scripts/ubuntu_train_lumen_adapters_aio.sh",
         "lumen_manifest_crawler/__init__.py",
@@ -1738,6 +1740,103 @@ def test_credential_uploader_uses_only_the_verified_image_copy() -> None:
     assert "scratch.st_gid == gid" in launcher
     assert "stat.S_IMODE(scratch.st_mode) == 0o700" in launcher
     assert "--source-integrity-digest" in launcher
+
+
+def test_host_launcher_binds_an_expected_commit_to_source_attestation() -> None:
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'EXPECTED_SOURCE_COMMIT="${LUMEN_UBUNTU_EXPECTED_SOURCE_COMMIT:-}"'
+        in launcher
+    )
+    assert "--expected-source-commit)" in launcher
+    assert (
+        '[[ -z "$EXPECTED_SOURCE_COMMIT" '
+        '|| "$SOURCE_BASE_COMMIT" == "$EXPECTED_SOURCE_COMMIT" ]]'
+    ) in launcher
+    assert 'SOURCE_ATTESTATION_OUTPUT="$(read_source_attestation_fields)"' in launcher
+    assert (
+        'mapfile -t SOURCE_ATTESTATION_FIELDS <<< "$SOURCE_ATTESTATION_OUTPUT"'
+        in launcher
+    )
+    assert "mapfile -t SOURCE_ATTESTATION_FIELDS < <" not in launcher
+
+
+def test_host_launchers_share_one_persistent_training_reservation() -> None:
+    wrapper = (REPO_ROOT / "scripts/ubuntu_run_fleet_canary.sh").read_text(
+        encoding="utf-8"
+    )
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+
+    state_root = 'HOST_STATE_ROOT="/var/tmp/lumen-fleet-canary-state"'
+    assert state_root in wrapper
+    assert state_root in launcher
+    assert "LUMEN_UBUNTU_HOST_RESERVATION_FD=8" in wrapper
+    assert (
+        'HOST_RESERVATION_FD="${LUMEN_UBUNTU_HOST_RESERVATION_FD:-}"'
+        in launcher
+    )
+    assert 'stat -Lc \'%d:%i:%u:%a:%F\' "/proc/$$/fd/8"' in launcher
+    assert 'exec 8<>"$HOST_RESERVATION_LOCK"' in launcher
+    assert "flock -n 8" in wrapper
+    assert "flock -n 8" in launcher
+    assert "wrapper-inherited host reservation is missing" in launcher
+    assert "marker-bound resume requires --expected-source-commit" in launcher
+
+
+def test_host_reservation_rejects_competing_durable_training_containers() -> None:
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+
+    reservation = launcher[
+        launcher.index("verify_running_training_reservation()") :
+        launcher.index("training_launch_contract_digest()")
+    ]
+    assert "docker ps" in reservation
+    assert "--no-trunc" in reservation
+    assert "label=ai.lumen.purpose=ubuntu-training" in reservation
+    assert '[[ "$RESUME" == "1" ]]' in reservation
+    assert "permits only an exact --resume" in reservation
+    assert "more than one durable Lumen training container is running" in reservation
+    assert 'docker container inspect "$active_id"' in reservation
+    assert 'labels.get("ai.lumen.host-run-root") != expected_run_root' in reservation
+    reservation_call = launcher.index("verify_running_training_reservation\n")
+    assert (
+        reservation_call
+        < launcher.index('mkdir -p -- "$OUTPUT_ROOT"')
+        < launcher.index("build_args=(", reservation_call)
+    )
+
+
+def test_marker_bound_resume_requires_stopped_ollama_and_existing_run() -> None:
+    launcher = (
+        REPO_ROOT / "scripts/ubuntu_train_lumen_full_pipeline.sh"
+    ).read_text(encoding="utf-8")
+
+    marker_verifier = launcher[
+        launcher.index("verify_host_restore_marker()") :
+        launcher.index("training_container_name()")
+    ]
+    assert (
+        "{{.Id}}|{{.Name}}|{{.State.Status}}|{{.State.Running}}|"
+        "{{.HostConfig.RestartPolicy.Name}}"
+    ) in marker_verifier
+    assert 'current_container_name" == "/$marker_container_name"' in marker_verifier
+    assert 'current_status" == "exited"' in marker_verifier
+    assert 'current_running" == "false"' in marker_verifier
+    assert (
+        "marker-bound resume requires the existing exact run root" in launcher
+    )
+    assert (
+        "Ollama restore marker or stopped-container validation failed" in launcher
+    )
+    assert "EXACT_EXISTING_RESUME_REQUIRED=1" in launcher
+    assert "exact recovery run root disappeared before bind reservation" in launcher
 
 
 def test_long_running_gpu_container_is_durable_and_recoverable() -> None:
@@ -1900,6 +1999,7 @@ def test_docker_build_uses_only_the_attested_commit_archive() -> None:
     assert "-u GIT_WORK_TREE" in archive_function
     assert "-u GIT_INDEX_FILE" in archive_function
     assert {
+        "scripts/ubuntu_run_fleet_canary.sh",
         "scripts/ubuntu_train_lumen_full_pipeline.sh",
         "scripts/ubuntu_train_lumen_adapters_aio.sh",
         "lumen_manifest_crawler/__init__.py",
@@ -1921,6 +2021,7 @@ def test_attested_build_archive_ignores_live_checkout_bytes_and_fails_closed(
     repository = tmp_path / "repository"
     repository.mkdir()
     files = {
+        "scripts/ubuntu_run_fleet_canary.sh": b"trusted canary wrapper\n",
         "scripts/ubuntu_train_lumen_full_pipeline.sh": b"trusted launcher\n",
         "scripts/ubuntu_train_lumen_adapters_aio.sh": b"trusted inner launcher\n",
         "lumen_manifest_crawler/__init__.py": b"trusted crawler shim\n",
@@ -2095,6 +2196,9 @@ if [ "${{1:-}}" = image ] && [ "${{2:-}}" = inspect ]; then
   printf '{FAKE_IMAGE_DIGEST}\\n'
   exit 0
 fi
+if [ "${{1:-}}" = ps ]; then
+  exit 0
+fi
 case "$*" in
   *'verify-image'*) exit 0 ;;
   *'/opt/lumen-venv/bin/python'*) exit 23 ;;
@@ -2194,6 +2298,7 @@ set -eu
 printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
 case "${{1:-}}" in
   info) exit 0 ;;
+  ps) exit 0 ;;
   build)
     cat >/dev/null
     exit 0
@@ -2381,6 +2486,7 @@ def _retained_container_launcher_harness(tmp_path: Path) -> dict[str, Any]:
         "environment": tmp_path / "docker.environment",
         "launch_mode": tmp_path / "docker.launch-mode",
         "run_root": tmp_path / "docker.run-root",
+        "name": tmp_path / "docker.name",
     }
     repository_head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"],
@@ -2417,6 +2523,13 @@ set -eu
 printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
 case "${{1:-}}" in
   info) exit 0 ;;
+  ps)
+    if [ -f "$FAKE_DOCKER_STATE" ] \
+      && [ "$(cat "$FAKE_DOCKER_STATE")" = running ]; then
+      printf '{container_id}\\n'
+    fi
+    exit 0
+    ;;
   build) cat >/dev/null; exit 0 ;;
   image)
     [ "${{2:-}}" = inspect ] || exit 2
@@ -2425,6 +2538,7 @@ case "${{1:-}}" in
     ;;
   run) exit 0 ;;
   create)
+    printf '%s\\n' "${{3:-}}" > "$FAKE_DOCKER_NAME"
     : > "$FAKE_DOCKER_ENVIRONMENT"
     capture_environment=0
     for value in "$@"; do
@@ -2469,7 +2583,10 @@ case "${{1:-}}" in
       exit 1
     fi
     if [ "${{3:-}}" != --format ]; then
-      printf '[{{"Id":"{container_id}"}}]\\n'
+      printf '[{{"Id":"{container_id}","Name":"/%s","State":{{"Status":"%s"}},"Config":{{"Labels":{{"ai.lumen.purpose":"ubuntu-training","ai.lumen.host-run-root":"%s"}}}}}}]\\n' \
+        "$(cat "$FAKE_DOCKER_NAME")" \
+        "$(cat "$FAKE_DOCKER_STATE")" \
+        "$(cat "$FAKE_DOCKER_RUN_ROOT")"
       exit 0
     fi
     format="${{4:-}}"
@@ -2521,11 +2638,58 @@ exit 2
             "FAKE_DOCKER_ENVIRONMENT": str(paths["environment"]),
             "FAKE_DOCKER_LAUNCH_MODE": str(paths["launch_mode"]),
             "FAKE_DOCKER_RUN_ROOT": str(paths["run_root"]),
+            "FAKE_DOCKER_NAME": str(paths["name"]),
             "FAKE_HF_CACHE": str(tmp_path / "hf-cache"),
         },
         "output_root": tmp_path / "outputs",
         "hf_cache": tmp_path / "hf-cache",
     }
+
+
+def test_running_unrelated_durable_container_blocks_a_fresh_launch(
+    tmp_path: Path,
+) -> None:
+    if sys.platform != "linux":
+        pytest.skip("launcher harness requires the Ubuntu/GNU host utilities")
+    harness = _retained_container_launcher_harness(tmp_path)
+    harness["paths"]["state"].write_text("running\n", encoding="utf-8")
+    harness["paths"]["name"].write_text(
+        f"lumen-ubuntu-{'a' * 24}\n",
+        encoding="utf-8",
+    )
+    unrelated_run_root = tmp_path / "unrelated-run"
+    unrelated_run_root.mkdir()
+    harness["paths"]["run_root"].write_text(
+        f"{unrelated_run_root}\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "scripts/ubuntu_train_lumen_full_pipeline.sh",
+            "--prepare-only",
+            "--no-pull",
+            "--run-id",
+            "blocked-fresh",
+            "--output-dir",
+            str(harness["output_root"]),
+            "--hf-cache",
+            str(harness["hf_cache"]),
+        ],
+        cwd=REPO_ROOT,
+        env=harness["env"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "permits only an exact --resume" in result.stderr
+    commands = harness["paths"]["log"].read_text(encoding="utf-8").splitlines()
+    assert not any(line.startswith("build ") for line in commands)
+    assert not any(line.startswith("create ") for line in commands)
+    assert not any(line.startswith("start ") for line in commands)
 
 
 @pytest.mark.parametrize("initial_mode", ("fresh", "overwrite"))

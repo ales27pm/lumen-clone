@@ -37,6 +37,7 @@ jobs:
 
       - name: Ubuntu launcher syntax
         run: |
+          bash -n scripts/ubuntu_run_fleet_canary.sh
           bash -n scripts/ubuntu_train_lumen_full_pipeline.sh
           bash -n scripts/ubuntu_train_lumen_adapters_aio.sh
 

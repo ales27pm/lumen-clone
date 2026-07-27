@@ -97,14 +97,15 @@ The image is specific to the invoking host UID/GID. Reusing it with
 of allowing a later `getpwuid` crash. Runtime compiler caches live below the
 owned container home and remain isolated from the repository and output tree.
 
-The host launcher also requires an exact clean Git worktree before image build,
+The host launchers also require an exact clean Git worktree before image build,
 fresh training, resume, or upload. Staged, unstaged, and untracked files, dirty
 or mismatched submodules, and ignored files inside the Ubuntu execution closure
 fail closed. The recorded source contract includes the base commit, canonical
 working-tree digest, `dirtyState=false`, the complete Ubuntu orchestration-file
-manifest, and `ubuntuOrchestrationCodeSHA256`. That closure covers both
-launchers, the container recipe and Docker ignore policy, trainers, evaluator,
-GGUF helper, uploader, imported crawler package, and ZeroGPU runtime sources.
+manifest, and `ubuntuOrchestrationCodeSHA256`. That closure covers the strict
+Fleet host wrapper, both pipeline launchers, the container recipe and Docker
+ignore policy, trainers, evaluator, GGUF helper, uploader, imported crawler
+package, and ZeroGPU runtime sources.
 
 Docker bakes the verified closure and frozen generated inputs under
 `/opt/lumen/source`; the host checkout is not mounted into the GPU or upload
@@ -138,6 +139,97 @@ The shared base is `Qwen/Qwen3-1.7B`, pinned to revision
 `70d244cc86ccca08cf5af4e1e306ecf908b1ad5e`. Its two controlled weight shards
 total about 3.78 GiB. Docker image layers, package wheels, optimizer state, and
 per-variant outputs require substantially more space than the model weights.
+
+## Strict Fleet Qualification Canary
+
+Use `scripts/ubuntu_run_fleet_canary.sh` when Fleet must pass alone before
+spending GPU time on the other five roles. It wraps the canonical launcher
+without introducing a second training implementation. The command requires an
+exact clean commit and a private workspace outside the source checkout:
+
+```bash
+cd /absolute/path/to/clean/lumen-clone
+bash scripts/ubuntu_run_fleet_canary.sh \
+  --workspace-root /absolute/path/to/lumen-fleet-canary \
+  --expected-commit "$(git rev-parse HEAD)" \
+  --run-id "fleetcanary-$(date -u +%Y%m%dT%H%M%SZ)" \
+  --confirm-stop-ollama
+```
+
+Run the non-training preflight first when preparing a new host:
+
+```bash
+bash scripts/ubuntu_run_fleet_canary.sh \
+  --workspace-root /absolute/path/to/lumen-fleet-canary \
+  --expected-commit "$(git rev-parse HEAD)" \
+  --preflight-only
+```
+
+The preflight creates or tightens the private `output` and `hf-cache`
+directories. It also creates or validates the owner-only persistent host state
+at `/var/tmp/lumen-fleet-canary-state`, but it does not stop Ollama, build the
+image, or launch training. The actual command requires
+`--confirm-stop-ollama`. Before stopping anything, it verifies:
+
+- the clean source attestation and exact expected commit;
+- at least 40 GiB free on the Docker storage filesystem;
+- at least 50 GiB free on the workspace filesystem;
+- one visible NVIDIA GPU, an idle Lumen training lane, and a unique fresh run
+  directory;
+- the exact `mongars-ollama-1` container is running, healthy, and uses its
+  expected `unless-stopped` restart policy.
+
+The wrapper and the canonical launcher both participate in the host-global
+`/var/tmp/lumen-fleet-canary-state/fleet-canary.lock`, so changing entry points
+or workspace roots cannot create a second GPU lane. The wrapper holds that
+reservation across preflight, training, and restoration; its canonical child
+verifies the inherited locked descriptor. A direct canonical launch acquires
+the same reservation itself. After acquiring it, the canonical launcher also
+lists every running container labeled `ai.lumen.purpose=ubuntu-training`. It
+rejects a new lane unless the caller explicitly resumes the single exact
+running container for an existing run root; list, inspection, label, state,
+name, or run-root ambiguity fails before image build or container creation.
+
+The wrapper writes a private, durable restoration marker beside that lock
+before stopping Ollama. While that marker exists, the canonical launcher
+accepts only the wrapper-inherited exact run or a direct `--resume` bound to the
+same expected commit, run ID, output root, existing run directory, and single
+variant. It also requires the marker's exact Ollama container ID, name, and
+restart policy to match and requires that container to remain stopped. It then
+waits for the fixed floor of 7168 MiB free VRAM and rejects a remaining
+`llama-server` GPU process. The 40 GiB Docker, 50 GiB workspace, and 7168 MiB
+VRAM floors cannot be reduced through inherited environment variables.
+
+The canonical launcher is invoked with a sanitized, fixed contract: build and
+pull enabled, optimized Fleet only, fresh SFT+DPO, full evaluation, no GGUF, no
+upload, no overwrite, and no resume or smoke flags. The wrapper passes its
+expected commit into the canonical launcher's independent source attestation,
+closing source changes between the two preflights. It never prunes Docker cache
+or changes unrelated images, volumes, or containers.
+
+On every ordinary success or failure, the exit trap starts the same recorded
+Ollama container ID and waits for it to become healthy. The canonical training
+exit status is preserved when restoration succeeds. If the launcher
+disconnects while its durable training container is still running, the wrapper
+does not restart Ollama into GPU contention and retains
+`/var/tmp/lumen-fleet-canary-state/ollama-restore-required` with the exact
+recovery identity. Do not remove that marker until the retained training
+container is no longer running and the recorded Ollama container has been
+restored and health-checked.
+
+For manual recovery, first confirm no Ubuntu training entry point holds
+`fleet-canary.lock`, then inspect the marker with `python3 -m json.tool`. Require
+`docker ps --filter label=ai.lumen.purpose=ubuntu-training` to be empty. Use
+`docker inspect` to confirm the marker's exact container ID still has the
+recorded restart policy, start that ID if needed, and wait for its health status
+to become `healthy`. Remove the marker only after every check succeeds; never
+substitute a different container that merely reuses the recorded name.
+
+The wrapper reports success only after the canonical launcher has completed its
+independent postcondition verification. For the current frozen Fleet suite,
+qualification means all 15 cases passed, weighted score `1.0`, zero critical
+failures, and zero terminal format failures. This is model-training evidence,
+not iOS device or shipped-runtime validation.
 
 ## Run The Pipeline
 
@@ -319,6 +411,10 @@ subsequent explicit `--resume` authenticates its immutable launch environment
 and either reattaches to the running container, starts a never-started fresh
 container, or verifies the postcondition of an exited container before any
 replacement. A never-started overwrite container still requires `--overwrite`.
+Before any new build or create, the host-global reservation rejects every
+unrelated running Lumen training container; only a single exact retained
+container for the requested existing run can be reattached by direct
+`--resume`.
 For a multi-variant batch, existing variant directories resume and a variant
 that had not started yet is prepared fresh. Direct unbound checkpoint selection
 remains disabled.
@@ -551,8 +647,9 @@ evidence owned by the release workflow even when the frozen evaluation passes.
   `--overwrite` deliberately after reviewing the existing artifacts.
 - **The terminal or Codex task disconnects while training:** do not delete the
   retained container or run root. Rerun the same clean source and run ID with
-  `--resume --no-build`; the launcher authenticates and reattaches to the exact
-  container or checkpoint state.
+  `--resume --no-build --expected-source-commit "$(git rev-parse HEAD)"`; the
+  launcher authenticates and reattaches to the exact container or checkpoint
+  state.
 - **The process stops during frozen evaluation:** keep the private evaluation
   directory unchanged and resume the same run. The launcher preserves an exact
   journal-only prefix, or a complete journal plus only a known partial-final
