@@ -1,82 +1,108 @@
 # AGENTS.md
 
-## iOS Scope
+## Scope
 
-This directory contains the shipped iOS app, XCTest targets, and Xcode project. Guidance here extends the repository root instructions for Swift, runtime, and simulator work.
+This file governs `ios/`: the Xcode project, app target, unit-test target, UI-test target, scheme, entitlements, bundled resources, and iOS-specific scripts. It refines [`../AGENTS.md`](../AGENTS.md); child files provide subsystem rules.
 
-## Swift And Runtime Rules
+## Role In The System
 
-- Release builds must not select deterministic fallback, mock, staged, unavailable, experimental, legacy-bridge, or not-compiled runtimes.
-- Keep diagnostic fallback, unavailable GGUF bridge implementations, live legacy probes, and experimental adapters behind `#if DEBUG`.
-- Prefer typed runtime errors, typed diagnostics, and explicit readiness states over generic fallback text.
-- Do not convert production failures into empty arrays, zero counts, false booleans, or vague user-facing copy.
-- Tool-capable chat, voice, AppIntent, trigger, and headless paths must be Agent Kernel-native in Release or excluded from Release.
-- Tool calls must be schema-validated before execution. Never execute unknown tools, schema-invalid arguments, malformed JSON, or extra dangerous arguments.
-- Tool coverage E2E paths must prefer actionable tool selection when an allowed tool exists. Nearby maps prompts such as coffee/pharmacy searches should reach `maps.search` or `location.current` plus `maps.search`; degraded location observations must not suppress `maps.search` evidence when the search can still run.
-- Missing-argument tool prompts should use explicit clarification text instead of generic safe failure finals. Keep user-visible final hygiene strict enough that truncated endings cannot pass compile-time or live-E2E evidence gates.
-- Logs and diagnostics must redact raw prompts, user documents, memory contents, and raw tool arguments unless the user explicitly exports diagnostics.
+`ios/Lumen/` is the shipping native application. `ios/LumenTests/` and `ios/LumenUITests/` validate it. `ios/Lumen.xcodeproj/` defines one app target (`Lumen`), one unit target (`LumenTests`), and one UI target (`LumenUITests`) with an iOS 18.0 deployment target and Xcode-managed Swift package dependencies.
 
-## XCTest And Xcode Validation
+## Key Files And Entry Points
 
-Use `build-for-testing` as the default simulator checkpoint:
+- `ios/Lumen/LumenApp.swift`: `@main`, SwiftData schema/container, bootstrap, background registration, scene handling, and URL handling.
+- `ios/Lumen/LumenAppDelegate.swift`: MetricKit, lifecycle callbacks, and Microsoft authentication callback routing.
+- `ios/Lumen.xcodeproj/project.pbxproj`: targets, packages, build settings, entitlements, generated Info.plist keys, and synchronized groups.
+- `ios/Lumen.xcodeproj/xcshareddata/xcschemes/Lumen.xcscheme`: shared build/test actions and post-build grounding-resource copy.
+- `ios/Lumen/Lumen.entitlements` and `ios/Lumen/LumenAppStore.entitlements`: capability declarations for their configurations.
+- `ios/Lumen/Scripts/copy_agent_grounding_resources.sh`: build-time verification/copy of generated grounding resources.
+
+## Public Interfaces
+
+The app exposes SwiftUI scenes, URL callbacks, App Intents/Shortcuts, optional CarPlay integration, background task registrations, local notifications, and native tool behavior. Kernel contracts, tool IDs/schemas, persistent model shapes, App Intent identifiers, BGTask identifiers, URL schemes, and entitlements are compatibility surfaces outside their declaring files.
+
+## Internal Structure And Dependency Direction
+
+- Views, voice, App Intents, CarPlay, and developer surfaces call `AssistantKernel` contracts.
+- `Assistant/` calls services, grounding, memory/RAG, and secure tools; it must not import presentation ownership into the kernel.
+- `Tools/` calls permission/platform adapters through typed execution context.
+- `Models/` supplies value and SwiftData types; stores own persistence operations.
+- `System/` and `Background/` coordinate cancellation/resource/lifecycle policy without owning inference.
+- Direct files under `Services/` own shared runtime/platform/store instances; child service directories refine specialized contracts.
+
+## Incoming And Outgoing Dependencies
+
+Incoming callers are iOS/Shortcuts/CarPlay lifecycle events and test targets. Outgoing dependencies include SwiftUI, SwiftData, BackgroundTasks, AVFoundation, Speech, Contacts, EventKit, Photos, PDFKit, Security, AuthenticationServices, MetricKit, URLSession, SwiftLlama/llama.cpp, Metal, and MSAL when linked. Optional frameworks remain guarded where source uses `canImport`.
+
+## Data And Control Flow
+
+App launch creates persistence and lightweight coordinators without loading the model. User or headless requests enter the kernel, which selects a Release-safe runtime, builds bounded grounding, validates structured actions, executes approved tools, and emits events to surface-specific reducers. Stores persist state through their `ModelContext`; scene/background cancellation propagates through coordinators and `AppCancellationBus`.
+
+## Local Invariants
+
+- Preserve one production kernel path. Do not reintroduce a view-owned or service-owned alternate agent loop.
+- Keep Release routing fail closed and DEBUG-only backends behind compile-time guards.
+- Do not model-load during launch, background maintenance, scene transition, or passive diagnostics.
+- Main-actor and actor annotations express ownership. Do not silence isolation errors with unchecked shared mutable state.
+- Every tool action is schema-validated and permission/approval-gated before side effects.
+- Keep raw user/model/tool content out of normal logs and diagnostics.
+- Treat persistence, audio, BGTask, and URL callback lifecycles as explicit resources with cancellation/cleanup.
+- A successful build is not evidence of executed tests, live model use, real-device behavior, signing, or upload.
+
+## Coordinated Changes
+
+- New Swift files are generally discovered by synchronized groups, but resources, build phases, packages, entitlements, URL/Info settings, and target membership still require project/scheme review.
+- Changing an `@Model` requires reviewing `LumenApp.swift`, owning stores, diagnostics/export, and `PersistenceAuditTests.swift`. No tracked versioned migration plan was found.
+- Changing a tool requires the model catalog, secure registry, schema bridge, route guard, manifest generation/resource mirror, and tests.
+- Changing model/runtime code requires routing, hardening scripts, package pin/linkage, memory budgets, cancellation tests, and status docs.
+- Changing background IDs, App Intent IDs, URL schemes, or entitlements requires checking operating-system registration/configuration as well as source.
+
+## Safe Editing Rules
+
+Prefer typed errors, explicit state machines, small actor-owned services, and existing reducer patterns. Do not add broad catches returning empty success. Do not directly edit generated `ios/Lumen/AgentBehaviorManifest.json`. Preserve the exact SwiftLlama package pin unless a deliberate runtime migration updates checks and evidence together. Do not add Release code that depends on the tracked GGUF header alone; no Release native implementation is present in this tree.
+
+## Validation
+
+From the repository root, compile first:
 
 ```bash
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
   -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
+  -derivedDataPath build/DerivedData-FocusedSimulatorTests \
   build-for-testing \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-If a previous `build-for-testing` already produced the needed `.xctestrun`, run focused simulator checks with `test-without-building` instead of rebuilding the app.
-
-Run full simulator tests only when the task requires executed XCTest proof and CoreSimulator is healthy:
+For bounded focused execution, invoke the runner directly:
 
 ```bash
-xcodebuild -project ios/Lumen.xcodeproj \
-  -scheme Lumen \
-  -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
-  test \
-  CODE_SIGNING_ALLOWED=NO
+bash scripts/run_focused_simulator_tests.sh
 ```
 
-Prefer focused tests when changing a narrow subsystem. Examples:
+The runner defaults to the same DerivedData path, but it still performs its own incremental `build-for-testing` before `test-without-building`; the standalone command is a compile checkpoint, not a no-build prerequisite.
+
+Use the full `xcodebuild ... test` command from the root file only when needed and CoreSimulator is healthy. Runtime/backend changes also require:
 
 ```bash
-xcodebuild -project ios/Lumen.xcodeproj \
-  -scheme Lumen \
-  -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
-  test \
-  -only-testing:LumenTests/RuntimeRouterTests \
-  CODE_SIGNING_ALLOWED=NO
+python3 tools/check_release_hardening.py
+python3 tools/check_agent_kernel_boundary.py --strict
+python3 tools/check_adapter_runtime_invariants.py
+python3 tools/check_ios_lora_hardening_invariants.py
+bash scripts/check-lumen-integration-gate.sh
 ```
 
-Preferred focused execution pattern:
+## Common Failure Modes
 
-```bash
-bash scripts/run_focused_simulator_tests.sh --only-testing LumenTests/<SuiteName>
-```
+- Tests pass through a DEBUG fallback that cannot exist in Release.
+- A synchronized source file compiles, but a required package/resource/build phase is not linked.
+- `build-for-testing` is reported as executed XCTest.
+- Main-thread model work causes launch or scene watchdog failures.
+- A new persistent property launches on a clean simulator but has no compatibility plan for existing stores.
+- A sensitive tool asks for permission or approval from a background/headless context.
 
-The focused runner uses the dedicated simulator, minimal AgentGrounding resources, a generated focused `.xctestrun`, disabled parallel workers, and bounded boot/test phases. The default simulator test timeout is `2400` seconds.
+## Parent And Child Guidance
 
-Useful command recap:
+Parent: [`../AGENTS.md`](../AGENTS.md).
 
-| Command | Purpose | When to use |
-| --- | --- | --- |
-| `xcodebuild ... build-for-testing CODE_SIGNING_ALLOWED=NO` | Compile app and tests without signing | Default iOS validation checkpoint |
-| `xcodebuild test-without-building -xctestrun ... -only-testing:LumenTests/<Suite>` | Execute focused tests from an existing build | Rerun narrow tests without recompiling |
-| `xcodebuild ... test -only-testing:LumenTests/<Suite>` | Focused XCTest execution | Narrow Swift behavior changes |
-| `xcodebuild ... test CODE_SIGNING_ALLOWED=NO` | Full simulator XCTest | Only when execution proof is required and simulator is healthy |
-| `bash scripts/validate_lumen_ios.sh` | Repo iOS validation wrapper | Release-candidate style local validation |
-
-Avoid during normal agent work:
-
-- Do not repeatedly launch a failing simulator. Switch to non-launching validation or a focused bounded runner.
-- Do not wait for a long `bootstatus -b` System App timeout when the device is already Booted and SpringBoard/backboardd are running.
-- Do not change signing, entitlements, bundle IDs, or App Store settings as a side effect of compile fixes.
-- Do not add production mock adapters to satisfy tests.
-- Do not treat generic fallback text as acceptable runtime UX.
-
-## Manual Evidence Boundary
-
-Do not treat a simulator compile or XCTest pass as proof of TestFlight, signed Release, real-device local model load, live RAG, live memory, voice, or AppIntent behavior. State those gaps explicitly unless fresh evidence was produced.
+Child guidance: [`Lumen/Assistant/AGENTS.md`](Lumen/Assistant/AGENTS.md), [`Lumen/AppIntents/AGENTS.md`](Lumen/AppIntents/AGENTS.md), [`Lumen/Background/AGENTS.md`](Lumen/Background/AGENTS.md), [`Lumen/CarPlay/AGENTS.md`](Lumen/CarPlay/AGENTS.md), [`Lumen/Developer/AGENTS.md`](Lumen/Developer/AGENTS.md), [`Lumen/Memory/AGENTS.md`](Lumen/Memory/AGENTS.md), [`Lumen/Models/AGENTS.md`](Lumen/Models/AGENTS.md), [`Lumen/Permissions/AGENTS.md`](Lumen/Permissions/AGENTS.md), [`Lumen/RAG/AGENTS.md`](Lumen/RAG/AGENTS.md), [`Lumen/Services/AGENTS.md`](Lumen/Services/AGENTS.md), [`Lumen/System/AGENTS.md`](Lumen/System/AGENTS.md), [`Lumen/Tools/AGENTS.md`](Lumen/Tools/AGENTS.md), [`Lumen/Views/AGENTS.md`](Lumen/Views/AGENTS.md), [`Lumen/Voice/AGENTS.md`](Lumen/Voice/AGENTS.md), and [`LumenTests/AGENTS.md`](LumenTests/AGENTS.md). `LumenUITests/` inherits this file because no distinct setup or invariant was found.
