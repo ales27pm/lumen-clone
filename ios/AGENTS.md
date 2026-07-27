@@ -69,15 +69,18 @@ From the repository root, compile first:
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
   -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
+  -derivedDataPath build/DerivedData-FocusedSimulatorTests \
   build-for-testing \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-For bounded focused execution:
+For bounded focused execution, invoke the runner directly:
 
 ```bash
 bash scripts/run_focused_simulator_tests.sh
 ```
+
+The runner defaults to the same DerivedData path, but it still performs its own incremental `build-for-testing` before `test-without-building`; the standalone command is a compile checkpoint, not a no-build prerequisite.
 
 Use the full `xcodebuild ... test` command from the root file only when needed and CoreSimulator is healthy. Runtime/backend changes also require:
 

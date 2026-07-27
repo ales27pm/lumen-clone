@@ -151,7 +151,7 @@ uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler --with pytes
 cd tools/lumen_manifest_crawler && uv run --python 3.12 --with pytest pytest --collect-only
 ```
 
-The first command runs the non-slow/non-E2E package suite from the root. The second verifies collection from the package directory. Remove `tools/lumen_manifest_crawler/uv.lock` if `uv` created it only as an unrequested validation byproduct.
+The first command runs the non-slow/non-E2E package suite from the root. The second verifies collection from the package directory. Before either command, record whether `tools/lumen_manifest_crawler/uv.lock` exists. Remove that explicit path afterward only if it was absent before the run and this validation created it; preserve any pre-existing tracked or untracked lockfile.
 
 ### Stable iOS compile checkpoint
 
@@ -159,11 +159,12 @@ The first command runs the non-slow/non-E2E package suite from the root. The sec
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
   -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
+  -derivedDataPath build/DerivedData-FocusedSimulatorTests \
   build-for-testing \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-Use the dedicated simulator when it exists. Build first; reuse its `.xctestrun` with the bounded focused runner for repeated tests.
+Use the dedicated simulator when it exists. The standalone command is the stable compile checkpoint. The focused runner defaults to the same DerivedData path, so it shares the build cache and `.xctestrun` output location, but it still performs its own incremental `build-for-testing` before `test-without-building`; the standalone build is not a no-build prerequisite.
 
 ### Focused and full simulator execution
 

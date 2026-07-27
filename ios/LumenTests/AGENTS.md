@@ -63,10 +63,18 @@ From the repository root:
 xcodebuild -project ios/Lumen.xcodeproj \
   -scheme Lumen \
   -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' \
+  -derivedDataPath build/DerivedData-FocusedSimulatorTests \
   build-for-testing \
   CODE_SIGNING_ALLOWED=NO
+```
+
+For bounded focused execution, invoke the runner directly:
+
+```bash
 bash scripts/run_focused_simulator_tests.sh
 ```
+
+The runner defaults to the same DerivedData path, but it still performs its own incremental `build-for-testing` before `test-without-building`; the standalone command is a compile checkpoint, not a no-build prerequisite.
 
 For a single class, use the verified Xcode selector form:
 
@@ -76,7 +84,7 @@ xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS
 
 ## Common Failure Modes
 
-- Rebuilding for every focused rerun instead of reusing `.xctestrun`.
+- Discarding the focused DerivedData cache between runner invocations and forcing avoidable full rebuilds.
 - Simulator install/test-manager stall is reported as a test failure or, worse, success.
 - A DEBUG fallback makes a Release invariant test meaningless.
 - A test validates fixture text instead of actual runtime correlation.

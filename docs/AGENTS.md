@@ -63,7 +63,7 @@ From the repository root:
 
 ```bash
 git diff --check -- docs README.md FEATURE_COMPLETE_VALIDATION.md
-rg -n 'generated/agent_manifest/fine_tuning|legacy.*shipped|partial|planned|staged' docs README.md FEATURE_COMPLETE_VALIDATION.md
+rg -n -i 'generated/agent_manifest/fine_tuning|legacy.*shipped|partial|planned|staged' docs README.md FEATURE_COMPLETE_VALIDATION.md
 ```
 
 The `rg` command is a review aid, not an automatic failure rule: inspect each historical/current context. Validate every added command against the referenced script/manifest before publishing it.
