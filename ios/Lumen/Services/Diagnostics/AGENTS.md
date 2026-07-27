@@ -58,7 +58,7 @@ From the repository root:
 xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' test CODE_SIGNING_ALLOWED=NO -only-testing:LumenTests/DeveloperFrameworkTests -only-testing:LumenTests/E2ETestRunnerHygieneTests -only-testing:LumenTests/PersistentRuntimeDiagnosticsTests
 ```
 
-No dedicated exporter-only test file was found; these consumer/hygiene tests are the nearest verified coverage.
+No dedicated exporter-only test file was found; these consumer/hygiene tests are the nearest identified coverage.
 
 ## Common Failure Modes
 

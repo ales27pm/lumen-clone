@@ -12,11 +12,10 @@ Scripts operationalize validation, generation, release, training, and exceptiona
 
 - `check-lumen-integration-gate.sh`: broad local integration/static gate.
 - `validate_lumen_ios.sh`: bounded iOS build-for-testing/default validation wrapper.
-- `run_focused_simulator_tests.sh`: bounded simulator test execution and `.xctestrun` reuse.
+- `run_focused_simulator_tests.sh`: bounded simulator build/test execution using stable DerivedData and `.xctestrun`.
 - `check-ios-build-readiness.sh`: static/Xcode readiness; static mode is not compilation.
 - `sync-agent-manifest-resource.sh`: canonical generated manifest -> app resource mirror.
-- `archive_lumen_stable.sh` and `build_and_submit_appstoreconnect.sh`: archive/export/upload path.
-- `upload_to_app_store_connect.sh`: upload output interpretation.
+- `archive_lumen_stable.sh`: signed archive creation; `build_and_submit_appstoreconnect.sh`: archive/export plus optional upload and inline upload-output interpretation.
 - `ubuntu_train_lumen_full_pipeline.sh`: controlled external Ubuntu/GPU training launcher.
 - `tripleboot_aio.sh`: destructive, standalone removable-media installer unrelated to routine Lumen validation.
 - Hotfix/repair scripts: source/project mutation, not validation.
@@ -44,8 +43,8 @@ Operator intent -> argument/preflight validation -> explicit side effects -> aut
 ## Local Invariants
 
 - Default local validation does not trigger GitHub Actions, App Store upload, destructive cleanup, hotfixes, or removable-media changes.
-- Keep simulator loops bounded; build-for-testing precedes repeated test-without-building runs.
-- Release/upload scripts run only on explicit request and must report archive, IPA, build number, and Delivery UUID only after error-free upload success.
+- Keep simulator loops bounded; the focused runner uses stable DerivedData and performs `build-for-testing` before `test-without-building`.
+- Release/upload scripts run only on explicit request. After successful archive/export, non-upload flows may report the archive, IPA, and build number; report a Delivery UUID only after confirmed, error-free upload completion.
 - Sync/generation scripts fail on drift; they do not silently accept nondeterministic/runtime-evidence manifests as app resources.
 - Destructive target/device scripts require explicit target confirmation and clear impact.
 - Never echo credentials or signing/token material.

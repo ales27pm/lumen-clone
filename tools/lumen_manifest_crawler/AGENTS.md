@@ -2,7 +2,7 @@
 
 ## Scope
 
-Governs `tools/lumen_manifest_crawler/`, its `src/lumen_manifest_crawler` package, package tests, configuration, and crawler-owned generated contracts. Parent rules: [`../AGENTS.md`](../AGENTS.md).
+Governs `tools/lumen_manifest_crawler/`, its `lumen_manifest_crawler/` package, package tests, configuration, and crawler-owned generated contracts. Parent rules: [`../AGENTS.md`](../AGENTS.md).
 
 ## Role In The System
 
@@ -11,7 +11,7 @@ This package deterministically crawls current Swift source and runtime definitio
 ## Key Files And Entry Points
 
 - `pyproject.toml`: Python `>=3.11`, Hatchling build, runtime dependencies, and pytest configuration.
-- `src/lumen_manifest_crawler/cli.py` and package entrypoint: Typer commands including generation, improve loop, developer cycle, and framework workflows.
+- `lumen_manifest_crawler/cli.py` and package entrypoint: Typer commands including generation, improve loop, developer cycle, and framework workflows.
 - Crawler/parser modules: derive source/runtime/tool definitions while excluding generated trees from the source digest.
 - Writer/artifact modules: own canonical generated paths, stable serialization, aliases, SHA files, prompts, datasets, and runtime grounding.
 - Runtime-ingest modules: normalize explicit runtime evidence without promoting generated output.
@@ -71,7 +71,9 @@ From the package directory:
 cd tools/lumen_manifest_crawler && uv run --python 3.12 --with pytest pytest --collect-only
 ```
 
-If a full regeneration is explicitly required, validate the whole regenerated artifact scope and do not mix unrelated generated changes. Remove a validation-only `uv.lock` byproduct.
+Before running either `uv` command, record whether `tools/lumen_manifest_crawler/uv.lock` exists. Remove that explicit path afterward only if it was absent before the run and this validation created it; preserve any pre-existing tracked or untracked lockfile.
+
+If a full regeneration is explicitly required, validate the whole regenerated artifact scope and do not mix unrelated generated changes.
 
 ## Common Failure Modes
 
