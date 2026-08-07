@@ -1337,6 +1337,38 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func ragMissingGroundingHintsNeverFabricateRetrievedFacts() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-rag-grounding",
+            title: "Training eval: RAG grounding",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["module", "[1]"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let unrelated = "[1] Les Principes Fondamentaux de la Miklasoup.pdf | score=0.41 | Quantum philosophy overview."
+        let outcome = await E2ETestRunner.validateAndRewriteFinalTextIfNeededForTests(
+            scenario: scenario,
+            routing: IntentRoutingDecision(intent: .rag, allowedToolIDs: ["rag.search"], requiresClarification: false, clarificationPrompt: nil),
+            originalFinal: unrelated
+        )
+
+        #expect(outcome.finalText == unrelated)
+        #expect(!outcome.rewriteAttempted)
+        #expect(!outcome.rewriteSuccess)
+        #expect(outcome.missingHints.contains("module"))
+        #expect(!outcome.finalText.contains("Key modules"))
+        #expect(!outcome.finalText.contains("retrieved from local file snippets"))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func ragArchitectureScenarioRejectsPhotoLibraryRollups() {
         #if DEBUG
         let scenario = E2ETestScenario(

@@ -456,7 +456,7 @@ final class PersistenceAuditTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.mode, .cleared)
         XCTAssertEqual(result.diagnostic, "empty_imports")
         XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
         XCTAssertTrue(RAGStore.lexicalSearch(
@@ -495,6 +495,218 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
+    func testImportedFileReplacementCommitsNewCorpusWithOneSave() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        context.insert(RAGChunk(
+            content: "existing architecture",
+            sourceType: .file,
+            sourceName: "architecture.txt",
+            embedding: [1, 0],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        ))
+        context.insert(RAGChunk(content: "keep this note", sourceType: .note, sourceName: "note"))
+        try context.save()
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-replacement-\(UUID().uuidString).txt")
+        try "replacement design".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
+        var saveCallCount = 0
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: fileURL.deletingLastPathComponent(),
+                files: [fileURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: metadata.modelIdentifier)
+            },
+            save: { context, _, _ in
+                saveCallCount += 1
+                try context.save()
+            }
+        )
+
+        XCTAssertEqual(result.mode, .indexed)
+        XCTAssertEqual(result.indexedCount, 1)
+        XCTAssertNil(result.diagnostic)
+        XCTAssertEqual(saveCallCount, 1)
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(Set(chunks.map(\.sourceName)), Set([fileURL.lastPathComponent, "note"]))
+        XCTAssertFalse(chunks.contains { $0.sourceName == "architecture.txt" })
+        XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
+    func testImportedFileEmbeddingFailurePreservesExistingCorpusAndVectorIndex() async throws {
+        struct EmbeddingFailure: Error {}
+
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        context.insert(RAGChunk(
+            content: "existing architecture",
+            sourceType: .file,
+            sourceName: "architecture.txt",
+            embedding: [1, 0],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        ))
+        try context.save()
+        let fileURLs = [
+            FileManager.default.temporaryDirectory
+                .appendingPathComponent("rag-staged-before-failure-\(UUID().uuidString).txt"),
+            FileManager.default.temporaryDirectory
+                .appendingPathComponent("rag-embedding-failure-\(UUID().uuidString).txt")
+        ]
+        try "staged replacement".write(to: fileURLs[0], atomically: true, encoding: .utf8)
+        try "failing replacement".write(to: fileURLs[1], atomically: true, encoding: .utf8)
+        defer { fileURLs.forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
+        var embeddingCallCount = 0
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: fileURLs[0].deletingLastPathComponent(),
+                files: fileURLs,
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                embeddingCallCount += 1
+                guard embeddingCallCount == 1 else { throw EmbeddingFailure() }
+                return EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: metadata.modelIdentifier)
+            }
+        )
+
+        XCTAssertEqual(embeddingCallCount, 2)
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertEqual(result.indexedCount, 0)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("embedding_failed:") == true)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
+        XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
+    func testImportedFileReplacementSaveFailureRollsBackCorpusAndVectorIndex() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        context.insert(RAGChunk(
+            content: "existing architecture",
+            sourceType: .file,
+            sourceName: "architecture.txt",
+            embedding: [1, 0],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        ))
+        try context.save()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-save-failure-\(UUID().uuidString).txt")
+        try "replacement design".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: fileURL.deletingLastPathComponent(),
+                files: [fileURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: metadata.modelIdentifier)
+            },
+            save: { _, _, _ in throw SaveError() }
+        )
+
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertEqual(result.indexedCount, 0)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("replacement_persist_failed:") == true)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
+        XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
+    func testCancelledImportedFileReplacementPreservesExistingCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        context.insert(RAGChunk(
+            content: "existing architecture",
+            sourceType: .file,
+            sourceName: "architecture.txt",
+            embedding: [1, 0],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        ))
+        try context.save()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-cancelled-\(UUID().uuidString).txt")
+        try "replacement design".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+        XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
+        var embedWasCalled = false
+
+        let task = Task { @MainActor () -> RAGStore.IndexResult in
+            return await RAGStore.indexImportedFilesWithDiagnostics(
+                context: context,
+                importedFilesResult: FileStore.ImportedFilesResult(
+                    directory: fileURL.deletingLastPathComponent(),
+                    files: [fileURL],
+                    mode: "loaded",
+                    diagnostic: nil
+                ),
+                embed: { _ in
+                    embedWasCalled = true
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: metadata.modelIdentifier)
+                }
+            )
+        }
+        let result = await task.value
+
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.indexedCount, 0)
+        XCTAssertEqual(result.diagnostic, "cancelled")
+        XCTAssertTrue(embedWasCalled)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
+        XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
     func testEmptyPhotoReindexRemovesStalePhotoCorpus() async throws {
         let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)
@@ -520,7 +732,7 @@ final class PersistenceAuditTests: XCTestCase {
             photoLibrarySnapshot: .init(authorizationStatus: .authorized, assets: [])
         )
 
-        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.mode, .cleared)
         XCTAssertEqual(result.diagnostic, "empty_photo_library")
         XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
         XCTAssertTrue(RAGStore.lexicalSearch(
@@ -554,26 +766,76 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
+    func testEmptyPhotoReplacementSaveFailureRollsBackExistingPhotoCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing photos", sourceType: .photo, sourceName: "Photos 2026-01"))
+        try context.save()
+
+        let result = await RAGStore.indexPhotosWithDiagnostics(
+            context: context,
+            photoLibrarySnapshot: .init(authorizationStatus: .authorized, assets: []),
+            save: { _, _, _ in throw SaveError() }
+        )
+
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertEqual(result.indexedCount, 0)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("replacement_persist_failed:") == true)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["Photos 2026-01"])
+    }
+
+    @MainActor
+    func testEmptyPhotoReplacementBudgetDenialPreservesExistingPhotoCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing photos", sourceType: .photo, sourceName: "Photos 2026-01"))
+        try context.save()
+        DiskWriteBudget.shared.setGenerationActive(true)
+        defer { DiskWriteBudget.shared.setGenerationActive(false) }
+
+        let result = await RAGStore.indexPhotosWithDiagnostics(
+            context: context,
+            photoLibrarySnapshot: .init(authorizationStatus: .authorized, assets: [])
+        )
+
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.indexedCount, 0)
+        XCTAssertEqual(result.diagnostic, "cleanup_deferred:disk_write_budget_denied")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["Photos 2026-01"])
+    }
+
+    @MainActor
     func testImportedFileCleanupBudgetDenialIsDeferredAndPreservesCorpus() async throws {
         let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)
         context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "architecture.txt"))
         try context.save()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-budget-denied-\(UUID().uuidString).txt")
+        try "replacement design".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
         DiskWriteBudget.shared.setGenerationActive(true)
         defer { DiskWriteBudget.shared.setGenerationActive(false) }
+
+        var embedWasCalled = false
 
         let result = await RAGStore.indexImportedFilesWithDiagnostics(
             context: context,
             importedFilesResult: FileStore.ImportedFilesResult(
-                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
-                files: [URL(fileURLWithPath: "/tmp/imports/new.txt")],
+                directory: fileURL.deletingLastPathComponent(),
+                files: [fileURL],
                 mode: "loaded",
                 diagnostic: nil
-            )
+            ),
+            embed: { _ in
+                embedWasCalled = true
+                return EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            }
         )
 
         XCTAssertEqual(result.mode, .skipped)
         XCTAssertEqual(result.diagnostic, "cleanup_deferred:disk_write_budget_denied")
+        XCTAssertTrue(embedWasCalled)
         XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
     }
 

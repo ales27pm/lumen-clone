@@ -34,6 +34,27 @@ struct FinalIntentValidatorTests {
         #expect(text == candidate)
     }
 
+    @Test func acceptsFinalizedMemoryFactsWhenConversationRecordContainsEmailSubject() async throws {
+        let candidate = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: """
+            - [FACT0001] I prefer concise bullet points | kind=fact | score=0.90 | source=agent
+            - [CHAT0001] User asked: Summarize my latest Outlook emails.
+            Assistant: Outlook messages: Subject: Project Lantern status
+            | kind=conversation | score=0.20 | source=chat
+            """,
+            originalPrompt: "What do you remember about my response style?"
+        )
+        let routing = IntentRoutingDecision(intent: .memory, allowedToolIDs: ["memory.recall"], requiresClarification: false, clarificationPrompt: nil)
+        let outcome = FinalIntentValidator.validateWithOutcome(candidate ?? "", routing: routing, fallback: nil)
+
+        #expect(candidate == "I remember that you prefer concise bullet points.")
+        #expect(outcome.text == candidate)
+        #expect(outcome.acceptedCandidate)
+        #expect(outcome.rejectionReason == nil)
+    }
+
     @Test func preservesMapsSearchResultsObservation() async throws {
         let routing = IntentRoutingDecision(intent: .maps, allowedToolIDs: ["location.current", "maps.search"], requiresClarification: false, clarificationPrompt: nil)
         let candidate = "Maps search results:\n• Tim Hortons — Avenue de la Plaza, Sorel-Tracy"
@@ -46,6 +67,59 @@ struct FinalIntentValidatorTests {
         let candidate = "RAG search results:\nNo matching files found. Source: local RAG index; no matching module snippets were retrieved."
         let text = FinalIntentValidator.validate(candidate, routing: routing, fallback: "Local search/indexing tools are unavailable in this build right now.")
         #expect(text == candidate)
+    }
+
+    @Test func ragIndexFinalizerReportsActualOutcomeWithoutFalseSuccess() async throws {
+        let skipped = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_files",
+            observation: "RAG indexing skipped. Diagnostic: disk_write_budget_denied.",
+            originalPrompt: "Reindex my imported files."
+        )
+        let partial = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_photos",
+            observation: "RAG photo indexing partially completed: indexed 2 monthly summaries. Diagnostic: cancelled.",
+            originalPrompt: "Reindex my photos."
+        )
+        let failed = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_files",
+            observation: "RAG indexing failed. Diagnostic: persist_failed.",
+            originalPrompt: "Reindex my imported files."
+        )
+        let fileCleared = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_files",
+            observation: "No imported files remain; the previous file index was cleared.",
+            originalPrompt: "Reindex my imported files."
+        )
+        let photoCleared = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_photos",
+            observation: "No photos remain in the selected range; the previous photo index was cleared.",
+            originalPrompt: "Reindex my photos."
+        )
+        let routing = IntentRoutingDecision(
+            intent: .rag,
+            allowedToolIDs: ["rag.index_files", "rag.index_photos"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let fileClearedOutcome = FinalIntentValidator.validateWithOutcome(fileCleared ?? "", routing: routing, fallback: nil)
+        let photoClearedOutcome = FinalIntentValidator.validateWithOutcome(photoCleared ?? "", routing: routing, fallback: nil)
+
+        #expect(skipped?.hasPrefix("Local file index unchanged:") == true)
+        #expect(skipped?.contains("index updated") == false)
+        #expect(partial?.hasPrefix("Photo index partially updated:") == true)
+        #expect(failed?.hasPrefix("Local file index update failed:") == true)
+        #expect(fileCleared?.hasPrefix("Local file index cleared:") == true)
+        #expect(fileCleared?.contains("unchanged") == false)
+        #expect(photoCleared?.hasPrefix("Photo index cleared:") == true)
+        #expect(fileClearedOutcome.acceptedCandidate)
+        #expect(photoClearedOutcome.acceptedCandidate)
+        #expect(fileClearedOutcome.text == fileCleared)
+        #expect(photoClearedOutcome.text == photoCleared)
     }
 
     @Test func preservesTrustedRAGClarificationPrompt() async throws {

@@ -19,6 +19,83 @@ final class RAGSearchToolTests: XCTestCase {
         )
     }
 
+    func testPostRerankRelevanceRejectsUnanchoredMiklasoupReportCandidates() {
+        let query = "Search my local files for Lumen architecture notes and summarize key modules."
+        let title = "Les Principes Fondamentaux de la Miklasoup.pdf"
+        let excerpts = [
+            "Les particules illustrent la nature fluide de la réalité à l'échelle quantique.",
+            "L'intrication quantique souligne la réalité non-locale de l'univers.",
+            "Cette soupe est un creuset spirituel où matière et esprit se mélangent.",
+            "La diversité infinie contribue positivement à l'harmonie universelle.",
+            "L'ancienne Égypte et le Livre des Morts évoquent la continuité de l'existence.",
+            "L'expansion de la Miklasoup traverse les mythes et les philosophies."
+        ]
+        let scores = [0.42, 0.41, 0.38, 0.37, 0.37, 0.37]
+
+        let relevant = zip(excerpts, scores).filter { candidate in
+            RAGEngine.isPostRerankRelevant(
+                query: query,
+                content: candidate.0,
+                title: title,
+                rerankedScore: candidate.1
+            )
+        }
+
+        XCTAssertTrue(relevant.isEmpty)
+        XCTAssertFalse(
+            RAGEngine.isPostRerankRelevant(
+                query: query,
+                content: "This local file contains notes and a report.",
+                title: "Latest local document",
+                rerankedScore: 0.42
+            )
+        )
+    }
+
+    func testPostRerankRelevanceRejectsTermsAddedOnlyByQueryExpansion() {
+        let originalQuery = "Search my files for Lumen architecture notes."
+        let expansionOnlyCandidate = "Service component module package overview."
+
+        XCTAssertFalse(
+            RAGEngine.isPostRerankRelevant(
+                query: originalQuery,
+                content: expansionOnlyCandidate,
+                title: "Unrelated engineering glossary",
+                rerankedScore: 0.24
+            )
+        )
+        XCTAssertTrue(
+            RAGEngine.isPostRerankRelevant(
+                query: originalQuery + " module service component package",
+                content: expansionOnlyCandidate,
+                title: "Unrelated engineering glossary",
+                rerankedScore: 0.24
+            )
+        )
+    }
+
+    func testPostRerankRelevancePreservesHighConfidenceSemanticMatchWithoutLiteralAnchor() {
+        XCTAssertTrue(
+            RAGEngine.isPostRerankRelevant(
+                query: "architecture modules",
+                content: "The system design separates orchestration, persistence, and native execution boundaries.",
+                title: "Engineering overview",
+                rerankedScore: 0.64
+            )
+        )
+    }
+
+    func testPostRerankRelevancePreservesLowConfidenceAnchoredLexicalMatch() {
+        XCTAssertTrue(
+            RAGEngine.isPostRerankRelevant(
+                query: "Search my local files for Lumen architecture notes and summarize key modules.",
+                content: "The architecture defines the assistant kernel and storage boundaries.",
+                title: "Local design notes",
+                rerankedScore: 0.24
+            )
+        )
+    }
+
     @MainActor func testMissingModelContextReportsSwiftDataDiagnostic() async {
         let tool = RAGSearchTool()
         let inv = ToolInvocation(

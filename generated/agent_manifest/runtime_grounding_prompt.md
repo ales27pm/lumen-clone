@@ -2,39 +2,40 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `d45cb92075345a99cdc9b4b19466e5f39102e801`
-- Working-tree digest: `4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f`
+- Base commit: `70912358f7a32d3db8ffd8d967e27ddfa7d93c06`
+- Working-tree digest: `c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `807`
+- Codebase-home records: `844`
 
 ## Top Modules
-- `ios/LumenTests`: 162 files
-- `Services`: 61 files
-- `docs`: 59 files
-- `tools/fine_tuning/unsloth`: 53 files
+- `ios/LumenTests`: 168 files
+- `Services`: 67 files
+- `docs`: 60 files
+- `tools/fine_tuning/unsloth`: 54 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 47 files
 - `tools/lumen_manifest_crawler/tests`: 39 files
-- `Views`: 32 files
-- `Assistant`: 29 files
-- `scripts`: 23 files
+- `Views`: 33 files
+- `Assistant`: 30 files
+- `scripts`: 24 files
+- `Services/LLM`: 22 files
 - `Diagnostics`: 21 files
-- `Services/LLM`: 21 files
-- `System`: 16 files
-- `Models`: 15 files
+- `System`: 17 files
+- `Models`: 16 files
+- `Tools`: 15 files
+- `Services/AgentGrounding`: 14 files
 - `Services/Tools`: 14 files
-- `Tools`: 14 files
-- `Services/AgentGrounding`: 13 files
-- `tools`: 13 files
+- `tools`: 14 files
 - `Tools/Builtin`: 12 files
+- `RAG`: 10 files
 - `repo`: 10 files
-- `RAG`: 9 files
+- `AppIntents`: 9 files
+- `Memory`: 9 files
 - `Services/LLM/Models`: 9 files
 - `Services/LLM/Policy`: 9 files
-- `tools/pipeline/tests`: 9 files
-- `AppIntents`: 8 files
 
 ## Key Files
+- `ios/Lumen/Services/AgentGrounding/AGENTS.md` (Services/AgentGrounding): AGENTS.md Symbols: AGENTS.md, Scope, Role In The System, Key Files And Entry Points, Public Interfaces, Internal Structure, Incoming Dependencies, Outgoing Dependencies.
 - `ios/Lumen/Services/AgentGrounding/AgentBehaviorManifest.swift` (Services/AgentGrounding): Compatibility accessor for code that predates the explicit base-commit provenance contract. Symbols: AgentBehaviorManifest, ManifestAppInfo, ManifestSourceIntegrity, CodingKeys, ManifestSourceFileHash, ManifestFleet, ManifestModelSlot, ManifestIntent.
 - `ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` owns AgentBehaviorTrace behavior and defines: AgentBehaviorTrace, SelfModelDecisionSummary, Event, CodingKeys, AgentBehaviorTraceEmitter, AgentDiagnosticFileRe Symbols: AgentBehaviorTrace, SelfModelDecisionSummary, Event, CodingKeys, AgentBehaviorTraceEmitter, AgentDiagnosticFileRedactor, AgentBehaviorAuditReport, AgentBehaviorViolation.
 - `ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/AgentGroundingAuditView.swift` owns AgentGroundingAuditView behavior and defines: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTrac Symbols: AgentKernelBridgeSmokeTestExpectation, AgentGroundingAuditView, completedSummary, runAudit, runLiveTraceSmokeTest, cancelLiveTraceSmokeTestForSceneTransition, finishLiveTraceSmokeTask, exportRuntimeAuditPackage.
@@ -48,6 +49,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/RuntimeManifestAuditor.swift` owns RuntimeManifestAuditor behavior and defines: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAudito Symbols: RuntimeAgentManifestAuditReport, RuntimeManifestFailure, RuntimeManifestLoadResult, RuntimeManifestAuditor, RuntimeManifestAuditError, loadBundledManifest, loadManifestFromStoreBundleOrRuntimeFallback, loadBundledManifestOrRuntimeFallback.
 - `ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/RuntimeScenarioRunner.swift` owns RuntimeScenarioRunner behavior and defines: RuntimeScenario, RuntimeScenarioResult, RuntimeScenarioRunner, scenarios, validateStaticScenarios, prompt,  Symbols: RuntimeScenario, RuntimeScenarioResult, RuntimeScenarioRunner, scenarios, validateStaticScenarios, prompt, id, intent.
 - `ios/Lumen/Services/AgentGrounding/RuntimeToolRegistryProviding.swift` (Services/AgentGrounding): `ios/Lumen/Services/AgentGrounding/RuntimeToolRegistryProviding.swift` owns RuntimeToolRegistryProviding behavior and defines: RuntimeToolRegistryProviding, StaticRuntimeToolRegistryProvider, currentToolDefinitions, tool Symbols: RuntimeToolRegistryProviding, StaticRuntimeToolRegistryProvider, currentToolDefinitions, tools.
+- `ios/Lumen/Assistant/AGENTS.md` (Assistant): AGENTS.md Symbols: AGENTS.md, Scope, Role In The System, Key Files And Entry Points, Public Interfaces, Internal Structure, Incoming Dependencies, Outgoing Dependencies.
 - `ios/Lumen/Assistant/AgentKernelContracts.swift` (Assistant): Canonical request envelope for the Agent Kernel migration. Symbols: AgentTraceCorrelation, AgentKernelRequest, AgentKernelMessage, Role, AgentKernelSource, AgentStructuredMode, AgentKernelOptions, CodingKeys.
 - `ios/Lumen/Assistant/AgentKernelRunOptions.swift` (Assistant): `ios/Lumen/Assistant/AgentKernelRunOptions.swift` owns AgentKernelRunOptions behavior and defines: AgentKernelRunOptions, GroundingMode, LegacyAgentRunOptions, modelContext, conversationID, turnID, groundingMode, allowDe Symbols: AgentKernelRunOptions, GroundingMode, LegacyAgentRunOptions, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding.
 - `ios/Lumen/Assistant/AssistantGroundingContext.swift` (Assistant): `ios/Lumen/Assistant/AssistantGroundingContext.swift` owns AssistantGroundingContext behavior and defines: AssistantGroundingContext, memoryCount, ragCount, toolCount, estimatedChars, estimatedTokens, contextProfile, max Symbols: AssistantGroundingContext, memoryCount, ragCount, toolCount, estimatedChars, estimatedTokens, contextProfile, maxInputTokens.
@@ -76,7 +78,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/PromptGroundingSection.swift` (Assistant): `ios/Lumen/Assistant/PromptGroundingSection.swift` owns PromptGroundingSection behavior and defines: GroundingPrivacyLevel, PromptGroundingSection, title, content, estimatedChars, sourceIDs, privacyLevel. Symbols: GroundingPrivacyLevel, PromptGroundingSection, title, content, estimatedChars, sourceIDs, privacyLevel.
 - `ios/Lumen/Assistant/SelfModelContextProvider.swift` (Assistant): `ios/Lumen/Assistant/SelfModelContextProvider.swift` owns SelfModelContextProvider behavior and defines: SelfModelContextProvider, section, render, maxChars, sourceIDs, compactLines, sectionTitle, foregroundMaxChars, bac Symbols: SelfModelContextProvider, section, render, maxChars, sourceIDs, compactLines, sectionTitle, foregroundMaxChars.
 - `ios/Lumen/Assistant/SemanticEmbeddingText.swift` (Assistant): `ios/Lumen/Assistant/SemanticEmbeddingText.swift` owns SemanticEmbeddingText behavior and defines: SemanticEmbeddingText, RAGEmbeddingMetadata, query, document, memoryQuery, memoryDocument, prefixed, boundedInlineContent Symbols: SemanticEmbeddingText, RAGEmbeddingMetadata, query, document, memoryQuery, memoryDocument, prefixed, boundedInlineContent.
-- `ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` (Assistant): `ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, Structure Symbols: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, AgentKernelSource.
+- `ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` (Assistant): `ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, Structure Symbols: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run.
 - `ios/Lumen/Services/AgentEventContinuationYield.swift` (Services): `ios/Lumen/Services/AgentEventContinuationYield.swift` is static Lumen source for the `Services` module.
 - `ios/Lumen/Services/AgentGroundingInstrumentation.swift` (Services): `ios/Lumen/Services/AgentGroundingInstrumentation.swift` owns AgentGroundingInstrumentation behavior and defines: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancel Symbols: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancellation, mark, elapsedMs, sceneText.
 - `ios/Lumen/Services/AgentIntentRouter.swift` (Services): Compatibility facade for older agent-routing tests/call sites. Symbols: AgentIntentRouter, Decision, decide, decideSemantic, decision, filteredTools, routingSystemNote, allowedToolIDs.
@@ -89,9 +91,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/Tools/HealthTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/HealthTools.swift` owns HealthTools behavior and defines: HealthTools, healthSummary, sumQuantity, averageQuantity, sleepHours, authorizationFailureMessage, healthStore, stepType, hrType, sleepT Symbols: HealthTools, healthSummary, sumQuantity, averageQuantity, sleepHours, authorizationFailureMessage, healthStore, stepType.
 - `ios/Lumen/Services/Tools/LocationProbe.swift` (Services/Tools): One-shot location fetch with a per-call delegate — no shared singleton state. Symbols: LocationProbe, LocationCoordinateFailure, LocationCoordinateProbeResult, LocationAuthorizationAction, SingleShotLocationDelegate, SingleShotDescriptionDelegate, currentCoordinate, currentCoordinateResult.
 - `ios/Lumen/Services/Tools/LocationTools.swift` (Services/Tools): Retrieves a textual description of the current location. - Returns: A string describing the current location. Symbols: LocationTools, currentLocation, openDirections, directionsURL, searchNearby, localSearchFailureMessage, trimmed, url.
-- `ios/Lumen/Services/Tools/MemoryTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MemoryTools.swift` owns MemoryTools behavior and defines: MemoryTools, save, recall, ragSearch, expandRAGQueryIfNeeded, ragIndexFiles, ragIndexPhotos, ragIndexFilesMessage, ragIndexPhotosMessage Symbols: MemoryTools, save, recall, ragSearch, expandRAGQueryIfNeeded, ragIndexFiles, ragIndexPhotos, ragIndexFilesMessage.
+- `ios/Lumen/Services/Tools/MemoryTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MemoryTools.swift` owns MemoryTools behavior and defines: MemoryTools, RAGIndexExecution, save, recall, ragSearch, expandRAGQueryIfNeeded, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos,  Symbols: MemoryTools, RAGIndexExecution, save, recall, ragSearch, expandRAGQueryIfNeeded, ragIndexFiles, ragIndexFilesExecution.
 - `ios/Lumen/Services/Tools/MotionTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MotionTools.swift` owns MotionTools behavior and defines: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end, start, ped. Symbols: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end.
 - `ios/Lumen/Services/Tools/PhotosTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/PhotosTools.swift` owns PhotosTools behavior and defines: PhotosTools, searchPhotos, captureImage, formatAssetDate, assetPayloadJSON, assetPayloadDictionary, mediaSubtypeNames, jsonString, previ Symbols: PhotosTools, searchPhotos, captureImage, formatAssetDate, assetPayloadJSON, assetPayloadDictionary, mediaSubtypeNames, jsonString.
 - `ios/Lumen/Services/Tools/ToolNetworkResilience.swift` (Services/Tools): `ios/Lumen/Services/Tools/ToolNetworkResilience.swift` owns ToolNetworkResilience behavior and defines: ToolNetworkErrorClass, ToolRetryPolicy, ToolRequestMetrics, ToolCircuitBreaker, ToolNetworkTelemetry, Notification,  Symbols: ToolNetworkErrorClass, ToolRetryPolicy, ToolRequestMetrics, ToolCircuitBreaker, ToolNetworkTelemetry, Notification, ToolNetworkResilience, allowRequest.
-- `ios/Lumen/Services/Tools/TriggerTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/TriggerTools.swift` owns TriggerTools behavior and defines: TriggerTools, create, normalizedScheduleType, list, cancel, triggerFetchFailureMessage, triggerSaveFailureMessage, container, ctx, tit Symbols: TriggerTools, create, normalizedScheduleType, list, cancel, triggerFetchFailureMessage, triggerSaveFailureMessage, container.
-- `ios/Lumen/Services/Tools/WeatherTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/WeatherTools.swift` owns WeatherTools behavior and defines: WeatherTools, WeatherCoordinateResolution, currentWeather, isCurrentLocationRequest, weatherLocationFailureMessage, weatherGeocodingFa Symbols: WeatherTools, WeatherCoordinateResolution, currentWeather, isCurrentLocationRequest, weatherLocationFailureMessage, weatherGeocodingFailureMessage, executeRequest, geocode.

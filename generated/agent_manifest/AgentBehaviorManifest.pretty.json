@@ -7,9 +7,9 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "baseCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
-    "workingTreeDigest": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f",
-    "dirtyState": false,
+    "baseCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
+    "workingTreeDigest": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2",
+    "dirtyState": true,
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -25,7 +25,7 @@
       },
       {
         "path": "ios/Lumen/Models/ToolDefinition.swift",
-        "sha256": "13a93a98462303e9b3a012abce1c6e73e8136afa87a75e8f07be63a6e8fb3d42"
+        "sha256": "22c58bb0907be7e7e06a952904c4a1cd90a939459c547cb96d049bf9203d3049"
       },
       {
         "path": "ios/Lumen/Models/Trigger.swift",
@@ -37,7 +37,7 @@
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",
-        "sha256": "f5c72271123875d2ae3b293a77c3fe7c4cd1c05e1ab8b9b7352666588020a4d5"
+        "sha256": "72f0de7f27b991e87d538c3a933a76d6d14ed81e5c605198961261428c61149c"
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
@@ -49,7 +49,7 @@
       },
       {
         "path": "ios/Lumen/Services/ModelFleet.swift",
-        "sha256": "4325976231bb637ac5ca1f812a120dee1db4b81156fb763c5f9c17f1a592e4ea"
+        "sha256": "d8589490c31f0b267d5a1841e14146c81aa5781f7375cf7d25364fbd087d7196"
       },
       {
         "path": "ios/Lumen/Services/RemCycleService.swift",
@@ -61,7 +61,7 @@
       },
       {
         "path": "ios/Lumen/Views/ChatView.swift",
-        "sha256": "0b417f29061dfb13626fb413de2583003e7ddfc95bae1f49a59e86d15f3a9cd2"
+        "sha256": "99c84a2f1df9b4886fc3e4d8294122abfac36bb9e2dd8b9b64a9ae3ff048fd98"
       }
     ]
   },
@@ -1492,11 +1492,11 @@
     {
       "id": "rag.index_files",
       "displayName": "Reindex Files",
-      "description": "Rebuild the index for imported files and PDFs. Args: none.",
-      "requiresApproval": false,
+      "description": "Rebuild the index for imported files and PDFs. Args: none. Requires explicit approval because it replaces the current file index.",
+      "requiresApproval": true,
       "permissionKey": null,
       "permissionKind": null,
-      "confirmationMode": "none",
+      "confirmationMode": "userApproval",
       "arguments": [],
       "source": "ios/Lumen/Models/ToolDefinition.swift",
       "inferred": false,
@@ -1505,11 +1505,11 @@
     {
       "id": "rag.index_photos",
       "displayName": "Reindex Photos",
-      "description": "Rebuild the monthly photo metadata index. Args: months.",
-      "requiresApproval": false,
+      "description": "Rebuild the monthly photo metadata index. Args: months. Requires explicit approval because it replaces the current photo index.",
+      "requiresApproval": true,
       "permissionKey": "NSPhotoLibraryUsageDescription",
       "permissionKind": "photos",
-      "confirmationMode": "none",
+      "confirmationMode": "userApproval",
       "arguments": [
         {
           "name": "months",

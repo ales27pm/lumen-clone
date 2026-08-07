@@ -62,6 +62,7 @@ final class RAGEngine {
 
     func retrieveWithDiagnostics(
         query: String,
+        relevanceQuery: String? = nil,
         limit: Int,
         sourceTypes: Set<RAGSourceType>? = nil,
         context: ModelContext
@@ -78,10 +79,19 @@ final class RAGEngine {
             limit: candidateLimit,
             sourceTypes: sourceTypes
         )
-        let mapped = search.matches.map { item in
+        let relevanceQuery = relevanceQuery ?? query
+        let mapped = search.matches.compactMap { item -> RAGRetrievalResult? in
             let ref = item.chunk.sourceRef ?? item.chunk.id.uuidString
-            let excerpt = Self.focusedExcerpt(query: query, content: item.chunk.content, maxLength: 260)
             let rerankedScore = Self.rerankedScore(query: query, chunk: item.chunk, baseScore: item.score)
+            guard Self.isPostRerankRelevant(
+                query: relevanceQuery,
+                content: item.chunk.content,
+                title: item.chunk.sourceName,
+                rerankedScore: rerankedScore
+            ) else {
+                return nil
+            }
+            let excerpt = Self.focusedExcerpt(query: relevanceQuery, content: item.chunk.content, maxLength: 260)
             return RAGRetrievalResult(
                 chunkID: item.chunk.id,
                 source: .init(id: ref, type: item.chunk.sourceType, title: item.chunk.sourceName, ref: item.chunk.sourceRef),
@@ -144,6 +154,39 @@ final class RAGEngine {
         let recency = max(0, 0.08 - now.timeIntervalSince(chunk.createdAt) / (60 * 60 * 24 * 365 * 4))
 
         return clamped((baseScore * 0.70) + (lexicalCoverage * 0.22) + (titleCoverage * 0.08) + recency)
+    }
+
+    /// Applies the final relevance gate after local reranking.
+    /// Low-confidence candidates must share a meaningful lexical anchor with the query.
+    nonisolated static func isPostRerankRelevant(
+        query: String,
+        content: String,
+        title: String,
+        rerankedScore: Double
+    ) -> Bool {
+        guard rerankedScore.isFinite, rerankedScore >= 0 else { return false }
+        let terms = queryTerms(query)
+        guard !terms.isEmpty else { return false }
+
+        // Strong semantic evidence may not share literal words with the query.
+        let highConfidenceSemanticThreshold = 0.50
+        if rerankedScore >= highConfidenceSemanticThreshold { return true }
+
+        // Lower-confidence candidates need a meaningful lexical anchor to fail closed.
+        let genericRetrievalTerms: Set<String> = [
+            "and", "document", "documents", "file", "files", "find", "for", "key", "latest",
+            "local", "look", "note", "notes", "please", "report", "search", "show", "summarize",
+            "summary", "tell", "the", "use", "using"
+        ]
+        let anchors = terms.filter { !genericRetrievalTerms.contains($0) }
+        guard !anchors.isEmpty else { return false }
+
+        let candidateTerms = Set(
+            "\(title) \(content)".lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count >= 3 }
+        )
+        return anchors.contains(where: candidateTerms.contains)
     }
 
     nonisolated private static func focusedExcerpt(query: String, content: String, maxLength: Int) -> (text: String, offsetStart: Int?, offsetEnd: Int?) {
