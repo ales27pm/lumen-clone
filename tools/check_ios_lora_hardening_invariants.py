@@ -77,15 +77,28 @@ def check_swift_llama_pin() -> None:
 
 def check_single_adapter_activation() -> None:
     text = read(LLAMA_SERVICE)
-    runtime_activation = extract_function(text, "func activateRoleAdapter(slot: LumenModelSlot, scale: Float) throws")
-    clear_index = runtime_activation.find("clearAdapters()")
+    runtime_activation = extract_function(
+        text,
+        "func activateRoleAdapter(slot: LumenModelSlot, scale: Float, operationGeneration: UInt64) throws",
+    )
+    claim_index = runtime_activation.find("claimAdapterActivation(generation: operationGeneration)")
+    clear_index = runtime_activation.find("clearAdaptersUnconditionally()")
     apply_index = runtime_activation.find("context.apply(loraAdapter: adapter, scale: scale)")
-    require(clear_index >= 0 and apply_index >= 0 and clear_index < apply_index, "runtime must clear adapters before applying selected LoRA")
+    require(
+        claim_index >= 0 and clear_index >= 0 and apply_index >= 0 and claim_index < clear_index < apply_index,
+        "runtime must claim newest activation ownership and clear adapters before applying selected LoRA",
+    )
 
     app_activation = extract_function(text, "func activateRoleAdapter(slot: LumenModelSlot) async throws")
-    require("try await runtime.activateRoleAdapter(slot: loaded.slot, scale: loaded.scale)" in app_activation, "app activation must call runtime activation")
+    require(
+        "let activationGeneration = beginAdapterActivation()" in app_activation
+        and "let activated = try await runtime.activateRoleAdapter(" in app_activation
+        and "operationGeneration: activationGeneration" in app_activation,
+        "app activation must register and pass newest-operation ownership to runtime activation",
+    )
     require(app_activation.find("try await runtime.activateRoleAdapter") < app_activation.find("activeAdapterSlot = slot"), "activeAdapterSlot must be set only after successful apply")
-    require("await runtime.clearAdapters()" in app_activation, "failure path must clear adapters")
+    require("await runtime.clearAdapters(operationGeneration: activationGeneration)" in app_activation, "failure path must clear adapters under the same activation ownership")
+    require("activationGeneration == adapterActivationGeneration" in app_activation, "app activation must reject stale post-await publication")
     require("activeAdapterSlot = nil" in app_activation, "failure path must reset activeAdapterSlot")
     require("lastAdapterFailureReason = error.localizedDescription" in app_activation, "failure path must preserve lastAdapterFailureReason")
 

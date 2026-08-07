@@ -26,6 +26,14 @@ def _valid_info() -> dict:
         "LumenBuildConfiguration": "Debug",
         "LumenBuildScheme": "Lumen",
         "LumenGitSHA": "abc123",
+        "CFBundleURLTypes": [
+            {
+                "CFBundleTypeRole": "Editor",
+                "CFBundleURLName": "com.27pm.lumenclone",
+                "CFBundleURLSchemes": ["msauth.com.27pm.lumenclone"],
+            }
+        ],
+        "LSApplicationQueriesSchemes": ["msauth", "msauthv2", "msauthv3"],
     }
 
 
@@ -62,6 +70,124 @@ def test_built_app_info_plist_check_accepts_signed_bundle_metadata(tmp_path: Pat
     assert result.returncode == 0
     assert "NSAlarmKitUsageDescription" in result.stdout
     assert "LumenGitSHA=abc123" in result.stdout
+    assert "MSAL callback URL scheme=msauth.com.27pm.lumenclone" in result.stdout
+
+
+def test_built_app_info_plist_check_rejects_missing_msal_callback_scheme(tmp_path: Path):
+    info = _valid_info()
+    info["CFBundleURLTypes"] = [
+        {"CFBundleURLSchemes": ["msauth.com.example.wrong"]}
+    ]
+    app = _write_app(tmp_path, info)
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(app)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "missing MSAL callback URL scheme 'msauth.com.27pm.lumenclone'" in result.stderr
+
+
+def test_built_app_info_plist_check_rejects_missing_msal_query_scheme(tmp_path: Path):
+    info = _valid_info()
+    info["LSApplicationQueriesSchemes"] = ["msauth", "msauthv3"]
+    app = _write_app(tmp_path, info)
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(app)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "missing required MSAL query schemes: msauthv2" in result.stderr
+
+
+def test_built_app_info_plist_check_requires_expected_release_identity(tmp_path: Path):
+    info = _valid_info()
+    info["LumenBuildConfiguration"] = "Release"
+    app = _write_app(tmp_path, info)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            str(app),
+            "--expected-bundle-version",
+            "42",
+            "--expected-build-configuration",
+            "Release",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+
+
+def test_built_app_info_plist_check_rejects_stale_release_build_number(tmp_path: Path):
+    info = _valid_info()
+    info["LumenBuildConfiguration"] = "Release"
+    app = _write_app(tmp_path, info)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            str(app),
+            "--expected-bundle-version",
+            "43",
+            "--expected-build-configuration",
+            "Release",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "CFBundleVersion='42'; expected '43'" in result.stderr
+
+
+def test_built_app_info_plist_check_rejects_wrong_release_configuration(tmp_path: Path):
+    app = _write_app(tmp_path, _valid_info())
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            str(app),
+            "--expected-build-configuration",
+            "Release",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "LumenBuildConfiguration='Debug'; expected 'Release'" in result.stderr
+
+
+def test_built_app_info_plist_check_rejects_mismatched_source_identifier(tmp_path: Path):
+    info = _valid_info()
+    info["LumenBuildSourceIdentifier"] = "41"
+    app = _write_app(tmp_path, info)
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), str(app)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "LumenBuildSourceIdentifier='41'; expected CFBundleVersion '42'" in result.stderr
 
 
 def test_built_app_info_plist_check_rejects_unknown_build_metadata(tmp_path: Path):

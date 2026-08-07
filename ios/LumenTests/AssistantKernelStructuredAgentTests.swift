@@ -212,6 +212,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
 
         XCTAssertTrue(assembly.systemPrompt.hasPrefix(StructuredAgentKernelExecutor.executorRuntimeSystemPromptContract))
         XCTAssertTrue(assembly.systemPrompt.contains("- weather:"))
+        XCTAssertTrue(assembly.systemPrompt.contains(StructuredAgentKernelExecutor.executorRuntimeOutputBoundary))
         XCTAssertTrue(assembly.systemPrompt.contains("Fast interactive mode:"))
         #endif
     }

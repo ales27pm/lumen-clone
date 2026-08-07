@@ -123,7 +123,10 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         queue.enqueue(DeferredMaintenanceJob(key: "test-foreground-grace", category: .diagnostics, staleAfter: 5, maxRuntime: 1) {
             ran.fulfill()
         })
-        await fulfillment(of: [ran], timeout: 3)
+        // Stay comfortably inside the three-second production grace period.
+        // Waiting exactly to its boundary races the intentionally scheduled drain.
+        await fulfillment(of: [ran], timeout: 1)
+        XCTAssertEqual(queue.pendingCount(), 1)
     }
 
     func testCPUWatchdogGuardDegradesRecordedWorkOnly() throws {

@@ -61,6 +61,37 @@ final class ResourceBudgetGateTests: XCTestCase {
         XCTAssertTrue(ResourceBudgetGate.allowsLoadedForegroundContinuationAfterMemoryPressure(snapshot: snapshot, reason: ModelLoadIntent.userChat.rawValue))
     }
 
+    func testForegroundModelAutoloadRetryDelayTracksTransientDenialWithoutBackgroundPolling() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let freshWarning = ResourceBudgetGate.Snapshot(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 1,
+            lastMemoryWarningAt: now.addingTimeInterval(-20)
+        )
+        let seriousThermal = ResourceBudgetGate.Snapshot(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .serious,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        let background = ResourceBudgetGate.Snapshot(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .serious,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+
+        let memoryRetryDelay = ResourceBudgetGate.foregroundModelLoadRetryDelay(snapshot: freshWarning, now: now)
+        XCTAssertNotNil(memoryRetryDelay)
+        XCTAssertEqual(memoryRetryDelay ?? -1, MemoryPressureMonitor.modelLoadSuppressionInterval - 20, accuracy: 0.001)
+        XCTAssertEqual(ResourceBudgetGate.foregroundModelLoadRetryDelay(snapshot: seriousThermal, now: now), 10)
+        XCTAssertNil(ResourceBudgetGate.foregroundModelLoadRetryDelay(snapshot: background, now: now))
+    }
+
     func testExecutorPreflightDefersOnlySafeLoadedMemoryPressureContinuation() {
         let snapshot = ResourceBudgetGate.Snapshot(scenePhase: .active, lowPowerModeEnabled: false, thermalState: .nominal, recentMemoryWarningCount: 1, lastMemoryWarningAt: Date())
         let denial = "strict-live-training.executor-preflight: recent-memory-warning"

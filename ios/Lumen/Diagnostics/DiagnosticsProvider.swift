@@ -76,7 +76,7 @@ final class DiagnosticsProvider {
             storeKit: StoreKitCapabilitySnapshot(frameworkAvailable: true, status: "cached", environment: "cached")
         )
         let grounding = GroundingDiagnosticsSnapshot(contextSource: "cached", degradedReasons: [], sectionCounts: [:], doubleGroundingNormalized: true)
-        let privacy = PrivacyReportSnapshot(localOnlyMode: true, networkAccessState: "cached", recentToolCategories: Array(Set(tools.tools.map(\.category))).sorted(), appIntentLimitations: ["Expensive diagnostics require explicit refresh"])
+        let privacy = PrivacyReportSnapshot(networkToolsEnabled: nil, networkAccessState: "cached", recentToolCategories: Array(Set(tools.tools.map(\.category))).sorted(), appIntentLimitations: ["Expensive diagnostics require explicit refresh"])
         return DiagnosticsSnapshot(build: build, runtime: runtime, permissions: permissions, tools: tools, background: background, grounding: grounding, privacy: privacy)
     }
 
@@ -144,7 +144,15 @@ final class DiagnosticsProvider {
         let grounding = GroundingDiagnosticsSnapshot(contextSource: SharedContainer.shared == nil ? "unavailable" : "sharedContainer", degradedReasons: SharedContainer.shared == nil ? ["model_context_unavailable"] : [], sectionCounts: [:], doubleGroundingNormalized: true)
 
         let networkState = (permStates[.networkAccess] ?? .unknown).rawValue
-        let privacy = PrivacyReportSnapshot(localOnlyMode: networkState != AssistantPermissionState.granted.rawValue, networkAccessState: networkState, recentToolCategories: Array(Set(toolRows.map(\.category))).sorted(), appIntentLimitations: ["Sensitive actions require open-app approval", "No external network by default"])
+        let privacy = PrivacyReportSnapshot(
+            networkToolsEnabled: networkState == AssistantPermissionState.granted.rawValue,
+            networkAccessState: networkState,
+            recentToolCategories: Array(Set(toolRows.map(\.category))).sorted(),
+            appIntentLimitations: [
+                "Sensitive actions require open-app approval",
+                "Network tools default to disabled; connected services and model downloads are separate user actions"
+            ]
+        )
 
         return DiagnosticsSnapshot(build: build, runtime: runtime, permissions: permissions, tools: tools, background: background, grounding: grounding, privacy: privacy)
     }

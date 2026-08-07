@@ -1,17 +1,20 @@
 import SwiftUI
 import SwiftData
+import Foundation
 
 struct ChatHomeView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Conversation.updatedAt, order: .reverse) private var conversations: [Conversation]
     @Query private var storedModels: [StoredModel]
+    @AppStorage("verifiedModelProvisioningReceipt") private var provisioningReceiptData: Data?
 
     @State private var selectedConversation: Conversation?
     @State private var showingConversations = false
     @State private var showingModelPicker = false
     @State private var showingOnboarding = false
     @State private var pendingDrafts: [UUID: String] = [:]
+    @State private var conversationPersistenceError: String?
 
     var body: some View {
         NavigationStack {
@@ -66,7 +69,11 @@ struct ChatHomeView: View {
             ModelPickerSheet()
                 .presentationDetents([.medium])
         }
-        .sheet(isPresented: $showingOnboarding) {
+        .sheet(isPresented: $showingOnboarding, onDismiss: {
+            if ModelProvisioningReceipt.status() != .completed {
+                _ = ModelProvisioningReceipt.markDeferred()
+            }
+        }) {
             OnboardingSheet()
                 .presentationDetents([.large])
         }
@@ -74,9 +81,17 @@ struct ChatHomeView: View {
             if conversations.isEmpty {
                 createConversation()
             }
-            if storedModels.isEmpty && !LumenLaunchArguments.isUITesting {
-                showingOnboarding = true
-            }
+        }
+        .task(id: provisioningValidationKey) {
+            await refreshProvisioningPresentation()
+        }
+        .alert("Conversation not saved", isPresented: Binding(
+            get: { conversationPersistenceError != nil },
+            set: { if !$0 { conversationPersistenceError = nil } }
+        )) {
+            Button("OK", role: .cancel) { conversationPersistenceError = nil }
+        } message: {
+            Text(conversationPersistenceError ?? "The new conversation could not be saved.")
         }
     }
 
@@ -109,7 +124,20 @@ struct ChatHomeView: View {
         let title = seedPrompt.map { String($0.prefix(42)) } ?? "New Chat"
         let convo = Conversation(title: title, systemPrompt: appState.systemPrompt, modelName: activeModelName)
         modelContext.insert(convo)
-        try? modelContext.save()
+        let outcome = ConversationPersistenceCoordinator.attemptSave(
+            estimatedBytes: title.utf8.count + appState.systemPrompt.utf8.count,
+            operation: "chat-home.create",
+            save: { try modelContext.save() }
+        )
+        guard case .saved = outcome else {
+            modelContext.delete(convo)
+            if case .failed(let failure) = outcome {
+                conversationPersistenceError = failure.userMessage
+            } else {
+                conversationPersistenceError = "The new conversation could not be saved."
+            }
+            return
+        }
         if let seedPrompt {
             pendingDrafts[convo.id] = seedPrompt
         }
@@ -118,6 +146,42 @@ struct ChatHomeView: View {
 
     private var activeModelName: String? {
         storedModels.first { $0.id.uuidString == appState.activeChatModelID }?.name
+    }
+
+    private var provisioningValidationKey: String {
+        let records = storedModels
+            .map { "\($0.id.uuidString)|\($0.repoId)|\($0.fileName)|\($0.localPath)|\($0.downloadedAt.timeIntervalSince1970)" }
+            .sorted()
+            .joined(separator: "\n")
+        return [
+            provisioningReceiptData?.base64EncodedString() ?? "none",
+            appState.activeChatModelID ?? "none",
+            appState.activeEmbeddingModelID ?? "none",
+            records
+        ].joined(separator: "\n")
+    }
+
+    private func refreshProvisioningPresentation() async {
+        guard !LumenLaunchArguments.isUITesting else {
+            showingOnboarding = false
+            return
+        }
+        switch ModelProvisioningReceipt.status() {
+        case .deferred:
+            showingOnboarding = false
+        case .completed:
+            let valid = await ModelLaunchBootstrap.isProvisionedSelectionValid(
+                appState: appState,
+                context: modelContext
+            )
+            guard !Task.isCancelled else { return }
+            if !valid {
+                ModelProvisioningReceipt.invalidate()
+            }
+            showingOnboarding = !valid
+        case .consented, .none:
+            showingOnboarding = true
+        }
     }
 }
 

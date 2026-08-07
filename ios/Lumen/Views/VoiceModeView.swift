@@ -23,6 +23,7 @@ struct VoiceModeView: View {
     @State private var activeSpeechTurnID: UUID?
     @State private var speechEndObserverTask: Task<Void, Never>?
     @State private var generationController = GenerationTaskController<String>()
+    @State private var conversationPersistenceFailure: ConversationPersistenceFailure?
 
     enum Phase { case idle, listening, thinking, speaking }
 
@@ -113,6 +114,16 @@ struct VoiceModeView: View {
             SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
         }
         .onDisappear { cleanup() }
+        .alert(item: $conversationPersistenceFailure) { failure in
+            Alert(
+                title: Text("Conversation not saved"),
+                message: Text(failure.userMessage),
+                primaryButton: .default(Text("Retry")) {
+                    retryVoiceConversationSave(failure)
+                },
+                secondaryButton: .cancel(Text("Dismiss"))
+            )
+        }
     }
 
     private var statusTitle: String {
@@ -500,23 +511,41 @@ struct VoiceModeView: View {
         unregisterResponseCancellation()
         session.handleAppDidEnterBackground()
         session.stopSpeaking()
-        DeferredMaintenanceQueue.shared.enqueue(DeferredMaintenanceJob(key: "voice-scene-transition-save", category: .voice, staleAfter: 10 * 60, maxRuntime: 2) { @MainActor in
-            try? modelContext.save()
-        })
+        ConversationPersistenceCoordinator.enqueueDeferredSave(
+            context: modelContext,
+            estimatedBytes: 4096,
+            operation: "voice.scene-transition.save",
+            deferredKey: "voice-scene-transition-save",
+            deferredCategory: .voice
+        ) { failure in
+            conversationPersistenceFailure = failure
+        }
         DeferredMaintenanceQueue.shared.setChatOrVoiceActive(false)
         RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "voice-scene")
         syncPhaseFromSession()
     }
 
     private func saveVoiceConversationIfBudgetAllows(estimatedBytes: Int) {
-        guard !DiskWriteBudget.shared.shouldDefer(bytes: estimatedBytes, category: .conversation) else {
-            DeferredMaintenanceQueue.shared.enqueue(DeferredMaintenanceJob(key: "voice-conversation-save", category: .conversation, staleAfter: 10 * 60, maxRuntime: 2) { @MainActor in
-                try? modelContext.save()
-            })
-            return
+        _ = ConversationPersistenceCoordinator.saveOrDefer(
+            context: modelContext,
+            estimatedBytes: estimatedBytes,
+            operation: "voice.conversation.save",
+            deferredKey: "voice-conversation-save"
+        ) { failure in
+            conversationPersistenceFailure = failure
         }
-        try? modelContext.save()
-        DiskWriteBudget.shared.recordWrite(bytes: estimatedBytes, category: .conversation)
+    }
+
+    private func retryVoiceConversationSave(_ previousFailure: ConversationPersistenceFailure) {
+        conversationPersistenceFailure = nil
+        _ = ConversationPersistenceCoordinator.saveOrDefer(
+            context: modelContext,
+            estimatedBytes: previousFailure.estimatedBytes,
+            operation: "voice.conversation.retry",
+            deferredKey: "voice-conversation-save"
+        ) { failure in
+            conversationPersistenceFailure = failure
+        }
     }
 
     private func cleanup() {

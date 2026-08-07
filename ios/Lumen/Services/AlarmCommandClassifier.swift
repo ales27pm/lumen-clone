@@ -93,7 +93,10 @@ nonisolated enum AlarmCommandClassifier {
         let text = normalized(normalizedText)
         guard !text.isEmpty else { return .unknown }
 
-        if containsAny(text, ["auth status", "authorization status", "permission status", "alarm permission status", "alarm auth status"]) {
+        if containsAny(text, [
+            "auth status", "authorization status", "permission status", "alarm permission status", "alarm auth status",
+            "check alarm authorization", "check alarm permission", "alarm authorization state", "alarm permission state"
+        ]) {
             return .authorizationStatus
         }
         if containsAny(text, ["request alarm authorization", "request authorization", "request permission", "ask for alarm authorization", "ask for authorization", "ask for permission"]) {

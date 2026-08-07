@@ -4,8 +4,22 @@ struct ToolPolicySettings: Sendable { let networkAccessEnabled: Bool; let userAl
 enum ToolApprovalDecision: Sendable, Equatable { case allow, deny(String), requiresApproval(String) }
 
 enum ToolApprovalPolicy {
+    private static let appIntentSafeToolIDs: Set<ToolID> = [
+        "memory.search",
+        "rag.search.secure",
+    ]
+
     static func decide(definition: SecureToolDefinition, invocation: ToolInvocation, isForeground: Bool, permissionStates: [PermissionDomain: AssistantPermissionState], settings: ToolPolicySettings) -> ToolApprovalDecision {
         if !settings.userAllowlist.isEmpty && !settings.userAllowlist.contains(definition.id) { return .deny("Tool not in user allowlist") }
+        if invocation.source == .appIntent {
+            guard appIntentSafeToolIDs.contains(definition.id),
+                  definition.supportsBackgroundExecution,
+                  !definition.requiresUserApproval,
+                  definition.requiredPermissions.isEmpty,
+                  definition.category == .readOnly else {
+                return .deny("Tool unavailable from headless surface")
+            }
+        }
         if definition.category == .externalNetwork && !settings.networkAccessEnabled { return .deny("Network tools are disabled") }
         if invocation.source == .backgroundTrigger {
             guard definition.supportsBackgroundExecution else {

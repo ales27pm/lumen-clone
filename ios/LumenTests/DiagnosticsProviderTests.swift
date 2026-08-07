@@ -28,4 +28,36 @@ final class DiagnosticsProviderTests: XCTestCase {
         XCTAssertEqual(snap.gitSHA, "abc123")
         XCTAssertEqual(snap.alarmKitUsageDescription, "Alarm scheduling")
     }
+
+    func testPersistentDiagnosticsSourceCommitUsesInjectedLumenGitSHA() {
+        XCTAssertEqual(
+            PersistentRuntimeDiagnosticsExporter.sourceCommit(
+                infoDictionary: [
+                    "LumenGitSHA": "current123",
+                    "GitCommit": "legacy456"
+                ]
+            ),
+            "current123"
+        )
+    }
+
+    func testPersistentDiagnosticsSourceCommitFallsBackToLegacyKey() {
+        XCTAssertEqual(
+            PersistentRuntimeDiagnosticsExporter.sourceCommit(
+                infoDictionary: ["GitCommit": "legacy456"]
+            ),
+            "legacy456"
+        )
+    }
+
+    func testPersistentDiagnosticsSourceCommitRejectsUnresolvedValues() {
+        XCTAssertNil(
+            PersistentRuntimeDiagnosticsExporter.sourceCommit(
+                infoDictionary: [
+                    "LumenGitSHA": "$(LUMEN_GIT_SHA)",
+                    "GitCommit": "unknown"
+                ]
+            )
+        )
+    }
 }

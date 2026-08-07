@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass
 from itertools import combinations
 from typing import Any
@@ -16411,7 +16412,7 @@ def _agent_unsloth_config(
 def _unique_sorted_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: dict[str, dict[str, Any]] = {}
     for record in records:
-        key = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        key = _canonical_record_key(record)
         deduped[key] = record
     return [deduped[key] for key in sorted(deduped)]
 
@@ -16893,6 +16894,17 @@ def _record_token_counts(
 ) -> tuple[int, int]:
     if target_mode not in {"all_assistant", "dpo_chosen"}:
         raise ValueError(f"Unsupported target token proxy mode: {target_mode!r}")
+    finalization_cache = _FLEET_FINALIZATION_RECORD_CACHE.get()
+    cache = (
+        finalization_cache.token_counts
+        if finalization_cache is not None
+        else None
+    )
+    cache_key = (id(record), max_chars_per_token, target_mode)
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if cached is not None and cached[0] is record:
+            return cached[1]
     total_text: list[str] = []
     target_text: list[str] = []
 
@@ -16932,7 +16944,10 @@ def _record_token_counts(
         )
         for text in target_text
     )
-    return total, target
+    counts = (total, target)
+    if cache is not None:
+        cache[cache_key] = (record, counts)
+    return counts
 
 
 def _stable_dpo_split(
@@ -17000,14 +17015,77 @@ def _unique_sorted_sft_records(records: list[dict[str, Any]]) -> list[dict[str, 
     return [deduped[key] for key in sorted(deduped)]
 
 
+@dataclass
+class _FleetFinalizationRecordCache:
+    canonical_record_keys: dict[int, tuple[dict[str, Any], str]]
+    canonical_message_keys: dict[int, tuple[dict[str, Any], str]]
+    token_counts: dict[
+        tuple[int, int, str],
+        tuple[dict[str, Any], tuple[int, int]],
+    ]
+    assistant_target_tokens: dict[
+        tuple[int, int],
+        tuple[dict[str, Any], int],
+    ]
+
+
+_FLEET_FINALIZATION_RECORD_CACHE: ContextVar[
+    _FleetFinalizationRecordCache | None
+] = ContextVar("fleet_finalization_record_cache", default=None)
+
+
+def _serialize_canonical_record(record: dict[str, Any]) -> str:
+    return json.dumps(
+        record,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
 def _canonical_record_key(record: dict[str, Any]) -> str:
-    return json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    finalization_cache = _FLEET_FINALIZATION_RECORD_CACHE.get()
+    cache = (
+        finalization_cache.canonical_record_keys
+        if finalization_cache is not None
+        else None
+    )
+    if cache is None:
+        return _serialize_canonical_record(record)
+    identity = id(record)
+    cached = cache.get(identity)
+    if cached is not None and cached[0] is record:
+        return cached[1]
+    key = _serialize_canonical_record(record)
+    # Retaining the object alongside its key prevents an id reused inside the
+    # bounded finalization scope from inheriting another record's serialization.
+    cache[identity] = (record, key)
+    return key
 
 
 def _canonical_messages_key(record: dict[str, Any]) -> str:
+    finalization_cache = _FLEET_FINALIZATION_RECORD_CACHE.get()
+    cache = (
+        finalization_cache.canonical_message_keys
+        if finalization_cache is not None
+        else None
+    )
+    identity = id(record)
+    if cache is not None:
+        cached = cache.get(identity)
+        if cached is not None and cached[0] is record:
+            return cached[1]
     messages = record.get("messages")
     if not isinstance(messages, list):
-        return json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        key = json.dumps(
+            messages,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        if cache is not None:
+            cache[identity] = (record, key)
+        return key
     canonical: list[dict[str, Any]] = []
     for message in messages:
         if not isinstance(message, dict):
@@ -17021,7 +17099,15 @@ def _canonical_messages_key(record: dict[str, Any]) -> str:
             except json.JSONDecodeError:
                 content = " ".join(content.split())
         canonical.append({"role": role, "content": content})
-    return json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    key = json.dumps(
+        canonical,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if cache is not None:
+        cache[identity] = (record, key)
+    return key
 
 
 def _canonical_prompt_content(content: Any) -> str:
@@ -17204,10 +17290,21 @@ def _assistant_target_token_count(
     *,
     max_chars_per_token: int = FineTuningDatasetConfig.max_chars_per_token,
 ) -> int:
+    finalization_cache = _FLEET_FINALIZATION_RECORD_CACHE.get()
+    cache = (
+        finalization_cache.assistant_target_tokens
+        if finalization_cache is not None
+        else None
+    )
+    cache_key = (id(record), max_chars_per_token)
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if cached is not None and cached[0] is record:
+            return cached[1]
     messages = record.get("messages")
     if not isinstance(messages, list):
         return 0
-    return sum(
+    count = sum(
         _source_token_proxy_count(
             str(message.get("content") or ""),
             max_chars_per_token=max_chars_per_token,
@@ -17215,6 +17312,9 @@ def _assistant_target_token_count(
         for message in messages
         if isinstance(message, dict) and message.get("role") == "assistant"
     )
+    if cache is not None:
+        cache[cache_key] = (record, count)
+    return count
 
 
 def _limit_cortex_public_sft_records(
@@ -18041,6 +18141,36 @@ def _bound_fleet_native_sft_source_proxy_share(
 
 
 def _finalize_fleet_optimizer_lane(
+    records: list[dict[str, Any]],
+    *,
+    lane: str,
+    config: FineTuningDatasetConfig,
+    prefer_public_quality: bool = True,
+    max_public_groups: int | None = None,
+) -> list[dict[str, Any]]:
+    """Finalize one Fleet optimizer lane with scoped canonical-key reuse."""
+
+    cache_token = _FLEET_FINALIZATION_RECORD_CACHE.set(
+        _FleetFinalizationRecordCache(
+            canonical_record_keys={},
+            canonical_message_keys={},
+            token_counts={},
+            assistant_target_tokens={},
+        )
+    )
+    try:
+        return _finalize_fleet_optimizer_lane_impl(
+            records,
+            lane=lane,
+            config=config,
+            prefer_public_quality=prefer_public_quality,
+            max_public_groups=max_public_groups,
+        )
+    finally:
+        _FLEET_FINALIZATION_RECORD_CACHE.reset(cache_token)
+
+
+def _finalize_fleet_optimizer_lane_impl(
     records: list[dict[str, Any]],
     *,
     lane: str,

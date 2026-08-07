@@ -370,10 +370,11 @@ nonisolated enum InAppDatasetPackageExporter {
         includeScenarioResults: Bool,
         traces: [AgentBehaviorTrace]
     ) -> LumenInAppDatasetPackage {
-        let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: traces)
+        let privacySafeTraces = traces.map { $0.redactedForPersistentDiagnostics() }
+        let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: privacySafeTraces)
         let exportedBehaviorAudit = redactedBehaviorAudit(mergedBehaviorAudit)
-        let correlationContext = exportCorrelationContext(report: liveE2EReport, traces: traces)
-        let exportedTraces = traces.map { trace in
+        let correlationContext = exportCorrelationContext(report: liveE2EReport, traces: privacySafeTraces)
+        let exportedTraces = privacySafeTraces.map { trace in
             exportTrace(trace, correlationToken: correlationContext.traceTokens[trace.id])
         }
         let app = appInfo()
@@ -381,7 +382,7 @@ nonisolated enum InAppDatasetPackageExporter {
             liveE2EReportExport(
                 from: report,
                 generatedAt: Date(),
-                traces: traces,
+                traces: privacySafeTraces,
                 correlationContext: correlationContext
             )
         }
@@ -389,12 +390,12 @@ nonisolated enum InAppDatasetPackageExporter {
             from: exportedTraces,
             liveE2EReport: liveReportExport,
             rawLiveE2EReport: liveE2EReport,
-            rawTraces: traces,
+            rawTraces: privacySafeTraces,
             correlationContext: correlationContext
         )
         let improveLoop = ImproveLoopSampleGate.buildDataset(
             behaviorAudit: exportedBehaviorAudit,
-            traces: traces,
+            traces: privacySafeTraces,
             scenarioResults: includeScenarioResults ? scenarioResults : [],
             sourceCommit: exportedBehaviorAudit?.sourceCommit
         )
@@ -411,7 +412,7 @@ nonisolated enum InAppDatasetPackageExporter {
             scenarioResults: includeScenarioResults ? scenarioResults : [],
             recentTraces: exportedTraces,
             liveE2EReport: liveReportExport,
-            traceSelectedToolAllowedCount: traces.reduce(into: 0) { count, trace in
+            traceSelectedToolAllowedCount: privacySafeTraces.reduce(into: 0) { count, trace in
                 guard let selectedToolID = trace.selectedToolID else { return }
                 let selected = ToolRouteGuard.canonicalToolID(selectedToolID)
                 let allowed = Set(trace.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
@@ -419,7 +420,7 @@ nonisolated enum InAppDatasetPackageExporter {
                     count += 1
                 }
             },
-            traceParseErrorCount: traces.reduce(into: 0) { count, trace in
+            traceParseErrorCount: privacySafeTraces.reduce(into: 0) { count, trace in
                 if traceHasActionParseError(trace) {
                     count += 1
                 }

@@ -11,8 +11,10 @@ struct OutlookMailView: View {
     @State private var composeBody = ""
     @State private var composeError: String?
     @State private var isSending = false
+    #if DEBUG
     @State private var microsoftClientID = MicrosoftGraphRuntimeConfig.loadClientIDOverride() ?? ""
     @State private var effectiveConfig = try? MicrosoftGraphConfiguration.load()
+    #endif
 
     var body: some View {
         Group {
@@ -80,45 +82,10 @@ struct OutlookMailView: View {
                     .multilineTextAlignment(.center)
             }
             
+            #if DEBUG
             debugConfigurationSection
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Microsoft Entra client ID")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                TextField("Enter app client ID", text: $microsoftClientID)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    Button("Use this client ID") {
-                        MicrosoftGraphRuntimeConfig.saveClientIDOverride(microsoftClientID)
-                        effectiveConfig = try? MicrosoftGraphConfiguration.load()
-                        auth.registerExternalError(MicrosoftGraphAuthError.invalidConfiguration("Saved client ID for this device. Tap Sign in with Microsoft to continue."))
-                    }
-                    .buttonStyle(.bordered)
-
-                    if MicrosoftGraphRuntimeConfig.loadClientIDOverride() != nil {
-                        Button("Reset", role: .destructive) {
-                            microsoftClientID = ""
-                            MicrosoftGraphRuntimeConfig.saveClientIDOverride(nil)
-                            effectiveConfig = try? MicrosoftGraphConfiguration.load()
-                            auth.registerExternalError(MicrosoftGraphAuthError.invalidConfiguration("Cleared saved client ID override."))
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-                if let effectiveConfig {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Effective client ID: \(effectiveConfig.clientID)")
-                        Text("Effective redirect URI: \(effectiveConfig.redirectURI ?? defaultRedirectURI)")
-                        Text("Effective authority URL: \(effectiveConfig.authorityURL.absoluteString)")
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                }
-            }
+            debugClientIDEditor
+            #endif
 
             Button {
                 Task { await signIn() }
@@ -137,30 +104,40 @@ struct OutlookMailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var defaultRedirectURI: String {
-        "msauth.\(Bundle.main.bundleIdentifier ?? "com.27pm.lumenclone")://auth"
-    }
+    #if DEBUG
+    private var debugClientIDEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Microsoft Entra client ID")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            TextField("Enter app client ID", text: $microsoftClientID)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("outlook.debug.clientIDEditor")
+            HStack {
+                Button("Use this client ID") {
+                    MicrosoftGraphRuntimeConfig.saveClientIDOverride(microsoftClientID)
+                    effectiveConfig = try? MicrosoftGraphConfiguration.load()
+                    auth.registerExternalError(MicrosoftGraphAuthError.invalidConfiguration("Saved client ID for this device. Tap Sign in with Microsoft to continue."))
+                }
+                .buttonStyle(.bordered)
 
-    private var shouldShowDebugConfiguration: Bool {
-        #if DEBUG
-        return true
-        #else
-        return Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
-        #endif
-    }
-
-    @ViewBuilder
-    private var debugConfigurationSection: some View {
-        if shouldShowDebugConfiguration {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Debug configuration")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                if MicrosoftGraphRuntimeConfig.loadClientIDOverride() != nil {
+                    Button("Reset", role: .destructive) {
+                        microsoftClientID = ""
+                        MicrosoftGraphRuntimeConfig.saveClientIDOverride(nil)
+                        effectiveConfig = try? MicrosoftGraphConfiguration.load()
+                        auth.registerExternalError(MicrosoftGraphAuthError.invalidConfiguration("Cleared saved client ID override."))
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            if let effectiveConfig {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Auth provider path: \(auth.authProviderPath)")
-                    Text("Client ID: \(auth.activeClientID)")
-                    Text("Redirect URI: \(auth.activeRedirectURI)")
-                    Text("Bundle ID: \(auth.bundleIdentifier)")
+                    Text("Effective client ID: \(effectiveConfig.clientID)")
+                    Text("Effective redirect URI: \(effectiveConfig.redirectURI ?? defaultRedirectURI)")
+                    Text("Effective authority URL: \(effectiveConfig.authorityURL.absoluteString)")
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -168,6 +145,29 @@ struct OutlookMailView: View {
             }
         }
     }
+
+    private var debugConfigurationSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Debug configuration")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Auth provider path: \(auth.authProviderPath)")
+                Text("Client ID: \(auth.activeClientID)")
+                Text("Redirect URI: \(auth.activeRedirectURI)")
+                Text("Bundle ID: \(auth.bundleIdentifier)")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+        }
+        .accessibilityIdentifier("outlook.debug.configurationDetails")
+    }
+
+    private var defaultRedirectURI: String {
+        "msauth.\(Bundle.main.bundleIdentifier ?? "com.27pm.lumenclone")://auth"
+    }
+    #endif
 
     private var inboxContent: some View {
         List {

@@ -3,7 +3,7 @@ import XCTest
 
 final class PrivacyReportTests: XCTestCase {
     func testPrivacyReportNoRawContentFields() {
-        let report = PrivacyReportSnapshot(localOnlyMode: true, networkAccessState: "denied", recentToolCategories: ["readOnly"], appIntentLimitations: ["x"])
+        let report = PrivacyReportSnapshot(networkToolsEnabled: false, networkAccessState: "denied", recentToolCategories: ["readOnly"], appIntentLimitations: ["x"])
         XCTAssertFalse(report.recentToolCategories.contains { $0.contains("message") })
     }
 }

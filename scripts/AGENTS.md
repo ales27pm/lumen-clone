@@ -17,6 +17,7 @@ Scripts operationalize validation, generation, release, training, and exceptiona
 - `sync-agent-manifest-resource.sh`: canonical generated manifest -> app resource mirror.
 - `archive_lumen_stable.sh`: signed archive creation; `build_and_submit_appstoreconnect.sh`: archive/export plus optional upload and inline upload-output interpretation.
 - `ubuntu_train_lumen_full_pipeline.sh`: controlled external Ubuntu/GPU training launcher.
+- `docs/MULTI_HOST_OPERATIONS.md`: cross-host dispatch contract for Apple and capacity work.
 - `tripleboot_aio.sh`: destructive, standalone removable-media installer unrelated to routine Lumen validation.
 - Hotfix/repair scripts: source/project mutation, not validation.
 
@@ -48,6 +49,9 @@ Operator intent -> argument/preflight validation -> explicit side effects -> aut
 - Sync/generation scripts fail on drift; they do not silently accept nondeterministic/runtime-evidence manifests as app resources.
 - Destructive target/device scripts require explicit target confirmation and clear impact.
 - Never echo credentials or signing/token material.
+- A launcher must declare its executor and reject an incompatible host before side effects: Apple/Xcode work belongs on macOS; CUDA/GPU and high-memory training belong on Ubuntu. A caller on either host may dispatch the task, but must not pretend the remote host shares its checkout or build cache.
+- Remote dispatch must bind an immutable Git commit and use the receiving host's independent clean checkout or dedicated worktree. Do not run a long Ubuntu job against a checkout being edited or synchronized in place.
+- Scripts that can consume GPU, stop services, upload, archive, sign, or mutate a remote worktree require explicit operator intent and a clear result/receipt. Provide a safe preflight mode where feasible; never bake SSH aliases, private endpoints, or credentials into tracked scripts.
 
 ## Coordinated Changes
 

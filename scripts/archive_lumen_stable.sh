@@ -11,7 +11,7 @@ if [[ "$PROJECT_PATH" != /* ]]; then
 fi
 SCHEME="${LUMEN_IOS_SCHEME:-Lumen}"
 CONFIGURATION="${LUMEN_IOS_CONFIGURATION:-Release}"
-SWIFT_OPTIMIZATION_LEVEL_VALUE="${LUMEN_SWIFT_OPTIMIZATION_LEVEL:--Onone}"
+SWIFT_OPTIMIZATION_LEVEL_VALUE="${LUMEN_SWIFT_OPTIMIZATION_LEVEL:--Osize}"
 CURRENT_PROJECT_VERSION_VALUE="${LUMEN_IOS_CURRENT_PROJECT_VERSION:-}"
 MARKETING_VERSION_VALUE="${LUMEN_IOS_MARKETING_VERSION:-}"
 DERIVED_DATA_ROOT="${LUMEN_DERIVED_DATA_ROOT:-$HOME/Library/Developer/Xcode/DerivedData}"
@@ -22,8 +22,6 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 ARCHIVE_PATH="${LUMEN_ARCHIVE_PATH:-$REPO_ROOT/build/Lumen-$TIMESTAMP.xcarchive}"
 LOG_DIR="$REPO_ROOT/build/logs"
 LOG_PATH="$LOG_DIR/archive-stable-$TIMESTAMP.log"
-ACTOOL_SHIM_DIR="$REPO_ROOT/build/actool-shim"
-ACTOOL_SHIM_PATH="$ACTOOL_SHIM_DIR/actool"
 SANITIZED_ENTITLEMENTS_PATH="$REPO_ROOT/build/LumenArchive.entitlements"
 SIGNING_XCCONFIG_PATH="$REPO_ROOT/build/LumenArchiveSigningOverrides.xcconfig"
 LOCK_DIR="$REPO_ROOT/build/archive_lumen_stable.lock"
@@ -38,11 +36,35 @@ AUTHENTICATION_KEY_PATH="${LUMEN_IOS_AUTHENTICATION_KEY_PATH:-}"
 AUTHENTICATION_KEY_ID="${LUMEN_IOS_AUTHENTICATION_KEY_ID:-}"
 AUTHENTICATION_KEY_ISSUER_ID="${LUMEN_IOS_AUTHENTICATION_KEY_ISSUER_ID:-}"
 LUMEN_GIT_SHA_VALUE="${LUMEN_GIT_SHA:-$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown')}"
+AGENT_GROUNDING_RESOURCE_MODE_VALUE="${LUMEN_AGENT_GROUNDING_RESOURCE_MODE:-minimal}"
 
 bold() { printf "\033[1m%s\033[0m\n" "$1"; }
 info() { printf "\n➡️  %s\n" "$1"; }
 warn() { printf "\n⚠️  %s\n" "$1"; }
 fail() { printf "\n❌ %s\n" "$1"; exit 1; }
+
+validate_archive_signing_arguments() {
+  local argument
+  for argument in "$@"; do
+    if [[ "$argument" == "CODE_SIGN_IDENTITY=" ]]; then
+      printf 'Archive command contains a literal empty CODE_SIGN_IDENTITY override.\n' >&2
+      return 1
+    fi
+  done
+}
+
+run_signing_argument_self_check() {
+  if validate_archive_signing_arguments xcodebuild CODE_SIGN_IDENTITY= >/dev/null 2>&1; then
+    fail "Signing-argument self-check accepted an empty CODE_SIGN_IDENTITY override."
+  fi
+  validate_archive_signing_arguments xcodebuild CODE_SIGN_STYLE=Automatic
+  printf 'Archive signing-argument self-check passed.\n'
+}
+
+if [[ "${1:-}" == "--self-check-signing-arguments" ]]; then
+  run_signing_argument_self_check
+  exit 0
+fi
 
 acquire_archive_lock() {
   mkdir -p "$REPO_ROOT/build"
@@ -249,6 +271,18 @@ command -v python3 >/dev/null 2>&1 || fail "python3 not found. Install Xcode Com
 [[ -f "$PROJECT_FILE" ]] || fail "Missing project file: $PROJECT_FILE"
 [[ -e "$PROJECT_PATH" ]] || fail "Project/workspace path not found: $PROJECT_PATH"
 [[ "$PROJECT_PATH" == *.xcworkspace || "$PROJECT_PATH" == *.xcodeproj ]] || fail "Project path must be .xcworkspace or .xcodeproj: $PROJECT_PATH"
+case "$CONFIGURATION" in
+  Release|AppStore|App\ Store)
+    case "$SWIFT_OPTIMIZATION_LEVEL_VALUE" in
+      -O|-Osize) ;;
+      *) fail "Release archives require Swift optimization (-O or -Osize); refusing SWIFT_OPTIMIZATION_LEVEL=$SWIFT_OPTIMIZATION_LEVEL_VALUE." ;;
+    esac
+    ;;
+esac
+case "$AGENT_GROUNDING_RESOURCE_MODE_VALUE" in
+  full|minimal|skip) ;;
+  *) fail "Unsupported LUMEN_AGENT_GROUNDING_RESOURCE_MODE=$AGENT_GROUNDING_RESOURCE_MODE_VALUE (expected full, minimal, or skip)." ;;
+esac
 
 cd "$REPO_ROOT"
 mkdir -p "$LOG_DIR" "$REPO_ROOT/build"
@@ -283,11 +317,15 @@ if [[ -n "$CODE_SIGN_STYLE_VALUE" ]]; then
   SIGNING_BUILD_SETTINGS+=("CODE_SIGN_STYLE=$CODE_SIGN_STYLE_VALUE")
 fi
 EFFECTIVE_CODE_SIGN_IDENTITY_VALUE="$CODE_SIGN_IDENTITY_VALUE"
-if [[ -z "$EFFECTIVE_CODE_SIGN_IDENTITY_VALUE" && "$CODE_SIGN_STYLE_VALUE" == "Automatic" ]]; then
-  EFFECTIVE_CODE_SIGN_IDENTITY_VALUE="Apple Development"
-fi
 if [[ -n "$CODE_SIGN_IDENTITY_VALUE" ]]; then
   info "Using codesigning identity override: $CODE_SIGN_IDENTITY_VALUE"
+elif [[ "$CODE_SIGN_STYLE_VALUE" == "Automatic" ]]; then
+  # Automatic signing archives with an Apple Development identity. Pinning it
+  # here overrides any legacy conditional distribution identity in the project
+  # without disabling signing; App Store distribution signing happens later
+  # when the archive is exported.
+  EFFECTIVE_CODE_SIGN_IDENTITY_VALUE="Apple Development"
+  info "Using Apple Development identity for automatic archive signing"
 fi
 if [[ -n "$EFFECTIVE_CODE_SIGN_IDENTITY_VALUE" ]]; then
   cat > "$SIGNING_XCCONFIG_PATH" <<XCCONFIG
@@ -320,8 +358,8 @@ python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
   --allow-sanitized-output
 SIGNING_BUILD_SETTINGS+=("CODE_SIGN_ENTITLEMENTS=$SANITIZED_ENTITLEMENTS_PATH")
 
-info "Applying durable archive/linker build settings"
-python3 "$REPO_ROOT/scripts/apply_ios_archive_linker_fix.py" "$PROJECT_FILE" --no-backup
+info "Verifying durable archive/linker build settings"
+python3 "$REPO_ROOT/scripts/apply_ios_archive_linker_fix.py" "$PROJECT_FILE" --check
 
 if [[ "${LUMEN_CLEAN_DERIVED_DATA:-1}" == "1" ]]; then
   info "Cleaning Lumen DerivedData"
@@ -339,9 +377,8 @@ preflight_signing_identity
 info "Resolving Swift package dependencies"
 resolve_package_dependencies
 
-info "Archiving with linker-safe Swift settings"
-mkdir -p "$DERIVED_DATA_PATH" "$CLONED_SOURCE_PACKAGES_DIR" "$PACKAGE_CACHE_PATH" "$ACTOOL_SHIM_DIR"
-ln -sf "$REPO_ROOT/scripts/lumen_actool_cached_assets.sh" "$ACTOOL_SHIM_PATH"
+info "Archiving with linker-safe Swift settings and freshly compiled asset catalogs"
+mkdir -p "$DERIVED_DATA_PATH" "$CLONED_SOURCE_PACKAGES_DIR" "$PACKAGE_CACHE_PATH"
 ARCHIVE_COMMAND=(
   xcodebuild
   "${PROJECT_SELECTOR[@]}"
@@ -371,30 +408,32 @@ ARCHIVE_COMMAND+=(
   COMPILER_INDEX_STORE_ENABLE=NO
   ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES=YES
   ENABLE_ON_DEMAND_RESOURCES=NO
-  ASSETCATALOG_COMPILER_ENABLE_ON_DEMAND_RESOURCES=NO
-  ASSETCATALOG_COMPILER_SKIP_APP_STORE_DEPLOYMENT=YES
-  ASSETCATALOG_COMPILER_COMPRESS_PNGS=NO
-  ASSETCATALOG_COMPILER_OPTIMIZATION=time
-  ASSETCATALOG_COMPILER_STANDALONE_ICON_BEHAVIOR=none
-  "ASSETCATALOG_EXEC=$ACTOOL_SHIM_PATH"
   DEAD_CODE_STRIPPING=NO
   SWIFT_COMPILATION_MODE=singlefile
   SWIFT_WHOLE_MODULE_OPTIMIZATION=NO
   "SWIFT_OPTIMIZATION_LEVEL=$SWIFT_OPTIMIZATION_LEVEL_VALUE"
   "LUMEN_GIT_SHA=$LUMEN_GIT_SHA_VALUE"
+  "AGENT_GROUNDING_RESOURCE_MODE=$AGENT_GROUNDING_RESOURCE_MODE_VALUE"
   clean
   archive
 )
+validate_archive_signing_arguments "${ARCHIVE_COMMAND[@]}" \
+  || fail "Refusing to run an archive command that disables signing identity selection."
 run_logged "$LOG_PATH" "${ARCHIVE_COMMAND[@]}"
 
 info "Verifying archived app Info.plist"
-python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$ARCHIVE_PATH"
+INFO_PLIST_CHECK=(python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$ARCHIVE_PATH" --expected-build-configuration "$CONFIGURATION")
+if [[ -n "$CURRENT_PROJECT_VERSION_VALUE" ]]; then
+  INFO_PLIST_CHECK+=(--expected-bundle-version "$CURRENT_PROJECT_VERSION_VALUE")
+fi
+"${INFO_PLIST_CHECK[@]}"
 
 info "Verifying archived app signed entitlements"
 python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
   --project-file "$PROJECT_FILE" \
   --entitlements "$REPO_ROOT/ios/Lumen/Lumen.entitlements" \
   --app-store-entitlements "$REPO_ROOT/ios/Lumen/LumenAppStore.entitlements" \
+  --signing-stage archive \
   --signed-app-path "$ARCHIVE_PATH"
 
 bold "✅ Archive created: $ARCHIVE_PATH"

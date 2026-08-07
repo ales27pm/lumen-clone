@@ -21,6 +21,7 @@ struct StructuredAgentKernelExecutor {
     nonisolated static let executorRuntimeSystemPromptContract = """
     You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {"action":{"tool":"<exact manifest tool id>","args":{...}}} or {"final":"<concise user-facing answer>"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.
     """
+    nonisolated static let executorRuntimeOutputBoundary = "Runtime output boundary: start with { and stop immediately after the matching }. Choose exactly one of action or final. For a matching available tool, emit its exact listed ID. Action is a JSON object, never a string; never invent tool results."
 
     private let kernel: AssistantKernel
     private let modelContext: ModelContext?
@@ -312,7 +313,7 @@ struct StructuredAgentKernelExecutor {
                 )
                 continuation.yield(.toolInvocation(invocation))
                 let context = ToolExecutionContext(
-                    isForeground: request.source.isForegroundForStructuredAgent,
+                    isForeground: request.source.allowsPermissionPrompts,
                     appState: nil,
                     modelContext: modelContext,
                     permissionRegistry: .shared,
@@ -460,7 +461,7 @@ struct StructuredAgentKernelExecutor {
 
     private func availableTools(for request: AgentKernelRequest, routing: IntentRoutingDecision) async -> StructuredToolAvailability {
         let context = ToolExecutionContext(
-            isForeground: request.source.isForegroundForStructuredAgent,
+            isForeground: request.source.allowsPermissionPrompts,
             appState: nil,
             modelContext: modelContext,
             permissionRegistry: .shared,
@@ -518,7 +519,7 @@ struct StructuredAgentKernelExecutor {
             history: [],
             relevantMemories: request.relevantMemories,
             attachments: request.attachments,
-            isForeground: request.source.isForegroundForStructuredAgent,
+            isForeground: request.source.isForeground,
             lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
             thermalState: ProcessInfo.processInfo.thermalState,
             prefersFoundationModels: false,
@@ -1021,6 +1022,7 @@ private extension StructuredAgentKernelExecutor {
             sys += "\nContext note, lower priority than JSON/tool rules:\n\(appPrompt)\n"
         }
         sys += "\nRouting hints: current web/research -> web.search; local files/notes -> rag.search; save user preference -> memory.save; recall stored memory -> memory.recall; weather -> weather; draft email -> mail.draft; scheduled agent run -> trigger.create. Do not include attachment bodies or local source snippets in this routing turn."
+        sys += "\n\(executorRuntimeOutputBoundary)"
         return sys
     }
 
@@ -2265,17 +2267,6 @@ private extension AgentKernelRequest {
             return .appIntent
         case .chat, .voice, .diagnostics, .benchmark:
             return .modelProposed
-        }
-    }
-}
-
-private extension AgentKernelSource {
-    var isForegroundForStructuredAgent: Bool {
-        switch self {
-        case .chat, .voice, .appIntent, .diagnostics, .benchmark:
-            return true
-        case .trigger:
-            return false
         }
     }
 }

@@ -10,6 +10,7 @@ struct ModelsView: View {
     @State private var loadedPaths: Set<String> = []
     @State private var selectedModelFamily = LumenModelFamily.persistedSelected
     @State private var isRepairingSelectedFamily = false
+    @State private var modelOperationError: String?
     @State private var runtimeController = ModelRuntimeController()
 
     var body: some View {
@@ -126,16 +127,36 @@ struct ModelsView: View {
             }
             .task(id: appState.activeChatModelID) { await refreshLoaded() }
             .task(id: appState.activeEmbeddingModelID) { await refreshLoaded() }
-            .onChange(of: selectedModelFamily) { _, family in
-                LumenModelFamily.persistedSelected = family
+            .task(id: appState.runtime.modelAutoloadState) { await refreshLoaded() }
+            .alert("Model operation failed", isPresented: Binding(
+                get: { modelOperationError != nil },
+                set: { if !$0 { modelOperationError = nil } }
+            )) {
+                Button("OK", role: .cancel) { modelOperationError = nil }
+            } message: {
+                Text(modelOperationError ?? "The model operation could not be completed.")
             }
         }
     }
 
     private var activeRow: some View {
         HStack(spacing: 10) {
-            ActivePill(title: "Chat", name: installedModels.first { $0.id.uuidString == appState.activeChatModelID }?.name ?? "None", icon: "bubble.left.and.bubble.right")
-            ActivePill(title: "Embed", name: installedModels.first { $0.id.uuidString == appState.activeEmbeddingModelID }?.name ?? "None", icon: "point.3.connected.trianglepath.dotted")
+            ActivePill(
+                title: "Chat",
+                name: activeChatModel?.name ?? "None",
+                modelID: appState.activeChatModelID,
+                icon: "bubble.left.and.bubble.right",
+                isLoaded: activeChatModel.map(isRuntimeLoaded) ?? false,
+                statusAccessibilityIdentifier: "models.chatRuntimeStatus"
+            )
+            ActivePill(
+                title: "Embed",
+                name: activeEmbeddingModel?.name ?? "None",
+                modelID: appState.activeEmbeddingModelID,
+                icon: "point.3.connected.trianglepath.dotted",
+                isLoaded: activeEmbeddingModel.map(isRuntimeLoaded) ?? false,
+                statusAccessibilityIdentifier: "models.embeddingRuntimeStatus"
+            )
         }
     }
 
@@ -145,7 +166,7 @@ struct ModelsView: View {
                 Image(systemName: "switch.2").foregroundStyle(Theme.accent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Model family").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
-                    Text("First launch and repair download only this family.").font(.caption).foregroundStyle(Theme.textSecondary)
+                    Text("Choose a family, then confirm Download / repair. Your working selection stays active until setup succeeds.").font(.caption).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
             }
@@ -181,8 +202,14 @@ struct ModelsView: View {
 
     private var featuredModels: [CatalogModel] { LumenModelFleetCatalog.bootstrapModels(for: selectedModelFamily) }
     private var installedModels: [StoredModel] { storedModels.filter { modelFileExists($0) } }
+    private var activeChatModel: StoredModel? { installedModels.first { $0.id.uuidString == appState.activeChatModelID } }
+    private var activeEmbeddingModel: StoredModel? { installedModels.first { $0.id.uuidString == appState.activeEmbeddingModelID } }
     private var runtimeAwareFleetSnapshot: LumenModelFleetSnapshot { fleetSnapshot.withRuntimeResidentPaths(loadedPaths) }
     private var fleetSnapshot: LumenModelFleetSnapshot { LumenModelFleetResolver.resolveV1(appState: appState, storedModels: storedModels) }
+
+    private func isRuntimeLoaded(_ model: StoredModel) -> Bool {
+        loadedPaths.contains(ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path)
+    }
 
     private func installedStoredModel(for catalog: CatalogModel) -> StoredModel? {
         storedModel(for: catalog).flatMap { modelFileExists($0) ? $0 : nil }
@@ -204,37 +231,45 @@ struct ModelsView: View {
         guard !isRepairingSelectedFamily else { return }
         isRepairingSelectedFamily = true
         Task { @MainActor in
-            await ModelLaunchBootstrap.switchFamily(selectedModelFamily, appState: appState, context: modelContext)
-            await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels, intent: .userChat)
+            let result = await ModelLaunchBootstrap.switchFamily(selectedModelFamily, appState: appState, context: modelContext)
             await refreshLoaded()
             isRepairingSelectedFamily = false
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            if result.succeeded {
+                selectedModelFamily = LumenModelFamily.persistedSelected
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            } else {
+                modelOperationError = result.errorMessage
+                    ?? "Only \(result.ready) of \(result.required) verified artifacts became ready."
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
         }
     }
 
     private func download(_ model: CatalogModel) {
-        downloader.start(model) { localURL in
-            Task { @MainActor in
-                if let existing = installedStoredModel(for: model) {
-                    activate(stored: existing)
-                    return
+        Task { @MainActor in
+            _ = await downloader.start(model) { localURL in
+                Task { @MainActor in
+                    do {
+                        let stored = try ModelCatalogPersistenceCoordinator.upsertVerifiedCatalogModel(
+                            model,
+                            localURL: localURL,
+                            context: modelContext
+                        )
+                        if model.role == .chat && appState.activeChatModelID == nil {
+                            try select(stored)
+                        } else if model.role == .embedding && appState.activeEmbeddingModelID == nil {
+                            try select(stored)
+                        }
+                        if model.role != .roleAdapter {
+                            try await runtimeController.load(stored, appState: appState, storedModels: mergedStoredModels(including: stored))
+                        }
+                        await refreshLoaded()
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    } catch {
+                        modelOperationError = error.localizedDescription
+                        UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    }
                 }
-                if let stale = storedModel(for: model), !modelFileExists(stale) {
-                    modelContext.delete(stale)
-                    try? modelContext.save()
-                }
-                let stored = StoredModel(name: model.name, repoId: model.repoId, fileName: model.fileName, sizeBytes: model.sizeBytes, quantization: model.quantization, parameters: model.parameters, role: model.role, localPath: localURL.path)
-                modelContext.insert(stored)
-                try? modelContext.save()
-                if model.role == .chat && appState.activeChatModelID == nil { appState.activeChatModelID = stored.id.uuidString }
-                if model.role == .embedding && appState.activeEmbeddingModelID == nil { appState.activeEmbeddingModelID = stored.id.uuidString }
-                if model.role == .chat || model.role == .roleAdapter {
-                    await ModelLoader.ensureFleetChatLoaded(appState: appState, stored: storedModels + [stored], intent: .userChat)
-                } else {
-                    _ = await ModelLoader.ensureEmbedLoaded(appState: appState, stored: storedModels + [stored], intent: .userChat)
-                }
-                await refreshLoaded()
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
         }
     }
@@ -254,14 +289,21 @@ struct ModelsView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             return
         }
-        if stored.modelRole == .chat { appState.activeChatModelID = stored.id.uuidString }
-        if stored.modelRole == .embedding { appState.activeEmbeddingModelID = stored.id.uuidString }
-        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        do {
+            try select(stored)
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        } catch {
+            modelOperationError = error.localizedDescription
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
     }
 
     private func deleteStored(for catalog: CatalogModel) {
-        if let stored = storedModel(for: catalog) { deleteStoredModel(stored) }
-        downloader.deleteLocal(catalog)
+        if let stored = storedModel(for: catalog) {
+            deleteStoredModel(stored)
+        } else {
+            downloader.deleteLocal(catalog)
+        }
     }
 
     private func refreshLoaded() async {
@@ -272,11 +314,22 @@ struct ModelsView: View {
     private func load(_ sm: StoredModel) {
         guard modelFileExists(sm) else { return }
         Task {
+            let previousSelection = PersistedModelSelectionStore.loadOrMigrate()
             do {
+                if sm.modelRole != .roleAdapter {
+                    try select(sm)
+                }
                 try await runtimeController.load(sm, appState: appState, storedModels: storedModels)
                 await refreshLoaded()
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             } catch {
+                try? appState.commitActiveModelSelection(
+                    chatModelID: previousSelection.chatModelID,
+                    embeddingModelID: previousSelection.embeddingModelID,
+                    family: LumenModelFamily.fromStoredID(previousSelection.familyID),
+                    provisioningPlanID: previousSelection.provisioningPlanID
+                )
+                modelOperationError = error.localizedDescription
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
         }
@@ -305,23 +358,82 @@ struct ModelsView: View {
 
     private func deleteStoredModel(_ sm: StoredModel) {
         let fm = FileManager.default
-        let resolvedPath = ModelStorage.resolvedModelURL(from: sm.localPath, fileName: sm.fileName, fileManager: fm).path
+        let modelID = sm.id.uuidString
+        let role = sm.modelRole
+        let localPath = sm.localPath
+        let resolvedPath = ModelStorage.resolvedModelURL(
+            from: localPath,
+            fileName: sm.fileName,
+            fileManager: fm
+        ).path
+        let roleAdapterSlot = role == .roleAdapter ? adapterSlot(for: sm) : nil
         Task { @MainActor in
-            if sm.modelRole == .chat {
-                let slots = await AppLlamaService.shared.loadedChatPathsBySlot.filter { $0.value == resolvedPath }.map(\.key)
-                for slot in slots { await AppLlamaService.shared.unloadChat(for: slot) }
-            } else if sm.modelRole == .roleAdapter {
-                if let slot = adapterSlot(for: sm) { await AppLlamaService.shared.unloadRoleAdapter(slot: slot) }
-            } else {
-                await AppLlamaService.shared.unloadEmbed()
+            let previousSelection = PersistedModelSelectionStore.loadOrMigrate()
+            let deletingSelectedChat = modelID == appState.activeChatModelID
+            let deletingSelectedEmbedding = modelID == appState.activeEmbeddingModelID
+            do {
+                if deletingSelectedChat || deletingSelectedEmbedding {
+                    try appState.commitActiveModelSelection(
+                        chatModelID: deletingSelectedChat ? nil : appState.activeChatModelID,
+                        embeddingModelID: deletingSelectedEmbedding ? nil : appState.activeEmbeddingModelID,
+                        family: LumenModelFamily.persistedSelected,
+                        provisioningPlanID: nil
+                    )
+                }
+                do {
+                    try ModelCatalogPersistenceCoordinator.delete(sm, context: modelContext)
+                } catch {
+                    _ = try? appState.commitActiveModelSelection(
+                        chatModelID: previousSelection.chatModelID,
+                        embeddingModelID: previousSelection.embeddingModelID,
+                        family: LumenModelFamily.fromStoredID(previousSelection.familyID),
+                        provisioningPlanID: previousSelection.provisioningPlanID
+                    )
+                    throw error
+                }
+            } catch {
+                modelOperationError = error.localizedDescription
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                return
             }
+
+            await runtimeController.unloadResolvedModel(
+                role: role,
+                resolvedPath: resolvedPath,
+                adapterSlot: roleAdapterSlot
+            )
+            try? fm.removeItem(atPath: localPath)
+            if resolvedPath != localPath { try? fm.removeItem(atPath: resolvedPath) }
+            ModelProvisioningReceipt.invalidate()
+            appState.runtime.requestModelAutoload()
+            await refreshLoaded()
         }
-        try? fm.removeItem(atPath: sm.localPath)
-        if resolvedPath != sm.localPath { try? fm.removeItem(atPath: resolvedPath) }
-        if sm.id.uuidString == appState.activeChatModelID { appState.activeChatModelID = nil }
-        if sm.id.uuidString == appState.activeEmbeddingModelID { appState.activeEmbeddingModelID = nil }
-        modelContext.delete(sm)
-        try? modelContext.save()
+    }
+
+    private func select(_ stored: StoredModel) throws {
+        let family = LumenModelFamily.persistedSelected
+        if stored.modelRole == .chat {
+            try LumenModelSelectionPolicy.validatePersistedChatModel(
+                repoID: stored.repoId,
+                fileName: stored.fileName,
+                sizeBytes: stored.sizeBytes,
+                family: family
+            )
+        }
+        let chatID = stored.modelRole == .chat ? stored.id.uuidString : appState.activeChatModelID
+        let embeddingID = stored.modelRole == .embedding ? stored.id.uuidString : appState.activeEmbeddingModelID
+        try appState.commitActiveModelSelection(
+            chatModelID: chatID,
+            embeddingModelID: embeddingID,
+            family: family,
+            provisioningPlanID: nil
+        )
+        ModelProvisioningReceipt.invalidate()
+        appState.runtime.requestModelAutoload()
+    }
+
+    private func mergedStoredModels(including stored: StoredModel) -> [StoredModel] {
+        storedModels.contains(where: { $0.id == stored.id }) ? storedModels : storedModels + [stored]
     }
 
     private func adapterSlot(for model: StoredModel) -> LumenModelSlot? {
@@ -343,12 +455,22 @@ private extension LumenModelFleetSnapshot {
 struct ActivePill: View {
     let title: String
     let name: String
+    let modelID: String?
     let icon: String
+    let isLoaded: Bool
+    let statusAccessibilityIdentifier: String
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Image(systemName: icon).font(.caption).foregroundStyle(Theme.textSecondary)
                 Text(title).font(.caption).foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Text(isLoaded ? "Loaded" : "Active")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(isLoaded ? Theme.accent : Theme.textSecondary)
+                    .accessibilityIdentifier(statusAccessibilityIdentifier)
+                    .accessibilityValue(modelID ?? "")
             }
             Text(name).font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary).lineLimit(1)
         }
@@ -478,7 +600,7 @@ struct DownloadedRow: View {
             } else if isAdapter {
                 Text("Adapter").font(.caption.weight(.medium)).foregroundStyle(Theme.textSecondary)
             } else if isActiveChat || isActiveEmbed {
-                Text("Active").font(.caption.weight(.medium)).foregroundStyle(Theme.accent)
+                Text(isLoaded ? "Loaded" : "Active").font(.caption.weight(.medium)).foregroundStyle(Theme.accent)
             } else {
                 Button("Use") { onActivate() }.font(.caption.weight(.medium)).buttonStyle(.bordered)
             }
@@ -507,23 +629,66 @@ struct ModelPickerSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
     @Query private var stored: [StoredModel]
+    @State private var selectionError: String?
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Chat model") {
-                    ForEach(stored.filter { $0.modelRole == .chat && FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: $0.localPath, fileName: $0.fileName).path) }) { m in
-                        pickerRow(m, isActive: appState.activeChatModelID == m.id.uuidString) { appState.activeChatModelID = m.id.uuidString; dismiss() }
+                    ForEach(stored.filter { model in
+                        model.modelRole == .chat
+                            && FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path)
+                            && LumenModelSelectionPolicy.isPersistedChatModelCompatible(
+                                repoID: model.repoId,
+                                fileName: model.fileName,
+                                sizeBytes: model.sizeBytes,
+                                family: LumenModelFamily.persistedSelected
+                            )
+                    }) { m in
+                        pickerRow(m, isActive: appState.activeChatModelID == m.id.uuidString) { select(m) }
                     }
                 }
                 Section("Embedding model") {
                     ForEach(stored.filter { $0.modelRole == .embedding && FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: $0.localPath, fileName: $0.fileName).path) }) { m in
-                        pickerRow(m, isActive: appState.activeEmbeddingModelID == m.id.uuidString) { appState.activeEmbeddingModelID = m.id.uuidString; dismiss() }
+                        pickerRow(m, isActive: appState.activeEmbeddingModelID == m.id.uuidString) { select(m) }
                     }
                 }
             }
             .navigationTitle("Active Models")
             .navigationBarTitleDisplayMode(.inline)
+            .alert("Selection not saved", isPresented: Binding(
+                get: { selectionError != nil },
+                set: { if !$0 { selectionError = nil } }
+            )) {
+                Button("OK", role: .cancel) { selectionError = nil }
+            } message: {
+                Text(selectionError ?? "The model selection could not be saved.")
+            }
+        }
+    }
+
+    private func select(_ model: StoredModel) {
+        do {
+            let family = LumenModelFamily.persistedSelected
+            if model.modelRole == .chat {
+                try LumenModelSelectionPolicy.validatePersistedChatModel(
+                    repoID: model.repoId,
+                    fileName: model.fileName,
+                    sizeBytes: model.sizeBytes,
+                    family: family
+                )
+            }
+            try appState.commitActiveModelSelection(
+                chatModelID: model.modelRole == .chat ? model.id.uuidString : appState.activeChatModelID,
+                embeddingModelID: model.modelRole == .embedding ? model.id.uuidString : appState.activeEmbeddingModelID,
+                family: family,
+                provisioningPlanID: nil
+            )
+            ModelProvisioningReceipt.invalidate()
+            appState.runtime.requestModelAutoload()
+            dismiss()
+        } catch {
+            selectionError = error.localizedDescription
         }
     }
 
@@ -546,6 +711,7 @@ struct AddModelSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
     @State private var candidates: [LocalModelFile] = []
+    @State private var importError: String?
 
     var body: some View {
         NavigationStack {
@@ -570,6 +736,14 @@ struct AddModelSheet: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("Refresh") { candidates = LocalModelDiscovery.discoverGGUF() } }
             }
             .task { candidates = LocalModelDiscovery.discoverGGUF() }
+            .alert("Model import", isPresented: Binding(
+                get: { importError != nil },
+                set: { if !$0 { importError = nil } }
+            )) {
+                Button("OK", role: .cancel) { importError = nil }
+            } message: {
+                Text(importError ?? "The local model import could not be completed.")
+            }
         }
     }
 
@@ -578,11 +752,44 @@ struct AddModelSheet: View {
         let role: ModelRole = fileName.lowercased().contains("embed") ? .embedding : .chat
         let attrs = (try? FileManager.default.attributesOfItem(atPath: file.url.path)) ?? [:]
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
-        let stored = StoredModel(name: file.displayName, repoId: "local/\(file.source.lowercased())", fileName: fileName, sizeBytes: size, quantization: "local", parameters: "local", role: role, localPath: file.url.path)
-        modelContext.insert(stored)
-        try? modelContext.save()
-        if role == .chat && appState.activeChatModelID == nil { appState.activeChatModelID = stored.id.uuidString }
-        if role == .embedding && appState.activeEmbeddingModelID == nil { appState.activeEmbeddingModelID = stored.id.uuidString }
-        dismiss()
+        do {
+            let stored = try ModelCatalogPersistenceCoordinator.insertLocalModel(
+                name: file.displayName,
+                repoID: "local/\(file.source.lowercased())",
+                fileName: fileName,
+                sizeBytes: size,
+                role: role,
+                localURL: file.url,
+                context: modelContext
+            )
+            let family = LumenModelFamily.persistedSelected
+            let chatCompatible = role != .chat || LumenModelSelectionPolicy.isPersistedChatModelCompatible(
+                repoID: stored.repoId,
+                fileName: stored.fileName,
+                sizeBytes: stored.sizeBytes,
+                family: family
+            )
+            let shouldActivateChat = role == .chat
+                && appState.activeChatModelID == nil
+                && chatCompatible
+            let shouldActivateEmbedding = role == .embedding && appState.activeEmbeddingModelID == nil
+            if shouldActivateChat || shouldActivateEmbedding {
+                try appState.commitActiveModelSelection(
+                    chatModelID: role == .chat ? stored.id.uuidString : appState.activeChatModelID,
+                    embeddingModelID: role == .embedding ? stored.id.uuidString : appState.activeEmbeddingModelID,
+                    family: family,
+                    provisioningPlanID: nil
+                )
+                ModelProvisioningReceipt.invalidate()
+                appState.runtime.requestModelAutoload()
+            }
+            if role == .chat, !chatCompatible {
+                importError = "\(file.displayName) was imported, but it cannot be activated while \(family.shortLabel) adapter mode is selected. Switch model families to use this local chat model."
+                return
+            }
+            dismiss()
+        } catch {
+            importError = error.localizedDescription
+        }
     }
 }

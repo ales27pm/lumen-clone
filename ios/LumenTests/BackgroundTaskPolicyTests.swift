@@ -3,6 +3,13 @@ import SwiftUI
 @testable import Lumen
 
 final class BackgroundTaskPolicyTests: XCTestCase {
+    func testStartupRegistersAndSchedulesWithoutAuthorizationOperation() {
+        XCTAssertEqual(BackgroundStartupPolicy.operations, [
+            .registerTasks,
+            .scheduleTasks,
+        ])
+    }
+
     func testCriticalThermalDenied() {
         let d = BackgroundTaskPolicy.decide(.init(taskKind: .triggerScan, lowPowerMode: false, thermalState: .critical, isForeground: false, backgroundAgentsEnabled: true, requiresNetwork: false, estimatedCost: 1))
         XCTAssertFalse(d.allow)

@@ -16,6 +16,61 @@ nonisolated struct BootStep: Identifiable, Hashable, Sendable {
     var state: BootStepState
 }
 
+nonisolated enum ModelAutoloadState: Equatable, Sendable {
+    case idle
+    case loading
+    case finished(chatLoaded: Bool, embeddingLoaded: Bool)
+
+    var shouldRetryAfterLeavingActiveScene: Bool {
+        switch self {
+        case .idle:
+            return false
+        case .loading:
+            return true
+        case let .finished(chatLoaded, embeddingLoaded):
+            return !chatLoaded || !embeddingLoaded
+        }
+    }
+}
+
+nonisolated struct ModelAutoloadRequestKey: Hashable, Sendable {
+    let bootstrapReady: Bool
+    let sceneIsActive: Bool
+    let activeChatModelID: String?
+    let activeEmbeddingModelID: String?
+    let selectedModelFamily: LumenModelFamily
+    let requestGeneration: UInt64
+
+    var canStartAutoload: Bool {
+        bootstrapReady && sceneIsActive
+    }
+}
+
+nonisolated enum ModelAutoloadRetryPolicy {
+    static let maximumRetryCount = 2
+    static let minimumDelaySeconds: TimeInterval = 1
+    static let maximumDelaySeconds: TimeInterval = 120
+
+    static func boundedDelaySeconds(_ suggestedDelaySeconds: TimeInterval?) -> TimeInterval? {
+        guard let suggestedDelaySeconds,
+              suggestedDelaySeconds.isFinite,
+              suggestedDelaySeconds > 0 else {
+            return nil
+        }
+        return min(maximumDelaySeconds, max(minimumDelaySeconds, suggestedDelaySeconds))
+    }
+
+    static func shouldRetry(
+        completedRetryCount: Int,
+        suggestedDelaySeconds: TimeInterval?,
+        sceneIsActive: Bool
+    ) -> Bool {
+        sceneIsActive
+            && completedRetryCount < maximumRetryCount
+            && boundedDelaySeconds(suggestedDelaySeconds) != nil
+    }
+}
+
 /// Ephemeral, non-persisted UI state. Reset every launch. Do not persist any of
 /// these to disk.
 @Observable
@@ -37,10 +92,30 @@ final class RuntimeState {
     /// Human-readable boot status shown on the launch overlay.
     var bootHeadline: String = "Starting Lumen"
 
+    /// Foreground launch restoration state for the persisted chat and embedding
+    /// selections. This is intentionally ephemeral and contains no model paths.
+    var modelAutoloadState: ModelAutoloadState = .idle
+
+    /// Identifies the current foreground restoration attempt so a cancelled scene
+    /// task cannot publish stale completion over a newer attempt.
+    var modelAutoloadAttemptID: UUID?
+
+    /// Model restoration must wait for detached grounding and trigger bootstrap to
+    /// dismiss the splash. `bootCoreComplete` becomes true earlier, when the root UI
+    /// first renders, so it is not sufficient on its own.
+    var modelAutoloadBootstrapReady: Bool {
+        bootCoreComplete && !bootSplashVisible
+    }
+
+    /// Invalidates the root autoload task when a model-family selection changes.
+    /// Model IDs are already part of the task key, so they do not need to mutate
+    /// this counter.
+    var modelAutoloadRequestGeneration: UInt64 = 0
+
     /// Ordered boot steps. Kept ephemeral so a fresh launch always reflects the
     /// real current boot sequence.
-    /// Fleet model checks and model loading are deferred to on-demand —
-    /// they do NOT run during startup to avoid watchdog kills.
+    /// The blocking boot path stays lightweight. Selected chat and embedding
+    /// runtimes are restored afterward from RootView while the scene is active.
     var bootSteps: [BootStep] = [
         BootStep(id: "container", title: "Storage", detail: "Preparing SwiftData container", state: .pending),
         BootStep(id: "grounding", title: "Knowledge", detail: "Loading agent manifests", state: .pending),
@@ -71,5 +146,9 @@ final class RuntimeState {
 
     func dismissBootSplash() {
         bootSplashVisible = false
+    }
+
+    func requestModelAutoload() {
+        modelAutoloadRequestGeneration &+= 1
     }
 }

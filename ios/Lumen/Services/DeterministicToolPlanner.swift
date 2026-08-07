@@ -86,6 +86,7 @@ nonisolated enum DeterministicToolPlanner {
     ///   - availableToolIDs: Tools currently available for execution.
     /// - Returns: An array of `AgentAction` objects to execute in order; empty if no plan can be made.
     static func planSteps(routing: IntentRoutingDecision, prompt: String, availableToolIDs: Set<String>) -> [AgentAction] {
+        guard !routing.requiresClarification else { return [] }
         let text = normalized(prompt)
 
         if routing.intent == .memory, let memoryPlan = MemoryCommandPlan.saveThenRecall(from: prompt) {
@@ -163,6 +164,12 @@ nonisolated enum DeterministicToolPlanner {
         switch routing.intent {
         case .webSearch:
             if has("web.fetch"), let url = firstURL(in: prompt) { return AgentAction(tool: "web.fetch", args: ["url": .string(url)]) }
+            if has("web.fetch"), routing.requiresClarification, IntentRouter.isExplicitWebFetchRequest(prompt) {
+                // Selection-only candidate for diagnostics and clarification tests.
+                // `planSteps` rejects clarification routes, so this incomplete
+                // action can never cross the production execution boundary.
+                return AgentAction(tool: "web.fetch", args: [:])
+            }
             guard has("web.search") else { return nil }
             if ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
                 return AgentAction(tool: "web.search", args: ["query": .string(dynamicPublicLookupWebQuery(from: prompt))])
@@ -197,7 +204,14 @@ nonisolated enum DeterministicToolPlanner {
         case .maps:
             if routing.allowedToolIDs == ["location.current"] || containsAny(text, ["where are we", "where am i", "current location", "my location"]) { return action("location.current") }
             if containsAny(text, ["directions", "navigate", "route"]) {
-                guard let destination = extractDestination(from: prompt), !destination.isEmpty else { return nil }
+                guard let destination = extractDestination(from: prompt), !destination.isEmpty else {
+                    if has("maps.directions"), routing.requiresClarification {
+                        // Selection-only candidate; `planSteps` rejects
+                        // clarification routes before execution.
+                        return action("maps.directions")
+                    }
+                    return nil
+                }
                 return action("maps.directions", ["destination": .string(destination)])
             }
             if isNearbyMapSearchIntent(text) {

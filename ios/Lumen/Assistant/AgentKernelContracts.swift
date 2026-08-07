@@ -343,4 +343,8 @@ extension AgentKernelSource {
             return false
         }
     }
+
+    var allowsPermissionPrompts: Bool {
+        toolInvocationSource.allowsPermissionPrompts
+    }
 }

@@ -33,6 +33,34 @@ nonisolated enum VoiceInputReadiness {
     }
 }
 
+nonisolated enum OnDeviceSpeechRecognitionReadiness: Equatable, Sendable {
+    case ready
+    case recognizerUnavailable
+    case unsupportedLocale(String)
+
+    var message: String? {
+        switch self {
+        case .ready:
+            return nil
+        case .recognizerUnavailable:
+            return "On-device speech recognition is unavailable right now."
+        case .unsupportedLocale(let identifier):
+            return "On-device speech recognition is unavailable for the selected locale (\(identifier))."
+        }
+    }
+
+    static func evaluate(
+        recognizerExists: Bool,
+        recognizerIsAvailable: Bool,
+        supportsOnDeviceRecognition: Bool,
+        localeIdentifier: String
+    ) -> Self {
+        guard recognizerExists, recognizerIsAvailable else { return .recognizerUnavailable }
+        guard supportsOnDeviceRecognition else { return .unsupportedLocale(localeIdentifier) }
+        return .ready
+    }
+}
+
 struct VoiceAudioStartupResult: Equatable, Sendable {
     var succeeded: Bool
     var error: String?
@@ -176,6 +204,9 @@ final class VoiceService: NSObject {
     @ObservationIgnored private var cancellationID: UUID?
     @ObservationIgnored private var ttsCancellationID: UUID?
     @ObservationIgnored private var audioStartup = VoiceAudioStartup.live
+    #if DEBUG
+    @ObservationIgnored private var onDeviceSpeechReadinessOverride: OnDeviceSpeechRecognitionReadiness?
+    #endif
     @ObservationIgnored private var inputTapInstalled = false
     @ObservationIgnored private var audioSessionObserverTokens: [NSObjectProtocol] = []
 
@@ -226,6 +257,12 @@ final class VoiceService: NSObject {
         stopSpeaking()
         lastError = nil
 
+        let speechReadiness = currentOnDeviceSpeechRecognitionReadiness()
+        guard speechReadiness == .ready else {
+            lastError = speechReadiness.message ?? "On-device speech recognition is unavailable."
+            return false
+        }
+
         let activation = audioStartup.activateAudioSession()
         guard activation.succeeded else {
             lastError = activation.error ?? "Audio session could not be activated."
@@ -243,14 +280,15 @@ final class VoiceService: NSObject {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.requiresOnDeviceRecognition = true
         if #available(iOS 16, *) { request.addsPunctuation = true }
         recognitionRequest = request
 
         self.onFinal = onFinal
         liveTranscript = ""
 
-        guard let recognizer, recognizer.isAvailable else {
-            lastError = "Speech recognizer unavailable."
+        guard let recognizer else {
+            lastError = "On-device speech recognition is unavailable right now."
             resetListeningState()
             return false
         }
@@ -325,6 +363,23 @@ final class VoiceService: NSObject {
         onFinal = nil
         isListening = false
         inputLevel = 0
+    }
+
+    private func currentOnDeviceSpeechRecognitionReadiness() -> OnDeviceSpeechRecognitionReadiness {
+        #if DEBUG
+        if let onDeviceSpeechReadinessOverride {
+            return onDeviceSpeechReadinessOverride
+        }
+        #endif
+        guard let recognizer else {
+            return .recognizerUnavailable
+        }
+        return .evaluate(
+            recognizerExists: true,
+            recognizerIsAvailable: recognizer.isAvailable,
+            supportsOnDeviceRecognition: recognizer.supportsOnDeviceRecognition,
+            localeIdentifier: recognizer.locale.identifier
+        )
     }
 
     func finishListening() {
@@ -438,11 +493,17 @@ final class VoiceService: NSObject {
     func configureAudioStartupForTests(_ startup: VoiceAudioStartup) {
         resetListeningState()
         audioStartup = startup
+        onDeviceSpeechReadinessOverride = .ready
     }
 
     func resetAudioStartupForTests() {
         resetListeningState()
         audioStartup = .live
+        onDeviceSpeechReadinessOverride = nil
+    }
+
+    func configureOnDeviceSpeechReadinessForTests(_ readiness: OnDeviceSpeechRecognitionReadiness) {
+        onDeviceSpeechReadinessOverride = readiness
     }
 
     func markInputTapInstalledForTests(_ installed: Bool) {

@@ -185,20 +185,12 @@ public final class BundledAgentGroundingStore: @unchecked Sendable {
     public nonisolated func verifyRequiredResources() throws {
         _ = try agentGroundingRootURL
         _ = try agentManifestDirectoryURL
-        _ = try crossModelTrainingDirectoryURL
         _ = try fileURL("AgentGrounding/agent_manifest/AgentBehaviorManifest", extension: "json")
         _ = try fileURL("AgentGrounding/agent_manifest/fleet_system_prompts", extension: "json")
         _ = try fileURL("AgentGrounding/agent_manifest/manifest_validation_report", extension: "json")
         _ = try fileURL("AgentGrounding/agent_manifest/AgentBehaviorManifest", extension: "md")
         _ = try fileURL("AgentGrounding/agent_manifest/runtime_grounding_bundle", extension: "json")
         _ = try fileURL("AgentGrounding/agent_manifest/runtime_grounding_prompt", extension: "md")
-        _ = try fileURL("AgentGrounding/agent_manifest/dataset/codebase_home_corpus", extension: "jsonl")
-        _ = try fileURL("AgentGrounding/agent_manifest/dataset/codebase_home_sft", extension: "jsonl")
-        _ = try crossModelTrainingFileURL(named: "cross_model_training.jsonl")
-        _ = try crossModelTrainingFileURL(named: "train_sft_cross.jsonl")
-        _ = try crossModelTrainingFileURL(named: "val_sft_cross.jsonl")
-        _ = try crossModelTrainingFileURL(named: "dpo_train_cross.jsonl")
-        _ = try crossModelTrainingFileURL(named: "dpo_val_cross.jsonl")
     }
 
     private nonisolated func directoryURL(_ relativePath: String) throws -> URL {

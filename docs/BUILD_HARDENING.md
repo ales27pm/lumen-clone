@@ -52,6 +52,6 @@ The build-hardening pass reserves legacy names for existing production UI/servic
 
 ## Runtime resource-kill hardening
 
-- App launch must not load chat, embedding, FoundationModels, or tokenizer assets. `AppStartupCoordinator` now marks model runtime as deferred until an explicit foreground user chat or voice turn.
+- `AppStartupCoordinator` must keep the blocking launch path free of model work. After bootstrap dismisses the splash, `RootView` automatically restores the persisted chat and embedding runtimes only while the scene is active and the foreground resource gate allows it; background, headless, diagnostics, and bootstrap paths must not start model loading.
 - Scene phase transitions to inactive/background must only do nonblocking cancellation and optional cleanup; no synchronous memory compaction, RAG indexing, trigger firing, or model probing may run from scene-update handlers.
 - Before TestFlight submission, run the duplicate Swift filename and duplicate compatibility-type checks listed in the validation section of the runtime resource-kill analysis.

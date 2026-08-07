@@ -554,37 +554,36 @@ struct ToolCallCard: View {
     private func approve() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         let toolID = ToolRouteGuard.canonicalToolID(message.toolName ?? "")
-        var args = parseArgs(message.content)
-        switch ToolApprovalPayloadCodec.consumePendingApproval(from: args, matchingToolID: toolID) {
-        case .success(let pending):
-            args = pending.arguments.stringCoerced
-        case .failure(let error):
-            message.toolStatus = ToolStatus.denied.rawValue
-            message.toolResult = error.userMessage
-            try? modelContext.save()
-            return
-        }
+        let payloadArguments = parseArgs(message.content)
         let routing = IntentRouter.classify(inferredUserPrompt())
-        guard IntentRouter.isToolAllowed(toolID, for: routing) else {
-            message.toolStatus = ToolStatus.denied.rawValue
-            message.toolResult = IntentRouter.blockedToolMessage(for: routing)
-            try? modelContext.save()
-            return
-        }
-
-        message.toolStatus = ToolStatus.running.rawValue
+        let claim = ToolApprovalPersistenceCoordinator.claimForExecution(
+            message: message,
+            toolID: toolID,
+            payloadArguments: payloadArguments,
+            policyAllowed: IntentRouter.isToolAllowed(toolID, for: routing),
+            policyDeniedResult: IntentRouter.blockedToolMessage(for: routing),
+            context: modelContext
+        )
         Task {
-            let result = await SecureToolRegistry.shared.executeToolCommand(
-                toolID,
-                arguments: AgentJSONArguments(stringDictionary: args),
-                approval: .userApproved,
-                modelContext: modelContext
+            guard let presentation = await ToolApprovalPersistenceCoordinator.executeIfClaimed(
+                claim,
+                execute: { pending in
+                    let result = await SecureToolRegistry.shared.executeToolCommand(
+                        toolID,
+                        arguments: pending.arguments,
+                        approval: .userApproved,
+                        modelContext: modelContext
+                    )
+                    let validated = FinalIntentValidator.validate(result, routing: routing, fallback: nil)
+                    return ToolExecutionPresentation.presentation(for: toolID, rawResult: validated)
+                }
+            ) else { return }
+            ToolApprovalPersistenceCoordinator.persistTerminal(
+                message: message,
+                status: presentation.status,
+                result: presentation.message,
+                context: modelContext
             )
-            let validated = FinalIntentValidator.validate(result, routing: routing, fallback: nil)
-            let presentation = ToolExecutionPresentation.presentation(for: toolID, rawResult: validated)
-            message.toolStatus = presentation.status.rawValue
-            message.toolResult = presentation.message
-            try? modelContext.save()
         }
     }
 
@@ -601,12 +600,12 @@ struct ToolCallCard: View {
     private func deny() {
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         let args = parseArgs(message.content)
-        if let pendingID = ToolApprovalPayloadCodec.pendingActionID(from: args) {
-            ToolApprovalQueue.shared.clear(pendingID)
-        }
-        message.toolStatus = ToolStatus.denied.rawValue
-        message.toolResult = "Denied by user."
-        try? modelContext.save()
+        ToolApprovalPersistenceCoordinator.persistDenied(
+            message: message,
+            result: "Denied by user.",
+            pendingActionID: ToolApprovalPayloadCodec.pendingActionID(from: args),
+            context: modelContext
+        )
     }
 
     private func parseArgs(_ string: String) -> [String: String] {

@@ -409,7 +409,7 @@ extension AssistantKernel: AgentKernelRunning {
             events.append(.toolInvocation(invocation))
 
             let context = ToolExecutionContext(
-                isForeground: request.source.isForeground,
+                isForeground: request.source.allowsPermissionPrompts,
                 appState: nil,
                 modelContext: modelContext,
                 permissionRegistry: .shared,
@@ -527,6 +527,24 @@ extension AssistantKernel: AgentKernelRunning {
         modelContext: ModelContext?
     ) async -> [ToolDefinition] {
         let routedIDs = Set(routing.allowedToolIDs.map { ToolRouteGuard.canonicalToolID($0) })
+        if request.source == .appIntent {
+            let context = ToolExecutionContext(
+                isForeground: request.source.allowsPermissionPrompts,
+                appState: nil,
+                modelContext: modelContext,
+                permissionRegistry: .shared,
+                metricsStore: metricsStore
+            )
+            let secureDefinitions = await toolRegistry.availableDefinitions(context: context, source: .appIntent)
+            let allowedIDs = Set(
+                ToolSchemaBridge.toCatalogToolDefinitions(secureDefinitions)
+                    .map { ToolRouteGuard.canonicalToolID($0.id) }
+            )
+            return ToolRegistry.all.filter {
+                let canonical = ToolRouteGuard.canonicalToolID($0.id)
+                return routedIDs.contains(canonical) && allowedIDs.contains(canonical)
+            }
+        }
         guard request.requiresBackgroundSafeToolExecution else {
             return ToolRegistry.all.filter { routedIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
         }

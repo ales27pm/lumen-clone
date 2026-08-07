@@ -78,6 +78,7 @@ struct ChatView: View {
     @State private var showVoiceMode = false
     @State private var showFilePicker = false
     @State private var fileImportMessage: String?
+    @State private var conversationPersistenceFailure: ConversationPersistenceFailure?
     @State private var attachments: [ChatAttachment] = []
     @State private var attachmentPreview: [UUID: AttachmentRenderState] = [:]
     @FocusState private var isFocused: Bool
@@ -197,6 +198,16 @@ struct ChatView: View {
             Button("OK", role: .cancel) { fileImportMessage = nil }
         } message: {
             Text(fileImportMessage ?? "")
+        }
+        .alert(item: $conversationPersistenceFailure) { failure in
+            Alert(
+                title: Text("Conversation not saved"),
+                message: Text(failure.userMessage),
+                primaryButton: .default(Text("Retry")) {
+                    retryConversationSave(failure)
+                },
+                secondaryButton: .cancel(Text("Dismiss"))
+            )
         }
         .onChange(of: draft) { _, _ in recomputeAttachmentPreview() }
         .onChange(of: scenePhase) { _, phase in
@@ -867,14 +878,26 @@ struct ChatView: View {
     }
 
     private func saveConversationIfBudgetAllows(estimatedBytes: Int) {
-        guard !DiskWriteBudget.shared.shouldDefer(bytes: estimatedBytes, category: .conversation) else {
-            DeferredMaintenanceQueue.shared.enqueue(DeferredMaintenanceJob(key: "conversation-save-\(conversation.id)", category: .conversation, staleAfter: 10 * 60, maxRuntime: 2) { @MainActor in
-                try? modelContext.save()
-            })
-            return
+        _ = ConversationPersistenceCoordinator.saveOrDefer(
+            context: modelContext,
+            estimatedBytes: estimatedBytes,
+            operation: "chat.conversation.save",
+            deferredKey: "conversation-save-\(conversation.id)"
+        ) { failure in
+            conversationPersistenceFailure = failure
         }
-        try? modelContext.save()
-        DiskWriteBudget.shared.recordWrite(bytes: estimatedBytes, category: .conversation)
+    }
+
+    private func retryConversationSave(_ previousFailure: ConversationPersistenceFailure) {
+        conversationPersistenceFailure = nil
+        _ = ConversationPersistenceCoordinator.saveOrDefer(
+            context: modelContext,
+            estimatedBytes: previousFailure.estimatedBytes,
+            operation: "chat.conversation.retry",
+            deferredKey: "conversation-save-\(conversation.id)"
+        ) { failure in
+            conversationPersistenceFailure = failure
+        }
     }
 
     private func stop() {

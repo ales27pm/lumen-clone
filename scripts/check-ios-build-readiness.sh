@@ -67,20 +67,34 @@ fi
 
 echo "== Built app artifact checks =="
 if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
-  latest_candidate="$(find build -maxdepth 2 \( -name '*.xcarchive' -o -name '*.ipa' \) -print 2>/dev/null | sort | tail -n 1 || true)"
-  if [[ -n "$latest_candidate" ]]; then
-    export LUMEN_BUILT_APP_PATH="$latest_candidate"
-  fi
-fi
-if [[ -z "${LUMEN_BUILT_APP_PATH:-}" ]]; then
   if [[ "${LUMEN_REQUIRE_BUILT_APP:-0}" == "1" ]]; then
     echo "error: LUMEN_BUILT_APP_PATH is required for final signed Info.plist metadata validation." >&2
     exit 1
   fi
-  echo "No built app artifact found; skipping signed Info.plist metadata validation. Set LUMEN_REQUIRE_BUILT_APP=1 to make this mandatory."
+  echo "No explicit built app artifact provided; skipping signed Info.plist metadata validation. Set LUMEN_BUILT_APP_PATH or LUMEN_REQUIRE_BUILT_APP=1 to make this mandatory."
 else
+  case "$LUMEN_BUILT_APP_PATH" in
+    *.xcarchive) signing_stage="archive" ;;
+    *.ipa) signing_stage="app-store" ;;
+    *.app)
+      signing_stage="${LUMEN_BUILT_APP_SIGNING_STAGE:-}"
+      case "$signing_stage" in
+        archive|app-store) ;;
+        *)
+          echo "error: Set LUMEN_BUILT_APP_SIGNING_STAGE=archive|app-store for an ambiguous .app path." >&2
+          exit 1
+          ;;
+      esac
+      ;;
+    *)
+      echo "error: Unsupported LUMEN_BUILT_APP_PATH signing artifact: $LUMEN_BUILT_APP_PATH" >&2
+      exit 1
+      ;;
+  esac
   python3 scripts/check_built_app_info_plist.py "$LUMEN_BUILT_APP_PATH"
-  python3 scripts/validate_ios_signing_capabilities.py --signed-app-path "$LUMEN_BUILT_APP_PATH"
+  python3 scripts/validate_ios_signing_capabilities.py \
+    --signing-stage "$signing_stage" \
+    --signed-app-path "$LUMEN_BUILT_APP_PATH"
 fi
 
 echo "Build readiness static checks completed. Run xcodebuild on macOS for compile validation."

@@ -35,6 +35,7 @@ final class LumenUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
         app = makeApp()
         launchOrActivateApp()
     }
@@ -145,6 +146,64 @@ final class LumenUITests: XCTestCase {
     }
 
     @MainActor
+    func testSelectedModelsAutoLoadAfterNormalRelaunch() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Requires a physical device with persisted chat and embedding models.")
+        #else
+
+        openModels()
+        let selectedChatStatus = app.staticTexts["models.chatRuntimeStatus"]
+        let selectedEmbeddingStatus = app.staticTexts["models.embeddingRuntimeStatus"]
+        XCTAssertTrue(
+            selectedChatStatus.waitForExistence(timeout: 10),
+            "No selected chat model was visible before relaunch."
+        )
+        XCTAssertTrue(
+            selectedEmbeddingStatus.waitForExistence(timeout: 10),
+            "No selected embedding model was visible before relaunch."
+        )
+        let selectedChatModelID = try XCTUnwrap(selectedChatStatus.value as? String)
+        let selectedEmbeddingModelID = try XCTUnwrap(selectedEmbeddingStatus.value as? String)
+        XCTAssertFalse(selectedChatModelID.isEmpty, "No chat model was selected before relaunch.")
+        XCTAssertFalse(selectedEmbeddingModelID.isEmpty, "No embedding model was selected before relaunch.")
+
+        app.terminate()
+        let normalApp = XCUIApplication()
+        app = normalApp
+        defer { normalApp.terminate() }
+        normalApp.launch()
+        dismissOnboardingIfNeeded()
+        openModels()
+
+        let chatLoaded = app.staticTexts.matching(
+            NSPredicate(format: "identifier == %@ AND label == %@", "models.chatRuntimeStatus", "Loaded")
+        ).firstMatch
+        XCTAssertTrue(
+            chatLoaded.waitForExistence(timeout: 120),
+            "The selected chat model did not load automatically."
+        )
+        XCTAssertEqual(
+            chatLoaded.value as? String,
+            selectedChatModelID,
+            "The normal relaunch loaded a different chat model than the persisted selection."
+        )
+
+        let embeddingLoaded = app.staticTexts.matching(
+            NSPredicate(format: "identifier == %@ AND label == %@", "models.embeddingRuntimeStatus", "Loaded")
+        ).firstMatch
+        XCTAssertTrue(
+            embeddingLoaded.waitForExistence(timeout: 120),
+            "The selected embedding model did not load automatically."
+        )
+        XCTAssertEqual(
+            embeddingLoaded.value as? String,
+            selectedEmbeddingModelID,
+            "The normal relaunch loaded a different embedding model than the persisted selection."
+        )
+        #endif
+    }
+
+    @MainActor
     func testDeveloperFeaturesRealTimeDashboard() throws {
         let formatter = ISO8601DateFormatter()
         let runStart = Date()
@@ -216,8 +275,13 @@ final class LumenUITests: XCTestCase {
 
         recordStep("run_dashboard_visible") {
             try assertElement(app.staticTexts["Complete E2E Tests"].waitForExistence(timeout: 4), "Run dashboard was not visible.")
-            try assertElement(app.staticTexts["Standard"].exists, "Standard E2E card was not visible.")
-            try assertElement(app.staticTexts["Training"].exists, "Training E2E card was not visible.")
+            let standardCard = app.staticTexts["Standard"]
+            scrollToElement(standardCard)
+            try assertElement(standardCard.waitForExistence(timeout: 2), "Standard E2E card was not visible.")
+
+            let trainingCard = app.staticTexts["Training"]
+            scrollToElement(trainingCard)
+            try assertElement(trainingCard.waitForExistence(timeout: 2), "Training E2E card was not visible.")
         }
 
         recordStep("telemetry_tab_visible") {
@@ -322,7 +386,7 @@ final class LumenUITests: XCTestCase {
 
     @MainActor
     private func tapSettingsEntryIfAvailable() -> Bool {
-        let settingsRow = app.descendants(matching: .any)["root.settings"]
+        let settingsRow = app.buttons["root.settings"]
         if settingsRow.waitForExistence(timeout: 0.5) {
             tapElement(settingsRow)
             return app.navigationBars["Settings"].waitForExistence(timeout: 1)
@@ -348,7 +412,7 @@ final class LumenUITests: XCTestCase {
 
     @MainActor
     private func scrollToSettingsEntry(attempts: Int = 5) -> Bool {
-        let settingsRow = app.descendants(matching: .any)["root.settings"]
+        let settingsRow = app.buttons["root.settings"]
         for _ in 0..<attempts {
             app.swipeUp()
             if settingsRow.waitForExistence(timeout: 0.5) {
@@ -368,6 +432,31 @@ final class LumenUITests: XCTestCase {
         tapElement(console)
         XCTAssertTrue(waitForDeveloperConsole(), "Developer Console did not open.")
         ensureDeveloperRunDashboardVisible()
+    }
+
+    @MainActor
+    private func openModels() {
+        if app.navigationBars["Models"].waitForExistence(timeout: 1) {
+            return
+        }
+
+        for _ in 0..<4 {
+            for candidate in [app.buttons["root.models"], app.buttons["Models"], app.staticTexts["Models"]] {
+                if candidate.waitForExistence(timeout: 0.5) {
+                    tapElement(candidate)
+                    if app.navigationBars["Models"].waitForExistence(timeout: 2) {
+                        return
+                    }
+                }
+            }
+
+            let back = app.navigationBars.buttons.firstMatch
+            if back.waitForExistence(timeout: 0.5) {
+                tapElement(back)
+            }
+        }
+
+        XCTFail("Unable to navigate to Models")
     }
 
     @MainActor

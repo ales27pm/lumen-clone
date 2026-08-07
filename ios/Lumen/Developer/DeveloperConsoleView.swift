@@ -678,7 +678,11 @@ private struct DeveloperPrivacySection: View {
         VStack(alignment: .leading, spacing: 14) {
             DeveloperSectionHeader(title: "Privacy Boundaries", subtitle: "Keep runtime exports useful without weakening local-first policy.")
             VStack(spacing: 10) {
-                DeveloperPrivacyRow(title: "Local-only mode", value: snapshot?.privacy.localOnlyMode == true ? "Enabled" : "Review", systemImage: "lock.shield")
+                DeveloperPrivacyRow(
+                    title: "Network tools",
+                    value: snapshot?.privacy.networkToolsEnabled.map { $0 ? "Enabled" : "Disabled" } ?? "Unknown",
+                    systemImage: "network.badge.shield.half.filled"
+                )
                 DeveloperPrivacyRow(title: "Network access", value: snapshot?.privacy.networkAccessState ?? "cached", systemImage: "network")
                 DeveloperPrivacyRow(title: "Tool categories", value: snapshot?.privacy.recentToolCategories.joined(separator: ", ") ?? "none", systemImage: "wrench.and.screwdriver")
                 ForEach(snapshot?.privacy.appIntentLimitations ?? ["Sensitive actions require open-app approval"], id: \.self) { limitation in
@@ -724,7 +728,7 @@ private struct DeveloperSurfaceGrid: View {
             NavigationLink {
                 DeveloperRuntimeDestination()
             } label: {
-                DeveloperSurfaceTile(title: "Runtime", subtitle: "Meters", systemImage: "gauge.with.dots.needle.50percent", tint: .purple)
+                DeveloperSurfaceTile(title: "Runtime", subtitle: "Persistent diagnostics", systemImage: "gauge.with.dots.needle.50percent", tint: .purple)
             }
             .accessibilityIdentifier("developerConsole.surface.runtime")
         }
@@ -733,32 +737,14 @@ private struct DeveloperSurfaceGrid: View {
 }
 
 private struct DeveloperGroundingDestination: View {
-    @State private var model = DeveloperConsoleModel()
-
     var body: some View {
-        Group {
-            if let grounding = model.diagnosticsSnapshot?.grounding {
-                GroundingDiagnosticsView(grounding: grounding)
-            } else {
-                ContentUnavailableView("Grounding unavailable", systemImage: "point.3.connected.trianglepath.dotted")
-            }
-        }
-        .task { model.loadCachedDiagnostics() }
+        AgentGroundingAuditView(registryProvider: LiveRuntimeToolRegistryProvider())
     }
 }
 
 private struct DeveloperRuntimeDestination: View {
-    @State private var model = DeveloperConsoleModel()
-
     var body: some View {
-        Group {
-            if let runtime = model.diagnosticsSnapshot?.runtime {
-                RuntimeDashboardView(runtime: runtime)
-            } else {
-                ContentUnavailableView("Runtime unavailable", systemImage: "gauge.with.dots.needle.50percent")
-            }
-        }
-        .task { model.loadCachedDiagnostics() }
+        PersistentRuntimeDiagnosticsView()
     }
 }
 

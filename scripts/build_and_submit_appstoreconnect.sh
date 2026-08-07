@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="$REPO_ROOT/.local"
 CONFIG_FILE="$CONFIG_DIR/appstoreconnect-upload.env"
 STABLE_ARCHIVE_SCRIPT="$REPO_ROOT/scripts/archive_lumen_stable.sh"
+PROJECT_FILE="$REPO_ROOT/ios/Lumen.xcodeproj/project.pbxproj"
 
 bold() { printf "\033[1m%s\033[0m\n" "$1"; }
 info() { printf "\n➡️  %s\n" "$1"; }
@@ -209,6 +210,50 @@ is_distribution_export() {
   esac
 }
 
+next_local_release_build_number() {
+  python3 - "$PROJECT_FILE" <<'PY'
+from __future__ import annotations
+
+import datetime
+import re
+import sys
+from pathlib import Path
+
+project_file = Path(sys.argv[1])
+text = project_file.read_text(encoding="utf-8")
+versions = [int(value) for value in re.findall(r"\bCURRENT_PROJECT_VERSION = ([0-9]+);", text)]
+if not versions:
+    raise SystemExit(f"error: no numeric CURRENT_PROJECT_VERSION found in {project_file}")
+timestamp = int(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S"))
+print(max(timestamp, max(versions) + 1))
+PY
+}
+
+validate_release_build_number() {
+  local candidate="$1"
+  python3 - "$PROJECT_FILE" "$candidate" <<'PY'
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+project_file = Path(sys.argv[1])
+candidate = sys.argv[2]
+if not candidate.isdigit():
+    raise SystemExit("error: release build number must contain decimal digits only")
+text = project_file.read_text(encoding="utf-8")
+versions = [int(value) for value in re.findall(r"\bCURRENT_PROJECT_VERSION = ([0-9]+);", text)]
+if not versions:
+    raise SystemExit(f"error: no numeric CURRENT_PROJECT_VERSION found in {project_file}")
+current = max(versions)
+if int(candidate) <= current:
+    raise SystemExit(
+        f"error: release build number {candidate} must be greater than the checked-in build number {current}"
+    )
+PY
+}
+
 write_export_options_plist() {
   local plist_path="$1"
   local export_method="$2"
@@ -245,6 +290,141 @@ PLIST
 PLIST
 }
 
+UPLOAD_SUCCESS_PATTERN='^[[:space:]]*(UPLOAD SUCCEEDED with no errors[.]?|No errors uploading archive at .+[.])[[:space:]]*$'
+UPLOAD_ERROR_PATTERN='(^|[^[:alnum:]_])(error|failed to upload|upload failed|unable to upload|entity_error|state_error|validation_error|validation errors?|asset validation failed|must be higher than|already been used|duplicate build)([^[:alnum:]_]|$)'
+DELIVERY_UUID_PATTERN='^[[:space:]]*Delivery UUID:[[:space:]]*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[[:space:]]*$'
+
+upload_log_has_success_marker() {
+  local log_path="$1"
+  LC_ALL=C grep -Eq "$UPLOAD_SUCCESS_PATTERN" "$log_path"
+}
+
+upload_log_has_error_pattern() {
+  local log_path="$1"
+  LC_ALL=C grep -Eiq "$UPLOAD_ERROR_PATTERN" "$log_path"
+}
+
+delivery_uuid_from_upload_log() {
+  local log_path="$1"
+  local delivery_lines
+  local delivery_line_count
+
+  delivery_lines="$(LC_ALL=C grep -Ei "$DELIVERY_UUID_PATTERN" "$log_path" || true)"
+  delivery_line_count="$(printf '%s\n' "$delivery_lines" | awk 'NF { count += 1 } END { print count + 0 }')"
+  [[ "$delivery_line_count" -eq 1 ]] || return 1
+  printf '%s\n' "$delivery_lines" | awk 'NF { print $NF; exit }'
+}
+
+validate_upload_result() {
+  local upload_status="$1"
+  local log_path="$2"
+  local delivery_uuid
+
+  if [[ ! "$upload_status" =~ ^[0-9]+$ ]] || [[ "$upload_status" -ne 0 ]]; then
+    printf 'Upload result rejected: uploader exit status was %s.\n' "$upload_status" >&2
+    return 1
+  fi
+  if [[ ! -f "$log_path" ]]; then
+    printf 'Upload result rejected: upload log is missing: %s\n' "$log_path" >&2
+    return 1
+  fi
+  if upload_log_has_error_pattern "$log_path"; then
+    printf 'Upload result rejected: upload log contains an error pattern.\n' >&2
+    return 1
+  fi
+  if ! upload_log_has_success_marker "$log_path"; then
+    printf 'Upload result rejected: unambiguous success marker is missing.\n' >&2
+    return 1
+  fi
+  if ! delivery_uuid="$(delivery_uuid_from_upload_log "$log_path")"; then
+    printf 'Upload result rejected: expected exactly one Delivery UUID.\n' >&2
+    return 1
+  fi
+
+  printf '%s\n' "$delivery_uuid"
+}
+
+write_upload_result_fixture() {
+  local fixture_path="$1"
+  local fixture_text="$2"
+  printf '%s\n' "$fixture_text" > "$fixture_path"
+}
+
+assert_upload_result_accepted() {
+  local fixture_name="$1"
+  local upload_status="$2"
+  local fixture_text="$3"
+  local expected_uuid="$4"
+  local fixture_path="$UPLOAD_RESULT_SELF_CHECK_DIR/$fixture_name.log"
+  local actual_uuid
+
+  write_upload_result_fixture "$fixture_path" "$fixture_text"
+  if ! actual_uuid="$(validate_upload_result "$upload_status" "$fixture_path" 2>/dev/null)"; then
+    printf 'Upload-result self-check failed: expected acceptance for %s.\n' "$fixture_name" >&2
+    return 1
+  fi
+  if [[ "$actual_uuid" != "$expected_uuid" ]]; then
+    printf 'Upload-result self-check failed: wrong Delivery UUID for %s.\n' "$fixture_name" >&2
+    return 1
+  fi
+}
+
+assert_upload_result_rejected() {
+  local fixture_name="$1"
+  local upload_status="$2"
+  local fixture_text="$3"
+  local fixture_path="$UPLOAD_RESULT_SELF_CHECK_DIR/$fixture_name.log"
+
+  write_upload_result_fixture "$fixture_path" "$fixture_text"
+  if validate_upload_result "$upload_status" "$fixture_path" >/dev/null 2>&1; then
+    printf 'Upload-result self-check failed: expected rejection for %s.\n' "$fixture_name" >&2
+    return 1
+  fi
+}
+
+run_upload_result_parser_self_check() {
+  local delivery_uuid='58259589-1b30-4ff4-b5e4-ec40cc8f1caf'
+  local second_delivery_uuid='11111111-2222-4333-8444-555555555555'
+  UPLOAD_RESULT_SELF_CHECK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lumen-upload-result.XXXXXX")"
+  trap 'rm -rf -- "$UPLOAD_RESULT_SELF_CHECK_DIR"' EXIT
+
+  assert_upload_result_accepted \
+    canonical-success \
+    0 \
+    $'UPLOAD SUCCEEDED with no errors\nDelivery UUID: '"$delivery_uuid"$'\nNo errors uploading archive at '\''Lumen.ipa'\''.' \
+    "$delivery_uuid"
+  assert_upload_result_accepted \
+    alternate-success \
+    0 \
+    $'Delivery UUID: '"$delivery_uuid"$'\nNo errors uploading archive at '\''Lumen.ipa'\''.' \
+    "$delivery_uuid"
+  assert_upload_result_rejected nonzero-status 1 $'UPLOAD SUCCEEDED with no errors\nDelivery UUID: '"$delivery_uuid"
+  assert_upload_result_rejected missing-marker 0 $'Delivery UUID: '"$delivery_uuid"
+  assert_upload_result_rejected missing-delivery-uuid 0 'UPLOAD SUCCEEDED with no errors'
+  assert_upload_result_rejected embedded-marker 0 $'status: UPLOAD SUCCEEDED with no errors (cached)\nDelivery UUID: '"$delivery_uuid"
+  assert_upload_result_rejected conflicting-error 0 $'UPLOAD SUCCEEDED with no errors\nDelivery UUID: '"$delivery_uuid"$'\nERROR: Asset validation failed.'
+  assert_upload_result_rejected multiple-delivery-uuids 0 $'UPLOAD SUCCEEDED with no errors\nDelivery UUID: '"$delivery_uuid"$'\nDelivery UUID: '"$second_delivery_uuid"
+
+  printf 'Upload-result parser self-check passed.\n'
+}
+
+if [[ "${1:-}" == "--self-check-upload-result-parser" ]]; then
+  run_upload_result_parser_self_check
+  exit 0
+fi
+
+if [[ "${1:-}" == "--print-next-build-number" ]]; then
+  next_local_release_build_number
+  exit 0
+fi
+
+if [[ "${1:-}" == "--validate-release-build-number" ]]; then
+  [[ -n "${2:-}" ]] || fail "--validate-release-build-number requires a candidate value."
+  validate_release_build_number "$2" || exit $?
+  printf 'Release build number %s passes local monotonicity validation.\n' "$2"
+  exit 0
+fi
+
 [[ "$(uname -s)" == "Darwin" ]] || fail "This script must run on macOS."
 cd "$REPO_ROOT"
 load_local_config
@@ -267,10 +447,16 @@ PROJECT_PATH="$(read_with_default 'Project/workspace path' "$DEFAULT_PROJECT_PAT
 
 SCHEME="$(read_with_default 'Scheme' "$DEFAULT_SCHEME")"
 CONFIGURATION="$(read_with_default 'Configuration' "$DEFAULT_CONFIGURATION")"
+DEFAULT_BUILD_NUMBER="${LUMEN_IOS_CURRENT_PROJECT_VERSION:-$(next_local_release_build_number)}"
+BUILD_NUMBER="$(read_with_default 'Release build number (CFBundleVersion)' "$DEFAULT_BUILD_NUMBER")"
+validate_release_build_number "$BUILD_NUMBER" || fail "Choose a new build number before archiving."
 TEAM_ID="$(read_with_default 'Apple Developer Team ID' "$DEFAULT_TEAM_ID")"
 
 EXPORT_METHOD_INPUT="$(read_with_default 'Export method' "$DEFAULT_EXPORT_METHOD")"
 EXPORT_METHOD="$(normalize_export_method "$EXPORT_METHOD_INPUT")" || fail "Unsupported export method: $EXPORT_METHOD_INPUT"
+if is_distribution_export "$EXPORT_METHOD" && [[ "$CONFIGURATION" != "Release" ]]; then
+  fail "Distribution export method '$EXPORT_METHOD' requires the Release configuration; received '$CONFIGURATION'."
+fi
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 SCHEME_SAFE="${SCHEME//[^A-Za-z0-9_.-]/_}"
@@ -343,6 +529,7 @@ ARCHIVE_ENV=(
   "LUMEN_IOS_PROJECT_PATH=$PROJECT_PATH"
   "LUMEN_IOS_SCHEME=$SCHEME"
   "LUMEN_IOS_CONFIGURATION=$CONFIGURATION"
+  "LUMEN_IOS_CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
   "LUMEN_GIT_SHA=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
   "LUMEN_IOS_ALLOW_PROVISIONING_UPDATES=1"
   "LUMEN_IOS_CODE_SIGN_STYLE=Automatic"
@@ -360,10 +547,15 @@ fi
 env "${ARCHIVE_ENV[@]}" bash "$STABLE_ARCHIVE_SCRIPT"
 
 info "Verify archived app Info.plist"
-python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$ARCHIVE_PATH"
+python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" \
+  "$ARCHIVE_PATH" \
+  --expected-bundle-version "$BUILD_NUMBER" \
+  --expected-build-configuration "$CONFIGURATION"
 
 info "Verify archived app signed entitlements"
-python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" --signed-app-path "$ARCHIVE_PATH"
+python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
+  --signing-stage archive \
+  --signed-app-path "$ARCHIVE_PATH"
 
 info "Export IPA"
 run_logged "$EXPORT_LOG" \
@@ -379,10 +571,15 @@ IPA_PATH="$("$FIND_BIN" "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' -print -
 [[ -n "$IPA_PATH" ]] || fail "No IPA found in $EXPORT_DIR"
 
 info "Verify exported IPA Info.plist"
-python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$IPA_PATH"
+python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" \
+  "$IPA_PATH" \
+  --expected-bundle-version "$BUILD_NUMBER" \
+  --expected-build-configuration "$CONFIGURATION"
 
 info "Verify exported IPA signed entitlements"
-python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" --signed-app-path "$IPA_PATH"
+python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
+  --signing-stage app-store \
+  --signed-app-path "$IPA_PATH"
 
 bold "Built IPA: $IPA_PATH"
 if [[ -z "$UPLOAD_AFTER_BUILD" ]]; then
@@ -416,11 +613,10 @@ set +e
 upload_status=${PIPESTATUS[0]}
 set -e
 
-if rg -q 'UPLOAD SUCCEEDED with no errors|No errors uploading archive' "$UPLOAD_LOG"; then
-  :
-elif [[ "$upload_status" -ne 0 ]] || rg -q 'ERROR:|Failed to upload|ENTITY_ERROR|must be higher than|validation errors' "$UPLOAD_LOG"; then
+if ! delivery_uuid="$(validate_upload_result "$upload_status" "$UPLOAD_LOG")"; then
   unset APP_SPECIFIC_PASSWORD || true
   fail "Upload failed. Full upload log: $UPLOAD_LOG"
 fi
 unset APP_SPECIFIC_PASSWORD || true
-bold "✅ Upload complete. Check App Store Connect for processing status."
+bold "✅ Upload complete. Delivery UUID: $delivery_uuid"
+info "Check App Store Connect for processing status."

@@ -6,6 +6,8 @@ from __future__ import annotations
 import pathlib
 import re
 import sys
+from dataclasses import dataclass
+from enum import Enum, auto
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE_ROOTS = [ROOT / "ios" / "Lumen"]
@@ -53,6 +55,17 @@ DEBUG_ONLY_PATTERNS = {
     "legacy compatibility bridge call": re.compile(r"\bLegacyAgentCompatibilityBridge\.(runLegacyAgentService|runSlotAgentKernelCompatibility|runSlotAgentCompatibility)\b"),
     "unavailable gguf bridge construction": re.compile(r"\bUnavailableGGUFNativeBridge\s*\("),
     "developer trace raw encoding": re.compile(r"\bencoder\.encode\s*\(\s*trace\s*\)"),
+    "receipt-based debug authorization": re.compile(
+        r"\bappStoreReceiptURL\b|\.lastPathComponent\s*==\s*\"sandboxReceipt\""
+    ),
+    "Microsoft Graph runtime client-ID override": re.compile(
+        r"\bMicrosoftGraphRuntimeConfig\b|\bMSALClientIDOverride\b"
+    ),
+    "Microsoft Graph debug editor surface": re.compile(
+        r"\b(?:microsoftClientID|debugClientIDEditor|debugConfigurationSection|defaultRedirectURI)\b"
+        r"|\"(?:Debug configuration|Microsoft Entra client ID|Enter app client ID|Use this client ID|"
+        r"Effective client ID:|Effective redirect URI:|Effective authority URL:)"
+    ),
 }
 
 UNSAFE_DIAGNOSTIC_PATTERNS = {
@@ -237,10 +250,271 @@ MODEL_CATALOG_RELEASE_FILES = {
     "ios/Lumen/Services/ModelFleetCatalog.swift",
 }
 
+MODEL_CATALOG_CONTRACT_FILE = "ios/Lumen/Services/ModelAdapterRuntimeContract.swift"
+MODEL_FAMILY_SELECTION_FILE = "ios/Lumen/Services/ModelFamilySelection.swift"
+MUTABLE_MODEL_RESOLUTION_PATTERN = re.compile(r"\bresolve/main\b", re.IGNORECASE)
+IMMUTABLE_REVISION_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
+SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
+SAFE_MODEL_PATH_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9_.~-]+$")
+
 DETERMINISTIC_COMPATIBILITY_EXECUTION_FILES = {
     "ios/Lumen/Services/AgentService.swift",
     "ios/Lumen/Services/SlotAgentService.swift",
 }
+
+
+@dataclass(frozen=True)
+class _SwiftCallBlock:
+    line_number: int
+    text: str
+
+
+def _swift_call_blocks(text: str, callee: str) -> list[_SwiftCallBlock]:
+    """Return balanced Swift call expressions while ignoring strings/comments."""
+    blocks: list[_SwiftCallBlock] = []
+    pattern = re.compile(rf"\b{re.escape(callee)}\s*\(")
+    for match in pattern.finditer(text):
+        opening = text.find("(", match.start(), match.end())
+        if opening < 0:
+            continue
+        depth = 0
+        index = opening
+        in_string = False
+        escaped = False
+        line_comment = False
+        block_comment_depth = 0
+        while index < len(text):
+            character = text[index]
+            following = text[index + 1] if index + 1 < len(text) else ""
+            if line_comment:
+                if character == "\n":
+                    line_comment = False
+                index += 1
+                continue
+            if block_comment_depth:
+                if character == "/" and following == "*":
+                    block_comment_depth += 1
+                    index += 2
+                    continue
+                if character == "*" and following == "/":
+                    block_comment_depth -= 1
+                    index += 2
+                    continue
+                index += 1
+                continue
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                index += 1
+                continue
+            if character == "/" and following == "/":
+                line_comment = True
+                index += 2
+                continue
+            if character == "/" and following == "*":
+                block_comment_depth = 1
+                index += 2
+                continue
+            if character == '"':
+                in_string = True
+                index += 1
+                continue
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    blocks.append(
+                        _SwiftCallBlock(
+                            line_number=text.count("\n", 0, match.start()) + 1,
+                            text=text[match.start() : index + 1],
+                        )
+                    )
+                    break
+            index += 1
+    return blocks
+
+
+def _swift_literal_argument(block: str, name: str) -> str | None:
+    match = re.search(
+        rf'\b{re.escape(name)}\s*:\s*"((?:\\.|[^"\\])*)"',
+        block,
+    )
+    return match.group(1) if match else None
+
+
+def _swift_has_argument(block: str, name: str) -> bool:
+    return re.search(rf"\b{re.escape(name)}\s*:", block) is not None
+
+
+def _swift_nil_argument(block: str, name: str) -> bool:
+    return re.search(rf"\b{re.escape(name)}\s*:\s*nil\b", block) is not None
+
+
+def _is_safe_model_basename(value: str) -> bool:
+    return (
+        bool(value)
+        and value == value.strip()
+        and value not in {".", ".."}
+        and "/" not in value
+        and "\\" not in value
+        and SAFE_MODEL_PATH_COMPONENT_PATTERN.fullmatch(value) is not None
+    )
+
+
+def _is_safe_model_source_path(value: str) -> bool:
+    if not value or value != value.strip() or "\\" in value:
+        return False
+    components = value.split("/")
+    return all(
+        component not in {"", ".", ".."}
+        and SAFE_MODEL_PATH_COMPONENT_PATTERN.fullmatch(component) is not None
+        for component in components
+    )
+
+
+def _model_pin_violation(
+    relative: str,
+    line_number: int,
+    field: str,
+    value: str | None,
+    pattern: re.Pattern[str],
+) -> str | None:
+    if value is not None and pattern.fullmatch(value):
+        return None
+    expected = "40-character commit hash" if pattern is IMMUTABLE_REVISION_PATTERN else "64-character SHA-256"
+    rendered = value if value is not None else "missing or non-literal"
+    return (
+        f"{relative}:{line_number}: selectable model {field} must be an immutable {expected}; "
+        f"found {rendered!r}"
+    )
+
+
+def _scan_model_catalog_contract(relative: str, text: str) -> list[str]:
+    violations: list[str] = []
+    destination_file_names: list[tuple[str, int]] = []
+
+    if relative == MODEL_FAMILY_SELECTION_FILE:
+        for block in _swift_call_blocks(text, "CatalogModel"):
+            for field in ("sourceRevision", "expectedSHA256"):
+                if not _swift_has_argument(block.text, field):
+                    violations.append(
+                        f"{relative}:{block.line_number}: selectable CatalogModel must provide {field}"
+                    )
+        return violations
+
+    if relative != MODEL_CATALOG_CONTRACT_FILE:
+        return violations
+
+    for block in _swift_call_blocks(text, "LumenTrainedModelRuntimeContract"):
+        shared_file_name = _swift_literal_argument(block.text, "sharedBaseFileName")
+        if shared_file_name is None or not _is_safe_model_basename(shared_file_name):
+            violations.append(
+                f"{relative}:{block.line_number}: selectable shared-base fileName must be one safe basename"
+            )
+        else:
+            destination_file_names.append((shared_file_name, block.line_number))
+
+        for field, pattern in (
+            ("sharedBaseSourceRevision", IMMUTABLE_REVISION_PATTERN),
+            ("sharedBaseExpectedSHA256", SHA256_PATTERN),
+        ):
+            violation = _model_pin_violation(
+                relative,
+                block.line_number,
+                field,
+                _swift_literal_argument(block.text, field),
+                pattern,
+            )
+            if violation:
+                violations.append(violation)
+
+        if not _swift_has_argument(block.text, "embeddingRepoID"):
+            violations.append(
+                f"{relative}:{block.line_number}: selectable runtime contract must declare embeddingRepoID explicitly"
+            )
+        elif not _swift_nil_argument(block.text, "embeddingRepoID"):
+            embedding_file_name = _swift_literal_argument(block.text, "embeddingFileName")
+            if embedding_file_name is None or not _is_safe_model_basename(embedding_file_name):
+                violations.append(
+                    f"{relative}:{block.line_number}: selectable embedding fileName must be one safe basename"
+                )
+            else:
+                destination_file_names.append((embedding_file_name, block.line_number))
+            for field, pattern in (
+                ("embeddingSourceRevision", IMMUTABLE_REVISION_PATTERN),
+                ("embeddingExpectedSHA256", SHA256_PATTERN),
+            ):
+                violation = _model_pin_violation(
+                    relative,
+                    block.line_number,
+                    field,
+                    _swift_literal_argument(block.text, field),
+                    pattern,
+                )
+                if violation:
+                    violations.append(violation)
+
+    for block in _swift_call_blocks(text, "LumenAdapterRoleContract"):
+        adapter_file_name = _swift_literal_argument(block.text, "adapterFileName")
+        if adapter_file_name is None or not _is_safe_model_basename(adapter_file_name):
+            violations.append(
+                f"{relative}:{block.line_number}: selectable adapter fileName must be one safe basename"
+            )
+        else:
+            destination_file_names.append((adapter_file_name, block.line_number))
+
+        for field, pattern in (
+            ("adapterSourceRevision", IMMUTABLE_REVISION_PATTERN),
+            ("adapterExpectedSHA256", SHA256_PATTERN),
+        ):
+            violation = _model_pin_violation(
+                relative,
+                block.line_number,
+                field,
+                _swift_literal_argument(block.text, field),
+                pattern,
+            )
+            if violation:
+                violations.append(violation)
+
+        literal_source_path = _swift_literal_argument(block.text, "adapterSourcePath")
+        if literal_source_path is not None:
+            if not _is_safe_model_source_path(literal_source_path):
+                violations.append(
+                    f"{relative}:{block.line_number}: selectable adapter sourcePath contains an unsafe component"
+                )
+        else:
+            helper_match = re.search(
+                r'\badapterSourcePath\s*:\s*qwen3AdapterSourcePath\s*\(\s*"([^"\\]+)"\s*\)',
+                block.text,
+            )
+            if (
+                helper_match is None
+                or adapter_file_name is None
+                or helper_match.group(1) != adapter_file_name
+            ):
+                violations.append(
+                    f"{relative}:{block.line_number}: selectable adapter sourcePath must be a safe literal or use the validated destination fileName"
+                )
+
+    seen_file_names: dict[str, tuple[str, int]] = {}
+    for file_name, line_number in destination_file_names:
+        key = file_name.casefold()
+        if key in seen_file_names:
+            prior_name, prior_line = seen_file_names[key]
+            violations.append(
+                f"{relative}:{line_number}: selectable destination fileName {file_name!r} duplicates "
+                f"{prior_name!r} from line {prior_line}"
+            )
+        else:
+            seen_file_names[key] = (file_name, line_number)
+
+    return violations
 
 
 def rel(path: pathlib.Path) -> str:
@@ -257,41 +531,214 @@ def iter_files(roots: list[pathlib.Path], suffixes: tuple[str, ...]) -> list[pat
     return sorted(files)
 
 
-def _condition_contains_debug(directive: str) -> bool:
-    condition = re.sub(r"//.*$", "", directive)
-    for match in re.finditer(r"\bDEBUG\b", condition):
-        prefix = condition[: match.start()].rstrip()
-        while True:
-            normalized = prefix
-            while normalized.endswith("("):
-                normalized = normalized[:-1].rstrip()
-            normalized = re.sub(r"\bdefined\s*$", "", normalized).rstrip()
-            if normalized == prefix:
-                break
-            prefix = normalized
-        if not prefix.endswith("!"):
-            return True
-    return False
+class _ReleaseTruth(Enum):
+    FALSE = auto()
+    TRUE = auto()
+    UNKNOWN = auto()
+
+
+def _release_not(value: _ReleaseTruth) -> _ReleaseTruth:
+    if value is _ReleaseTruth.FALSE:
+        return _ReleaseTruth.TRUE
+    if value is _ReleaseTruth.TRUE:
+        return _ReleaseTruth.FALSE
+    return _ReleaseTruth.UNKNOWN
+
+
+def _release_and(left: _ReleaseTruth, right: _ReleaseTruth) -> _ReleaseTruth:
+    if _ReleaseTruth.FALSE in {left, right}:
+        return _ReleaseTruth.FALSE
+    if left is _ReleaseTruth.TRUE and right is _ReleaseTruth.TRUE:
+        return _ReleaseTruth.TRUE
+    return _ReleaseTruth.UNKNOWN
+
+
+def _release_or(left: _ReleaseTruth, right: _ReleaseTruth) -> _ReleaseTruth:
+    if _ReleaseTruth.TRUE in {left, right}:
+        return _ReleaseTruth.TRUE
+    if left is _ReleaseTruth.FALSE and right is _ReleaseTruth.FALSE:
+        return _ReleaseTruth.FALSE
+    return _ReleaseTruth.UNKNOWN
+
+
+class _ReleaseConditionParser:
+    """Evaluate a Swift compilation condition with DEBUG fixed to false.
+
+    Platform checks and custom compilation flags remain unknown. The caller only
+    treats a branch as debug-only when this evaluator can prove that its
+    condition is false in Release; parse failures therefore fail open to
+    UNKNOWN/release-reachable rather than hiding source from the guard.
+    """
+
+    TOKEN_PATTERN = re.compile(r"&&|\|\||==|!=|!|\(|\)|[A-Za-z_][A-Za-z0-9_]*|\S")
+
+    def __init__(self, expression: str) -> None:
+        self.tokens = self.TOKEN_PATTERN.findall(expression)
+        self.index = 0
+        self.valid = True
+
+    def parse(self) -> _ReleaseTruth:
+        if not self.tokens:
+            return _ReleaseTruth.UNKNOWN
+        value = self._parse_or()
+        if not self.valid or self.index != len(self.tokens):
+            return _ReleaseTruth.UNKNOWN
+        return value
+
+    def _peek(self) -> str | None:
+        if self.index >= len(self.tokens):
+            return None
+        return self.tokens[self.index]
+
+    def _accept(self, token: str) -> bool:
+        if self._peek() != token:
+            return False
+        self.index += 1
+        return True
+
+    def _parse_or(self) -> _ReleaseTruth:
+        value = self._parse_and()
+        while self._accept("||"):
+            value = _release_or(value, self._parse_and())
+        return value
+
+    def _parse_and(self) -> _ReleaseTruth:
+        value = self._parse_equality()
+        while self._accept("&&"):
+            value = _release_and(value, self._parse_equality())
+        return value
+
+    def _parse_equality(self) -> _ReleaseTruth:
+        value = self._parse_unary()
+        while self._peek() in {"==", "!="}:
+            operator = self._peek()
+            self.index += 1
+            right = self._parse_unary()
+            if _ReleaseTruth.UNKNOWN in {value, right}:
+                value = _ReleaseTruth.UNKNOWN
+            else:
+                equal = value is right
+                value = _ReleaseTruth.TRUE if equal else _ReleaseTruth.FALSE
+                if operator == "!=":
+                    value = _release_not(value)
+        return value
+
+    def _parse_unary(self) -> _ReleaseTruth:
+        if self._accept("!"):
+            return _release_not(self._parse_unary())
+        return self._parse_primary()
+
+    def _parse_primary(self) -> _ReleaseTruth:
+        if self._accept("("):
+            value = self._parse_or()
+            if not self._accept(")"):
+                self.valid = False
+            return value
+
+        token = self._peek()
+        if token is None:
+            self.valid = False
+            return _ReleaseTruth.UNKNOWN
+        self.index += 1
+
+        if token == "DEBUG":
+            return _ReleaseTruth.FALSE
+        if token == "true":
+            return _ReleaseTruth.TRUE
+        if token == "false":
+            return _ReleaseTruth.FALSE
+        if token == "defined":
+            return self._parse_defined()
+
+        if self._accept("("):
+            self._consume_call_arguments()
+        return _ReleaseTruth.UNKNOWN
+
+    def _parse_defined(self) -> _ReleaseTruth:
+        parenthesized = self._accept("(")
+        flag = self._peek()
+        if flag is None:
+            self.valid = False
+            return _ReleaseTruth.UNKNOWN
+        self.index += 1
+        if parenthesized and not self._accept(")"):
+            self.valid = False
+            return _ReleaseTruth.UNKNOWN
+        return _ReleaseTruth.FALSE if flag == "DEBUG" else _ReleaseTruth.UNKNOWN
+
+    def _consume_call_arguments(self) -> None:
+        depth = 1
+        while self.index < len(self.tokens) and depth > 0:
+            token = self.tokens[self.index]
+            self.index += 1
+            if token == "(":
+                depth += 1
+            elif token == ")":
+                depth -= 1
+        if depth != 0:
+            self.valid = False
+
+
+def _release_condition_truth(directive: str) -> _ReleaseTruth:
+    condition = re.sub(r"//.*$", "", directive, count=1)
+    condition = re.sub(r"^#(?:if|elseif)\b", "", condition, count=1).strip()
+    return _ReleaseConditionParser(condition).parse()
 
 
 def _is_else_directive(stripped: str) -> bool:
     return re.match(r"^#else(?:\s|//|$)", stripped) is not None
 
 
+@dataclass
+class _ConditionalFrame:
+    parent_release_reachable: bool
+    prior_branch_definitely_true: bool
+    current_release_reachable: bool
+    saw_else: bool = False
+
+
 def debug_stack_for_lines(lines: list[str]) -> list[bool]:
-    stack: list[bool] = []
+    stack: list[_ConditionalFrame] = []
     states: list[bool] = []
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("#if"):
-            stack.append(_condition_contains_debug(stripped))
-        elif stripped.startswith("#elseif") and stack:
-            stack[-1] = _condition_contains_debug(stripped)
+        if re.match(r"^#if\b", stripped):
+            truth = _release_condition_truth(stripped)
+            parent_release_reachable = (
+                stack[-1].current_release_reachable if stack else True
+            )
+            stack.append(
+                _ConditionalFrame(
+                    parent_release_reachable=parent_release_reachable,
+                    prior_branch_definitely_true=truth is _ReleaseTruth.TRUE,
+                    current_release_reachable=(
+                        parent_release_reachable and truth is not _ReleaseTruth.FALSE
+                    ),
+                )
+            )
+        elif re.match(r"^#elseif\b", stripped) and stack:
+            frame = stack[-1]
+            truth = _release_condition_truth(stripped)
+            frame.current_release_reachable = (
+                frame.parent_release_reachable
+                and not frame.prior_branch_definitely_true
+                and truth is not _ReleaseTruth.FALSE
+            )
+            frame.prior_branch_definitely_true = (
+                frame.prior_branch_definitely_true or truth is _ReleaseTruth.TRUE
+            )
         elif _is_else_directive(stripped) and stack:
-            stack[-1] = not stack[-1]
+            frame = stack[-1]
+            frame.current_release_reachable = (
+                frame.parent_release_reachable
+                and not frame.prior_branch_definitely_true
+                and not frame.saw_else
+            )
+            frame.prior_branch_definitely_true = True
+            frame.saw_else = True
         elif stripped.startswith("#endif") and stack:
             stack.pop()
-        states.append(any(stack))
+        states.append(bool(stack) and not stack[-1].current_release_reachable)
     return states
 
 
@@ -330,6 +777,10 @@ def scan_source() -> list[str]:
                 if pattern.search(line) and not debug_only:
                     violations.append(f"{relative}:{line_number}: {label} must be inside #if DEBUG: {line.strip()}")
             if not debug_only:
+                if MUTABLE_MODEL_RESOLUTION_PATTERN.search(line):
+                    violations.append(
+                        f"{relative}:{line_number}: mutable model resolve/main reference is forbidden in Release: {line.strip()}"
+                    )
                 for label, pattern in RELEASE_FORBIDDEN_SOURCE_PATTERNS.items():
                     if pattern.search(line):
                         violations.append(f"{relative}:{line_number}: {label}: {line.strip()}")
@@ -533,6 +984,7 @@ def scan_source() -> list[str]:
                 violations.append(
                     f"{relative}:{line_number}: raw deterministic compatibility flag in Release-compiled execution path; use allowsDeterministicCompatibilityExecution: {line.strip()}"
                 )
+        violations.extend(_scan_model_catalog_contract(relative, text))
     return violations
 
 

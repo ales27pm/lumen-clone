@@ -44,6 +44,35 @@ final class VoiceServiceAudioStartupTests: XCTestCase {
         XCTAssertTrue(VoiceService.shared.lastError?.contains("Voice input is unavailable") == true)
     }
 
+    func testUnsupportedOnDeviceRecognitionStopsBeforeAudioActivation() async {
+        let counters = AudioStartupCounters()
+        VoiceService.shared.configureAudioStartupForTests(Self.fakeStartup(snapshot: Self.validSnapshot(), counters: counters))
+        VoiceService.shared.configureOnDeviceSpeechReadinessForTests(.unsupportedLocale("zz-ZZ"))
+
+        let started = await VoiceService.shared.startListening(permissionsAlreadyGranted: true) { _ in }
+
+        XCTAssertFalse(started)
+        XCTAssertEqual(counters.activateAudioSessionCount, 0)
+        XCTAssertEqual(counters.installTapCount, 0)
+        XCTAssertEqual(counters.startEngineCount, 0)
+        XCTAssertEqual(
+            VoiceService.shared.lastError,
+            "On-device speech recognition is unavailable for the selected locale (zz-ZZ)."
+        )
+    }
+
+    func testOnDeviceRecognitionReadinessRejectsUnavailableRecognizer() {
+        XCTAssertEqual(
+            OnDeviceSpeechRecognitionReadiness.evaluate(
+                recognizerExists: true,
+                recognizerIsAvailable: false,
+                supportsOnDeviceRecognition: true,
+                localeIdentifier: "en-US"
+            ),
+            .recognizerUnavailable
+        )
+    }
+
     func testResetListeningStateDoesNotRemoveTapUnlessTapWasInstalled() {
         let counters = AudioStartupCounters()
         VoiceService.shared.configureAudioStartupForTests(Self.fakeStartup(snapshot: Self.validSnapshot(), counters: counters))
@@ -81,7 +110,10 @@ final class VoiceServiceAudioStartupTests: XCTestCase {
 
     private static func fakeStartup(snapshot: VoiceInputReadinessSnapshot, counters: AudioStartupCounters) -> VoiceAudioStartup {
         VoiceAudioStartup(
-            activateAudioSession: { .success },
+            activateAudioSession: {
+                counters.activateAudioSessionCount += 1
+                return .success
+            },
             inputReadinessSnapshot: { _ in snapshot },
             installInputTap: { _, _ in
                 counters.installTapCount += 1
@@ -122,6 +154,7 @@ final class VoiceServiceAudioStartupTests: XCTestCase {
 
 @MainActor
 private final class AudioStartupCounters {
+    var activateAudioSessionCount = 0
     var installTapCount = 0
     var startEngineCount = 0
     var stopEngineCount = 0

@@ -36,6 +36,18 @@ final class CarPlayVoiceSessionPolicyTests: XCTestCase {
         XCTAssertLessThanOrEqual(spoken.count, 40)
     }
 
+    func testSensitivePromptRequiresIPhoneHandoffBeforeCarPlayKernelRun() {
+        let message = CarPlayVoiceSessionPolicy.headlessDenialMessage(for: "search my photos for yesterday's receipt")
+
+        XCTAssertNotNil(message)
+        XCTAssertTrue(message?.contains("Open Lumen on iPhone") == true)
+        XCTAssertTrue(message?.contains("protected personal data") == true)
+    }
+
+    func testLocalQuestionMayRunOnCarPlay() {
+        XCTAssertNil(CarPlayVoiceSessionPolicy.headlessDenialMessage(for: "explain what a mutex is"))
+    }
+
     func testVoiceStateActivationPolicySkipsDuplicateState() {
         let decision = CarPlayVoiceStateActivationPolicy.decision(
             requestedStateID: "listening",

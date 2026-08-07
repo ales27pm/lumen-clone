@@ -114,7 +114,7 @@ nonisolated struct LumenModelSlotContract: Sendable, Hashable {
 
     static func runtimePathKind(for runtimePath: String) -> LumenRuntimePathKind {
         switch runtimePath {
-        case "sharedAdapter", "sharedAdapterLoadedContinuation", "legacySlot", "legacySlotLoadedContinuation", "loadedChatFallback", "agent-model":
+        case "sharedAdapter", "sharedAdapterLoadedContinuation", "legacySlot", "legacySlotLoadedContinuation", "agent-model":
             return .llamaGGUF
         case "coreML":
             return .coreML
@@ -169,18 +169,37 @@ nonisolated struct LumenModelSlotContract: Sendable, Hashable {
 nonisolated struct LumenModelAssignment: Sendable, Hashable {
     let slot: LumenModelSlot
     let modelID: UUID
+    let repoID: String
     let localPath: String
     let fileName: String
+    let sizeBytes: Int64
+    let expectedSHA256: String?
     let displayName: String
     let parameters: String
     let quantization: String
     let modelFamily: LumenModelFamily?
     let artifactKind: ModelRole
     let adapterID: UUID?
+    let adapterRepoID: String?
     let adapterPath: String?
     let adapterFileName: String?
+    let adapterSizeBytes: Int64?
+    let adapterExpectedSHA256: String?
     let adapterScale: Float
 
+    var expectedSharedBaseContract: LumenTrainedModelRuntimeContract? {
+        guard modelFamily == .qwen3 else { return nil }
+        return LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+    }
+    var configuredSharedBaseMatchesContract: Bool {
+        guard let expectedSharedBaseContract else { return false }
+        return expectedSharedBaseContract.matchesSharedBase(
+            repoID: repoID,
+            fileName: fileName,
+            sizeBytes: sizeBytes,
+            expectedSHA256: expectedSHA256
+        )
+    }
     var hasConfiguredRoleAdapter: Bool { adapterPath?.isEmpty == false }
     var usesRoleAdapter: Bool { artifactKind == .chat && hasConfiguredRoleAdapter }
     var expectedRoleAdapterContract: LumenAdapterRoleContract? {
@@ -193,6 +212,118 @@ nonisolated struct LumenModelAssignment: Sendable, Hashable {
     var expectedRoleAdapterFileName: String? { expectedRoleAdapterContract?.adapterFileName }
     var requiresRoleAdapterForRuntime: Bool {
         usesRoleAdapter || expectedRoleAdapterContract != nil
+    }
+
+    var configuredRoleAdapterMatchesContract: Bool {
+        guard let expected = expectedRoleAdapterContract,
+              let adapterRepoID,
+              let adapterFileName,
+              let adapterSizeBytes,
+              let adapterExpectedSHA256,
+              CatalogModel.isValidSHA256(expected.adapterExpectedSHA256)
+        else { return false }
+        return adapterRepoID == expected.adapterRepoID
+            && adapterFileName == expected.adapterFileName
+            && adapterSizeBytes == expected.adapterSizeBytes
+            && adapterExpectedSHA256.caseInsensitiveCompare(expected.adapterExpectedSHA256) == .orderedSame
+    }
+}
+
+nonisolated enum LumenModelSelectionPolicy {
+    enum Failure: LocalizedError, Equatable, Sendable {
+        case incompatibleChatModel(family: LumenModelFamily, expectedFileName: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .incompatibleChatModel(let family, let expectedFileName):
+                return "\(family.shortLabel) adapter mode can only activate its verified shared chat base (\(expectedFileName)). Switch model families before selecting this chat model."
+            }
+        }
+    }
+
+    static func trustedExpectedSHA256(
+        repoID: String,
+        fileName: String,
+        sizeBytes: Int64,
+        family: LumenModelFamily
+    ) -> String? {
+        switch family {
+        case .qwen25:
+            let expectedSHA256 = ModelCatalog.catalogModel(repoId: repoID, fileName: fileName)?.expectedSHA256
+            return expectedSHA256.flatMap { CatalogModel.isValidSHA256($0) ? $0 : nil }
+        case .qwen3:
+            let contract = LumenTrainedModelRuntimeRegistry.contract(for: family)
+            guard let catalog = ModelCatalog.catalogModel(repoId: repoID, fileName: fileName),
+                  catalog.role == .chat,
+                  catalog.repoId == contract.sharedBaseRepoID,
+                  catalog.fileName == contract.sharedBaseFileName,
+                  catalog.sizeBytes == contract.sharedBaseSizeBytes,
+                  contract.matchesSharedBase(
+                      repoID: repoID,
+                      fileName: fileName,
+                      sizeBytes: sizeBytes,
+                      expectedSHA256: catalog.expectedSHA256
+                  )
+            else { return nil }
+            return contract.sharedBaseExpectedSHA256
+        }
+    }
+
+    static func isPersistedChatModelCompatible(
+        repoID: String,
+        fileName: String,
+        sizeBytes: Int64,
+        family: LumenModelFamily
+    ) -> Bool {
+        isChatModelCompatible(
+            repoID: repoID,
+            fileName: fileName,
+            sizeBytes: sizeBytes,
+            expectedSHA256: trustedExpectedSHA256(
+                repoID: repoID,
+                fileName: fileName,
+                sizeBytes: sizeBytes,
+                family: family
+            ),
+            family: family
+        )
+    }
+
+    static func isChatModelCompatible(
+        repoID: String,
+        fileName: String,
+        sizeBytes: Int64,
+        expectedSHA256: String?,
+        family: LumenModelFamily
+    ) -> Bool {
+        switch family {
+        case .qwen25:
+            return true
+        case .qwen3:
+            return LumenTrainedModelRuntimeRegistry.contract(for: family).matchesSharedBase(
+                repoID: repoID,
+                fileName: fileName,
+                sizeBytes: sizeBytes,
+                expectedSHA256: expectedSHA256
+            )
+        }
+    }
+
+    static func validatePersistedChatModel(
+        repoID: String,
+        fileName: String,
+        sizeBytes: Int64,
+        family: LumenModelFamily
+    ) throws {
+        guard isPersistedChatModelCompatible(
+            repoID: repoID,
+            fileName: fileName,
+            sizeBytes: sizeBytes,
+            family: family
+        ) else {
+            let expectedFileName = LumenTrainedModelRuntimeRegistry.contract(for: family).sharedBaseFileName
+            throw Failure.incompatibleChatModel(family: family, expectedFileName: expectedFileName)
+        }
     }
 }
 
@@ -244,12 +375,17 @@ enum LumenModelFleetResolver {
         let textModels = existingStoredModels.filter { $0.modelRole == .chat && isStandaloneLoadableChatArtifact($0) }
         let adapterModels = existingStoredModels.filter { $0.modelRole == .roleAdapter }
         let activeText = activeChatModelID.flatMap { id in textModels.first { $0.id.uuidString == id } }
-        let fallbackText = activeText ?? preferredTextModel(from: textModels)
         let selectedFamily = LumenModelFamily.persistedSelected
         let runtimeContract = LumenTrainedModelRuntimeRegistry.contract(for: selectedFamily)
         let qwen3AdapterBase = selectedFamily == .qwen3
-            ? ((activeText.map { isSharedBase($0, contract: runtimeContract) } == true ? activeText : nil)
-                ?? textModels.filter { isSharedBase($0, contract: runtimeContract) }.sorted { $0.downloadedAt > $1.downloadedAt }.first)
+            ? activeText.flatMap { model in
+                LumenModelSelectionPolicy.isPersistedChatModelCompatible(
+                    repoID: model.repoId,
+                    fileName: model.fileName,
+                    sizeBytes: model.sizeBytes,
+                    family: selectedFamily
+                ) ? model : nil
+            }
             : nil
 
         if selectedFamily == .qwen3, let sharedBase = qwen3AdapterBase {
@@ -257,18 +393,16 @@ enum LumenModelFleetResolver {
                 let adapter = preferredAdapter(for: slot, storedModels: adapterModels, contract: runtimeContract)
                 assignments[slot] = assignment(slot: slot, model: sharedBase, family: .qwen3, adapter: adapter)
             }
-        } else {
-            let fallbackFamily: LumenModelFamily? = selectedFamily == .qwen3 ? nil : selectedFamily
+        } else if selectedFamily != .qwen3, let activeText {
             for slot in [LumenModelSlot.cortex, .executor, .mouth, .mimicry, .rem] {
-                if let model = preferredFineTunedModel(for: slot, storedModels: textModels)
-                    ?? preferredModel(for: slot, storedModels: textModels)
-                    ?? fallbackText {
-                    assignments[slot] = assignment(slot: slot, model: model, family: fallbackFamily, adapter: nil)
-                }
+                assignments[slot] = assignment(slot: slot, model: activeText, family: selectedFamily, adapter: nil)
             }
         }
 
-        if let embed = preferredEmbedding(activeEmbeddingModelID: activeEmbeddingModelID, storedModels: existingStoredModels) {
+        if let activeEmbeddingModelID,
+           let embed = existingStoredModels.first(where: {
+               $0.id.uuidString == activeEmbeddingModelID && $0.modelRole == .embedding
+           }) {
             assignments[.embedding] = assignment(slot: .embedding, model: embed)
         }
 
@@ -284,11 +418,17 @@ enum LumenModelFleetResolver {
         let textModels = existingStoredModels.filter { $0.modelRole == .chat && isStandaloneLoadableChatArtifact($0) }
         let adapterModels = existingStoredModels.filter { $0.modelRole == .roleAdapter }
         let activeText = activeChatModelID.flatMap { id in textModels.first { $0.id.uuidString == id } }
-        let fallbackText = activeText ?? preferredTextModel(from: textModels)
         let runtimeContract = LumenTrainedModelRuntimeRegistry.contract(for: selectedFamily)
         let qwen3AdapterBase = selectedFamily == .qwen3
-            ? ((activeText.map { isSharedBase($0, contract: runtimeContract) } == true ? activeText : nil)
-                ?? textModels.filter { isSharedBase($0, contract: runtimeContract) }.sorted { $0.downloadedAt > $1.downloadedAt }.first)
+            ? activeText.flatMap { model in
+                LumenModelSelectionPolicy.isChatModelCompatible(
+                    repoID: model.repoId,
+                    fileName: model.fileName,
+                    sizeBytes: model.sizeBytes,
+                    expectedSHA256: model.expectedSHA256,
+                    family: selectedFamily
+                ) ? model : nil
+            }
             : nil
 
         if selectedFamily == .qwen3, let sharedBase = qwen3AdapterBase {
@@ -296,18 +436,16 @@ enum LumenModelFleetResolver {
                 let adapter = preferredAdapter(for: slot, storedModels: adapterModels, contract: runtimeContract)
                 assignments[slot] = assignment(slot: slot, model: sharedBase, family: .qwen3, adapter: adapter)
             }
-        } else {
-            let fallbackFamily: LumenModelFamily? = selectedFamily == .qwen3 ? nil : selectedFamily
+        } else if selectedFamily != .qwen3, let activeText {
             for slot in [LumenModelSlot.cortex, .executor, .mouth, .mimicry, .rem] {
-                if let model = preferredFineTunedModel(for: slot, storedModels: textModels)
-                    ?? preferredModel(for: slot, storedModels: textModels)
-                    ?? fallbackText {
-                    assignments[slot] = assignment(slot: slot, model: model, family: fallbackFamily, adapter: nil)
-                }
+                assignments[slot] = assignment(slot: slot, model: activeText, family: selectedFamily, adapter: nil)
             }
         }
 
-        if let embed = preferredEmbedding(activeEmbeddingModelID: activeEmbeddingModelID, storedModels: existingStoredModels) {
+        if let activeEmbeddingModelID,
+           let embed = existingStoredModels.first(where: {
+               $0.id.uuidString == activeEmbeddingModelID && $0.modelRole == .embedding
+           }) {
             assignments[.embedding] = assignment(slot: .embedding, model: embed)
         }
 
@@ -318,25 +456,11 @@ enum LumenModelFleetResolver {
     }
 
     nonisolated private static func preferredAdapter(for slot: LumenModelSlot, storedModels: [StoredModelLoadItem], contract: LumenTrainedModelRuntimeContract) -> StoredModelLoadItem? {
-        if let role = contract.adapterRole(for: slot) {
-            if let exact = storedModels.filter({ $0.repoId == role.adapterRepoID && $0.fileName == role.adapterFileName }).sorted(by: { $0.downloadedAt > $1.downloadedAt }).first {
-                return exact
-            }
-            if let exactFile = storedModels.filter({ $0.fileName == role.adapterFileName }).sorted(by: { $0.downloadedAt > $1.downloadedAt }).first {
-                return exactFile
-            }
-        }
-        let slotToken = slot.rawValue
-        let scored = storedModels.compactMap { model -> (model: StoredModelLoadItem, rank: Int)? in
-            let text = [model.name, model.repoId, model.fileName, model.localPath].joined(separator: " ").lowercased()
-            if text.contains(slotToken) { return (model, 2) }
-            if slot == .cortex, text.contains("fleet") { return (model, 1) }
-            return nil
-        }
-        return scored.sorted { lhs, rhs in
-            if lhs.rank != rhs.rank { return lhs.rank > rhs.rank }
-            return lhs.model.downloadedAt > rhs.model.downloadedAt
-        }.first?.model
+        guard let role = contract.adapterRole(for: slot) else { return nil }
+        return storedModels
+            .filter { $0.repoId == role.adapterRepoID && $0.fileName == role.adapterFileName }
+            .sorted { $0.downloadedAt > $1.downloadedAt }
+            .first
     }
 
     nonisolated private static func preferredEmbedding(activeEmbeddingModelID: String?, storedModels: [StoredModelLoadItem]) -> StoredModelLoadItem? {
@@ -413,43 +537,41 @@ enum LumenModelFleetResolver {
     }
 
     nonisolated private static func assignment(slot: LumenModelSlot, model: StoredModelLoadItem, family: LumenModelFamily? = nil, adapter: StoredModelLoadItem? = nil) -> LumenModelAssignment {
-        LumenModelAssignment(
+        let sharedBaseContract = family == .qwen3
+            ? LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+            : nil
+        let adapterContract = family.flatMap {
+            LumenTrainedModelRuntimeRegistry.contract(for: $0).adapterRole(for: slot)
+        }
+        return LumenModelAssignment(
             slot: slot,
             modelID: model.id,
+            repoID: model.repoId,
             localPath: model.resolvedPath,
             fileName: model.fileName,
+            sizeBytes: sharedBaseContract?.sharedBaseSizeBytes ?? model.sizeBytes,
+            expectedSHA256: sharedBaseContract?.sharedBaseExpectedSHA256 ?? model.expectedSHA256,
             displayName: model.name,
             parameters: model.parameters,
             quantization: model.quantization,
             modelFamily: family,
             artifactKind: model.modelRole,
             adapterID: adapter?.id,
+            adapterRepoID: adapter?.repoId,
             adapterPath: adapter?.resolvedPath,
             adapterFileName: adapter?.fileName,
+            adapterSizeBytes: adapter.map { adapterContract?.adapterSizeBytes ?? $0.sizeBytes },
+            adapterExpectedSHA256: adapter == nil ? nil : (adapterContract?.adapterExpectedSHA256 ?? adapter?.expectedSHA256),
             adapterScale: 1.0
         )
     }
 
     private static func preferredAdapter(for slot: LumenModelSlot, storedModels: [StoredModel], contract: LumenTrainedModelRuntimeContract) -> StoredModel? {
-        if let role = contract.adapterRole(for: slot) {
-            if let exact = storedModels.filter({ $0.repoId == role.adapterRepoID && $0.fileName == role.adapterFileName }).sorted(by: { $0.downloadedAt > $1.downloadedAt }).first {
-                return exact
-            }
-            if let exactFile = storedModels.filter({ $0.fileName == role.adapterFileName }).sorted(by: { $0.downloadedAt > $1.downloadedAt }).first {
-                return exactFile
-            }
-        }
-        let slotToken = slot.rawValue
-        let scored = storedModels.compactMap { model -> (model: StoredModel, rank: Int)? in
-            let text = [model.name, model.repoId, model.fileName, model.localPath].joined(separator: " ").lowercased()
-            if text.contains(slotToken) { return (model, 2) }
-            if slot == .cortex, text.contains("fleet") { return (model, 1) }
-            return nil
-        }
-        return scored.sorted { lhs, rhs in
-            if lhs.rank != rhs.rank { return lhs.rank > rhs.rank }
-            return lhs.model.downloadedAt > rhs.model.downloadedAt
-        }.first?.model
+        guard let role = contract.adapterRole(for: slot) else { return nil }
+        return storedModels
+            .filter { $0.repoId == role.adapterRepoID && $0.fileName == role.adapterFileName }
+            .sorted { $0.downloadedAt > $1.downloadedAt }
+            .first
     }
 
     private static func preferredEmbedding(activeEmbeddingModelID: String?, storedModels: [StoredModel]) -> StoredModel? {
@@ -563,32 +685,38 @@ enum LumenModelFleetResolver {
         FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path)
     }
 
-    nonisolated private static func isSharedBase(_ model: StoredModelLoadItem, contract: LumenTrainedModelRuntimeContract) -> Bool {
-        contract.matchesSharedBase(repoID: model.repoId, fileName: model.fileName)
-    }
-
-    private static func isSharedBase(_ model: StoredModel, contract: LumenTrainedModelRuntimeContract) -> Bool {
-        contract.matchesSharedBase(repoID: model.repoId, fileName: model.fileName)
-    }
-
     nonisolated private static func tokenSet(_ value: String) -> Set<String> {
         Set(value.split { !$0.isLetter && !$0.isNumber }.map(String.init))
     }
 
     private static func assignment(slot: LumenModelSlot, model: StoredModel, family: LumenModelFamily? = nil, adapter: StoredModel? = nil) -> LumenModelAssignment {
-        LumenModelAssignment(
+        let modelCatalog = ModelCatalog.catalogModel(repoId: model.repoId, fileName: model.fileName)
+        let adapterCatalog = adapter.flatMap { ModelCatalog.catalogModel(repoId: $0.repoId, fileName: $0.fileName) }
+        let sharedBaseContract = family == .qwen3
+            ? LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+            : nil
+        let adapterContract = family.flatMap {
+            LumenTrainedModelRuntimeRegistry.contract(for: $0).adapterRole(for: slot)
+        }
+        return LumenModelAssignment(
             slot: slot,
             modelID: model.id,
+            repoID: model.repoId,
             localPath: ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path,
             fileName: model.fileName,
+            sizeBytes: sharedBaseContract?.sharedBaseSizeBytes ?? modelCatalog?.sizeBytes ?? model.sizeBytes,
+            expectedSHA256: sharedBaseContract?.sharedBaseExpectedSHA256 ?? modelCatalog?.expectedSHA256,
             displayName: model.name,
             parameters: model.parameters,
             quantization: model.quantization,
             modelFamily: family,
             artifactKind: model.modelRole,
             adapterID: adapter?.id,
+            adapterRepoID: adapter?.repoId,
             adapterPath: adapter.map { ModelStorage.resolvedModelURL(from: $0.localPath, fileName: $0.fileName).path },
             adapterFileName: adapter?.fileName,
+            adapterSizeBytes: adapter.map { adapterContract?.adapterSizeBytes ?? adapterCatalog?.sizeBytes ?? $0.sizeBytes },
+            adapterExpectedSHA256: adapter == nil ? nil : (adapterContract?.adapterExpectedSHA256 ?? adapterCatalog?.expectedSHA256),
             adapterScale: 1.0
         )
     }
