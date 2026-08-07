@@ -172,7 +172,13 @@ struct SourcesView: View {
     private func reindexFiles() {
         Task {
             busy = true; defer { busy = false }
-            let result = await RAGStore.indexImportedFilesWithDiagnostics(context: modelContext)
+            guard let container = SharedContainer.shared else {
+                status = "RAG storage unavailable."
+                return
+            }
+            // Bulk replacement may roll back its transaction on failure. Keep it
+            // isolated from unrelated unsaved edits owned by this view context.
+            let result = await RAGStore.indexImportedFilesWithDiagnostics(context: ModelContext(container))
             status = MemoryTools.ragIndexFilesMessage(from: result)
         }
     }
@@ -180,7 +186,14 @@ struct SourcesView: View {
     private func reindexPhotos() {
         Task {
             busy = true; defer { busy = false }
-            let result = await RAGStore.indexPhotosWithDiagnostics(monthsBack: 6, context: modelContext)
+            guard let container = SharedContainer.shared else {
+                status = "RAG storage unavailable."
+                return
+            }
+            let result = await RAGStore.indexPhotosWithDiagnostics(
+                monthsBack: 6,
+                context: ModelContext(container)
+            )
             status = MemoryTools.ragIndexPhotosMessage(from: result)
         }
     }

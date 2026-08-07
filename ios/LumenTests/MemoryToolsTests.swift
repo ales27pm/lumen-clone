@@ -47,9 +47,23 @@ struct MemoryToolsTests {
 
     @Test func ragIndexPhotosMessageDistinguishesPermissionDeniedFromEmptyLibrary() {
         let denied = RAGStore.IndexResult(indexedCount: 0, mode: .failed, diagnostic: "photos_permission_denied:denied")
-        let empty = RAGStore.IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_photo_library")
+        let empty = RAGStore.IndexResult(indexedCount: 0, mode: .cleared, diagnostic: "empty_photo_library")
 
         #expect(MemoryTools.ragIndexPhotosMessage(from: denied).contains("photos_permission_denied:denied"))
         #expect(MemoryTools.ragIndexPhotosMessage(from: empty).contains("empty_photo_library"))
+        #expect(MemoryTools.ragIndexPhotosMessage(from: empty).contains("cleared"))
+        #expect(!MemoryTools.ragIndexPhotosMessage(from: empty).contains("skipped"))
+    }
+
+    @Test func ragIndexExecutionUsesTypedStatusInsteadOfStringHeuristics() {
+        let indexed = RAGStore.IndexResult(indexedCount: 3, mode: .indexed, diagnostic: nil)
+        let empty = RAGStore.IndexResult(indexedCount: 0, mode: .cleared, diagnostic: "no_imported_files")
+        let deferred = RAGStore.IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "replacement_deferred:disk_write_budget_denied")
+        let partial = RAGStore.IndexResult(indexedCount: 2, mode: .partial, diagnostic: "persist_failed")
+
+        #expect(MemoryTools.ragIndexExecution(from: indexed, text: "indexed").status == .success)
+        #expect(MemoryTools.ragIndexExecution(from: empty, text: "empty").status == .success)
+        #expect(MemoryTools.ragIndexExecution(from: deferred, text: "deferred").status == .unavailable)
+        #expect(MemoryTools.ragIndexExecution(from: partial, text: "partial").status == .failed)
     }
 }

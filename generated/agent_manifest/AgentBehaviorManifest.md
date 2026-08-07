@@ -1,9 +1,9 @@
 # Lumen Agent Behavior Manifest
 
 ## Source Integrity
-- Base commit: `d45cb92075345a99cdc9b4b19466e5f39102e801`
-- Working-tree digest: `4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f`
-- Dirty source state: `False`
+- Base commit: `70912358f7a32d3db8ffd8d967e27ddfa7d93c06`
+- Working-tree digest: `c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2`
+- Dirty source state: `True`
 - Source files: 13
 - Source map:
   - `ios/Lumen/Models/AgentJSONValue.swift`: json_protocol
@@ -610,20 +610,20 @@
 
 ### `rag.index_files`
 - Display name: Reindex Files
-- Description: Rebuild the index for imported files and PDFs. Args: none.
+- Description: Rebuild the index for imported files and PDFs. Args: none. Requires explicit approval because it replaces the current file index.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
-- Requires approval: False
+- Requires approval: True
 - Permission key: none
 - Arguments: none
 - Example: Use `rag.index_files` only when the user intent maps to this manifest tool and all required arguments are known.
 
 ### `rag.index_photos`
 - Display name: Reindex Photos
-- Description: Rebuild the monthly photo metadata index. Args: months.
+- Description: Rebuild the monthly photo metadata index. Args: months. Requires explicit approval because it replaces the current photo index.
 - Source: `ios/Lumen/Models/ToolDefinition.swift`
 - Inferred: False
-- Requires approval: False
+- Requires approval: True
 - Permission key: NSPhotoLibraryUsageDescription
 - Arguments:
   - `months`: number, required. Declared in ToolDefinition capability contract. Source: `ios/Lumen/Models/ToolDefinition.swift`.
@@ -824,7 +824,8 @@
 - `outlook.message.reply_all`: permission=none, requiresApproval=True
 - `phone.call`: permission=none, requiresApproval=True
 - `photos.search`: permission=NSPhotoLibraryUsageDescription, requiresApproval=False
-- `rag.index_photos`: permission=NSPhotoLibraryUsageDescription, requiresApproval=False
+- `rag.index_files`: permission=none, requiresApproval=True
+- `rag.index_photos`: permission=NSPhotoLibraryUsageDescription, requiresApproval=True
 - `reminders.create`: permission=NSRemindersFullAccessUsageDescription, requiresApproval=True
 - `reminders.list`: permission=NSRemindersFullAccessUsageDescription, requiresApproval=False
 - `trigger.cancel`: permission=none, requiresApproval=True

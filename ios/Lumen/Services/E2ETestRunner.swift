@@ -3553,6 +3553,18 @@ nonisolated enum E2ETestRunner {
             return EvalRewriteOutcome(finalText: originalFinal, missingHints: [], rewriteAttempted: false, rewriteSuccess: false)
         }
 
+        // RAG hints are factual claims about retrieved user data. A rewrite cannot
+        // manufacture missing grounding (for example, module names or citations).
+        // Preserve the original answer and let the evidence assertion fail closed.
+        if routing.intent == .rag {
+            return EvalRewriteOutcome(
+                finalText: originalFinal,
+                missingHints: firstMissing,
+                rewriteAttempted: false,
+                rewriteSuccess: false
+            )
+        }
+
         let rewritten = await rewriteFinalTextForEvalHints(
             originalFinal: originalFinal,
             prompt: scenario.prompt,
@@ -3634,34 +3646,12 @@ nonisolated enum E2ETestRunner {
         }
         let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
         let candidate = trimmed.isEmpty ? originalFinal : trimmed
-        let grounded = enforceEvalGrounding(candidate, intent: intent)
         return enforceEvalHintConstraints(
-            grounded,
+            candidate,
             intent: intent,
             requiredHints: requiredHints,
             forbiddenHints: forbiddenHints
         )
-    }
-
-    nonisolated private static func enforceEvalGrounding(_ text: String, intent: UserIntent) -> String {
-        guard intent == .rag else { return text }
-        let lower = text.lowercased()
-        let ragEvidence = ragRetrievalEvidenceState(finalText: text, agentSteps: [], events: [])
-        if ragEvidence == .empty || ragEvidence == .contradictory || liveAgentInvalidFinalReason(lowerRaw: lower, lowerFinal: lower) != nil {
-            return text
-        }
-        var out = text
-        if !(lower.contains("module") || lower.contains("modules")) {
-            out += "\nKey modules: core module details were retrieved from local file snippets [1]."
-        }
-        let loweredOut = out.lowercased()
-        if !loweredOut.contains("[1]") {
-            out += " [1]"
-        }
-        if !(loweredOut.contains("snippet") || loweredOut.contains("source") || loweredOut.contains("file") || loweredOut.contains("retrieved")) {
-            out += " Source: retrieved file snippet [1]."
-        }
-        return out
     }
 
     nonisolated private static func enforceEvalHintConstraints(
@@ -3704,9 +3694,6 @@ nonisolated enum E2ETestRunner {
         }
         if lower.contains("precision/recall") {
             return "In plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall."
-        }
-        if lower == "module(s)" {
-            return "Key modules: core module details were retrieved from local file snippets [1]."
         }
         if intent == .memory && lower == "remember" {
             return "I remember your preference."

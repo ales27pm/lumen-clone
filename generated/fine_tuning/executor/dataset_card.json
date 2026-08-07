@@ -1,7 +1,7 @@
 {
   "agent": "executor",
-  "availableSFTRecords": 378,
-  "candidateSFTRecords": 866,
+  "availableSFTRecords": 384,
+  "candidateSFTRecords": 876,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": null,
@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "8deb6abe991c030d72dbe1a4d0fec765265b96c39116f51c3fefaa7e715f4904"
+      "reportSHA256": "b49628cc87c993052568906e113aecd3e5e0999223205a361e2540f575699116"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "64e9da3c83a47d080d7dadcd57f200c4a27c39decf9dfbc33a9cf2f8a587ec8c",
-      "optimizedTrainingCorpusSHA256": "21930f5e930f1d86059a0d3b6f5a3a56b7ad1f24b61000f255fab0cb27d5fa09",
+      "baselineTrainingCorpusSHA256": "2938fbbc418c11d7485630e8b374e9e96088a8e857aefa73968f8d074f0f3fe0",
+      "optimizedTrainingCorpusSHA256": "3174c6f60597faf3c03e1ac87ddbe1c6d4c60709c57b07cc4bf5fcc9e53dbf52",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 462,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "3c0c2fed0e1ce70ac710d3ccc4ccfe04661def841eb874b8d0b0245ff2a83918",
+    "experimentManifestSHA256": "cc8349f4eadde38df701cce4238b35493d365d0c8329f6b44e5ff041e94072fc",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
+  "manifestCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 36,
@@ -196,9 +196,9 @@
   "publicCorpus": {
     "availableRecordCounts": {
       "train_dpo": 0,
-      "train_sft": 393,
+      "train_sft": 391,
       "val_dpo": 0,
-      "val_sft": 69
+      "val_sft": 71
     },
     "availableSourceCounts": {
       "AmazonScience/massive": 450,
@@ -230,15 +230,15 @@
     "maxSFTTokenProxyShare": 0.3,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 83,
+      "train_sft": 84,
       "val_dpo": 0,
       "val_sft": 8
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 310,
+      "train_sft": 307,
       "val_dpo": 0,
-      "val_sft": 61
+      "val_sft": 63
     },
     "rejectedByValidationSampling": {
       "train_dpo": 0,
@@ -279,9 +279,9 @@
         "minimum": 0.733437
       },
       "selected": {
-        "count": 91,
+        "count": 92,
         "maximum": 0.831918,
-        "mean": 0.796851,
+        "mean": 0.796933,
         "minimum": 0.733437
       }
     },
@@ -316,7 +316,7 @@
         "public_verified_tool_argument_extraction": 12,
         "public_verified_tool_routing": 12
       },
-      "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
+      "lumenContractSHA256": "a9e46692c2bd30ea02eee7d4ecde718d3cc47c7361958ee82a09be11967926c7",
       "partitionPolicy": {
         "allowedMLTrainingPartitions": [
           "train"
@@ -326,9 +326,9 @@
       },
       "qualityScoreSummaryByAgent": {
         "cortex": {
-          "maximum": 0.847137,
-          "mean": 0.832951,
-          "minimum": 0.766562
+          "maximum": 0.892138,
+          "mean": 0.875338,
+          "minimum": 0.767187
         },
         "executor": {
           "maximum": 0.831918,
@@ -357,19 +357,19 @@
         }
       },
       "recordCount": 3280,
-      "recordsSHA256": "8da5f97b74c716938560d203d5f8cc943b18df1c075c02458e67418fcf2fe2b7",
+      "recordsSHA256": "c5d86e9066346bab769f7e81b7be5bb05eed4667ebb04cf84c152770b39c4673",
       "schema": "lumen.public-adapter-corpus/1.1.0",
       "selectionPolicyVersion": "2026-07-12.3",
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
     },
     "sourceCounts": {
-      "AmazonScience/massive": 79,
+      "AmazonScience/massive": 80,
       "Team-ACE/ToolACE": 12
     },
     "sourceSplitCounts": {
       "AmazonScience/massive": {
         "train_dpo": 0,
-        "train_sft": 73,
+        "train_sft": 74,
         "val_dpo": 0,
         "val_sft": 6
       },
@@ -386,22 +386,22 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.298369,
-        "total": 0.237872
+        "target": 0.298323,
+        "total": 0.237244
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.299225,
-        "total": 0.228699
+        "target": 0.298033,
+        "total": 0.22268
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 32654,
-    "assistantTargetTokenProxyCount": 8310,
+    "assistantTargetCharCount": 33046,
+    "assistantTargetTokenProxyCount": 8411,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -439,11 +439,11 @@
   "recordCounts": {
     "eval": 63,
     "train_dpo": 33,
-    "train_sft": 344,
+    "train_sft": 349,
     "val_dpo": 3,
-    "val_sft": 34
+    "val_sft": 35
   },
-  "sourceDirty": false,
+  "sourceDirty": true,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "approval_boundary_samples",
@@ -455,24 +455,24 @@
   ],
   "sourceFamilyCounts": {
     "adapter_ultra_specific": 79,
-    "approval_boundary_samples": 63,
+    "approval_boundary_samples": 68,
     "executor_tool_calls": 54,
     "negative_samples": 53,
-    "public_adapter_corpus_massive_en_us_1_1": 79,
+    "public_adapter_corpus_massive_en_us_1_1": 80,
     "public_adapter_corpus_toolace_train": 12,
     "tool_schema_cards": 38
   },
   "sourceIntegrity": {
-    "baseCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
-    "dirtyState": false,
-    "workingTreeDigest": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
+    "baseCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
+    "dirtyState": true,
+    "workingTreeDigest": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2"
   },
   "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.",
   "taskTypeCounts": {
-    "approval_granted": 26,
-    "approval_required_tool": 26,
-    "permission_unavailable": 11,
-    "public_manifest_tool_argument_extraction": 79,
+    "approval_granted": 28,
+    "approval_required_tool": 28,
+    "permission_unavailable": 12,
+    "public_manifest_tool_argument_extraction": 80,
     "public_verified_tool_argument_extraction": 12,
     "tool_call_generation": 54,
     "tool_id_repair": 53,
@@ -492,5 +492,5 @@
     "ultra_specific_post_observation_final",
     "ultra_specific_tool_call_generation"
   ],
-  "worktreeFingerprint": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
+  "worktreeFingerprint": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2"
 }

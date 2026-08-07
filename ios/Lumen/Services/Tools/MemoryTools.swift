@@ -3,6 +3,12 @@ import SwiftData
 
 @MainActor
 enum MemoryTools {
+    struct RAGIndexExecution: Sendable, Equatable {
+        let text: String
+        let status: ToolResultStatus
+        let diagnostic: String?
+    }
+
     static func save(content: String, kind: String) async -> String {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "Need content." }
@@ -38,7 +44,12 @@ enum MemoryTools {
         }
         let ctx = ModelContext(container)
         let expandedQuery = expandRAGQueryIfNeeded(trimmed)
-        let retrieval = await RAGEngine().retrieveWithDiagnostics(query: expandedQuery, limit: limit, context: ctx)
+        let retrieval = await RAGEngine().retrieveWithDiagnostics(
+            query: expandedQuery,
+            relevanceQuery: trimmed,
+            limit: limit,
+            context: ctx
+        )
         let results = retrieval.results
         if results.isEmpty {
             if retrieval.mode == "failed" || isFailureDiagnostic(retrieval.diagnostic) {
@@ -74,35 +85,74 @@ enum MemoryTools {
     }
 
     static func ragIndexFiles() async -> String {
+        await ragIndexFilesExecution().text
+    }
+
+    static func ragIndexFilesExecution() async -> RAGIndexExecution {
         guard let container = SharedContainer.shared else {
-            return "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+            return RAGIndexExecution(
+                text: "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable.",
+                status: .unavailable,
+                diagnostic: "swiftdata_shared_container_unavailable"
+            )
         }
         let ctx = ModelContext(container)
         let embeddingReady = await RAGStore.embeddingRuntimeAvailable()
         guard embeddingReady else {
-            return "RAG indexing failed: embedding model is unavailable. Load a local embedding model, then run reindex files."
+            return RAGIndexExecution(
+                text: "RAG indexing failed: embedding model is unavailable. Load a local embedding model, then run reindex files.",
+                status: .unavailable,
+                diagnostic: "embedding_model_unavailable"
+            )
         }
         let result = await RAGStore.indexImportedFilesWithDiagnostics(context: ctx)
-        return ragIndexFilesMessage(from: result)
+        return ragIndexExecution(from: result, text: ragIndexFilesMessage(from: result))
     }
 
     static func ragIndexPhotos(months: Int) async -> String {
+        await ragIndexPhotosExecution(months: months).text
+    }
+
+    static func ragIndexPhotosExecution(months: Int) async -> RAGIndexExecution {
         guard let container = SharedContainer.shared else {
-            return "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+            return RAGIndexExecution(
+                text: "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable.",
+                status: .unavailable,
+                diagnostic: "swiftdata_shared_container_unavailable"
+            )
         }
         let ctx = ModelContext(container)
         let embeddingReady = await RAGStore.embeddingRuntimeAvailable()
         guard embeddingReady else {
-            return "RAG photo indexing failed: embedding model is unavailable. Load a local embedding model, then try again."
+            return RAGIndexExecution(
+                text: "RAG photo indexing failed: embedding model is unavailable. Load a local embedding model, then try again.",
+                status: .unavailable,
+                diagnostic: "embedding_model_unavailable"
+            )
         }
         let result = await RAGStore.indexPhotosWithDiagnostics(monthsBack: max(1, months), context: ctx)
-        return ragIndexPhotosMessage(from: result)
+        return ragIndexExecution(from: result, text: ragIndexPhotosMessage(from: result))
+    }
+
+    static func ragIndexExecution(from result: RAGStore.IndexResult, text: String) -> RAGIndexExecution {
+        let status: ToolResultStatus
+        switch result.mode {
+        case .indexed, .cleared:
+            status = .success
+        case .skipped:
+            status = .unavailable
+        case .partial, .failed:
+            status = .failed
+        }
+        return RAGIndexExecution(text: text, status: status, diagnostic: result.diagnostic)
     }
 
     static func ragIndexFilesMessage(from result: RAGStore.IndexResult) -> String {
         switch result.mode {
         case .indexed:
             return "Indexed \(result.indexedCount) chunks from imported files."
+        case .cleared:
+            return "No imported files remain; the previous file index was cleared. Diagnostic: \(diagnosticText(result.diagnostic))."
         case .skipped:
             return "RAG indexing skipped. Diagnostic: \(diagnosticText(result.diagnostic))."
         case .partial:
@@ -116,6 +166,8 @@ enum MemoryTools {
         switch result.mode {
         case .indexed:
             return "Indexed \(result.indexedCount) monthly photo summaries."
+        case .cleared:
+            return "No photos remain in the selected range; the previous photo index was cleared. Diagnostic: \(diagnosticText(result.diagnostic))."
         case .skipped:
             return "RAG photo indexing skipped. Diagnostic: \(diagnosticText(result.diagnostic))."
         case .partial:

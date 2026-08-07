@@ -105,7 +105,7 @@ nonisolated enum FinalIntentValidator {
         case .rag:
             let hasRagTopic = containsAny(lower, ["search", "index", "indexed", "files", "photos", "local"])
             let hasGrounding = containsAny(lower, ["[1]", "[2]", "snippet", "source", "retrieved", "file", "pdf", "note", "module", "modules"])
-            let hasIndexCompletion = containsAny(lower, ["index updated", "indexed", "reindexed"])
+            let hasIndexCompletion = containsAny(lower, ["index updated", "index cleared", "indexed", "reindexed"])
             let explicitUnavailable = containsAny(lower, ["unavailable", "couldn’t", "couldn't", "no relevant", "no matching"]) 
             return (hasRagTopic && hasGrounding) || hasIndexCompletion || explicitUnavailable
         case .trigger:

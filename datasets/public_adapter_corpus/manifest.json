@@ -34,7 +34,7 @@
     "public_verified_tool_argument_extraction": 12,
     "public_verified_tool_routing": 12
   },
-  "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
+  "lumenContractSHA256": "a9e46692c2bd30ea02eee7d4ecde718d3cc47c7361958ee82a09be11967926c7",
   "partitionPolicy": {
     "allowedMLTrainingPartitions": [
       "train"
@@ -49,9 +49,9 @@
   },
   "qualityScoreSummaryByAgent": {
     "cortex": {
-      "maximum": 0.847137,
-      "mean": 0.832951,
-      "minimum": 0.766562
+      "maximum": 0.892138,
+      "mean": 0.875338,
+      "minimum": 0.767187
     },
     "executor": {
       "maximum": 0.831918,
@@ -81,7 +81,7 @@
   },
   "recordCount": 3280,
   "recordsFile": "records.jsonl",
-  "recordsSHA256": "8da5f97b74c716938560d203d5f8cc943b18df1c075c02458e67418fcf2fe2b7",
+  "recordsSHA256": "c5d86e9066346bab769f7e81b7be5bb05eed4667ebb04cf84c152770b39c4673",
   "schema": "lumen.public-adapter-corpus/1.1.0",
   "selectionPolicyVersion": "2026-07-12.3",
   "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa",
