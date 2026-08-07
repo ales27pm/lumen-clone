@@ -732,6 +732,12 @@ final class SlotAgentService {
         let steps: [AgentStep]
     }
 
+    private struct CompatibilityObservation: Sendable {
+        let text: String
+        let status: ToolResultStatus?
+        let ragIndexMode: RAGStore.IndexMode?
+    }
+
     /// Generates a deterministic response to a user request through intent routing, tool planning, and execution.
     /// - Returns: A response containing the final text and execution steps.
     private nonisolated static func deterministicCompatibilityResponse(original: AgentRequest, effective: AgentRequest, options: LegacyAgentRunOptions) async -> DeterministicCompatibilityResponse {
@@ -817,6 +823,8 @@ final class SlotAgentService {
         var steps: [AgentStep] = []
         var lastObservation = ""
         var lastToolID = ""
+        var lastResultStatus: ToolResultStatus?
+        var lastRAGIndexMode: RAGStore.IndexMode?
         var latestOutlookMessageID: String?
 
         for (index, plannedAction) in plannedActions.enumerated() {
@@ -882,21 +890,23 @@ final class SlotAgentService {
                 options: options,
                 availableToolIDs: availableToolIDs
             )
-            steps.append(AgentStep(kind: .observation, content: result, toolID: canonicalActionTool))
+            steps.append(AgentStep(kind: .observation, content: result.text, toolID: canonicalActionTool))
             Self.emitChatTrace(req: original, phase: "observation", values: [
                 "toolID": canonicalActionTool,
-                "observationChars": String(result.count),
-                "observationSHA256": Self.sha256(result)
+                "observationChars": String(result.text.count),
+                "observationSHA256": Self.sha256(result.text)
             ])
-            lastObservation = result
+            lastObservation = result.text
             lastToolID = canonicalActionTool
+            lastResultStatus = result.status
+            lastRAGIndexMode = result.ragIndexMode
             if canonicalActionTool == "outlook.messages.list",
-               let messageID = extractOutlookMessageID(from: result) {
+               let messageID = extractOutlookMessageID(from: result.text) {
                 latestOutlookMessageID = messageID
             }
             if routing.intent == .phoneCall, canonicalActionTool == "contacts.search" {
                 if let continuation = phoneCallContinuation(
-                    afterContactObservation: result,
+                    afterContactObservation: result.text,
                     availableToolIDs: availableToolIDs,
                     routing: routing
                 ) {
@@ -929,12 +939,12 @@ final class SlotAgentService {
                 : nil
             if index < plannedActions.count - 1,
                shouldStopPlannedChain(
-                after: result,
+                after: result.text,
                 currentToolID: canonicalActionTool,
                 nextToolID: nextToolID,
                 routing: routing
                ) {
-                let text = FinalIntentValidator.validate(result, routing: routing, fallback: IntentRouter.unavailableMessage(for: routing))
+                let text = FinalIntentValidator.validate(result.text, routing: routing, fallback: IntentRouter.unavailableMessage(for: routing))
                 Self.emitChatTrace(req: original, phase: "chain_stopped", values: [
                     "toolID": canonicalActionTool,
                     "finalChars": String(text.count),
@@ -986,14 +996,18 @@ final class SlotAgentService {
                 tool: lastTool,
                 observation: lastObservation,
                 originalPrompt: original.userMessage,
-                trustedApprovalCaptured: false
+                trustedApprovalCaptured: false,
+                resultStatus: lastResultStatus,
+                ragIndexMode: lastRAGIndexMode
             )
         } else {
             finalizerOutcome = ToolObservationFinalizer.immediateFinalOutcome(
                 intent: routing.intent,
                 toolID: lastToolID,
                 observation: lastObservation,
-                originalPrompt: original.userMessage
+                originalPrompt: original.userMessage,
+                resultStatus: lastResultStatus,
+                ragIndexMode: lastRAGIndexMode
             )
         }
         Self.emitChatTrace(req: original, phase: "tool_observation_finalizer", values: [
@@ -1295,22 +1309,26 @@ final class SlotAgentService {
         effective: AgentRequest,
         options: LegacyAgentRunOptions,
         availableToolIDs: Set<String>
-    ) async -> String {
+    ) async -> CompatibilityObservation {
         guard availableToolIDs.contains(toolID) else {
-            return "Tool \(toolID) is disabled. Enable it in Tools."
+            return CompatibilityObservation(
+                text: "Tool \(toolID) is disabled. Enable it in Tools.",
+                status: .unavailable,
+                ragIndexMode: nil
+            )
         }
 
         if options.diagnosticsEnabled,
            let diagnosticObservation = diagnosticsObservationWithoutExecution(toolID: toolID) {
-            return diagnosticObservation
+            return CompatibilityObservation(text: diagnosticObservation, status: nil, ragIndexMode: nil)
         }
 
         if options.diagnosticsEnabled,
            let diagnosticObservation = diagnosticsObservationWithoutExecution(toolID: toolID, action: action) {
-            return diagnosticObservation
+            return CompatibilityObservation(text: diagnosticObservation, status: nil, ragIndexMode: nil)
         }
 
-        let result = await SecureToolRegistry.shared.executeToolCommand(
+        let result = await SecureToolRegistry.shared.executeToolCommandResult(
             toolID,
             arguments: action.args,
             approval: .autonomous,
@@ -1319,10 +1337,19 @@ final class SlotAgentService {
             modelContext: options.modelContext,
             isBackground: options.groundingMode == .headlessTrigger
         )
+        let text = SecureToolRegistry.commandText(from: result)
         if options.diagnosticsEnabled {
-            return diagnosticsObservationOverride(toolID: toolID, action: action, result: result)
+            return CompatibilityObservation(
+                text: diagnosticsObservationOverride(toolID: toolID, action: action, result: text),
+                status: nil,
+                ragIndexMode: nil
+            )
         }
-        return result
+        return CompatibilityObservation(
+            text: text,
+            status: result.status,
+            ragIndexMode: result.structuredPayload?["ragIndexMode"].flatMap(RAGStore.IndexMode.init(rawValue:))
+        )
     }
 
     private nonisolated static func diagnosticsObservationWithoutExecution(toolID: String) -> String? {

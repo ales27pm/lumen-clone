@@ -322,6 +322,7 @@ struct StructuredAgentKernelExecutor {
                 let result = await kernel.toolRegistry.execute(invocation, context: context)
                 continuation.yield(.toolResult(result))
                 let observationText = Self.userVisibleToolObservation(toolID: validatedCall.canonicalToolID, result: result)
+                let ragIndexMode = Self.ragIndexMode(from: result)
                 let observationStep = AgentStep(kind: .observation, content: observationText, toolID: validatedCall.canonicalToolID)
                 steps.append(observationStep)
                 continuation.yield(.step(observationStep))
@@ -376,10 +377,21 @@ struct StructuredAgentKernelExecutor {
                 }
                 if Self.shouldStopAfterToolResult(result.status) {
                     emit(.reflection, "Structured tool loop stopped after non-success \(validatedCall.canonicalToolID) result.", toolID: validatedCall.canonicalToolID, steps: &steps, continuation: continuation)
-                    finalAnswer = Self.deterministicObservationFallback(
-                        observations: [(validatedCall.canonicalToolID, observationText)],
-                        intent: routing.intent
-                    ) ?? observationText
+                    if Self.isRAGIndexTool(validatedCall.canonicalToolID) {
+                        finalAnswer = ToolObservationFinalizer.immediateFinalIfSafe(
+                            intent: routing.intent,
+                            toolID: validatedCall.canonicalToolID,
+                            observation: observationText,
+                            originalPrompt: userMessage,
+                            resultStatus: result.status,
+                            ragIndexMode: ragIndexMode
+                        ) ?? observationText
+                    } else {
+                        finalAnswer = Self.deterministicObservationFallback(
+                            observations: [(validatedCall.canonicalToolID, observationText)],
+                            intent: routing.intent
+                        ) ?? observationText
+                    }
                     break stepsLoop
                 }
                 observations.append((validatedCall.canonicalToolID, observationText))
@@ -405,8 +417,19 @@ struct StructuredAgentKernelExecutor {
                 }
 
                 if stepIndex == maxSteps - 1 {
-                    finalAnswer = Self.deterministicObservationFallback(observations: observations, intent: routing.intent)
-                        ?? "I gathered tool observations but reached the structured step limit before a final answer."
+                    if Self.isRAGIndexTool(validatedCall.canonicalToolID) {
+                        finalAnswer = ToolObservationFinalizer.immediateFinalIfSafe(
+                            intent: routing.intent,
+                            toolID: validatedCall.canonicalToolID,
+                            observation: observationText,
+                            originalPrompt: userMessage,
+                            resultStatus: result.status,
+                            ragIndexMode: ragIndexMode
+                        ) ?? observationText
+                    } else {
+                        finalAnswer = Self.deterministicObservationFallback(observations: observations, intent: routing.intent)
+                            ?? "I gathered tool observations but reached the structured step limit before a final answer."
+                    }
                     break stepsLoop
                 }
                 continue
@@ -1772,6 +1795,15 @@ private extension StructuredAgentKernelExecutor {
             return "\(toolID) finished with status \(result.status.rawValue): \(errorCode)."
         }
         return "\(toolID) finished with status \(result.status.rawValue) and no user-visible output."
+    }
+
+    static func ragIndexMode(from result: ToolResult) -> RAGStore.IndexMode? {
+        result.structuredPayload?["ragIndexMode"].flatMap(RAGStore.IndexMode.init(rawValue:))
+    }
+
+    static func isRAGIndexTool(_ toolID: String) -> Bool {
+        let canonical = ToolRouteGuard.canonicalToolID(toolID)
+        return canonical == "rag.index_files" || canonical == "rag.index_photos"
     }
 
     static func agentJSONMissingDecisionRetryUserTurn(from userTurn: String, rawOutput: String, allowedToolIDs: [String]) -> String {

@@ -473,6 +473,108 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
+    func testAlreadyEmptyImportedFileReindexBypassesWriteBudgetAsNoOp() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        DiskWriteBudget.shared.setGenerationActive(true)
+        defer { DiskWriteBudget.shared.setGenerationActive(false) }
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
+                files: [],
+                mode: "loaded",
+                diagnostic: "empty_imports"
+            )
+        )
+
+        XCTAssertEqual(result.mode, .cleared)
+        XCTAssertEqual(result.diagnostic, "empty_imports")
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
+    }
+
+    @MainActor
+    func testEmptyImportedFileReindexCleansHiddenReplacementOrphans() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let orphan = RAGChunk(content: "orphan", sourceType: .file, sourceName: "orphan.txt")
+        orphan.sourceType = RAGChunk.replacementStagingSourceType(id: UUID(), kind: .file)
+        context.insert(orphan)
+        try context.save()
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        RAGStore.testCPUWatchdogDegradedOverride = false
+        defer {
+            ResourceBudgetGate.testSnapshotOverride = nil
+            RAGStore.testCPUWatchdogDegradedOverride = nil
+        }
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
+                files: [],
+                mode: "loaded",
+                diagnostic: "empty_imports"
+            )
+        )
+
+        XCTAssertEqual(result.mode, .cleared)
+        XCTAssertEqual(result.diagnostic, "empty_imports")
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
+    }
+
+    @MainActor
+    func testEmptyImportedFileReindexDefersHiddenOrphanCleanupWithoutLosingClearedResult() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let orphan = RAGChunk(content: "orphan", sourceType: .file, sourceName: "orphan.txt")
+        orphan.sourceType = RAGChunk.replacementStagingSourceType(id: UUID(), kind: .file)
+        context.insert(orphan)
+        try context.save()
+        let budget = DiskWriteBudget(oneMinuteLimit: 1_000, fifteenMinuteLimit: 2_000, dayLimit: 3_000)
+        budget.setGenerationActive(true)
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        RAGStore.testCPUWatchdogDegradedOverride = false
+        defer {
+            budget.setGenerationActive(false)
+            ResourceBudgetGate.testSnapshotOverride = nil
+            RAGStore.testCPUWatchdogDegradedOverride = nil
+        }
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: URL(fileURLWithPath: "/tmp/imports", isDirectory: true),
+                files: [],
+                mode: "loaded",
+                diagnostic: "empty_imports"
+            ),
+            writeBudget: budget
+        )
+
+        XCTAssertEqual(result.mode, .cleared)
+        XCTAssertEqual(
+            result.diagnostic,
+            "empty_imports;replacement_staging_cleanup_deferred:disk_write_budget_denied"
+        )
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).count, 1)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).allSatisfy(\.isReplacementStaging))
+    }
+
+    @MainActor
     func testFailedImportedFileEnumerationPreservesExistingDocumentCorpus() async throws {
         let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)
@@ -495,7 +597,7 @@ final class PersistenceAuditTests: XCTestCase {
     }
 
     @MainActor
-    func testImportedFileReplacementCommitsNewCorpusWithOneSave() async throws {
+    func testImportedFileReplacementUsesBoundedStagingThenCommitsNewCorpus() async throws {
         let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = ModelContext(container)
         let metadata = RAGEmbeddingIndexMetadata(
@@ -522,6 +624,7 @@ final class PersistenceAuditTests: XCTestCase {
         defer { RAGVectorIndex.shared.invalidate() }
         XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
         var saveCallCount = 0
+        var saveOperations: [String] = []
 
         let result = await RAGStore.indexImportedFilesWithDiagnostics(
             context: context,
@@ -534,8 +637,9 @@ final class PersistenceAuditTests: XCTestCase {
             embed: { _ in
                 EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: metadata.modelIdentifier)
             },
-            save: { context, _, _ in
+            save: { context, operation, _ in
                 saveCallCount += 1
+                saveOperations.append(operation)
                 try context.save()
             }
         )
@@ -543,11 +647,163 @@ final class PersistenceAuditTests: XCTestCase {
         XCTAssertEqual(result.mode, .indexed)
         XCTAssertEqual(result.indexedCount, 1)
         XCTAssertNil(result.diagnostic)
-        XCTAssertEqual(saveCallCount, 1)
+        XCTAssertEqual(saveCallCount, 2)
+        XCTAssertEqual(saveOperations.filter { $0 == "indexImportedFiles.stage" }.count, 1)
         let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
         XCTAssertEqual(Set(chunks.map(\.sourceName)), Set([fileURL.lastPathComponent, "note"]))
         XCTAssertFalse(chunks.contains { $0.sourceName == "architecture.txt" })
         XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
+    func testImportedFileReplacementPromotesAndDeletesEveryPageBeyondBatchSize() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        for index in 0..<70 {
+            context.insert(RAGChunk(
+                content: "old \(index)",
+                sourceType: .file,
+                sourceName: "old-\(index).txt",
+                embedding: [1, 0],
+                embeddingModelIdentifier: metadata.modelIdentifier
+            ))
+        }
+        try context.save()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-paged-replacement-\(UUID().uuidString).txt")
+        try String(repeating: "replacement ", count: 4_000).write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+
+        var saveOperations: [String] = []
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: fileURL.deletingLastPathComponent(),
+                files: [fileURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: metadata.modelIdentifier)
+            },
+            save: { context, operation, _ in
+                saveOperations.append(operation)
+                try context.save()
+            }
+        )
+
+        XCTAssertEqual(result.mode, .indexed)
+        XCTAssertGreaterThan(result.indexedCount, 64)
+        XCTAssertGreaterThanOrEqual(saveOperations.filter { $0 == "indexImportedFiles.stage" }.count, 3)
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.count, result.indexedCount)
+        XCTAssertTrue(chunks.allSatisfy { $0.sourceName == fileURL.lastPathComponent })
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
+    }
+
+    @MainActor
+    func testImportedFileReplacementAccountsSmallBatchesByPayloadInsteadOfFixedCharge() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "old.txt"))
+        try context.save()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-small-batch-budget-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = try (0..<12).map { index in
+            let url = directory.appendingPathComponent("small-\(index).txt")
+            try "Lumen module \(index)".write(to: url, atomically: true, encoding: .utf8)
+            return url
+        }
+        let budget = DiskWriteBudget(
+            oneMinuteLimit: 400 * 1024,
+            fifteenMinuteLimit: 800 * 1024,
+            dayLimit: 2 * 1024 * 1024
+        )
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: directory,
+                files: files,
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            },
+            writeBudget: budget
+        )
+
+        XCTAssertEqual(result.mode, .indexed)
+        XCTAssertEqual(result.indexedCount, 12)
+        XCTAssertLessThan(budget.snapshot().bytes1Minute, 400 * 1024)
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.count, 12)
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
+    }
+
+    @MainActor
+    func testGenerationStartingAfterFirstStageUsesReservedCleanupAndPreservesCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "old.txt"))
+        try context.save()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-generation-after-stage-\(UUID().uuidString).txt")
+        try String(repeating: "replacement module ", count: 4_000).write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let budget = DiskWriteBudget(
+            oneMinuteLimit: 10 * 1024 * 1024,
+            fifteenMinuteLimit: 20 * 1024 * 1024,
+            dayLimit: 40 * 1024 * 1024
+        )
+        RAGStore.testCPUWatchdogDegradedOverride = false
+        defer {
+            RAGStore.testCPUWatchdogDegradedOverride = nil
+            budget.setGenerationActive(false)
+        }
+        var embeddingCallCount = 0
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: fileURL.deletingLastPathComponent(),
+                files: [fileURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                embeddingCallCount += 1
+                if embeddingCallCount == 33 {
+                    budget.setGenerationActive(true)
+                }
+                return EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            },
+            writeBudget: budget
+        )
+
+        XCTAssertGreaterThanOrEqual(embeddingCallCount, 64)
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("cleanup_deferred:disk_write_budget_denied") == true)
+        XCTAssertFalse(result.diagnostic?.contains("replacement_staging_cleanup_") == true)
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.map(\.sourceName), ["old.txt"])
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
     }
 
     @MainActor
@@ -602,9 +858,139 @@ final class PersistenceAuditTests: XCTestCase {
         XCTAssertEqual(embeddingCallCount, 2)
         XCTAssertEqual(result.mode, .failed)
         XCTAssertEqual(result.indexedCount, 0)
-        XCTAssertTrue(result.diagnostic?.hasPrefix("embedding_failed:") == true)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("source_failures=1:embedding_failed:") == true)
         XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
         XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
+    func testImportedFileRebuildCollectsSourceFailuresAndContinuesBeforeRollback() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "architecture.txt"))
+        try context.save()
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-source-failures-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let emptyURL = directory.appendingPathComponent("empty.txt")
+        let missingURL = directory.appendingPathComponent("missing.txt")
+        let validURL = directory.appendingPathComponent("valid.txt")
+        try "".write(to: emptyURL, atomically: true, encoding: .utf8)
+        try "replacement design".write(to: validURL, atomically: true, encoding: .utf8)
+        var embeddingCallCount = 0
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: FileStore.ImportedFilesResult(
+                directory: directory,
+                files: [emptyURL, missingURL, validURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                embeddingCallCount += 1
+                return EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            }
+        )
+
+        XCTAssertEqual(embeddingCallCount, 1)
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertEqual(result.indexedCount, 0)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("source_failures=2:") == true)
+        XCTAssertTrue(result.diagnostic?.contains("source_modes=skipped:1,failed:1") == true)
+        XCTAssertTrue(result.diagnostic?.contains("|skipped|empty_text") == true)
+        XCTAssertTrue(result.diagnostic?.contains("|failed|file_read_failed:") == true)
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.map(\.sourceName), ["architecture.txt"])
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
+    }
+
+    @MainActor
+    func testImportedFileRebuildCleansEveryEncodedOrphanPageBeforeStaging() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        for index in 0..<70 {
+            let orphan = RAGChunk(
+                content: "orphan \(index)",
+                sourceType: .file,
+                sourceName: "orphan-\(index).txt"
+            )
+            orphan.sourceType = RAGChunk.replacementStagingSourceType(id: UUID(), kind: .file)
+            context.insert(orphan)
+        }
+        try context.save()
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-orphan-recovery-\(UUID().uuidString).txt")
+        try "replacement architecture".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: fileURL.deletingLastPathComponent(),
+                files: [fileURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            },
+            save: { context, _, _ in try context.save() }
+        )
+
+        XCTAssertEqual(result.mode, .indexed)
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.count, result.indexedCount)
+        XCTAssertTrue(chunks.allSatisfy { $0.sourceName == fileURL.lastPathComponent })
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
+    }
+
+    @MainActor
+    func testImportedFileFailureDiscardsEveryStagingPageAndPreservesOldCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "architecture.txt"))
+        try context.save()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-paged-discard-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let largeURL = directory.appendingPathComponent("large.txt")
+        let missingURL = directory.appendingPathComponent("missing.txt")
+        try String(repeating: "replacement ", count: 4_000).write(to: largeURL, atomically: true, encoding: .utf8)
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .active,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        var embeddingCallCount = 0
+
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: directory,
+                files: [largeURL, missingURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                embeddingCallCount += 1
+                return EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            },
+            save: { context, _, _ in try context.save() }
+        )
+
+        XCTAssertGreaterThan(embeddingCallCount, 64)
+        XCTAssertEqual(result.mode, .failed)
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.map(\.sourceName), ["architecture.txt"])
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
     }
 
     @MainActor
@@ -633,6 +1019,7 @@ final class PersistenceAuditTests: XCTestCase {
         defer { RAGVectorIndex.shared.invalidate() }
         XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
 
+        var saveCallCount = 0
         let result = await RAGStore.indexImportedFilesWithDiagnostics(
             context: context,
             importedFilesResult: FileStore.ImportedFilesResult(
@@ -644,13 +1031,19 @@ final class PersistenceAuditTests: XCTestCase {
             embed: { _ in
                 EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: metadata.modelIdentifier)
             },
-            save: { _, _, _ in throw SaveError() }
+            save: { context, _, _ in
+                saveCallCount += 1
+                if saveCallCount == 2 { throw SaveError() }
+                try context.save()
+            }
         )
 
         XCTAssertEqual(result.mode, .failed)
         XCTAssertEqual(result.indexedCount, 0)
         XCTAssertTrue(result.diagnostic?.hasPrefix("replacement_persist_failed:") == true)
+        XCTAssertEqual(saveCallCount, 3)
         XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
+        XCTAssertFalse(try context.fetch(FetchDescriptor<RAGChunk>()).contains { $0.isReplacementStaging })
         XCTAssertEqual(RAGVectorIndex.shared.count, 1)
     }
 
@@ -673,12 +1066,13 @@ final class PersistenceAuditTests: XCTestCase {
         try context.save()
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("rag-cancelled-\(UUID().uuidString).txt")
-        try "replacement design".write(to: fileURL, atomically: true, encoding: .utf8)
+        try String(repeating: "replacement design ", count: 4_000).write(to: fileURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: fileURL) }
         RAGVectorIndex.shared.invalidate()
         defer { RAGVectorIndex.shared.invalidate() }
         XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
-        var embedWasCalled = false
+        var embeddingCallCount = 0
+        var saveOperations: [String] = []
 
         let task = Task { @MainActor () -> RAGStore.IndexResult in
             return await RAGStore.indexImportedFilesWithDiagnostics(
@@ -690,9 +1084,15 @@ final class PersistenceAuditTests: XCTestCase {
                     diagnostic: nil
                 ),
                 embed: { _ in
-                    embedWasCalled = true
-                    withUnsafeCurrentTask { $0?.cancel() }
+                    embeddingCallCount += 1
+                    if embeddingCallCount == 33 {
+                        withUnsafeCurrentTask { $0?.cancel() }
+                    }
                     return EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: metadata.modelIdentifier)
+                },
+                save: { context, operation, _ in
+                    saveOperations.append(operation)
+                    try context.save()
                 }
             )
         }
@@ -701,9 +1101,108 @@ final class PersistenceAuditTests: XCTestCase {
         XCTAssertEqual(result.mode, .skipped)
         XCTAssertEqual(result.indexedCount, 0)
         XCTAssertEqual(result.diagnostic, "cancelled")
-        XCTAssertTrue(embedWasCalled)
+        XCTAssertEqual(embeddingCallCount, 33)
+        XCTAssertGreaterThanOrEqual(saveOperations.filter { $0 == "indexImportedFiles.stage" }.count, 1)
+        XCTAssertTrue(saveOperations.contains("indexImportedFiles.discard"))
         XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["architecture.txt"])
+        XCTAssertFalse(try context.fetch(FetchDescriptor<RAGChunk>()).contains { $0.isReplacementStaging })
         XCTAssertEqual(RAGVectorIndex.shared.count, 1)
+    }
+
+    @MainActor
+    func testBulkReplacementLeaseRejectsReentrantSingleFileImportAndWipe() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "old.txt"))
+        try context.save()
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-reentrant-mutation-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bulkURL = directory.appendingPathComponent("bulk.txt")
+        let nestedURL = directory.appendingPathComponent("nested.txt")
+        try "bulk replacement".write(to: bulkURL, atomically: true, encoding: .utf8)
+        try "nested import".write(to: nestedURL, atomically: true, encoding: .utf8)
+
+        var nestedResult: RAGStore.IndexResult?
+        var wipeError: RAGStore.PersistenceError?
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: directory,
+                files: [bulkURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                nestedResult = await RAGStore.indexFileWithDiagnostics(
+                    url: nestedURL,
+                    context: context,
+                    embed: { _ in
+                        XCTFail("The rejected nested import must not embed")
+                        return EmbeddingRuntimeResult(vector: [1, 0], modelIdentifier: "llama:sha256:model-a")
+                    }
+                )
+                do {
+                    try RAGStore.wipe(.file, context: context)
+                } catch let error as RAGStore.PersistenceError {
+                    wipeError = error
+                }
+                return EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            },
+            save: { context, _, _ in try context.save() }
+        )
+
+        XCTAssertEqual(result.mode, .indexed)
+        XCTAssertEqual(nestedResult?.mode, .skipped)
+        XCTAssertEqual(nestedResult?.diagnostic, "replacement_already_in_progress")
+        XCTAssertEqual(wipeError, .replacementAlreadyInProgress)
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.map(\.sourceName), [bulkURL.lastPathComponent])
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
+    }
+
+    @MainActor
+    func testCPUDegradationBeforeCommitRollsBackStagingAndPreservesCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "existing architecture", sourceType: .file, sourceName: "old.txt"))
+        try context.save()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rag-cpu-transition-\(UUID().uuidString).txt")
+        try "replacement architecture".write(to: fileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        RAGStore.testCPUWatchdogDegradedOverride = false
+        defer { RAGStore.testCPUWatchdogDegradedOverride = nil }
+
+        var saveOperations: [String] = []
+        let result = await RAGStore.indexImportedFilesWithDiagnostics(
+            context: context,
+            importedFilesResult: .init(
+                directory: fileURL.deletingLastPathComponent(),
+                files: [fileURL],
+                mode: "loaded",
+                diagnostic: nil
+            ),
+            embed: { _ in
+                EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            },
+            save: { context, operation, _ in
+                saveOperations.append(operation)
+                try context.save()
+                if operation == "indexImportedFiles.stage" {
+                    RAGStore.testCPUWatchdogDegradedOverride = true
+                }
+            }
+        )
+
+        XCTAssertEqual(result.mode, .skipped)
+        XCTAssertEqual(result.diagnostic, "cpu_watchdog_degraded")
+        XCTAssertTrue(saveOperations.contains("indexImportedFiles.stage"))
+        XCTAssertTrue(saveOperations.contains("indexImportedFiles.discard"))
+        XCTAssertEqual(try context.fetch(FetchDescriptor<RAGChunk>()).map(\.sourceName), ["old.txt"])
+        XCTAssertFalse(try context.fetch(FetchDescriptor<RAGChunk>()).contains { $0.isReplacementStaging })
     }
 
     @MainActor
@@ -746,6 +1245,122 @@ final class PersistenceAuditTests: XCTestCase {
             topK: 5,
             allowedBuckets: [RAGSourceType.photo.rawValue]
         ).isEmpty)
+    }
+
+    @MainActor
+    func testAlreadyEmptyPhotoReindexBypassesWriteBudgetAsNoOp() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        DiskWriteBudget.shared.setGenerationActive(true)
+        defer { DiskWriteBudget.shared.setGenerationActive(false) }
+
+        let result = await RAGStore.indexPhotosWithDiagnostics(
+            context: context,
+            photoLibrarySnapshot: .init(authorizationStatus: .authorized, assets: [])
+        )
+
+        XCTAssertEqual(result.mode, .cleared)
+        XCTAssertEqual(result.diagnostic, "empty_photo_library")
+        XCTAssertTrue(try context.fetch(FetchDescriptor<RAGChunk>()).isEmpty)
+    }
+
+    @MainActor
+    func testNonEmptyPhotoReplacementStagesAndCommitsSummary() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "old photos", sourceType: .photo, sourceName: "Photos 2025-12"))
+        try context.save()
+        var saveOperations: [String] = []
+
+        let result = await RAGStore.indexPhotosWithDiagnostics(
+            context: context,
+            photoLibrarySnapshot: .init(authorizationStatus: .authorized, assets: []),
+            photoIndexSummaries: [.init(month: "2026-08", content: "Photos (2026-08): 3 items.")],
+            embed: { _ in
+                EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            },
+            save: { context, operation, _ in
+                saveOperations.append(operation)
+                try context.save()
+            }
+        )
+
+        XCTAssertEqual(result, .init(indexedCount: 1, mode: .indexed, diagnostic: nil))
+        XCTAssertEqual(saveOperations, ["indexPhotos.stage", "indexPhotos.replace"])
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.map(\.sourceName), ["Photos 2026-08"])
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
+    }
+
+    @MainActor
+    func testNonEmptyPhotoReplacementCommitFailureDiscardsStageAndPreservesCorpus() async throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        context.insert(RAGChunk(content: "old photos", sourceType: .photo, sourceName: "Photos 2025-12"))
+        try context.save()
+        var saveOperations: [String] = []
+
+        let result = await RAGStore.indexPhotosWithDiagnostics(
+            context: context,
+            photoLibrarySnapshot: .init(authorizationStatus: .authorized, assets: []),
+            photoIndexSummaries: [.init(month: "2026-08", content: "Photos (2026-08): 3 items.")],
+            embed: { _ in
+                EmbeddingRuntimeResult(vector: [0, 1], modelIdentifier: "llama:sha256:model-a")
+            },
+            save: { context, operation, _ in
+                saveOperations.append(operation)
+                if operation == "indexPhotos.replace" { throw SaveError() }
+                try context.save()
+            }
+        )
+
+        XCTAssertEqual(result.mode, .failed)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("replacement_persist_failed:") == true)
+        XCTAssertEqual(saveOperations, ["indexPhotos.stage", "indexPhotos.replace", "indexPhotos.discard"])
+        let chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+        XCTAssertEqual(chunks.map(\.sourceName), ["Photos 2025-12"])
+        XCTAssertFalse(chunks.contains { $0.isReplacementStaging })
+    }
+
+    @MainActor
+    func testReplacementStagingChunksStayHiddenFromLiveCorpusViews() throws {
+        let container = try ModelContainer(for: RAGChunk.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = ModelContext(container)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: SemanticEmbeddingText.formatVersion,
+            modelIdentifier: "llama:sha256:model-a",
+            dimension: 2
+        )
+        let active = RAGChunk(
+            content: "active architecture",
+            sourceType: .file,
+            sourceName: "active.txt",
+            embedding: [1, 0],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        )
+        let staged = RAGChunk(
+            content: "hidden replacement",
+            sourceType: .file,
+            sourceName: "staged.txt",
+            embedding: [0, 1],
+            embeddingModelIdentifier: metadata.modelIdentifier
+        )
+        staged.sourceType = RAGChunk.replacementStagingSourceType(id: UUID(), kind: .file)
+        context.insert(active)
+        context.insert(staged)
+        try context.save()
+        RAGVectorIndex.shared.invalidate()
+        defer { RAGVectorIndex.shared.invalidate() }
+
+        XCTAssertEqual(RAGStore.counts(context: context)[.file], 1)
+        XCTAssertEqual(RAGStore.chunks(for: .file, context: context).map(\.sourceName), ["active.txt"])
+        XCTAssertTrue(RAGStore.lexicalSearch(
+            query: "hidden",
+            context: context,
+            sourceTypes: [.file],
+            limit: 5
+        ).isEmpty)
+        XCTAssertEqual(RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata).loadedCount, 1)
     }
 
     @MainActor

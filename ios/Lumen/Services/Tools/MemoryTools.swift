@@ -6,6 +6,7 @@ enum MemoryTools {
     struct RAGIndexExecution: Sendable, Equatable {
         let text: String
         let status: ToolResultStatus
+        let mode: RAGStore.IndexMode?
         let diagnostic: String?
     }
 
@@ -43,7 +44,7 @@ enum MemoryTools {
             return "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
         }
         let ctx = ModelContext(container)
-        let expandedQuery = expandRAGQueryIfNeeded(trimmed)
+        let expandedQuery = RAGEngine.expandedSearchQuery(trimmed)
         let retrieval = await RAGEngine().retrieveWithDiagnostics(
             query: expandedQuery,
             relevanceQuery: trimmed,
@@ -74,16 +75,6 @@ enum MemoryTools {
             return "[\(idx + 1)] \(src) · score \(String(format: "%.2f", r.score))\n\(r.excerpt)"
         }.joined(separator: "\n\n")
     }
-
-
-    private static func expandRAGQueryIfNeeded(_ query: String) -> String {
-        let lower = query.lowercased()
-        let shouldExpand = ["architecture notes", "architecture", "module", "service", "component", "package"].contains { lower.contains($0) }
-        guard shouldExpand else { return query }
-        let expansionTerms = ["architecture", "module", "service", "component", "package"]
-        return query + " " + expansionTerms.joined(separator: " ")
-    }
-
     static func ragIndexFiles() async -> String {
         await ragIndexFilesExecution().text
     }
@@ -93,6 +84,7 @@ enum MemoryTools {
             return RAGIndexExecution(
                 text: "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable.",
                 status: .unavailable,
+                mode: nil,
                 diagnostic: "swiftdata_shared_container_unavailable"
             )
         }
@@ -102,6 +94,7 @@ enum MemoryTools {
             return RAGIndexExecution(
                 text: "RAG indexing failed: embedding model is unavailable. Load a local embedding model, then run reindex files.",
                 status: .unavailable,
+                mode: nil,
                 diagnostic: "embedding_model_unavailable"
             )
         }
@@ -118,6 +111,7 @@ enum MemoryTools {
             return RAGIndexExecution(
                 text: "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable.",
                 status: .unavailable,
+                mode: nil,
                 diagnostic: "swiftdata_shared_container_unavailable"
             )
         }
@@ -127,6 +121,7 @@ enum MemoryTools {
             return RAGIndexExecution(
                 text: "RAG photo indexing failed: embedding model is unavailable. Load a local embedding model, then try again.",
                 status: .unavailable,
+                mode: nil,
                 diagnostic: "embedding_model_unavailable"
             )
         }
@@ -144,7 +139,7 @@ enum MemoryTools {
         case .partial, .failed:
             status = .failed
         }
-        return RAGIndexExecution(text: text, status: status, diagnostic: result.diagnostic)
+        return RAGIndexExecution(text: text, status: status, mode: result.mode, diagnostic: result.diagnostic)
     }
 
     static func ragIndexFilesMessage(from result: RAGStore.IndexResult) -> String {

@@ -17,6 +17,12 @@ nonisolated struct DiskWriteBudgetSnapshot: Equatable, Sendable {
     let bytesByCategory24Hours: [DiskWriteCategory: Int64]
 }
 
+nonisolated struct DiskWriteBudgetReservation: Equatable, Hashable, Sendable {
+    fileprivate let id: UUID
+    fileprivate let bytes: Int64
+    fileprivate let category: DiskWriteCategory
+}
+
 nonisolated final class DiskWriteGenerationLease: @unchecked Sendable {
     private let lock = NSLock()
     private var ended = false
@@ -43,6 +49,7 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
 
     private let lock = NSLock()
     private var events: [Event] = []
+    private var activeReservations: [UUID: DiskWriteBudgetReservation] = [:]
     private let oneMinuteLimit: Int64
     private let fifteenMinuteLimit: Int64
     private let dayLimit: Int64
@@ -57,6 +64,46 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
 
     func canWrite(bytes: Int, category: DiskWriteCategory) -> Bool {
         !shouldDefer(bytes: bytes, category: category)
+    }
+
+    func reserveWrite(bytes: Int, category: DiskWriteCategory) -> DiskWriteBudgetReservation? {
+        let requested = Int64(max(0, bytes))
+        let now = ProcessInfo.processInfo.systemUptime
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isGenerationBlocked(category: category) else { return nil }
+        prune(now: now)
+        guard !wouldExceedLimits(requested: requested, now: now) else { return nil }
+
+        let reservation = DiskWriteBudgetReservation(
+            id: UUID(),
+            bytes: requested,
+            category: category
+        )
+        activeReservations[reservation.id] = reservation
+        return reservation
+    }
+
+    @discardableResult
+    func commitReservedWrite(_ reservation: DiskWriteBudgetReservation) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        lock.lock()
+        defer { lock.unlock() }
+        guard activeReservations.removeValue(forKey: reservation.id) == reservation else {
+            return false
+        }
+        prune(now: now)
+        if reservation.bytes > 0 {
+            events.append(Event(at: now, bytes: reservation.bytes, category: reservation.category))
+        }
+        return true
+    }
+
+    @discardableResult
+    func releaseReservedWrite(_ reservation: DiskWriteBudgetReservation) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return activeReservations.removeValue(forKey: reservation.id) == reservation
     }
 
     func setGenerationActive(_ active: Bool) {
@@ -88,23 +135,13 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
     }
 
     func shouldDefer(bytes: Int, category: DiskWriteCategory) -> Bool {
-        lock.lock()
-        let active = generationActive || activeGenerationLeaseCount > 0
-        lock.unlock()
-        let generationBlockedCategories: Set<DiskWriteCategory> = [.diagnostics, .logs, .memory, .rag, .triggers]
-        if active, generationBlockedCategories.contains(category) {
-            return true
-        }
-
         let requested = Int64(max(0, bytes))
         let now = ProcessInfo.processInfo.systemUptime
         lock.lock()
+        defer { lock.unlock() }
+        guard !isGenerationBlocked(category: category) else { return true }
         prune(now: now)
-        let one = total(since: now - 60) + requested
-        let fifteen = total(since: now - 15 * 60) + requested
-        let day = total(since: now - 24 * 60 * 60) + requested
-        lock.unlock()
-        return one > oneMinuteLimit || fifteen > fifteenMinuteLimit || day > dayLimit
+        return wouldExceedLimits(requested: requested, now: now)
     }
 
     func recordWrite(bytes: Int, category: DiskWriteCategory) {
@@ -123,7 +160,7 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
         prune(now: now)
         var byCategory: [DiskWriteCategory: Int64] = [:]
         for category in DiskWriteCategory.allCases {
-            byCategory[category] = events.filter { $0.category == category }.reduce(0) { $0 + $1.bytes }
+            byCategory[category] = saturatedSum(events.lazy.filter { $0.category == category }.map(\.bytes))
         }
         let snap = DiskWriteBudgetSnapshot(
             bytes1Minute: total(since: now - 60),
@@ -140,6 +177,36 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
     }
 
     private func total(since cutoff: TimeInterval) -> Int64 {
-        events.filter { $0.at >= cutoff }.reduce(0) { $0 + $1.bytes }
+        saturatedSum(events.lazy.filter { $0.at >= cutoff }.map(\.bytes))
+    }
+
+    private func isGenerationBlocked(category: DiskWriteCategory) -> Bool {
+        let generationBlockedCategories: Set<DiskWriteCategory> = [.diagnostics, .logs, .memory, .rag, .triggers]
+        return (generationActive || activeGenerationLeaseCount > 0)
+            && generationBlockedCategories.contains(category)
+    }
+
+    private func wouldExceedLimits(requested: Int64, now: TimeInterval) -> Bool {
+        guard let reserved = checkedSum(activeReservations.values.lazy.map(\.bytes)),
+              let one = checkedSum([total(since: now - 60), reserved, requested]),
+              let fifteen = checkedSum([total(since: now - 15 * 60), reserved, requested]),
+              let day = checkedSum([total(since: now - 24 * 60 * 60), reserved, requested]) else {
+            return true
+        }
+        return one > oneMinuteLimit || fifteen > fifteenMinuteLimit || day > dayLimit
+    }
+
+    private func saturatedSum<S: Sequence>(_ values: S) -> Int64 where S.Element == Int64 {
+        checkedSum(values) ?? .max
+    }
+
+    private func checkedSum<S: Sequence>(_ values: S) -> Int64? where S.Element == Int64 {
+        var sum: Int64 = 0
+        for value in values {
+            let result = sum.addingReportingOverflow(value)
+            guard !result.overflow else { return nil }
+            sum = result.partialValue
+        }
+        return sum
     }
 }

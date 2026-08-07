@@ -437,7 +437,19 @@ extension AssistantKernel: AgentKernelRunning {
                     ))
                     continue
                 }
-                finalText = observationText
+                let canonicalToolID = ToolRouteGuard.canonicalToolID(validatedCall.canonicalToolID)
+                if canonicalToolID == "rag.index_files" || canonicalToolID == "rag.index_photos" {
+                    finalText = Self.finalizedToolObservation(
+                        intent: routing.intent,
+                        toolID: validatedCall.canonicalToolID,
+                        observation: observationText,
+                        originalPrompt: userMessage,
+                        resultStatus: result.status,
+                        ragIndexMode: result.structuredPayload?["ragIndexMode"].flatMap(RAGStore.IndexMode.init(rawValue:))
+                    )
+                } else {
+                    finalText = observationText
+                }
                 break
             }
 
@@ -445,7 +457,9 @@ extension AssistantKernel: AgentKernelRunning {
                 intent: routing.intent,
                 toolID: validatedCall.canonicalToolID,
                 observation: observationText,
-                originalPrompt: userMessage
+                originalPrompt: userMessage,
+                resultStatus: result.status,
+                ragIndexMode: result.structuredPayload?["ragIndexMode"].flatMap(RAGStore.IndexMode.init(rawValue:))
             )
         }
 
@@ -495,13 +509,17 @@ extension AssistantKernel: AgentKernelRunning {
         intent: UserIntent,
         toolID: String,
         observation: String,
-        originalPrompt: String
+        originalPrompt: String,
+        resultStatus: ToolResultStatus? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
     ) -> String {
         ToolObservationFinalizer.immediateFinalIfSafe(
             intent: intent,
             toolID: toolID,
             observation: observation,
-            originalPrompt: originalPrompt
+            originalPrompt: originalPrompt,
+            resultStatus: resultStatus,
+            ragIndexMode: ragIndexMode
         ) ?? observation
     }
 

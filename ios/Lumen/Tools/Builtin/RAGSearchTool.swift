@@ -86,8 +86,10 @@ struct RAGSearchTool: LocalTool {
     /// - Returns: A tuple containing formatted chunk rows and the search mode ("semantic" or "lexical").
     @MainActor
     private static func searchRows(query: String, limit: Int, sourceScope: RAGSourceScope, source: String?, minScore: Double?, outputBudgetChars: Int, modelContext: ModelContext) async -> (rows: [String], mode: String, diagnosticsPayload: [String: String], failureDiagnostic: String?, scopedCorpusEmpty: Bool) {
+        let searchQuery = RAGEngine.expandedSearchQuery(query)
         let retrieval = await RAGEngine().retrieveWithDiagnostics(
-            query: query,
+            query: searchQuery,
+            relevanceQuery: query,
             limit: limit,
             sourceTypes: sourceScope.sourceTypes,
             context: modelContext

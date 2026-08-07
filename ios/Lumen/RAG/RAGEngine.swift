@@ -133,7 +133,10 @@ final class RAGEngine {
 
     func maintenance(context: ModelContext) async -> RAGMaintenanceResult {
         do {
-            var descriptor = FetchDescriptor<RAGChunk>()
+            let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
+            var descriptor = FetchDescriptor<RAGChunk>(
+                predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
+            )
             descriptor.fetchLimit = 1
             let hasChunks = try !context.fetch(descriptor).isEmpty
             return .init(success: true, metricSummary: hasChunks ? "maintenance_success_work_done" : "maintenance_success_empty")
@@ -166,11 +169,17 @@ final class RAGEngine {
     ) -> Bool {
         guard rerankedScore.isFinite, rerankedScore >= 0 else { return false }
         let terms = queryTerms(query)
-        guard !terms.isEmpty else { return false }
+        let highConfidenceSemanticThreshold = 0.50
 
         // Strong semantic evidence may not share literal words with the query.
-        let highConfidenceSemanticThreshold = 0.50
         if rerankedScore >= highConfidenceSemanticThreshold { return true }
+
+        // Preserve acronyms embedded in ordinary requests without treating a
+        // substring inside a longer word (for example, "ui" in "build") as evidence.
+        if hasDirectShortQueryMatch(query: query, content: content, title: title) {
+            return true
+        }
+        guard !terms.isEmpty else { return false }
 
         // Lower-confidence candidates need a meaningful lexical anchor to fail closed.
         let genericRetrievalTerms: Set<String> = [
@@ -186,7 +195,28 @@ final class RAGEngine {
                 .components(separatedBy: CharacterSet.alphanumerics.inverted)
                 .filter { $0.count >= 3 }
         )
-        return anchors.contains(where: candidateTerms.contains)
+        return anchors.contains { anchor in
+            candidateTerms.contains { candidate in
+                tokensShareLexicalAnchor(anchor, candidate)
+            }
+        }
+    }
+
+    /// Expands the retrieval query while allowing callers to keep the untouched
+    /// input as the relevance anchor.
+    nonisolated static func expandedSearchQuery(_ query: String) -> String {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        let expansionTerms = ["architecture", "module", "service", "component", "package"]
+        guard expansionTerms.contains(where: { lower.contains($0) }) || lower.contains("design") || lower.contains("system") else {
+            return trimmed
+        }
+
+        var expanded = trimmed
+        for term in expansionTerms where !lower.contains(term) {
+            expanded += " \(term)"
+        }
+        return expanded
     }
 
     nonisolated private static func focusedExcerpt(query: String, content: String, maxLength: Int) -> (text: String, offsetStart: Int?, offsetEnd: Int?) {
@@ -227,6 +257,55 @@ final class RAGEngine {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count >= 3 && !stopwords.contains($0) }
             .filter { seen.insert($0).inserted }
+    }
+
+    nonisolated private static func hasDirectShortQueryMatch(query: String, content: String, title: String) -> Bool {
+        let ignoredTerms: Set<String> = [
+            "about", "after", "and", "document", "documents", "file", "files", "find", "for", "from",
+            "have", "into", "local", "look", "note", "notes", "please", "pour", "report", "search",
+            "show", "summarize", "summary", "tell", "that", "the", "this", "use", "using", "what",
+            "when", "where", "with", "avec", "dans"
+        ]
+        let shortStopwords: Set<String> = [
+            "a", "an", "as", "at", "be", "by", "do", "go", "he", "i", "if", "in", "is", "it",
+            "la", "le", "me", "my", "of", "on", "or", "so", "to", "up", "us", "we"
+        ]
+        let rawTerms = lexicalTokens(query).filter {
+            $0.count < 3 && !ignoredTerms.contains($0) && !shortStopwords.contains($0)
+        }
+        guard !rawTerms.isEmpty else { return false }
+
+        let candidateTerms = Set(lexicalTokens(title) + lexicalTokens(content))
+        return rawTerms.contains(where: candidateTerms.contains)
+    }
+
+    nonisolated private static func lexicalTokens(_ value: String) -> [String] {
+        value.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+    }
+
+    nonisolated private static func tokensShareLexicalAnchor(_ anchor: String, _ candidate: String) -> Bool {
+        if anchor == candidate { return true }
+
+        let anchorVariants = inflectionVariants(anchor)
+        let candidateVariants = inflectionVariants(candidate)
+        if !anchorVariants.isDisjoint(with: candidateVariants) { return true }
+
+        let shorter = anchor.count <= candidate.count ? anchor : candidate
+        let longer = anchor.count <= candidate.count ? candidate : anchor
+        return shorter.count >= 5 && longer.hasPrefix(shorter)
+    }
+
+    nonisolated private static func inflectionVariants(_ token: String) -> Set<String> {
+        var variants: Set<String> = [token]
+        if token.count > 3, token.hasSuffix("s") {
+            variants.insert(String(token.dropLast()))
+        }
+        if token.count > 4, token.hasSuffix("ies") {
+            variants.insert(String(token.dropLast(3)) + "y")
+        }
+        return variants
     }
 
     nonisolated private static func clamped(_ value: Double) -> Double {

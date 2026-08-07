@@ -70,6 +70,11 @@ nonisolated enum FinalIntentValidator {
             return true
         }
 
+        if lower.hasPrefix("approval required for")
+            || lower.hasPrefix("this tool requires explicit user approval before it can run:") {
+            return isValidApprovalBoundaryFinal(text, lower: lower, routing: routing)
+        }
+
         switch routing.intent {
         case .weather:
             return containsAny(lower, ["weather", "temperature", "humidity", "wind", "feels like", "°c", "rain", "snow", "cloud", "gps", "location access", "network", "timeout", "unreachable", "open-meteo", "service unavailable"])
@@ -218,6 +223,60 @@ nonisolated enum FinalIntentValidator {
         guard !looksLikeEmailLeak(lower, unless: routing.intent == .emailDraft || routing.intent == .outlook) else { return false }
         guard !looksLikeWebSearchLeak(lower, unless: routing.intent == .webSearch) else { return false }
         return true
+    }
+
+    private static func isValidApprovalBoundaryFinal(
+        _ text: String,
+        lower: String,
+        routing: IntentRoutingDecision
+    ) -> Bool {
+        guard passesLeakFilters(text: text, lower: lower, routing: routing) else { return false }
+        guard let reference = approvalBoundaryReference(in: lower) else { return false }
+        let canonicalToolID = ToolRouteGuard.canonicalToolID(reference.toolID)
+        let allowedToolIDs = Set(routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
+        guard allowedToolIDs.contains(canonicalToolID) else { return false }
+        guard ToolRouteGuard.requiresUserApproval(canonicalToolID) else { return false }
+        return hasExplicitNonExecutionEvidence(reference.trailingText, canonicalToolID: canonicalToolID)
+    }
+
+    private static func approvalBoundaryReference(in lower: String) -> (toolID: String, trailingText: String)? {
+        let pattern = #"(?:approval required for\s+|requires explicit user approval before it can run:\s*)([a-z0-9][a-z0-9._-]*)"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let fullRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+        let matches = expression.matches(in: lower, range: fullRange)
+        guard matches.count == 1,
+              let match = matches.first,
+              let toolRange = Range(match.range(at: 1), in: lower),
+              let trailingRange = Range(match.range, in: lower) else {
+            return nil
+        }
+        return (
+            toolID: String(lower[toolRange]).trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+            trailingText: String(lower[trailingRange.lowerBound...])
+        )
+    }
+
+    private static func hasExplicitNonExecutionEvidence(_ trailingText: String, canonicalToolID: String) -> Bool {
+        if canonicalToolID == "rag.index_files" || canonicalToolID == "rag.index_photos" {
+            return containsAny(trailingText, [
+                "i did not run it",
+                "i didn't run it",
+                "i didn’t run it",
+                "it was not run",
+                "it has not been run",
+                "before it can run"
+            ])
+        }
+        return containsAny(trailingText, [
+            "i did not ",
+            "i didn't ",
+            "i didn’t ",
+            "it was not run",
+            "it has not been run",
+            "after you approve",
+            "after approval",
+            "before it can run"
+        ])
     }
 
     private static func replacementReason(for text: String, lower: String, routing: IntentRoutingDecision) -> String {
