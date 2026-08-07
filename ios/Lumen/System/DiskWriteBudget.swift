@@ -21,6 +21,7 @@ nonisolated struct DiskWriteBudgetReservation: Equatable, Hashable, Sendable {
     fileprivate let id: UUID
     fileprivate let bytes: Int64
     fileprivate let category: DiskWriteCategory
+    fileprivate let countsAgainstAdmissionLimits: Bool
 }
 
 nonisolated final class DiskWriteGenerationLease: @unchecked Sendable {
@@ -67,18 +68,38 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
     }
 
     func reserveWrite(bytes: Int, category: DiskWriteCategory) -> DiskWriteBudgetReservation? {
+        reserveWrite(bytes: bytes, category: category, countsAgainstAdmissionLimits: true)
+    }
+
+    /// Reserves guaranteed cleanup headroom for a staged transactional write.
+    /// Cleanup reservations are bounded separately so they cannot double-count the
+    /// same staged payload against the rolling write windows.
+    func reserveCleanupWrite(bytes: Int, category: DiskWriteCategory) -> DiskWriteBudgetReservation? {
+        reserveWrite(bytes: bytes, category: category, countsAgainstAdmissionLimits: false)
+    }
+
+    private func reserveWrite(
+        bytes: Int,
+        category: DiskWriteCategory,
+        countsAgainstAdmissionLimits: Bool
+    ) -> DiskWriteBudgetReservation? {
         let requested = Int64(max(0, bytes))
         let now = ProcessInfo.processInfo.systemUptime
         lock.lock()
         defer { lock.unlock() }
         guard !isGenerationBlocked(category: category) else { return nil }
         prune(now: now)
-        guard !wouldExceedLimits(requested: requested, now: now) else { return nil }
+        if countsAgainstAdmissionLimits {
+            guard !wouldExceedLimits(requested: requested, now: now) else { return nil }
+        } else {
+            guard !wouldExceedCleanupReservationLimit(requested: requested, now: now) else { return nil }
+        }
 
         let reservation = DiskWriteBudgetReservation(
             id: UUID(),
             bytes: requested,
-            category: category
+            category: category,
+            countsAgainstAdmissionLimits: countsAgainstAdmissionLimits
         )
         activeReservations[reservation.id] = reservation
         return reservation
@@ -187,13 +208,31 @@ nonisolated final class DiskWriteBudget: @unchecked Sendable {
     }
 
     private func wouldExceedLimits(requested: Int64, now: TimeInterval) -> Bool {
-        guard let reserved = checkedSum(activeReservations.values.lazy.map(\.bytes)),
+        let admittedReservations = activeReservations.values.lazy
+            .filter(\.countsAgainstAdmissionLimits)
+            .map(\.bytes)
+        guard let reserved = checkedSum(admittedReservations),
               let one = checkedSum([total(since: now - 60), reserved, requested]),
               let fifteen = checkedSum([total(since: now - 15 * 60), reserved, requested]),
               let day = checkedSum([total(since: now - 24 * 60 * 60), reserved, requested]) else {
             return true
         }
         return one > oneMinuteLimit || fifteen > fifteenMinuteLimit || day > dayLimit
+    }
+
+    private func wouldExceedCleanupReservationLimit(requested: Int64, now: TimeInterval) -> Bool {
+        let cleanupReservations = activeReservations.values.lazy
+            .filter { !$0.countsAgainstAdmissionLimits }
+            .map(\.bytes)
+        guard let reservedCleanup = checkedSum(cleanupReservations),
+              let cleanupExposure = checkedSum([
+                total(since: now - 24 * 60 * 60),
+                reservedCleanup,
+                requested
+              ]) else {
+            return true
+        }
+        return cleanupExposure > dayLimit
     }
 
     private func saturatedSum<S: Sequence>(_ values: S) -> Int64 where S.Element == Int64 {

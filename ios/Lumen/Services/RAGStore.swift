@@ -211,6 +211,7 @@ enum RAGStore {
         save: ((ModelContext, String, String) throws -> Void)?
     ) throws -> IndexResult? {
         guard try !hasVisibleCorpus(context: context, sourceTypes: sourceTypes) else { return nil }
+        RAGVectorIndex.shared.invalidate()
 
         let prefix = RAGChunk.replacementStagingSourceTypePrefix
         var hasOrphanedStaging = false
@@ -346,7 +347,13 @@ enum RAGStore {
         if save == nil {
             let estimatedBytes = estimatedReplacementStageBytes(pending)
             do {
-                cleanupReservation = try reserveReplacementWrite(bytes: estimatedBytes, authorization: authorization)
+                guard let reservedCleanup = authorization.budget.reserveCleanupWrite(
+                    bytes: estimatedBytes,
+                    category: .rag
+                ) else {
+                    throw PersistenceError.diskWriteBudgetDenied
+                }
+                cleanupReservation = reservedCleanup
                 forwardReservation = try reserveReplacementWrite(bytes: estimatedBytes, authorization: authorization)
             } catch PersistenceError.diskWriteBudgetDenied {
                 if let cleanupReservation {

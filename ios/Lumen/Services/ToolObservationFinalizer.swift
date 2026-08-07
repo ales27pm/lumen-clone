@@ -312,7 +312,9 @@ nonisolated enum ToolObservationFinalizer {
         guard !records.isEmpty,
               records.allSatisfy(hasMemoryRecallRecordMetadata) else {
             return (
-                lines.map(unstructuredMemoryFactCandidate).filter { !$0.isEmpty },
+                unstructuredMemoryRecords(from: lines)
+                    .compactMap(unstructuredMemoryFactCandidate)
+                    .filter { !$0.isEmpty },
                 false
             )
         }
@@ -351,9 +353,34 @@ nonisolated enum ToolObservationFinalizer {
 
     private static func isMemoryRecallRecordStart(_ line: String) -> Bool {
         line.range(
-            of: #"^\s*(?:[•\-]\s*)?\[[^\]\r\n]+\]\s*"#,
-            options: .regularExpression
+            of: #"^\s*(?:[•\-]\s*)?\[(?:[0-9a-f]{8}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[a-z]{4}[0-9]{4})\]\s*"#,
+            options: [.regularExpression, .caseInsensitive]
         ) != nil
+    }
+
+    private static func unstructuredMemoryRecords(from lines: [String]) -> [String] {
+        var records: [String] = []
+        var currentLines: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let startsBullet = line.range(of: #"^\s*[•\-]\s+"#, options: .regularExpression) != nil
+            if startsBullet {
+                if !currentLines.isEmpty {
+                    records.append(currentLines.joined(separator: " "))
+                }
+                currentLines = [line]
+            } else if currentLines.isEmpty {
+                records.append(line)
+            } else {
+                currentLines.append(line)
+            }
+        }
+        if !currentLines.isEmpty {
+            records.append(currentLines.joined(separator: " "))
+        }
+        return records
     }
 
     private static func isConversationMemoryRecord(_ record: String) -> Bool {
@@ -370,10 +397,39 @@ nonisolated enum ToolObservationFinalizer {
         ) != nil
     }
 
-    private static func unstructuredMemoryFactCandidate(from line: String) -> String {
-        line
+    private static func unstructuredMemoryFactCandidate(from record: String) -> String? {
+        guard !isConversationMemoryRecord(record) else { return nil }
+        let metadataPattern = #"\s*\|\s*(?:kind|score|source)\s*=.*$"#
+        let hasTrailingMetadata = record.range(
+            of: metadataPattern,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+
+        var candidate = record
             .replacingOccurrences(of: #"^\s*[•\-]\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(
+                of: metadataPattern,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if hasTrailingMetadata {
+            candidate = candidate.replacingOccurrences(
+                of: #"^\[[^\]\r\n]+\]\s*"#,
+                with: "",
+                options: .regularExpression
+            )
+        } else {
+            candidate = candidate.replacingOccurrences(
+                of: #"^\[(?:[0-9a-f]{8}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[a-z]{4}[0-9]{4})\]\s*"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+
+        candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        return candidate.isEmpty ? nil : candidate
     }
 
     private static func memoryFactCandidate(from line: String) -> String {
