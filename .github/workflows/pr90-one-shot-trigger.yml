@@ -1,0 +1,44 @@
+name: Trigger PR90 one-shot patch
+
+on:
+  push:
+    branches:
+      - agent/fix-rag-memory-e2e-root-causes
+    paths:
+      - .github/workflows/pr90-one-shot-trigger.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-reviewed-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-rag-memory-e2e-root-causes
+          fetch-depth: 0
+
+      - name: Recover, verify, and apply reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATCH_B64="$(sed -n 's/^          PATCH_B64: //p' .github/workflows/pr90-one-shot-patch.yml)"
+          test -n "$PATCH_B64"
+          printf '%s' "$PATCH_B64" | base64 --decode > /tmp/pr90.patch
+          echo 'dd18bd48027e0d0c19d0f34eb6ec701c4794c47eaad0b021f78c628700ce7016  /tmp/pr90.patch' | sha256sum --check -
+          git apply --check /tmp/pr90.patch
+          git apply /tmp/pr90.patch
+          git diff --check
+
+      - name: Commit patched sources and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ios/Lumen/Services/E2ETestRunner.swift \
+                  ios/LumenTests/PersistenceAuditTests.swift \
+                  ios/LumenTests/E2ETestRunnerHygieneTests.swift
+          git commit -m 'test: finish PR 90 review fixes'
+          git push origin HEAD:agent/fix-rag-memory-e2e-root-causes
