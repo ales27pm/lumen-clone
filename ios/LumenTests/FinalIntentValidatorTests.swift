@@ -122,6 +122,60 @@ struct FinalIntentValidatorTests {
         #expect(photoClearedOutcome.text == photoCleared)
     }
 
+    @Test func ragIndexFinalizerPrefersTypedOutcomeOverMisleadingProse() {
+        let failed = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_files",
+            observation: "Indexed 4 chunks from imported files.",
+            originalPrompt: "Reindex my imported files.",
+            resultStatus: .failed,
+            ragIndexMode: .failed
+        )
+        let cleared = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_photos",
+            observation: "Photo indexing completed.",
+            originalPrompt: "Reindex my photos.",
+            resultStatus: .success,
+            ragIndexMode: .cleared
+        )
+        let skipped = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_files",
+            observation: "Indexed 4 chunks from imported files.",
+            originalPrompt: "Reindex my imported files.",
+            resultStatus: .unavailable,
+            ragIndexMode: .skipped
+        )
+        let statusOnlyFailure = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .rag,
+            toolID: "rag.index_photos",
+            observation: "Indexed 3 monthly photo summaries.",
+            originalPrompt: "Reindex my photos.",
+            resultStatus: .failed
+        )
+
+        #expect(failed?.hasPrefix("Local file index update failed:") == true)
+        #expect(cleared?.hasPrefix("Photo index cleared:") == true)
+        #expect(skipped?.hasPrefix("Local file index unchanged:") == true)
+        #expect(statusOnlyFailure?.hasPrefix("Photo index update failed:") == true)
+    }
+
+    @Test func memoryRecallKeepsPlainBracketPrefixedRowsLineOriented() {
+        let memory = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: """
+            • [UI] Keep controls compact
+            • ordinary saved fact
+            • [AI] Prefer local models
+            """,
+            originalPrompt: "What do you remember?"
+        )
+
+        #expect(memory == "I remember that [UI] Keep controls compact; ordinary saved fact; [AI] Prefer local models.")
+    }
+
     @Test func preservesTrustedRAGClarificationPrompt() async throws {
         let clarification = "What should I search for?"
         let routing = IntentRoutingDecision(
@@ -174,6 +228,84 @@ extension FinalIntentValidatorTests {
         let routing = IntentRoutingDecision(intent: .outlook, allowedToolIDs: ["outlook.messages.list"], requiresClarification: false, clarificationPrompt: nil)
         let text = FinalIntentValidator.validate("Outlook tool failed: authentication expired. Sign in again.", routing: routing, fallback: nil)
         #expect(text.contains("authentication expired"))
+    }
+}
+
+extension FinalIntentValidatorTests {
+    @Test func acceptsAllowedRAGApprovalBoundaryWithExplicitNonExecution() {
+        let routing = IntentRoutingDecision(
+            intent: .rag,
+            allowedToolIDs: ["rag.index_photos"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let candidate = "Approval required for rag.index_photos. I did not run it yet."
+
+        let outcome = FinalIntentValidator.validateWithOutcome(candidate, routing: routing, fallback: nil)
+
+        #expect(outcome.acceptedCandidate)
+        #expect(outcome.text == candidate)
+    }
+
+    @Test func acceptsCanonicalRAGApprovalToolBeforeRenderedArguments() {
+        let routing = IntentRoutingDecision(
+            intent: .rag,
+            allowedToolIDs: ["rag.index_photos"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let candidate = "Approval required for rag.index_photos(months=6). I did not run it yet."
+
+        #expect(FinalIntentValidator.validate(candidate, routing: routing, fallback: nil) == candidate)
+    }
+
+    @Test func rejectsDisallowedOrNonApprovalRAGBoundaries() {
+        let filesOnlyRouting = IntentRoutingDecision(
+            intent: .rag,
+            allowedToolIDs: ["rag.index_files"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let searchRouting = IntentRoutingDecision(
+            intent: .rag,
+            allowedToolIDs: ["rag.search"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        let disallowed = FinalIntentValidator.validateWithOutcome(
+            "Approval required for rag.index_photos. I did not run it yet.",
+            routing: filesOnlyRouting,
+            fallback: nil
+        )
+        let readOnly = FinalIntentValidator.validateWithOutcome(
+            "Approval required for rag.search. I did not run it yet.",
+            routing: searchRouting,
+            fallback: nil
+        )
+
+        #expect(!disallowed.acceptedCandidate)
+        #expect(!readOnly.acceptedCandidate)
+        #expect(disallowed.text == "I couldn’t safely complete the local search/indexing request.")
+        #expect(readOnly.text == "I couldn’t safely complete the local search/indexing request.")
+    }
+
+    @Test func rejectsRAGApprovalBoundaryWithoutNonExecutionEvidence() {
+        let routing = IntentRoutingDecision(
+            intent: .rag,
+            allowedToolIDs: ["rag.index_photos"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+
+        let outcome = FinalIntentValidator.validateWithOutcome(
+            "Approval required for rag.index_photos.",
+            routing: routing,
+            fallback: nil
+        )
+
+        #expect(!outcome.acceptedCandidate)
+        #expect(outcome.rejectionReason == "intent-validation-failed")
     }
 }
 

@@ -3,6 +3,8 @@ import SwiftData
 
 @Model
 final class RAGChunk {
+    static let replacementStagingSourceTypePrefix = "__lumen_rag_replacement_staging__:"
+
     var id: UUID = UUID()
     var content: String = ""
     var sourceType: String = "file"
@@ -37,7 +39,25 @@ final class RAGChunk {
         self.embeddingDimension = embeddingDimension ?? embedding.count
     }
 
-    var kind: RAGSourceType { RAGSourceType(rawValue: sourceType) ?? .file }
+    var isReplacementStaging: Bool {
+        sourceType.hasPrefix(Self.replacementStagingSourceTypePrefix)
+    }
+
+    var kind: RAGSourceType {
+        if isReplacementStaging,
+           let rawValue = sourceType
+               .dropFirst(Self.replacementStagingSourceTypePrefix.count)
+               .split(separator: ":", omittingEmptySubsequences: false)
+               .first,
+           let stagedKind = RAGSourceType(rawValue: String(rawValue)) {
+            return stagedKind
+        }
+        return RAGSourceType(rawValue: sourceType) ?? .file
+    }
+
+    static func replacementStagingSourceType(id: UUID, kind: RAGSourceType) -> String {
+        "\(replacementStagingSourceTypePrefix)\(kind.rawValue):\(id.uuidString)"
+    }
 }
 
 enum RAGSourceType: String, Codable, CaseIterable, Sendable {

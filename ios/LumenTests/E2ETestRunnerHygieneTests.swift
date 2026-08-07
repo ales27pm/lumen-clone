@@ -1369,6 +1369,91 @@ struct E2ETestRunnerHygieneTests {
         #endif
     }
 
+    @Test func expectedRAGScenarioNeverRewritesHintsAfterRuntimeMisroute() async {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "training-rag-misroute",
+            title: "Training eval: RAG misroute",
+            kind: .training,
+            prompt: "Search my files for architecture notes and summarize key modules.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.search"],
+            forbiddenToolIDs: [],
+            requiredTextHints: ["module", "[1]"],
+            forbiddenTextHints: [],
+            requiresAgentRun: true
+        )
+        let misrouted = IntentRoutingDecision(
+            intent: .calendar,
+            allowedToolIDs: ["calendar.list"],
+            requiresClarification: false,
+            clarificationPrompt: nil
+        )
+        let original = "No calendar events matched that request."
+
+        let outcome = await E2ETestRunner.validateAndRewriteFinalTextIfNeededForTests(
+            scenario: scenario,
+            routing: misrouted,
+            originalFinal: original
+        )
+
+        #expect(outcome.finalText == original)
+        #expect(!outcome.rewriteAttempted)
+        #expect(!outcome.rewriteSuccess)
+        #expect(Set(outcome.missingHints) == Set(["module", "[1]"]))
+        #else
+        #expect(true)
+        #endif
+    }
+
+    @Test func policyFirstFinalIntentReplacementIsNotATrainingSignal() {
+        #if DEBUG
+        let scenario = E2ETestScenario(
+            id: "live-rag-index-photos",
+            title: "Live rag.index_photos approval boundary",
+            kind: .toolGuard,
+            prompt: "Reindex my photos.",
+            expectedIntent: .rag,
+            requiredAllowedToolIDs: ["rag.index_photos"],
+            forbiddenToolIDs: [],
+            requiredTextHints: [],
+            forbiddenTextHints: [],
+            requiresAgentRun: true,
+            evidenceMode: .policyFirstAllowed
+        )
+        let rejected = FinalIntentValidationOutcome(
+            text: "I couldn’t safely complete the local search/indexing request.",
+            acceptedCandidate: false,
+            replacementSource: "safeMessage",
+            rejectionReason: "intent-validation-failed"
+        )
+
+        let metadata = E2ETestRunner.deterministicFinalIntentValidationMetadataForTests(
+            scenario: scenario,
+            outcome: rejected,
+            evidenceKind: "policy-first-deterministic"
+        )
+
+        #expect(metadata["failureKind"] == "deterministicFinalIntentValidation")
+        #expect(metadata["actionable"] == "true")
+        #expect(metadata["trainingSignal"] == "false")
+        #expect(metadata["runtimeEvidence"] == "deterministic-finalizer")
+        #expect(E2ETestRunner.deterministicFinalIntentValidationMetadataForTests(
+            scenario: scenario,
+            outcome: rejected,
+            evidenceKind: "policy-first-deterministic",
+            hasFailures: false
+        ).isEmpty)
+        #expect(E2ETestRunner.deterministicFinalIntentValidationMetadataForTests(
+            scenario: scenario,
+            outcome: rejected,
+            evidenceKind: "model-backed"
+        ).isEmpty)
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func ragArchitectureScenarioRejectsPhotoLibraryRollups() {
         #if DEBUG
         let scenario = E2ETestScenario(

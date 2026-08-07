@@ -34,8 +34,22 @@ nonisolated enum ToolObservationFinalizer {
 
     /// Converts a raw tool observation into a sanitized, intent-appropriate final string.
     /// - Returns: A formatted observation string, or `nil` if the observation is empty, unsafe, or does not match the expected intent.
-    static func immediateFinalIfSafe(intent: UserIntent, toolID: String, observation: String, originalPrompt: String) -> String? {
-        immediateFinalOutcome(intent: intent, toolID: toolID, observation: observation, originalPrompt: originalPrompt).text
+    static func immediateFinalIfSafe(
+        intent: UserIntent,
+        toolID: String,
+        observation: String,
+        originalPrompt: String,
+        resultStatus: ToolResultStatus? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
+    ) -> String? {
+        immediateFinalOutcome(
+            intent: intent,
+            toolID: toolID,
+            observation: observation,
+            originalPrompt: originalPrompt,
+            resultStatus: resultStatus,
+            ragIndexMode: ragIndexMode
+        ).text
     }
 
     static func immediateFinalOutcome(
@@ -43,7 +57,9 @@ nonisolated enum ToolObservationFinalizer {
         tool: ToolDefinition,
         observation: String,
         originalPrompt: String,
-        trustedApprovalCaptured: Bool
+        trustedApprovalCaptured: Bool,
+        resultStatus: ToolResultStatus? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
     ) -> ToolObservationFinalizationOutcome {
         if tool.requiresApproval && !trustedApprovalCaptured {
             return rejected("approval-required")
@@ -52,11 +68,20 @@ nonisolated enum ToolObservationFinalizer {
             intent: intent,
             toolID: tool.id,
             observation: observation,
-            originalPrompt: originalPrompt
+            originalPrompt: originalPrompt,
+            resultStatus: resultStatus,
+            ragIndexMode: ragIndexMode
         )
     }
 
-    static func immediateFinalOutcome(intent: UserIntent, toolID: String, observation: String, originalPrompt: String) -> ToolObservationFinalizationOutcome {
+    static func immediateFinalOutcome(
+        intent: UserIntent,
+        toolID: String,
+        observation: String,
+        originalPrompt: String,
+        resultStatus: ToolResultStatus? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
+    ) -> ToolObservationFinalizationOutcome {
         let canonicalTool = ToolRouteGuard.canonicalToolID(toolID)
         let strippedObservation = ModelOutputSanitizer.stripHiddenBlocksPreservingPayloadMarkers(observation)
         let cleanObservation = canonicalTool.hasPrefix("outlook.")
@@ -136,10 +161,10 @@ nonisolated enum ToolObservationFinalizer {
             return accepted("Health summary:\n\(plainObservation)\(payloadMarkers)")
         case "rag.index_files":
             guard intent == .rag else { return rejected("intent-mismatch") }
-            return accepted("\(ragIndexFinal(label: "Local file index", observation: plainObservation))\(payloadMarkers)")
+            return accepted("\(ragIndexFinal(label: "Local file index", observation: plainObservation, mode: ragIndexMode, status: resultStatus))\(payloadMarkers)")
         case "rag.index_photos":
             guard intent == .rag else { return rejected("intent-mismatch") }
-            return accepted("\(ragIndexFinal(label: "Photo index", observation: plainObservation))\(payloadMarkers)")
+            return accepted("\(ragIndexFinal(label: "Photo index", observation: plainObservation, mode: ragIndexMode, status: resultStatus))\(payloadMarkers)")
         case "rag.search":
             guard intent == .rag else { return rejected("intent-mismatch") }
             return accepted("RAG search results:\n\(groundedRAGObservation(plainObservation))\(payloadMarkers)")
@@ -207,7 +232,37 @@ nonisolated enum ToolObservationFinalizer {
         return "[1] \(trimmed)\nSource: local RAG index snippet."
     }
 
-    private static func ragIndexFinal(label: String, observation: String) -> String {
+    private static func ragIndexFinal(
+        label: String,
+        observation: String,
+        mode: RAGStore.IndexMode?,
+        status: ToolResultStatus?
+    ) -> String {
+        if let mode {
+            switch mode {
+            case .indexed:
+                return "\(label) updated: \(observation)"
+            case .cleared:
+                return "\(label) cleared: \(observation)"
+            case .skipped:
+                return "\(label) unchanged: \(observation)"
+            case .partial:
+                return "\(label) partially updated: \(observation)"
+            case .failed:
+                return "\(label) update failed: \(observation)"
+            }
+        }
+        if let status {
+            switch status {
+            case .success:
+                return "\(label) updated: \(observation)"
+            case .requiresApproval, .unavailable:
+                return "\(label) unchanged: \(observation)"
+            case .denied, .failed:
+                return "\(label) update failed: \(observation)"
+            }
+        }
+
         let lower = observation.lowercased()
         if lower.contains("cleared") {
             return "\(label) cleared: \(observation)"
@@ -253,13 +308,24 @@ nonisolated enum ToolObservationFinalizer {
 
     private static func memoryFactCandidates(from observation: String) -> (facts: [String], usedStructuredRecords: Bool) {
         let lines = observation.components(separatedBy: .newlines)
-        guard lines.contains(where: isMemoryRecallRecordStart) else {
+        let records = memoryRecallRecords(from: lines)
+        guard !records.isEmpty,
+              records.allSatisfy(hasMemoryRecallRecordMetadata) else {
             return (
-                lines.map(memoryFactCandidate).filter { !$0.isEmpty },
+                lines.map(unstructuredMemoryFactCandidate).filter { !$0.isEmpty },
                 false
             )
         }
 
+        let facts = records.compactMap { record -> String? in
+            guard !isConversationMemoryRecord(record) else { return nil }
+            let candidate = memoryFactCandidate(from: record)
+            return candidate.isEmpty ? nil : candidate
+        }
+        return (facts, true)
+    }
+
+    private static func memoryRecallRecords(from lines: [String]) -> [String] {
         var records: [String] = []
         var currentRecordLines: [String] = []
 
@@ -280,13 +346,7 @@ nonisolated enum ToolObservationFinalizer {
         if !currentRecordLines.isEmpty {
             records.append(currentRecordLines.joined(separator: " "))
         }
-
-        let facts = records.compactMap { record -> String? in
-            guard !isConversationMemoryRecord(record) else { return nil }
-            let candidate = memoryFactCandidate(from: record)
-            return candidate.isEmpty ? nil : candidate
-        }
-        return (facts, true)
+        return records
     }
 
     private static func isMemoryRecallRecordStart(_ line: String) -> Bool {
@@ -301,6 +361,19 @@ nonisolated enum ToolObservationFinalizer {
             of: #"(?:^|\|)\s*kind\s*=\s*conversation(?:\s*(?:\||$))"#,
             options: .regularExpression
         ) != nil
+    }
+
+    private static func hasMemoryRecallRecordMetadata(_ record: String) -> Bool {
+        record.range(
+            of: #"\|\s*kind\s*=\s*[^|\r\n]+"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func unstructuredMemoryFactCandidate(from line: String) -> String {
+        line
+            .replacingOccurrences(of: #"^\s*[•\-]\s*"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func memoryFactCandidate(from line: String) -> String {

@@ -96,6 +96,94 @@ final class RAGSearchToolTests: XCTestCase {
         )
     }
 
+    func testPostRerankRelevancePreservesConservativeLexicalVariants() {
+        XCTAssertTrue(
+            RAGEngine.isPostRerankRelevant(
+                query: "module",
+                content: "The runtime modules are isolated by responsibility.",
+                title: "Engineering notes",
+                rerankedScore: 0.18
+            )
+        )
+        XCTAssertTrue(
+            RAGEngine.isPostRerankRelevant(
+                query: "architect",
+                content: "The architecture separates persistence from execution.",
+                title: "Engineering notes",
+                rerankedScore: 0.18
+            )
+        )
+        XCTAssertFalse(
+            RAGEngine.isPostRerankRelevant(
+                query: "app",
+                content: "An apple orchard inventory.",
+                title: "Unrelated notes",
+                rerankedScore: 0.18
+            )
+        )
+    }
+
+    func testPostRerankRelevancePreservesBoundaryMatchedAcronymQueries() {
+        XCTAssertTrue(
+            RAGEngine.isPostRerankRelevant(
+                query: "UI",
+                content: "The UI uses a compact navigation hierarchy.",
+                title: "Design notes",
+                rerankedScore: 0.18
+            )
+        )
+        XCTAssertFalse(
+            RAGEngine.isPostRerankRelevant(
+                query: "UI",
+                content: "The build pipeline is stable.",
+                title: "Release notes",
+                rerankedScore: 0.18
+            )
+        )
+        XCTAssertTrue(
+            RAGEngine.isPostRerankRelevant(
+                query: "AI",
+                content: "A semantically related passage with no literal acronym.",
+                title: "Research notes",
+                rerankedScore: 0.64
+            )
+        )
+        XCTAssertTrue(
+            RAGEngine.isPostRerankRelevant(
+                query: "Show me UI docs",
+                content: "The UI uses a compact navigation hierarchy.",
+                title: "Design notes",
+                rerankedScore: 0.18
+            )
+        )
+        XCTAssertFalse(
+            RAGEngine.isPostRerankRelevant(
+                query: "Show me UI docs",
+                content: "The build pipeline is stable.",
+                title: "Release notes",
+                rerankedScore: 0.18
+            )
+        )
+    }
+
+    @MainActor func testMaintenanceIgnoresReplacementStagingRows() async throws {
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let context = ModelContext(container)
+        let staged = RAGChunk(content: "pending", sourceType: .file, sourceName: "pending")
+        staged.sourceType = RAGChunk.replacementStagingSourceType(id: UUID(), kind: .file)
+        context.insert(staged)
+        try context.save()
+
+        let stagingOnly = await RAGEngine().maintenance(context: context)
+        XCTAssertEqual(stagingOnly, .init(success: true, metricSummary: "maintenance_success_empty"))
+
+        context.insert(RAGChunk(content: "active", sourceType: .file, sourceName: "active"))
+        try context.save()
+        let activeCorpus = await RAGEngine().maintenance(context: context)
+        XCTAssertEqual(activeCorpus, .init(success: true, metricSummary: "maintenance_success_work_done"))
+    }
+
     @MainActor func testMissingModelContextReportsSwiftDataDiagnostic() async {
         let tool = RAGSearchTool()
         let inv = ToolInvocation(
@@ -155,6 +243,57 @@ final class RAGSearchToolTests: XCTestCase {
         XCTAssertNotNil(res.structuredPayload?["estimatedTokens"])
         XCTAssertNotNil(res.structuredPayload?["confidence"])
         XCTAssertTrue(res.modelText.contains("swift memory search"))
+    }
+
+    @MainActor func testToolQueryExpansionDoesNotBecomeRelevanceAnchor() async throws {
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: true,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer { ResourceBudgetGate.testSnapshotOverride = nil }
+        let schema = Schema([RAGChunk.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let context = ModelContext(container)
+        context.insert(RAGChunk(
+            content: "Service component package overview.",
+            sourceType: .file,
+            sourceName: "Unrelated engineering glossary"
+        ))
+        try context.save()
+
+        let rawQuery = "Search my files for Lumen architecture notes."
+        let expandedQuery = RAGEngine.expandedSearchQuery(rawQuery)
+        XCTAssertNotEqual(expandedQuery, rawQuery)
+        XCTAssertTrue(expandedQuery.contains("service"))
+        XCTAssertTrue(expandedQuery.contains("component"))
+        XCTAssertTrue(expandedQuery.contains("package"))
+
+        let invocation = ToolInvocation(
+            id: UUID(),
+            toolID: "rag.search.secure",
+            arguments: ["query": rawQuery, "limit": "3", "sourceScope": "documents"],
+            source: .system,
+            conversationID: nil,
+            turnID: nil,
+            createdAt: Date()
+        )
+        let result = await RAGSearchTool().execute(
+            invocation: invocation,
+            context: .init(
+                isForeground: true,
+                appState: nil,
+                modelContext: context,
+                permissionRegistry: .shared,
+                metricsStore: .shared
+            )
+        )
+
+        XCTAssertEqual(result.status, .success)
+        XCTAssertEqual(result.structuredPayload?["count"], "0")
+        XCTAssertEqual(result.modelText, "No matching RAG chunks found.")
     }
 
     @MainActor func testToolUsesFocusedRerankedExcerpt() async {

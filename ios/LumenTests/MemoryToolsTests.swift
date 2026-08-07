@@ -58,12 +58,21 @@ struct MemoryToolsTests {
     @Test func ragIndexExecutionUsesTypedStatusInsteadOfStringHeuristics() {
         let indexed = RAGStore.IndexResult(indexedCount: 3, mode: .indexed, diagnostic: nil)
         let empty = RAGStore.IndexResult(indexedCount: 0, mode: .cleared, diagnostic: "no_imported_files")
-        let deferred = RAGStore.IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "replacement_deferred:disk_write_budget_denied")
+        let deferred = RAGStore.IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cleanup_deferred:disk_write_budget_denied")
         let partial = RAGStore.IndexResult(indexedCount: 2, mode: .partial, diagnostic: "persist_failed")
 
-        #expect(MemoryTools.ragIndexExecution(from: indexed, text: "indexed").status == .success)
-        #expect(MemoryTools.ragIndexExecution(from: empty, text: "empty").status == .success)
-        #expect(MemoryTools.ragIndexExecution(from: deferred, text: "deferred").status == .unavailable)
-        #expect(MemoryTools.ragIndexExecution(from: partial, text: "partial").status == .failed)
+        let indexedExecution = MemoryTools.ragIndexExecution(from: indexed, text: "indexed")
+        let emptyExecution = MemoryTools.ragIndexExecution(from: empty, text: "empty")
+        let deferredExecution = MemoryTools.ragIndexExecution(from: deferred, text: "deferred")
+        let partialExecution = MemoryTools.ragIndexExecution(from: partial, text: "partial")
+
+        #expect(indexedExecution.status == .success)
+        #expect(indexedExecution.mode == .indexed)
+        #expect(emptyExecution.status == .success)
+        #expect(emptyExecution.mode == .cleared)
+        #expect(deferredExecution.status == .unavailable)
+        #expect(deferredExecution.mode == .skipped)
+        #expect(partialExecution.status == .failed)
+        #expect(partialExecution.mode == .partial)
     }
 }

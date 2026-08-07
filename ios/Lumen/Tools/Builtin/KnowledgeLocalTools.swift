@@ -67,7 +67,8 @@ struct KnowledgeLocalTool: LocalTool {
                 text: execution.text,
                 status: execution.status,
                 metricsSummary: "native_knowledge_tool",
-                errorCode: execution.diagnostic
+                errorCode: execution.diagnostic,
+                ragIndexMode: execution.mode
             )
         case "rag.index_photos":
             let execution = await MemoryTools.ragIndexPhotosExecution(months: Int(args["months"] ?? "6") ?? 6)
@@ -76,7 +77,8 @@ struct KnowledgeLocalTool: LocalTool {
                 text: execution.text,
                 status: execution.status,
                 metricsSummary: "native_knowledge_tool",
-                errorCode: execution.diagnostic
+                errorCode: execution.diagnostic,
+                ragIndexMode: execution.mode
             )
         default:
             text = "Unsupported native knowledge tool: \(toolID)."
@@ -89,11 +91,15 @@ struct KnowledgeLocalTool: LocalTool {
         text: String,
         status: ToolResultStatus,
         metricsSummary: String,
-        errorCode: String? = nil
+        errorCode: String? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
     ) -> ToolResult {
         var payload = ["toolID": toolID, "implementation": "KnowledgeLocalTool"]
         if let errorCode, !errorCode.isEmpty {
             payload["diagnostic"] = errorCode
+        }
+        if let ragIndexMode {
+            payload["ragIndexMode"] = ragIndexMode.rawValue
         }
         return ToolResult(
             invocationID: invocation.id,
