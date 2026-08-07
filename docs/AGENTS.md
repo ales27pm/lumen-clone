@@ -16,6 +16,7 @@ This directory records architecture, current runtime status, validation/evidence
 - `docs/ARTIFACT_STATUS.md`: canonical generated/runtime artifact ownership and freshness.
 - `docs/RUNTIME_AUDIT_BOUNDARIES.md`: static/live/device evidence boundaries.
 - `docs/DEVELOPER_IMPROVE_FRAMEWORK.md`: developer-cycle/evidence workflow.
+- `docs/MULTI_HOST_OPERATIONS.md`: macOS/Ubuntu execution ownership, cross-host dispatch, and evidence boundaries.
 - `FEATURE_COMPLETE_VALIDATION.md` and root `README.md`: cross-directory shipped-state summaries that must remain aligned.
 - Historical migration/PR documents are evidence of their time, not current authority.
 
@@ -48,6 +49,7 @@ Verified code/config/evidence -> current status/validation documentation -> deve
 - Keep `README.md`, `FEATURE_COMPLETE_VALIDATION.md`, `docs/VALIDATION.md`, `docs/RUNTIME_STATUS_MATRIX.md`, and `docs/AGENT_KERNEL_MIGRATION_STATUS.md` aligned after status changes.
 - Historical `LEGACY_*` or migration prose can be stale; current code/status files win. A verified contradiction should be marked, not silently copied.
 - Do not include secrets, raw personal data, or private runtime payloads.
+- Multi-host documentation must distinguish Git source synchronization from artifact transfer, and a remote preflight from an executed GPU, Apple build, signing, or release result. It must not prescribe private hostnames, account names, or credential material.
 
 ## Coordinated Changes
 

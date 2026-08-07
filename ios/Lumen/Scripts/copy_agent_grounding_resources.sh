@@ -25,7 +25,21 @@ require_dir() {
 PROJECT_DIR_VALUE="${PROJECT_DIR:-}"
 TARGET_BUILD_DIR_VALUE="${TARGET_BUILD_DIR:-}"
 UNLOCALIZED_RESOURCES_FOLDER_PATH_VALUE="${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}"
-AGENT_GROUNDING_RESOURCE_MODE="${AGENT_GROUNDING_RESOURCE_MODE:-full}"
+if [ -n "${AGENT_GROUNDING_RESOURCE_MODE:-}" ]; then
+  AGENT_GROUNDING_RESOURCE_MODE_VALUE="$AGENT_GROUNDING_RESOURCE_MODE"
+elif [ "${CONFIGURATION:-}" = "Release" ]; then
+  AGENT_GROUNDING_RESOURCE_MODE_VALUE="minimal"
+else
+  AGENT_GROUNDING_RESOURCE_MODE_VALUE="full"
+fi
+
+case "$AGENT_GROUNDING_RESOURCE_MODE_VALUE" in
+  full|minimal|skip)
+    ;;
+  *)
+    fail "Unsupported AGENT_GROUNDING_RESOURCE_MODE=$AGENT_GROUNDING_RESOURCE_MODE_VALUE (expected full, minimal, or skip)"
+    ;;
+esac
 
 if [ -z "$PROJECT_DIR_VALUE" ]; then
   fail 'PROJECT_DIR is not set. Run this script from an Xcode build action or pass Xcode build settings.'
@@ -43,17 +57,11 @@ fi
 # directory containing the agent manifest. This makes the script robust to
 # different CI layouts where PROJECT_DIR may not be exactly one level below
 # the repo root.
-# A repo root candidate must have an agent_manifest with at least one of the
-# cross_model_training directories present. This avoids matching a stray
-# `generated/agent_manifest` that may exist higher up in the CI workspace.
+# A repo root candidate must have the canonical runtime manifest. Release
+# builds intentionally do not depend on developer/training corpora.
 is_repo_root() {
   c="$1"
-  [ -d "$c/generated/agent_manifest" ] || return 1
-  if [ -d "$c/generated/cross_model_training" ] \
-     || [ -d "$c/generated/agent_manifest/cross_model_training" ]; then
-    return 0
-  fi
-  return 1
+  [ -f "$c/generated/agent_manifest/AgentBehaviorManifest.json" ]
 }
 
 find_repo_root() {
@@ -141,7 +149,15 @@ fi
 # breaking the entire install, skip the bundling step and let the runtime
 # fall back to its baked-in defaults. Required runtime checks in Swift are
 # already best-effort and tolerate missing resources.
-if [ ! -d "$AGENT_MANIFEST_DIR" ] || [ -z "$CROSS_MODEL_DIR" ]; then
+if [ "$AGENT_GROUNDING_RESOURCE_MODE_VALUE" = "skip" ]; then
+  log "AGENT_GROUNDING_RESOURCE_MODE=skip; creating lightweight AgentGrounding directories only."
+  rm -rf "$DEST_DIR"
+  mkdir -p "$DEST_DIR/agent_manifest" "$DEST_DIR/cross_model_training"
+  exit 0
+fi
+
+if [ ! -d "$AGENT_MANIFEST_DIR" ] \
+   || { [ "$AGENT_GROUNDING_RESOURCE_MODE_VALUE" = "full" ] && [ -z "$CROSS_MODEL_DIR" ]; }; then
   log "Generated agent grounding artifacts not present at $REPO_ROOT/generated; skipping bundling."
   log "  - agent_manifest dir present: $([ -d "$AGENT_MANIFEST_DIR" ] && echo yes || echo no)"
   log "  - cross_model_training dir present: $([ -n "$CROSS_MODEL_DIR" ] && echo yes || echo no)"
@@ -151,27 +167,10 @@ if [ ! -d "$AGENT_MANIFEST_DIR" ] || [ -z "$CROSS_MODEL_DIR" ]; then
   exit 0
 fi
 
-case "$AGENT_GROUNDING_RESOURCE_MODE" in
-  full|minimal|skip)
-    ;;
-  *)
-    fail "Unsupported AGENT_GROUNDING_RESOURCE_MODE=$AGENT_GROUNDING_RESOURCE_MODE (expected full, minimal, or skip)"
-    ;;
-esac
-
-if [ "$AGENT_GROUNDING_RESOURCE_MODE" = "skip" ]; then
-  log "AGENT_GROUNDING_RESOURCE_MODE=skip; creating lightweight AgentGrounding directories only."
-  rm -rf "$DEST_DIR"
-  mkdir -p "$DEST_DIR/agent_manifest" "$DEST_DIR/cross_model_training"
-  exit 0
-fi
-
-verify_cross_model_mirrors
-
-if [ "$AGENT_GROUNDING_RESOURCE_MODE" = "minimal" ]; then
+if [ "$AGENT_GROUNDING_RESOURCE_MODE_VALUE" = "minimal" ]; then
   log "AGENT_GROUNDING_RESOURCE_MODE=minimal; copying only runtime-required grounding resources."
   rm -rf "$DEST_DIR"
-  mkdir -p "$DEST_DIR/agent_manifest/dataset" "$DEST_DIR/cross_model_training"
+  mkdir -p "$DEST_DIR/agent_manifest" "$DEST_DIR/cross_model_training"
 
   copy_required_file "$AGENT_MANIFEST_DIR/AgentBehaviorManifest.json" "agent_manifest/AgentBehaviorManifest.json"
   copy_required_file "$AGENT_MANIFEST_DIR/AgentBehaviorManifest.md" "agent_manifest/AgentBehaviorManifest.md"
@@ -179,18 +178,12 @@ if [ "$AGENT_GROUNDING_RESOURCE_MODE" = "minimal" ]; then
   copy_required_file "$AGENT_MANIFEST_DIR/manifest_validation_report.json" "agent_manifest/manifest_validation_report.json"
   copy_required_file "$AGENT_MANIFEST_DIR/runtime_grounding_bundle.json" "agent_manifest/runtime_grounding_bundle.json"
   copy_required_file "$AGENT_MANIFEST_DIR/runtime_grounding_prompt.md" "agent_manifest/runtime_grounding_prompt.md"
-  copy_required_file "$AGENT_MANIFEST_DIR/dataset/codebase_home_corpus.jsonl" "agent_manifest/dataset/codebase_home_corpus.jsonl"
-  copy_required_file "$AGENT_MANIFEST_DIR/dataset/codebase_home_sft.jsonl" "agent_manifest/dataset/codebase_home_sft.jsonl"
-
-  copy_required_file "$CROSS_MODEL_DIR/cross_model_training.jsonl" "cross_model_training/cross_model_training.jsonl"
-  copy_required_file "$CROSS_MODEL_DIR/train_sft_cross.jsonl" "cross_model_training/train_sft_cross.jsonl"
-  copy_required_file "$CROSS_MODEL_DIR/val_sft_cross.jsonl" "cross_model_training/val_sft_cross.jsonl"
-  copy_required_file "$CROSS_MODEL_DIR/dpo_train_cross.jsonl" "cross_model_training/dpo_train_cross.jsonl"
-  copy_required_file "$CROSS_MODEL_DIR/dpo_val_cross.jsonl" "cross_model_training/dpo_val_cross.jsonl"
 
   log "Installed minimal resources at: $DEST_DIR"
   exit 0
 fi
+
+verify_cross_model_mirrors
 
 require_file "$AGENT_MANIFEST_DIR/AgentBehaviorManifest.json" 'AgentBehaviorManifest.json'
 require_file "$AGENT_MANIFEST_DIR/AgentBehaviorManifest.md" 'AgentBehaviorManifest.md'

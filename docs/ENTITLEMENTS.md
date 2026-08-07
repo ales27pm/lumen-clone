@@ -18,9 +18,11 @@ CarPlay support is intentionally limited to voice-based conversation. `ios/Lumen
 Final archives and exported IPAs should also be validated with signed entitlements:
 
 ```bash
-python3 scripts/validate_ios_signing_capabilities.py --signed-app-path build/export-Lumen-YYYYMMDD-HHMMSS/Lumen.ipa
+python3 scripts/validate_ios_signing_capabilities.py \
+  --signing-stage app-store \
+  --signed-app-path build/export-Lumen-YYYYMMDD-HHMMSS/Lumen.ipa
 ```
 
-`scripts/archive_lumen_stable.sh`, `scripts/build_and_submit_appstoreconnect.sh`, and `scripts/check-ios-build-readiness.sh` run this check automatically when a signed `.xcarchive` or `.ipa` is available.
+`--signing-stage archive` accepts a verified Apple Development or Apple Distribution archive as input to Xcode's automatic export, while `--signing-stage app-store` requires the exported IPA to use Store distribution semantics. `scripts/archive_lumen_stable.sh`, `scripts/build_and_submit_appstoreconnect.sh`, and `scripts/check-ios-build-readiness.sh` select the stage explicitly when a signed `.xcarchive` or `.ipa` is available.
 
 `scripts/archive_lumen_stable.sh` also checks for a local signing identity before starting the expensive archive step. Release/App Store archives require a matching Apple Distribution/iOS Distribution certificate with a private key in the keychain, unless authenticated automatic provisioning is enabled through App Store Connect API key arguments and `LUMEN_IOS_ALLOW_PROVISIONING_UPDATES=1`.

@@ -52,7 +52,7 @@ enum SHA256FileHasher {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    static func sha256Hex(for fileURL: URL) throws -> String {
+    static func sha256Hex(for fileURL: URL, checkingCancellation: Bool = false) throws -> String {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: fileURL.path) else {
             throw ModelStorageError.fileNotFound(fileURL)
@@ -74,11 +74,16 @@ enum SHA256FileHasher {
         var hasher = SHA256()
         do {
             while true {
+                if checkingCancellation {
+                    try Task.checkCancellation()
+                }
                 guard let data = try handle.read(upToCount: chunkSize), !data.isEmpty else {
                     break
                 }
                 hasher.update(data: data)
             }
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw ModelStorageError.unreadableFile(fileURL)
         }

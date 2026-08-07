@@ -154,6 +154,10 @@ private extension CarPlayVoiceSceneDelegate {
             handleEmptyTranscript()
             return
         }
+        if let policyMessage = CarPlayVoiceSessionPolicy.headlessDenialMessage(for: trimmed) {
+            speakUnavailable(policyMessage)
+            return
+        }
         guard !isThermalBlocked() else {
             presentUnavailable(CarPlayVoiceSessionPolicy.thermalRetryMessage)
             return

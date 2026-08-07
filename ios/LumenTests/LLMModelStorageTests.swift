@@ -99,6 +99,52 @@ struct LLMModelStorageTests {
         #expect(!failure.diagnosticCode.contains(modelURL.path))
     }
 
+    @Test func pinnedCatalogArtifactRequiresExactSizeAndHash() throws {
+        let temp = try makeTemporaryStorage()
+        defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
+        let modelURL = temp.baseDirectory.appendingPathComponent("verified.gguf")
+        var data = Data(count: 16 * 1024 * 1024)
+        data.replaceSubrange(0..<4, with: Data([0x47, 0x47, 0x55, 0x46]))
+        try data.write(to: modelURL)
+        let digest = try SHA256FileHasher.sha256Hex(for: modelURL)
+        let catalog = testCatalogModel(fileName: modelURL.lastPathComponent, sizeBytes: Int64(data.count), sha256: digest)
+
+        guard case .success(let actualSize) = ModelFileIntegrity.validateDownloadedCatalogFile(catalog, at: modelURL) else {
+            Issue.record("Expected exact pinned artifact to validate")
+            return
+        }
+        #expect(actualSize == Int64(data.count))
+
+        data.append(0)
+        try data.write(to: modelURL)
+        guard case .failure(.sizeMismatch(let actual, let expected)) = ModelFileIntegrity.validateDownloadedCatalogFile(catalog, at: modelURL) else {
+            Issue.record("Expected an oversized pinned artifact to fail exact-size validation")
+            return
+        }
+        #expect(actual == Int64(data.count))
+        #expect(expected == catalog.sizeBytes)
+    }
+
+    @Test func pinnedCatalogArtifactRejectsSameSizeTampering() throws {
+        let temp = try makeTemporaryStorage()
+        defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
+        let modelURL = temp.baseDirectory.appendingPathComponent("tampered.gguf")
+        var data = Data(count: 16 * 1024 * 1024)
+        data.replaceSubrange(0..<4, with: Data([0x47, 0x47, 0x55, 0x46]))
+        try data.write(to: modelURL)
+        let digest = try SHA256FileHasher.sha256Hex(for: modelURL)
+        let catalog = testCatalogModel(fileName: modelURL.lastPathComponent, sizeBytes: Int64(data.count), sha256: digest)
+
+        data[data.count - 1] = 1
+        try data.write(to: modelURL)
+        guard case .failure(.hashMismatch(let expected, let actual)) = ModelFileIntegrity.validateDownloadedCatalogFile(catalog, at: modelURL) else {
+            Issue.record("Expected same-size tampering to fail SHA-256 validation")
+            return
+        }
+        #expect(expected == digest)
+        #expect(actual != digest)
+    }
+
     @Test func modelStorageRegistersTinyIntentRecord() async throws {
         let temp = try makeTemporaryStorage()
         defer { try? FileManager.default.removeItem(at: temp.baseDirectory) }
@@ -111,6 +157,23 @@ struct LLMModelStorageTests {
         #expect(record.model.backend == .tinyIntent)
         #expect(record.isUsable)
         #expect(fetched == record)
+    }
+
+    private func testCatalogModel(fileName: String, sizeBytes: Int64, sha256: String) -> CatalogModel {
+        CatalogModel(
+            id: "test-pinned-artifact",
+            name: "Pinned test artifact",
+            repoId: "test/models",
+            fileName: fileName,
+            parameters: "test",
+            quantization: "test",
+            sizeBytes: sizeBytes,
+            role: .chat,
+            description: "test",
+            tags: [],
+            sourceRevision: String(repeating: "a", count: 40),
+            expectedSHA256: sha256
+        )
     }
 
     @Test func modelStorageImportsSmallFakeGGUFIntoTempStorage() async throws {

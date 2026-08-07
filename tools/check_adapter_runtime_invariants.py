@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_FAMILY_SELECTION = ROOT / "ios/Lumen/Services/ModelFamilySelection.swift"
 MODEL_ADAPTER_RUNTIME_CONTRACT = ROOT / "ios/Lumen/Services/ModelAdapterRuntimeContract.swift"
 MODEL_FLEET = ROOT / "ios/Lumen/Services/ModelFleet.swift"
+MODEL_LOADER = ROOT / "ios/Lumen/Services/ModelLoader.swift"
+MODEL_RUNTIME_CONTROLLER = ROOT / "ios/Lumen/Services/ModelRuntimeController.swift"
 LLAMA_SERVICE = ROOT / "ios/Lumen/Services/LlamaService.swift"
 SLOT_COORDINATOR = ROOT / "ios/Lumen/Services/SlotModelRuntimeCoordinator.swift"
 MODELS_VIEW = ROOT / "ios/Lumen/Views/ModelsView.swift"
@@ -135,17 +137,41 @@ def check_catalog() -> None:
 
 def check_fleet_resolver() -> None:
     text = read(MODEL_FLEET)
+    contract = read(MODEL_ADAPTER_RUNTIME_CONTRACT)
     require(
-        "fallbackFamily: LumenModelFamily? = selectedFamily == .qwen3 ? nil : selectedFamily" in text,
-        "Qwen3 fallback path must not label non-Qwen3 fallback assignments as Qwen3.",
+        "LumenModelSelectionPolicy.isChatModelCompatible" in text
+        and "else if selectedFamily != .qwen3, let activeText" in text,
+        "Qwen3 selection must fail closed instead of relabeling an incompatible active chat model.",
     )
     require(
-        "if text.contains(slotToken) { return (model, 2) }" in text,
-        "Adapter ranking must prefer exact role adapter matches.",
+        text.count("guard let role = contract.adapterRole(for: slot) else { return nil }") >= 2
+        and text.count("$0.repoId == role.adapterRepoID && $0.fileName == role.adapterFileName") >= 2,
+        "Qwen3 adapters must resolve by exact contract repository and filename in both resolver paths.",
     )
     require(
-        "if slot == .cortex, text.contains(\"fleet\") { return (model, 1) }" in text,
-        "Fleet adapter fallback must rank below exact cortex adapter matches.",
+        "if let exactFile = storedModels.filter" not in text
+        and "if text.contains(slotToken) { return (model, 2) }" not in text
+        and "if slot == .cortex, text.contains(\"fleet\") { return (model, 1) }" not in text,
+        "Qwen3 adapter resolution must not accept filename-only or hint-ranked fallback artifacts.",
+    )
+    require(
+        "configuredRoleAdapterMatchesContract" in text
+        and "adapterExpectedSHA256.caseInsensitiveCompare(expected.adapterExpectedSHA256)" in text,
+        "Qwen3 assignments must bind adapter repository, filename, size, and SHA-256 to the runtime contract.",
+    )
+    require(
+        "sizeBytes: Int64" in contract
+        and "expectedSHA256: String?" in contract
+        and "sizeBytes == sharedBaseSizeBytes" in contract
+        and "CatalogModel.isValidSHA256(expectedSHA256)" in contract,
+        "Qwen3 shared-base identity must include exact size and a valid SHA-256.",
+    )
+    require(
+        "trustedExpectedSHA256" in text
+        and "configuredSharedBaseMatchesContract" in text
+        and "sharedBaseContract?.sharedBaseSizeBytes" in text
+        and "sharedBaseContract?.sharedBaseExpectedSHA256" in text,
+        "Qwen3 resolver assignments must derive and bind trusted shared-base integrity metadata.",
     )
 
 
@@ -162,25 +188,38 @@ def check_runtime() -> None:
         "The no-slot stream overload must use the explicit implicit-generation slot policy.",
     )
     require(
-        "func activateRoleAdapter(slot: LumenModelSlot, scale: Float) throws" in text,
+        "func activateRoleAdapter(slot: LumenModelSlot, scale: Float, operationGeneration: UInt64) throws -> Bool" in text,
         "AdapterChatRuntime must own a single activation entry point.",
     )
-    runtime_activation = section_after_marker(text, "func activateRoleAdapter(slot: LumenModelSlot, scale: Float) throws")
-    runtime_activation = runtime_activation.split("func clearAdapters()", 1)[0]
+    runtime_activation = section_after_marker(text, "func activateRoleAdapter(slot: LumenModelSlot, scale: Float, operationGeneration: UInt64) throws -> Bool")
+    runtime_activation = runtime_activation.split("func clearAdapters(operationGeneration:", 1)[0]
     require_in_order(
         runtime_activation,
-        ["clearAdapters()", "guard let adapter = loadedAdapters[slot]", "try context.apply(loraAdapter: adapter, scale: scale)"],
-        "AdapterChatRuntime must clear all LoRA adapters before applying the requested one.",
+        [
+            "guard claimAdapterActivation(generation: operationGeneration)",
+            "guard activeAdapterSlot != slot || activeAdapterScale != scale else { return false }",
+            "clearAdaptersUnconditionally()",
+            "guard let adapter = loadedAdapters[slot]",
+            "try context.apply(loraAdapter: adapter, scale: scale)",
+        ],
+        "AdapterChatRuntime must claim activation ownership before its fast path and requested adapter application.",
     )
     service_activation = section_after_marker(text, "func activateRoleAdapter(slot: LumenModelSlot) async throws")
     service_activation = service_activation.split("func activateRoleAdapterIfNeeded", 1)[0]
     require_in_order(
         service_activation,
-        ["try await runtime.activateRoleAdapter(slot: loaded.slot, scale: loaded.scale)", "activeAdapterSlot = slot"],
-        "AppLlamaService must set activeAdapterSlot only after successful adapter application.",
+        [
+            "let activationGeneration = beginAdapterActivation()",
+            "let activated = try await runtime.activateRoleAdapter(",
+            "operationGeneration: activationGeneration",
+            "guard activationGeneration == adapterActivationGeneration",
+            "activeAdapterSlot = slot",
+        ],
+        "AppLlamaService activation fast paths and post-await publication must remain newest-wins.",
     )
     require(
-        "await runtime.clearAdapters()" in service_activation and "lastAdapterFailureReason = error.localizedDescription" in service_activation,
+        "await runtime.clearAdapters(operationGeneration: activationGeneration)" in service_activation
+        and "lastAdapterFailureReason = error.localizedDescription" in service_activation,
         "Adapter activation failure must clear adapters, reset state, and persist lastAdapterFailureReason.",
     )
     require("let isLast = index == lastIndex" in text, "Prompt decode must mark the final prompt token for logits.")
@@ -197,6 +236,120 @@ def check_runtime() -> None:
     require(
         "adapterApplied" in text and "adapterSlot" in text and "adapterFailureReason" in text,
         "Runtime trace metadata must include adapterApplied, adapterSlot, and adapterFailureReason.",
+    )
+
+    shared_load = section_after_marker(text, "func loadSharedChatModel(path: String")
+    shared_load = shared_load.split("func loadRoleAdapter(slot:", 1)[0]
+    require_in_order(
+        shared_load,
+        [
+            "let operationGeneration = beginSharedChatOperation()",
+            "if sharedChatBasePath == path, sharedChatRuntime != nil { return }",
+            "let diagnostics = await runtime.runtimeAccelerationDiagnostics()",
+            "guard ownsSharedChatOperation(operationGeneration)",
+            "sharedChatRuntime = runtime",
+        ],
+        "Shared-chat same-path fast return and post-await publication must remain newest-wins.",
+    )
+
+    role_load = section_after_marker(text, "func loadRoleAdapter(slot: LumenModelSlot, path: String")
+    role_load = role_load.split("func loadRoleAdapterIfNeeded", 1)[0]
+    require_in_order(
+        role_load,
+        [
+            "let operationGeneration = beginRoleAdapterOperation(slot: slot)",
+            "let activationGeneration = beginAdapterActivation()",
+            "let loadedNow = try await runtime.loadRoleAdapter(",
+            "operationGeneration: operationGeneration",
+            "activationGeneration: activationGeneration",
+            "guard ownsRoleAdapterOperation(",
+            "roleAdapters[slot] = LoadedRoleAdapter",
+        ],
+        "Role-adapter same-path fast return and post-await publication must remain newest-wins.",
+    )
+
+    load_if_needed = section_after_marker(text, "func loadRoleAdapterIfNeeded")
+    load_if_needed = load_if_needed.split("func activateRoleAdapter(slot:", 1)[0]
+    require(
+        "if roleAdapters[slot]?.path == path { return false }" not in load_if_needed
+        and "try await loadRoleAdapter(slot: slot, path: path, scale: scale)" in load_if_needed,
+        "Role-adapter load-if-needed must delegate same-path ownership registration to loadRoleAdapter.",
+    )
+
+    activate_if_needed = section_after_marker(text, "func activateRoleAdapterIfNeeded")
+    activate_if_needed = activate_if_needed.split("func clearActiveRoleAdapter", 1)[0]
+    require(
+        "if activeAdapterSlot == slot { return false }" not in activate_if_needed
+        and "try await activateRoleAdapter(slot: slot)" in activate_if_needed,
+        "Role-adapter activate-if-needed must delegate same-slot ownership registration to activateRoleAdapter.",
+    )
+
+    clear_adapter = section_after_marker(text, "func clearActiveRoleAdapter() async")
+    clear_adapter = clear_adapter.split("func unloadRoleAdapter(slot:", 1)[0]
+    require_in_order(
+        clear_adapter,
+        [
+            "let activationGeneration = beginAdapterActivation()",
+            "await runtime.clearAdapters(operationGeneration: activationGeneration)",
+            "guard activationGeneration == adapterActivationGeneration",
+            "activeAdapterSlot = nil",
+        ],
+        "Adapter clear must guard post-await state publication with its activation generation.",
+    )
+
+    runtime_role_load = section_after_marker(text, "func loadRoleAdapter(\n        slot: LumenModelSlot,")
+    runtime_role_load = runtime_role_load.split("func activateRoleAdapter(slot:", 1)[0]
+    require_in_order(
+        runtime_role_load,
+        [
+            "guard claimRoleAdapterOperation(slot: slot, generation: operationGeneration)",
+            "guard claimAdapterActivation(generation: activationGeneration)",
+            "guard loadedAdapterPaths[slot] != path else { return false }",
+            "loadedAdapters[slot] = adapter",
+            "loadedAdapterPaths[slot] = path",
+        ],
+        "AdapterChatRuntime must claim role-load ownership before its same-path fast return and mutation.",
+    )
+
+    conditional_adapter_unload = section_after_marker(text, "func unloadRoleAdapter(slot: LumenModelSlot, ifPathEquals")
+    conditional_adapter_unload = conditional_adapter_unload.split("func unloadAllRoleAdapters", 1)[0]
+    require_in_order(
+        conditional_adapter_unload,
+        [
+            "let operationGeneration = beginRoleAdapterOperation(slot: slot)",
+            "let activationGeneration = beginAdapterActivation()",
+            "guard currentPath == expectedPath else",
+            "await runtime.discardRoleAdapterIfPathDiffers(",
+            "await runtime.unloadRoleAdapter(",
+            "guard ownsRoleAdapterOperation(",
+            "roleAdapters.removeValue(forKey: slot)",
+        ],
+        "Conditional role-adapter unload must register before its fast return and guard destruction.",
+    )
+
+    runtime_conditional_discard = section_after_marker(text, "func discardRoleAdapterIfPathDiffers(")
+    runtime_conditional_discard = runtime_conditional_discard.split("func activateRoleAdapter(slot:", 1)[0]
+    require_in_order(
+        runtime_conditional_discard,
+        [
+            "guard claimRoleAdapterOperation(slot: slot, generation: operationGeneration)",
+            "guard claimAdapterActivation(generation: activationGeneration)",
+            "guard loadedAdapterPaths[slot] != expectedPath else { return false }",
+            "return removeRoleAdapter(slot: slot)",
+        ],
+        "Conditional role-adapter no-op must claim both epochs and discard a mismatched hidden handle.",
+    )
+
+    conditional_chat_unload = section_after_marker(text, "func unloadAllChat(ifLoadedPathEquals")
+    conditional_chat_unload = conditional_chat_unload.split("func unloadEmbed", 1)[0]
+    require_in_order(
+        conditional_chat_unload,
+        [
+            "beginSharedChatOperation()",
+            "guard loadedChatPath == expectedPath else { return false }",
+            "sharedChatRuntime = nil",
+        ],
+        "Conditional shared-chat unload must register before its mismatch fast return.",
     )
 
 
@@ -312,12 +465,65 @@ def check_slot_coordinator() -> None:
     adapter_section_match = re.search(r"private func ensureAdapterRuntimeReady[\s\S]+?private func ensureLegacyRuntimeReady", text)
     require(adapter_section_match is not None, "Missing ensureAdapterRuntimeReady/ensureLegacyRuntimeReady split.")
     adapter_section = adapter_section_match.group(0)
-    require("unloadAllChat" not in adapter_section, "Qwen3 adapter slot switch must not call unloadAllChat().")
-    require("unloadRoleAdapter(slot: slot)" in adapter_section, "Failed role adapter activation must unload the failed adapter handle.")
+    adapter_switch_section = adapter_section.split("guard let adapterPath", 1)[-1]
+    require("unloadAllChat" not in adapter_switch_section, "Qwen3 adapter slot switch must not unload the verified shared base.")
+    require(
+        "await AppLlamaService.shared.unloadRoleAdapter(slot: slot, ifPathEquals: adapterPath)" in adapter_section
+        and adapter_section.count("guard assignmentRemainsOwned(assignment, slot: slot, generation: generation)") >= 4,
+        "Failed role adapter activation must conditionally unload only the still-owned failed adapter handle.",
+    )
     require(
         "requiresRoleAdapter(assignment: assignment)" in adapter_section
         and 'throw LocalRuntimeError.unavailable("role adapter missing for \\(slot.rawValue): expectedAdapterRepo=\\(expectedRepo); expectedAdapterFile=\\(expectedFile)")' in adapter_section,
         "Qwen3 adapter-required slots must fail hard when their role adapter is missing.",
+    )
+    require(
+        "assignment.expectedRoleAdapterContract != nil" in adapter_section
+        and "!assignment.configuredRoleAdapterMatchesContract" in adapter_section
+        and "role_adapter_identity_mismatch" in adapter_section,
+        "Qwen3 adapter activation must fail closed when contract identity or integrity metadata differs.",
+    )
+    require(
+        "configuredSharedBaseMatchesContract" in adapter_section
+        and "shared_base_identity_mismatch" in adapter_section
+        and 'role: "chat"' in adapter_section,
+        "Qwen3 shared-base activation must fail closed and verify the contract-bound artifact.",
+    )
+    require(
+        "loadedChatFallback" not in text
+        and "return assignments[.cortex]" not in text
+        and "if slot == .mouth" not in text,
+        "An already-loaded or Cortex chat runtime must not satisfy an unassigned role slot.",
+    )
+
+
+def check_model_loader_ownership() -> None:
+    text = read(MODEL_LOADER)
+    require(
+        "let epoch: UInt64" in text
+        and "registerChatRequest" in text
+        and "registerEmbedRequest" in text
+        and "chatLoadEpoch == epoch" in text
+        and "embedLoadEpoch == epoch" in text,
+        "Chat and embedding load completion must be guarded by monotonic request epochs.",
+    )
+    chat_section = text.split("private static func ensureFleetChatLoaded", 1)[1].split("private static func completeChatLoad", 1)[0]
+    require_in_order(
+        chat_section,
+        ["if let pending = chatLoadTask", "if await hasLoadedChatRuntime"],
+        "Chat must reconcile a mismatched pending load before the already-loaded fast path",
+    )
+    embed_section = text.split("static func ensureEmbedLoaded", 1)[1].split("private static func finishEmbedLoad", 1)[0]
+    require_in_order(
+        embed_section,
+        ["if let pending = embedLoadTask", "if await hasLoadedEmbeddingRuntime"],
+        "Embedding must reconcile a mismatched pending load before the already-loaded fast path",
+    )
+    chat_completion = text.split("private static func completeChatLoad", 1)[1].split("private static func configureFleetRuntimeIfSelectionIsCurrent", 1)[0]
+    embed_completion = text.split("private static func completeEmbeddingLoad", 1)[1].split("private static func embeddingRequestIsCurrent", 1)[0]
+    require(
+        "unloadAllChat" not in chat_completion and "unloadEmbed" not in embed_completion,
+        "A stale load waiter must not globally unload a newer chat or embedding runtime.",
     )
 
 
@@ -334,6 +540,23 @@ def check_models_view() -> None:
     require(
         "stored.modelRole != .roleAdapter" in text,
         "Stored role adapters must not be activatable as chat/embedding models.",
+    )
+    require(
+        "LumenModelSelectionPolicy.validatePersistedChatModel" in text
+        and "LumenModelSelectionPolicy.isPersistedChatModelCompatible" in text,
+        "Model activation and picker surfaces must share the family-aware chat selection policy.",
+    )
+    require(
+        "runtimeController.unloadResolvedModel" in text
+        and "cannot be activated while" in text,
+        "Model deletion must unload a matching shared runtime and incompatible local imports must explain why they were not activated.",
+    )
+    controller = read(MODEL_RUNTIME_CONTROLLER)
+    require(
+        "loadedSharedPath == resolvedPath" in controller
+        and "return .allChat" in controller
+        and "await AppLlamaService.shared.unloadAllChat()" in controller,
+        "Deleting the loaded shared chat base must plan and perform a full chat-runtime unload.",
     )
 
 
@@ -562,6 +785,7 @@ def main() -> int:
         check_persistence_search_diagnostics,
         check_swift_llama_pin,
         check_slot_coordinator,
+        check_model_loader_ownership,
         check_models_view,
         check_export_policy,
         check_docs,

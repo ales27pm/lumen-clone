@@ -4,6 +4,7 @@ import SwiftData
 struct RootView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @Query private var storedModels: [StoredModel]
     @State private var selection: MenuItem? = LumenLaunchArguments.isUITesting ? .settings : .chat
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
@@ -134,6 +135,95 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: appState.runtime.bootSplashVisible)
+        .task(id: modelAutoloadRequestKey) {
+            guard !LumenLaunchArguments.isUITesting else { return }
+            let requestKey = modelAutoloadRequestKey
+            guard requestKey.canStartAutoload else {
+                ModelLoader.cancelActiveLoads()
+                appState.runtime.modelAutoloadAttemptID = nil
+                if appState.runtime.modelAutoloadState.shouldRetryAfterLeavingActiveScene {
+                    appState.runtime.modelAutoloadState = .idle
+                }
+                return
+            }
+            await restoreSelectedModels(for: requestKey)
+        }
+        .onChange(of: appState.activeChatModelID) { _, _ in
+            ModelLoader.cancelActiveLoads()
+        }
+        .onChange(of: appState.activeEmbeddingModelID) { _, _ in
+            ModelLoader.cancelActiveLoads()
+        }
+    }
+
+    private var modelAutoloadRequestKey: ModelAutoloadRequestKey {
+        ModelAutoloadRequestKey(
+            bootstrapReady: appState.runtime.modelAutoloadBootstrapReady,
+            sceneIsActive: scenePhase == .active,
+            activeChatModelID: appState.activeChatModelID,
+            activeEmbeddingModelID: appState.activeEmbeddingModelID,
+            selectedModelFamily: LumenModelFamily.persistedSelected,
+            requestGeneration: appState.runtime.modelAutoloadRequestGeneration
+        )
+    }
+
+    private func restoreSelectedModels(for requestKey: ModelAutoloadRequestKey) async {
+        // Let the first frame render before any model catalog or runtime work begins.
+        await Task.yield()
+        guard ownsAutoloadRequest(requestKey) else { return }
+
+        let attemptID = UUID()
+        appState.runtime.modelAutoloadAttemptID = attemptID
+        appState.runtime.modelAutoloadState = .loading
+
+        var completedRetryCount = 0
+        var result = ModelLaunchLoadResult(
+            chatLoaded: false,
+            embeddingLoaded: false,
+            resourceRetryAfterSeconds: nil
+        )
+
+        while ownsAutoloadAttempt(attemptID, requestKey: requestKey) {
+            result = await ModelLoader.loadAtLaunch(appState: appState, stored: storedModels)
+            guard ownsAutoloadAttempt(attemptID, requestKey: requestKey) else { return }
+
+            guard ModelAutoloadRetryPolicy.shouldRetry(
+                completedRetryCount: completedRetryCount,
+                suggestedDelaySeconds: result.resourceRetryAfterSeconds,
+                sceneIsActive: scenePhase == .active
+            ), let delaySeconds = ModelAutoloadRetryPolicy.boundedDelaySeconds(result.resourceRetryAfterSeconds) else {
+                break
+            }
+
+            completedRetryCount += 1
+            let delayNanoseconds = UInt64((delaySeconds * 1_000_000_000).rounded())
+            do {
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            } catch {
+                return
+            }
+        }
+
+        guard ownsAutoloadAttempt(attemptID, requestKey: requestKey) else { return }
+        appState.runtime.modelAutoloadAttemptID = nil
+        appState.runtime.modelAutoloadState = .finished(
+            chatLoaded: result.chatLoaded,
+            embeddingLoaded: result.embeddingLoaded
+        )
+    }
+
+    private func ownsAutoloadRequest(_ requestKey: ModelAutoloadRequestKey) -> Bool {
+        !Task.isCancelled
+            && requestKey.canStartAutoload
+            && modelAutoloadRequestKey == requestKey
+    }
+
+    private func ownsAutoloadAttempt(
+        _ attemptID: UUID,
+        requestKey: ModelAutoloadRequestKey
+    ) -> Bool {
+        appState.runtime.modelAutoloadAttemptID == attemptID
+            && ownsAutoloadRequest(requestKey)
     }
 
     @ViewBuilder

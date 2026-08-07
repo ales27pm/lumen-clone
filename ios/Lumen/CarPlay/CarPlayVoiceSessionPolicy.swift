@@ -40,6 +40,13 @@ nonisolated enum CarPlayVoiceSessionPolicy {
         return String(sanitized.prefix(maxCharacters)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static func headlessDenialMessage(for prompt: String) -> String? {
+        guard let reason = LumenIntentPolicy.openAppReason(forHeadlessPrompt: prompt) else {
+            return nil
+        }
+        return "Open Lumen on iPhone to approve: \(reason)."
+    }
+
     static func acceptsAsk(in state: CarPlayVoiceSessionState) -> Bool {
         state.acceptsAsk
     }

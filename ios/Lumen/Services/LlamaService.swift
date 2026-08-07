@@ -398,6 +398,11 @@ private actor AdapterChatRuntime {
     private var processedTokens: [llama_token] = []
     private var currentTokenPosition: Int32 = 0
     private var loadedAdapters: [LumenModelSlot: LlamaLoraAdapter] = [:]
+    private var loadedAdapterPaths: [LumenModelSlot: String] = [:]
+    private var roleAdapterOperationGenerations: [LumenModelSlot: UInt64] = [:]
+    private var activeAdapterSlot: LumenModelSlot?
+    private var activeAdapterScale: Float?
+    private var adapterActivationGeneration: UInt64 = 0
     private let accelerationDiagnostics: RuntimeAccelerationDiagnostics
 
     init(path: String, contextSize: Int, batchSize: UInt32) throws {
@@ -449,18 +454,99 @@ private actor AdapterChatRuntime {
         stopFlag.requestStop()
     }
 
-    func loadRoleAdapter(slot: LumenModelSlot, path: String) throws {
-        loadedAdapters[slot] = try LlamaLoraAdapter(model: model, path: path)
+    @discardableResult
+    func loadRoleAdapter(
+        slot: LumenModelSlot,
+        path: String,
+        operationGeneration: UInt64,
+        activationGeneration: UInt64
+    ) throws -> Bool {
+        guard claimRoleAdapterOperation(slot: slot, generation: operationGeneration) else { return false }
+        guard claimAdapterActivation(generation: activationGeneration) else { return false }
+        guard loadedAdapterPaths[slot] != path else { return false }
+        let adapter = try LlamaLoraAdapter(model: model, path: path)
+        if activeAdapterSlot == slot {
+            clearAdaptersUnconditionally()
+        }
+        loadedAdapters[slot] = adapter
+        loadedAdapterPaths[slot] = path
+        return true
     }
 
-    func activateRoleAdapter(slot: LumenModelSlot, scale: Float) throws {
-        clearAdapters()
-        guard let adapter = loadedAdapters[slot] else { return }
+    @discardableResult
+    func unloadRoleAdapter(
+        slot: LumenModelSlot,
+        operationGeneration: UInt64,
+        activationGeneration: UInt64
+    ) -> Bool {
+        guard claimRoleAdapterOperation(slot: slot, generation: operationGeneration) else { return false }
+        guard claimAdapterActivation(generation: activationGeneration) else { return false }
+        return removeRoleAdapter(slot: slot)
+    }
+
+    @discardableResult
+    func discardRoleAdapterIfPathDiffers(
+        slot: LumenModelSlot,
+        expectedPath: String?,
+        operationGeneration: UInt64,
+        activationGeneration: UInt64
+    ) -> Bool {
+        guard claimRoleAdapterOperation(slot: slot, generation: operationGeneration) else { return false }
+        guard claimAdapterActivation(generation: activationGeneration) else { return false }
+        guard loadedAdapterPaths[slot] != expectedPath else { return false }
+        return removeRoleAdapter(slot: slot)
+    }
+
+    @discardableResult
+    func activateRoleAdapter(slot: LumenModelSlot, scale: Float, operationGeneration: UInt64) throws -> Bool {
+        guard claimAdapterActivation(generation: operationGeneration) else { return false }
+        guard activeAdapterSlot != slot || activeAdapterScale != scale else { return false }
+        clearAdaptersUnconditionally()
+        guard let adapter = loadedAdapters[slot] else {
+            throw LlamaError.slotModelNotLoaded("role adapter \(slot.rawValue)")
+        }
         try context.apply(loraAdapter: adapter, scale: scale)
+        activeAdapterSlot = slot
+        activeAdapterScale = scale
+        return true
     }
 
-    func clearAdapters() {
+    @discardableResult
+    func clearAdapters(operationGeneration: UInt64) -> Bool {
+        guard claimAdapterActivation(generation: operationGeneration) else { return false }
+        guard activeAdapterSlot != nil else { return false }
+        clearAdaptersUnconditionally()
+        return true
+    }
+
+    private func claimRoleAdapterOperation(slot: LumenModelSlot, generation: UInt64) -> Bool {
+        if let current = roleAdapterOperationGenerations[slot], current > generation {
+            return false
+        }
+        roleAdapterOperationGenerations[slot] = generation
+        return true
+    }
+
+    private func claimAdapterActivation(generation: UInt64) -> Bool {
+        guard generation >= adapterActivationGeneration else { return false }
+        adapterActivationGeneration = generation
+        return true
+    }
+
+    private func removeRoleAdapter(slot: LumenModelSlot) -> Bool {
+        let existed = loadedAdapters[slot] != nil || loadedAdapterPaths[slot] != nil
+        if activeAdapterSlot == slot {
+            clearAdaptersUnconditionally()
+        }
+        loadedAdapters.removeValue(forKey: slot)
+        loadedAdapterPaths.removeValue(forKey: slot)
+        return existed
+    }
+
+    private func clearAdaptersUnconditionally() {
         context.removeAllLoraAdapters()
+        activeAdapterSlot = nil
+        activeAdapterScale = nil
     }
 
     func resetKVCache() {
@@ -668,6 +754,9 @@ final actor AppLlamaService {
     private var sharedChatBasePath: String?
     private var roleAdapters: [LumenModelSlot: LoadedRoleAdapter] = [:]
     private var activeAdapterSlot: LumenModelSlot?
+    private var sharedChatOperationGeneration: UInt64 = 0
+    private var roleAdapterOperationGenerations: [LumenModelSlot: UInt64] = [:]
+    private var adapterActivationGeneration: UInt64 = 0
     private var lastAdapterFailureReason: String?
     private var completedTracePayloads: [UUID: CompletedGenerationTracePayload] = [:]
     private var activeGenerations: [UUID: ActiveLlamaGeneration] = [:]
@@ -757,20 +846,66 @@ final actor AppLlamaService {
         chatRuntimes[targetSlot] = runtime
     }
 
+    @discardableResult
+    private func beginSharedChatOperation() -> UInt64 {
+        sharedChatOperationGeneration &+= 1
+        return sharedChatOperationGeneration
+    }
+
+    @discardableResult
+    private func beginRoleAdapterOperation(slot: LumenModelSlot) -> UInt64 {
+        let next = (roleAdapterOperationGenerations[slot] ?? 0) &+ 1
+        roleAdapterOperationGenerations[slot] = next
+        return next
+    }
+
+    @discardableResult
+    private func beginAdapterActivation() -> UInt64 {
+        adapterActivationGeneration &+= 1
+        return adapterActivationGeneration
+    }
+
+    private func ownsSharedChatOperation(_ generation: UInt64) -> Bool {
+        generation == sharedChatOperationGeneration
+    }
+
+    private func ownsSharedChatRuntime(_ runtime: AdapterChatRuntime) -> Bool {
+        sharedChatRuntime === runtime
+    }
+
+    private func ownsRoleAdapterOperation(
+        slot: LumenModelSlot,
+        generation: UInt64,
+        activationGeneration: UInt64,
+        runtime: AdapterChatRuntime
+    ) -> Bool {
+        roleAdapterOperationGenerations[slot] == generation
+            && adapterActivationGeneration == activationGeneration
+            && sharedChatRuntime === runtime
+    }
+
     func loadSharedChatModel(path: String, contextSize: Int, batchSize: UInt32 = 256) async throws {
+        let operationGeneration = beginSharedChatOperation()
         if sharedChatBasePath == path, sharedChatRuntime != nil { return }
         guard FileManager.default.fileExists(atPath: path) else { throw LlamaError.modelFileNotFound(path) }
         logger.info(
             "event=llama.chat.runtime_init_start path=\(path, privacy: .private) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public) gpu_target_layers=999"
         )
         do {
-            sharedChatRuntime = try AdapterChatRuntime(path: path, contextSize: contextSize, batchSize: batchSize)
-            if let diagnostics = await sharedChatRuntime?.runtimeAccelerationDiagnostics() {
-                lastAccelerationDiagnostics = diagnostics
-                logger.info(
-                    "event=llama.chat.acceleration_verified backend=\(diagnostics.actualBackend ?? "unknown", privacy: .public) metal_device=\(diagnostics.metalDeviceUsed ?? diagnostics.metalDeviceName ?? "unknown", privacy: .public) offloaded_layers=\(diagnostics.actualOffloadedLayers.map(String.init) ?? "unknown", privacy: .public) total_layers=\(diagnostics.actualTotalLayers.map(String.init) ?? "unknown", privacy: .public) kqv_offload=\(diagnostics.actualKQVOffload.map { String($0) } ?? "unknown", privacy: .public) verification=\(diagnostics.verificationLevel, privacy: .public)"
-                )
-            }
+            let runtime = try AdapterChatRuntime(path: path, contextSize: contextSize, batchSize: batchSize)
+            let diagnostics = await runtime.runtimeAccelerationDiagnostics()
+            guard ownsSharedChatOperation(operationGeneration) else { throw CancellationError() }
+            beginAdapterActivation()
+            lastAccelerationDiagnostics = diagnostics
+            logger.info(
+                "event=llama.chat.acceleration_verified backend=\(diagnostics.actualBackend ?? "unknown", privacy: .public) metal_device=\(diagnostics.metalDeviceUsed ?? diagnostics.metalDeviceName ?? "unknown", privacy: .public) offloaded_layers=\(diagnostics.actualOffloadedLayers.map(String.init) ?? "unknown", privacy: .public) total_layers=\(diagnostics.actualTotalLayers.map(String.init) ?? "unknown", privacy: .public) kqv_offload=\(diagnostics.actualKQVOffload.map { String($0) } ?? "unknown", privacy: .public) verification=\(diagnostics.verificationLevel, privacy: .public)"
+            )
+            sharedChatRuntime = runtime
+            sharedChatBasePath = path
+            activeAdapterSlot = nil
+            roleAdapters.removeAll()
+            roleAdapterOperationGenerations.removeAll()
+            chatRuntimes.removeAll()
             logger.info(
                 "event=llama.chat.runtime_init_success path=\(path, privacy: .private) context_size=\(contextSize, privacy: .public) batch_size=\(batchSize, privacy: .public)"
             )
@@ -780,40 +915,75 @@ final actor AppLlamaService {
             )
             throw error
         }
-        sharedChatBasePath = path
-        activeAdapterSlot = nil
-        roleAdapters.removeAll()
-        chatRuntimes.removeAll()
     }
 
-    func loadRoleAdapter(slot: LumenModelSlot, path: String, scale: Float = 1.0) async throws {
+    @discardableResult
+    func loadRoleAdapter(slot: LumenModelSlot, path: String, scale: Float = 1.0) async throws -> Bool {
         guard let runtime = sharedChatRuntime else { throw LlamaError.noModelLoaded }
+        let operationGeneration = beginRoleAdapterOperation(slot: slot)
+        let activationGeneration = beginAdapterActivation()
         guard FileManager.default.fileExists(atPath: path) else { throw LlamaError.modelFileNotFound(path) }
-        if roleAdapters[slot]?.path == path { return }
-        try await runtime.loadRoleAdapter(slot: slot, path: path)
+        let loadedNow = try await runtime.loadRoleAdapter(
+            slot: slot,
+            path: path,
+            operationGeneration: operationGeneration,
+            activationGeneration: activationGeneration
+        )
+        guard ownsRoleAdapterOperation(
+            slot: slot,
+            generation: operationGeneration,
+            activationGeneration: activationGeneration,
+            runtime: runtime
+        ) else { throw CancellationError() }
+        if loadedNow, activeAdapterSlot == slot {
+            activeAdapterSlot = nil
+        }
         roleAdapters[slot] = LoadedRoleAdapter(slot: slot, path: path, scale: scale, loadedAt: Date())
+        return loadedNow
     }
 
     func loadRoleAdapterIfNeeded(slot: LumenModelSlot, path: String, scale: Float = 1.0) async throws -> Bool {
-        if roleAdapters[slot]?.path == path { return false }
         try await loadRoleAdapter(slot: slot, path: path, scale: scale)
-        return true
     }
 
-    func activateRoleAdapter(slot: LumenModelSlot) async throws {
+    @discardableResult
+    func activateRoleAdapter(slot: LumenModelSlot) async throws -> Bool {
         guard let runtime = sharedChatRuntime else { throw LlamaError.noModelLoaded }
-        if activeAdapterSlot == slot { return }
+        let activationGeneration = beginAdapterActivation()
         guard let loaded = roleAdapters[slot] else {
-            await runtime.clearAdapters()
+            let cleared = await runtime.clearAdapters(operationGeneration: activationGeneration)
+            guard activationGeneration == adapterActivationGeneration,
+                  ownsSharedChatRuntime(runtime) else {
+                throw CancellationError()
+            }
             activeAdapterSlot = nil
-            return
+            return cleared
         }
         do {
-            try await runtime.activateRoleAdapter(slot: loaded.slot, scale: loaded.scale)
+            let activated = try await runtime.activateRoleAdapter(
+                slot: loaded.slot,
+                scale: loaded.scale,
+                operationGeneration: activationGeneration
+            )
+            guard activationGeneration == adapterActivationGeneration,
+                  ownsSharedChatRuntime(runtime),
+                  roleAdapters[slot]?.path == loaded.path else {
+                throw CancellationError()
+            }
             activeAdapterSlot = slot
             lastAdapterFailureReason = nil
+            return activated
         } catch {
-            await runtime.clearAdapters()
+            guard activationGeneration == adapterActivationGeneration,
+                  ownsSharedChatRuntime(runtime),
+                  roleAdapters[slot]?.path == loaded.path else {
+                throw error
+            }
+            await runtime.clearAdapters(operationGeneration: activationGeneration)
+            guard activationGeneration == adapterActivationGeneration,
+                  ownsSharedChatRuntime(runtime) else {
+                throw error
+            }
             activeAdapterSlot = nil
             lastAdapterFailureReason = error.localizedDescription
             throw error
@@ -821,26 +991,114 @@ final actor AppLlamaService {
     }
 
     func activateRoleAdapterIfNeeded(slot: LumenModelSlot) async throws -> Bool {
-        if activeAdapterSlot == slot { return false }
         try await activateRoleAdapter(slot: slot)
-        return true
     }
 
     func clearActiveRoleAdapter() async {
-        if let sharedChatRuntime {
-            await sharedChatRuntime.clearAdapters()
+        let activationGeneration = beginAdapterActivation()
+        guard let runtime = sharedChatRuntime else {
+            activeAdapterSlot = nil
+            return
         }
+        await runtime.clearAdapters(operationGeneration: activationGeneration)
+        guard activationGeneration == adapterActivationGeneration,
+              ownsSharedChatRuntime(runtime) else { return }
         activeAdapterSlot = nil
     }
 
     func unloadRoleAdapter(slot: LumenModelSlot) async {
-        if activeAdapterSlot == slot { await clearActiveRoleAdapter() }
+        let operationGeneration = beginRoleAdapterOperation(slot: slot)
+        let activationGeneration = beginAdapterActivation()
+        guard let runtime = sharedChatRuntime else {
+            guard roleAdapterOperationGenerations[slot] == operationGeneration,
+                  adapterActivationGeneration == activationGeneration else { return }
+            roleAdapters.removeValue(forKey: slot)
+            if activeAdapterSlot == slot { activeAdapterSlot = nil }
+            return
+        }
+        await runtime.unloadRoleAdapter(
+            slot: slot,
+            operationGeneration: operationGeneration,
+            activationGeneration: activationGeneration
+        )
+        guard ownsRoleAdapterOperation(
+            slot: slot,
+            generation: operationGeneration,
+            activationGeneration: activationGeneration,
+            runtime: runtime
+        ) else { return }
         roleAdapters.removeValue(forKey: slot)
+        if activeAdapterSlot == slot { activeAdapterSlot = nil }
+    }
+
+    @discardableResult
+    func unloadRoleAdapter(slot: LumenModelSlot, ifPathEquals expectedPath: String) async -> Bool {
+        let operationGeneration = beginRoleAdapterOperation(slot: slot)
+        let activationGeneration = beginAdapterActivation()
+        let currentPath = roleAdapters[slot]?.path
+        guard let runtime = sharedChatRuntime else {
+            guard roleAdapterOperationGenerations[slot] == operationGeneration,
+                  adapterActivationGeneration == activationGeneration,
+                  currentPath == expectedPath,
+                  roleAdapters[slot]?.path == expectedPath else { return false }
+            roleAdapters.removeValue(forKey: slot)
+            if activeAdapterSlot == slot { activeAdapterSlot = nil }
+            return true
+        }
+        guard currentPath == expectedPath else {
+            let discarded = await runtime.discardRoleAdapterIfPathDiffers(
+                slot: slot,
+                expectedPath: currentPath,
+                operationGeneration: operationGeneration,
+                activationGeneration: activationGeneration
+            )
+            guard ownsRoleAdapterOperation(
+                slot: slot,
+                generation: operationGeneration,
+                activationGeneration: activationGeneration,
+                runtime: runtime
+            ) else { return false }
+            if discarded, activeAdapterSlot == slot { activeAdapterSlot = nil }
+            return false
+        }
+        await runtime.unloadRoleAdapter(
+            slot: slot,
+            operationGeneration: operationGeneration,
+            activationGeneration: activationGeneration
+        )
+        guard ownsRoleAdapterOperation(
+            slot: slot,
+            generation: operationGeneration,
+            activationGeneration: activationGeneration,
+            runtime: runtime
+        ), roleAdapters[slot]?.path == expectedPath else { return false }
+        roleAdapters.removeValue(forKey: slot)
+        if activeAdapterSlot == slot { activeAdapterSlot = nil }
+        return true
     }
 
     func unloadAllRoleAdapters() async {
-        await clearActiveRoleAdapter()
-        roleAdapters.removeAll()
+        var slotSet = Set(roleAdapters.keys).union(roleAdapterOperationGenerations.keys)
+        if let activeAdapterSlot { slotSet.insert(activeAdapterSlot) }
+        let slots = Array(slotSet)
+        let generations = Dictionary(uniqueKeysWithValues: slots.map { ($0, beginRoleAdapterOperation(slot: $0)) })
+        let activationGeneration = beginAdapterActivation()
+        if let runtime = sharedChatRuntime {
+            for slot in slots {
+                guard let operationGeneration = generations[slot] else { continue }
+                await runtime.unloadRoleAdapter(
+                    slot: slot,
+                    operationGeneration: operationGeneration,
+                    activationGeneration: activationGeneration
+                )
+            }
+            guard adapterActivationGeneration == activationGeneration,
+                  ownsSharedChatRuntime(runtime) else { return }
+        }
+        for slot in slots where roleAdapterOperationGenerations[slot] == generations[slot] {
+            roleAdapters.removeValue(forKey: slot)
+        }
+        activeAdapterSlot = nil
     }
 
     func loadModel(named name: String, contextSize: UInt32 = 2048, batchSize: UInt32 = 256) throws {
@@ -924,12 +1182,28 @@ final actor AppLlamaService {
     }
 
     func unloadAllChat() async {
+        beginSharedChatOperation()
+        beginAdapterActivation()
         chatRuntimes.removeAll()
         sharedChatRuntime = nil
         sharedChatBasePath = nil
         roleAdapters.removeAll()
         activeAdapterSlot = nil
         primaryChatSlot = .cortex
+    }
+
+    @discardableResult
+    func unloadAllChat(ifLoadedPathEquals expectedPath: String) async -> Bool {
+        beginSharedChatOperation()
+        guard loadedChatPath == expectedPath else { return false }
+        beginAdapterActivation()
+        chatRuntimes.removeAll()
+        sharedChatRuntime = nil
+        sharedChatBasePath = nil
+        roleAdapters.removeAll()
+        activeAdapterSlot = nil
+        primaryChatSlot = .cortex
+        return true
     }
 
     func unloadEmbed() async {

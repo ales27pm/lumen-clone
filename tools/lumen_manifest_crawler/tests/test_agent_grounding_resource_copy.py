@@ -62,6 +62,8 @@ def _run_copy_script(
     repository: Path,
     project: Path,
     destination: Path,
+    mode: str | None = "minimal",
+    configuration: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     script = (
         Path(__file__).resolve().parents[3]
@@ -70,13 +72,18 @@ def _run_copy_script(
         / "Scripts"
         / "copy_agent_grounding_resources.sh"
     )
-    environment = {
+    environment: dict[str, str] = {
         **os.environ,
         "PROJECT_DIR": str(project),
         "TARGET_BUILD_DIR": str(destination),
         "UNLOCALIZED_RESOURCES_FOLDER_PATH": "Resources",
-        "AGENT_GROUNDING_RESOURCE_MODE": "minimal",
     }
+    if mode is not None:
+        environment["AGENT_GROUNDING_RESOURCE_MODE"] = mode
+    else:
+        environment.pop("AGENT_GROUNDING_RESOURCE_MODE", None)
+    if configuration is not None:
+        environment["CONFIGURATION"] = configuration
     return subprocess.run(
         ["sh", str(script)],
         cwd=repository,
@@ -138,7 +145,7 @@ def _write_manifest(
     )
 
 
-def test_resource_copy_accepts_identical_cross_model_mirrors(
+def test_minimal_resource_copy_excludes_developer_training_corpora(
     tmp_path: Path,
 ) -> None:
     repository, project, _, _ = _resource_tree(tmp_path)
@@ -151,16 +158,36 @@ def test_resource_copy_accepts_identical_cross_model_mirrors(
     )
 
     assert completed.returncode == 0, completed.stderr
-    copied = (
+    copied_manifest = (
         destination
         / "Resources"
         / "AgentGrounding"
-        / "cross_model_training"
-        / "cross_model_training.jsonl"
+        / "agent_manifest"
+        / "AgentBehaviorManifest.json"
     )
-    assert copied.read_text(encoding="utf-8") == (
-        "canonical cross_model_training.jsonl\n"
+    grounding_root = destination / "Resources" / "AgentGrounding"
+    assert copied_manifest.read_text(encoding="utf-8") == "AgentBehaviorManifest.json\n"
+    assert not (grounding_root / "agent_manifest" / "dataset").exists()
+    assert list((grounding_root / "cross_model_training").iterdir()) == []
+
+
+def test_release_defaults_to_minimal_runtime_resources(tmp_path: Path) -> None:
+    repository, project, _, _ = _resource_tree(tmp_path)
+    destination = tmp_path / "build"
+
+    completed = _run_copy_script(
+        repository=repository,
+        project=project,
+        destination=destination,
+        mode=None,
+        configuration="Release",
     )
+
+    assert completed.returncode == 0, completed.stderr
+    grounding_root = destination / "Resources" / "AgentGrounding"
+    assert (grounding_root / "agent_manifest" / "runtime_grounding_bundle.json").is_file()
+    assert not (grounding_root / "agent_manifest" / "dataset").exists()
+    assert list((grounding_root / "cross_model_training").iterdir()) == []
 
 
 def test_resource_copy_rejects_divergent_cross_model_mirrors(
@@ -176,6 +203,7 @@ def test_resource_copy_rejects_divergent_cross_model_mirrors(
         repository=repository,
         project=project,
         destination=tmp_path / "build",
+        mode="full",
     )
 
     assert completed.returncode != 0

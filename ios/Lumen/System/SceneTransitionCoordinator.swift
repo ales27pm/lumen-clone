@@ -23,8 +23,11 @@ final class SceneTransitionCoordinator {
             emitSceneTransition(values: ["phase": Self.phaseName(phase), "cancellationRequested": String(ResourceBudgetGate.shouldCancelForScenePhase(phase))])
             if phase == .active {
                 cancelDeferredCleanup()
-            } else if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
-                cancelSceneSensitive(reason: "scene-phase-\(Self.phaseName(phase))")
+            } else {
+                cancelPendingModelLoads()
+                if ResourceBudgetGate.shouldCancelForScenePhase(phase) {
+                    cancelSceneSensitive(reason: "scene-phase-\(Self.phaseName(phase))")
+                }
             }
         }
     }
@@ -35,6 +38,7 @@ final class SceneTransitionCoordinator {
             currentPhase = .inactive
             ResourceBudgetGate.recordScenePhase(.inactive)
             DeferredMaintenanceQueue.shared.updateScenePhase(.inactive)
+            cancelPendingModelLoads()
             emitSceneTransition(values: ["phase": "inactive", "cancellationRequested": "false"])
         }
     }
@@ -45,6 +49,7 @@ final class SceneTransitionCoordinator {
             currentPhase = .background
             ResourceBudgetGate.recordScenePhase(.background)
             DeferredMaintenanceQueue.shared.updateScenePhase(.background)
+            cancelPendingModelLoads()
             emitSceneTransition(values: ["phase": "background", "cancellationRequested": "false"])
         }
     }
@@ -63,6 +68,10 @@ final class SceneTransitionCoordinator {
         deferredCleanupTask?.cancel()
         deferredCleanupTask = nil
         lastIssuedCancellationAt = nil
+    }
+
+    private func cancelPendingModelLoads() {
+        ModelLoader.cancelActiveLoads()
     }
 
     private func cancelSceneSensitive(reason: String) {

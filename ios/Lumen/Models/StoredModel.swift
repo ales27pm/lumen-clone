@@ -39,6 +39,11 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
         case missingFileName
         case invalidRepoPathCharacters
         case invalidFileNameCharacters
+        case invalidSourcePathCharacters
+        case missingSourceRevision
+        case invalidSourceRevision
+        case missingExpectedSHA256
+        case invalidExpectedSHA256
         case invalidURLComponents
         case persistentDirectoryUnavailable
 
@@ -48,6 +53,11 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
             case .missingFileName: return "File name is missing."
             case .invalidRepoPathCharacters: return "Repository path contains invalid characters."
             case .invalidFileNameCharacters: return "File name contains invalid characters."
+            case .invalidSourcePathCharacters: return "Model source path contains invalid components."
+            case .missingSourceRevision: return "Model source revision is missing."
+            case .invalidSourceRevision: return "Model source revision must be an immutable commit hash."
+            case .missingExpectedSHA256: return "Model SHA-256 is missing."
+            case .invalidExpectedSHA256: return "Model SHA-256 is invalid."
             case .invalidURLComponents: return "Could not build a valid download URL."
             case .persistentDirectoryUnavailable: return "No persistent model directory is available."
             }
@@ -66,6 +76,8 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
     let role: ModelRole
     let description: String
     let tags: [String]
+    let sourceRevision: String
+    let expectedSHA256: String
     let sourcePath: String?
 
     init(
@@ -79,6 +91,8 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
         role: ModelRole,
         description: String,
         tags: [String],
+        sourceRevision: String = "",
+        expectedSHA256: String = "",
         sourcePath: String? = nil
     ) {
         self.id = id
@@ -91,6 +105,8 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
         self.role = role
         self.description = description
         self.tags = tags
+        self.sourceRevision = sourceRevision
+        self.expectedSHA256 = expectedSHA256.lowercased()
         self.sourcePath = sourcePath
     }
 
@@ -106,10 +122,9 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
             return .failure(.invalidRepoPathCharacters)
         }
 
-        let sourcePath = sourcePath ?? fileName
-        let sanitizedSourcePath: String
+        let sanitizedFileName: String
         do {
-            sanitizedSourcePath = try Self.sanitizeFileName(sourcePath)
+            sanitizedFileName = try Self.sanitizeDestinationFileName(fileName)
         } catch let error as DownloadURLError {
             Self.logInvalidMetadata(modelID: id, repoId: repoId, fileName: fileName, reason: error)
             return .failure(error)
@@ -118,10 +133,46 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
             return .failure(.invalidFileNameCharacters)
         }
 
+        let sanitizedSourcePath: String
+        do {
+            if let sourcePath {
+                sanitizedSourcePath = try Self.sanitizeSourcePath(sourcePath)
+            } else {
+                sanitizedSourcePath = sanitizedFileName
+            }
+        } catch let error as DownloadURLError {
+            Self.logInvalidMetadata(modelID: id, repoId: repoId, fileName: fileName, reason: error)
+            return .failure(error)
+        } catch {
+            Self.logInvalidMetadata(modelID: id, repoId: repoId, fileName: fileName, reason: .invalidSourcePathCharacters)
+            return .failure(.invalidSourcePathCharacters)
+        }
+
+        let sanitizedRevision: String
+        do {
+            sanitizedRevision = try Self.sanitizeImmutableRevision(sourceRevision)
+        } catch let error as DownloadURLError {
+            Self.logInvalidMetadata(modelID: id, repoId: repoId, fileName: fileName, reason: error)
+            return .failure(error)
+        } catch {
+            Self.logInvalidMetadata(modelID: id, repoId: repoId, fileName: fileName, reason: .invalidSourceRevision)
+            return .failure(.invalidSourceRevision)
+        }
+
+        let trimmedSHA256 = expectedSHA256.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSHA256.isEmpty else {
+            Self.logInvalidMetadata(modelID: id, repoId: repoId, fileName: fileName, reason: .missingExpectedSHA256)
+            return .failure(.missingExpectedSHA256)
+        }
+        guard Self.isValidSHA256(trimmedSHA256) else {
+            Self.logInvalidMetadata(modelID: id, repoId: repoId, fileName: fileName, reason: .invalidExpectedSHA256)
+            return .failure(.invalidExpectedSHA256)
+        }
+
         var components = URLComponents()
         components.scheme = "https"
         components.host = "huggingface.co"
-        components.percentEncodedPath = "/\(sanitizedRepoPath)/resolve/main/\(sanitizedSourcePath)"
+        components.percentEncodedPath = "/\(sanitizedRepoPath)/resolve/\(sanitizedRevision)/\(sanitizedSourcePath)"
         components.queryItems = [URLQueryItem(name: "download", value: "true")]
 
         guard let url = components.url else {
@@ -152,15 +203,52 @@ nonisolated struct CatalogModel: Identifiable, Hashable, Sendable {
         return encoded
     }
 
-    private static func sanitizeFileName(_ value: String) throws -> String {
+    private static let safePathComponentCharacters = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~"
+    )
+
+    private static func sanitizeDestinationFileName(_ value: String) throws -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw DownloadURLError.missingFileName }
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~/")
-        guard trimmed.unicodeScalars.allSatisfy(allowed.contains) else { throw DownloadURLError.invalidFileNameCharacters }
-        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)?
-            .replacingOccurrences(of: "%2F", with: "/")
+        guard value == trimmed,
+              trimmed != ".",
+              trimmed != "..",
+              !trimmed.contains("/"),
+              !trimmed.contains("\\"),
+              trimmed.unicodeScalars.allSatisfy(safePathComponentCharacters.contains)
         else { throw DownloadURLError.invalidFileNameCharacters }
-        return encoded
+        return trimmed
+    }
+
+    private static func sanitizeSourcePath(_ value: String) throws -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let components = trimmed.split(separator: "/", omittingEmptySubsequences: false)
+        guard !trimmed.isEmpty,
+              value == trimmed,
+              !trimmed.contains("\\"),
+              components.allSatisfy({ component in
+                  !component.isEmpty
+                      && component != "."
+                      && component != ".."
+                      && component.unicodeScalars.allSatisfy(safePathComponentCharacters.contains)
+              })
+        else { throw DownloadURLError.invalidSourcePathCharacters }
+        return components.map(String.init).joined(separator: "/")
+    }
+
+    private static func sanitizeImmutableRevision(_ value: String) throws -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { throw DownloadURLError.missingSourceRevision }
+        guard trimmed.count == 40,
+              trimmed.unicodeScalars.allSatisfy(CharacterSet(charactersIn: "0123456789abcdef").contains)
+        else { throw DownloadURLError.invalidSourceRevision }
+        return trimmed
+    }
+
+    static func isValidSHA256(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.count == 64
+            && normalized.unicodeScalars.allSatisfy(CharacterSet(charactersIn: "0123456789abcdef").contains)
     }
 
     private static func logInvalidMetadata(modelID: String, repoId: String, fileName: String, reason: DownloadURLError) {
@@ -185,6 +273,13 @@ nonisolated enum ModelCatalog {
         ?? legacyFeatured.first { $0.id == legacyGeneralDefaultOnboardingModelID }
         ?? legacyFeatured.first
         ?? featured[0]
+    }
+
+    static func catalogModel(repoId: String, fileName: String) -> CatalogModel? {
+        featured.first { model in
+            model.repoId.caseInsensitiveCompare(repoId) == .orderedSame
+                && model.fileName.caseInsensitiveCompare(fileName) == .orderedSame
+        }
     }
 
     static let legacyFeatured: [CatalogModel] = [

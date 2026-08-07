@@ -53,6 +53,29 @@ set_background_task_identifiers_from_build_setting() {
   set +f
 }
 
+set_msal_url_registration() {
+  bundle_identifier="${PRODUCT_BUNDLE_IDENTIFIER:-}"
+  if [ -z "$bundle_identifier" ]; then
+    echo "error: PRODUCT_BUNDLE_IDENTIFIER is empty; cannot register the MSAL callback URL" >&2
+    exit 1
+  fi
+
+  callback_scheme="msauth.${bundle_identifier}"
+  "$plistbuddy" -c "Delete :CFBundleURLTypes" "$plist" 2>/dev/null || true
+  "$plistbuddy" -c "Add :CFBundleURLTypes array" "$plist"
+  "$plistbuddy" -c "Add :CFBundleURLTypes:0 dict" "$plist"
+  "$plistbuddy" -c "Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor" "$plist"
+  "$plistbuddy" -c "Add :CFBundleURLTypes:0:CFBundleURLName string ${bundle_identifier}" "$plist"
+  "$plistbuddy" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$plist"
+  "$plistbuddy" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string ${callback_scheme}" "$plist"
+
+  "$plistbuddy" -c "Delete :LSApplicationQueriesSchemes" "$plist" 2>/dev/null || true
+  "$plistbuddy" -c "Add :LSApplicationQueriesSchemes array" "$plist"
+  "$plistbuddy" -c "Add :LSApplicationQueriesSchemes:0 string msauth" "$plist"
+  "$plistbuddy" -c "Add :LSApplicationQueriesSchemes:1 string msauthv2" "$plist"
+  "$plistbuddy" -c "Add :LSApplicationQueriesSchemes:2 string msauthv3" "$plist"
+}
+
 set_carplay_voice_scene() {
   module="${PRODUCT_MODULE_NAME:-Lumen}"
   "$plistbuddy" -c "Add :UIApplicationSceneManifest dict" "$plist" 2>/dev/null || true
@@ -75,6 +98,7 @@ set_string LumenBuildSourceIdentifier "${CURRENT_PROJECT_VERSION:-}"
 set_string LumenBuildConfiguration "${CONFIGURATION:-}"
 set_string LumenBuildScheme "${LUMEN_BUILD_SCHEME:-${TARGET_NAME:-}}"
 set_string LumenGitSHA "${LUMEN_GIT_SHA:-unknown}"
+set_msal_url_registration
 set_background_modes
 set_background_task_identifiers_from_build_setting
 set_carplay_voice_scene

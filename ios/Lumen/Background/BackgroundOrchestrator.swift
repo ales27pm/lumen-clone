@@ -3,6 +3,20 @@ import SwiftData
 import BackgroundTasks
 import SwiftUI
 
+nonisolated enum BackgroundStartupOperation: Equatable {
+    case registerTasks
+    case scheduleTasks
+}
+
+nonisolated enum BackgroundStartupPolicy {
+    /// Startup may register and schedule work, but authorization remains tied to
+    /// an explicit trigger or Permissions UI action.
+    static let operations: [BackgroundStartupOperation] = [
+        .registerTasks,
+        .scheduleTasks,
+    ]
+}
+
 @MainActor
 final class BackgroundOrchestrator {
     static let shared = BackgroundOrchestrator()
@@ -23,17 +37,19 @@ final class BackgroundOrchestrator {
         self.modelHousekeeping = modelHousekeeping
     }
 
-    func register() {
-        TriggerScheduler.shared.registerTasks()
+    func prepareForStartup() {
+        for operation in BackgroundStartupPolicy.operations {
+            switch operation {
+            case .registerTasks:
+                TriggerScheduler.shared.registerTasks()
+            case .scheduleTasks:
+                scheduleNextBackgroundRefresh()
+            }
+        }
     }
 
-    func schedule() {
+    private func scheduleNextBackgroundRefresh() {
         TriggerScheduler.shared.scheduleBackgroundRefresh()
-    }
-
-    @discardableResult
-    func requestPermission() async -> Bool {
-        await TriggerScheduler.shared.requestPermission()
     }
 
     func handleAppRefresh(task: BGAppRefreshTask) async {
@@ -253,7 +269,7 @@ final class BackgroundOrchestrator {
     }
 
     private func handleBackgroundTask(_ task: BGTask, runProcessingWork: Bool) async {
-        schedule()
+        scheduleNextBackgroundRefresh()
         let completion = BackgroundTaskCompletion(task: task)
         let work = Task { () -> Bool in
             guard let container = SharedContainer.shared else {

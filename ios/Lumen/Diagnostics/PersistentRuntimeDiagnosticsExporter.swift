@@ -77,8 +77,18 @@ actor PersistentRuntimeDiagnosticsExporter {
         }
     }
 
-    private static func sourceCommit() -> String? {
-        Bundle.main.object(forInfoDictionaryKey: "GitCommit") as? String
+    static func sourceCommit(infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]) -> String? {
+        // Current builds inject LumenGitSHA. Keep the legacy key as a read-only
+        // compatibility fallback for diagnostics exported by older internal builds.
+        for key in ["LumenGitSHA", "GitCommit"] {
+            guard let rawValue = infoDictionary[key] as? String else { continue }
+            let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty,
+                  value.lowercased() != "unknown",
+                  !value.hasPrefix("$(") else { continue }
+            return String(value.prefix(128))
+        }
+        return nil
     }
 }
 

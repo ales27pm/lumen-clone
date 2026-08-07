@@ -473,10 +473,14 @@ nonisolated enum IntentRouter {
             return IntentRoutingDecision(intent: .camera, allowedToolIDs: cameraToolIDs, requiresClarification: false, clarificationPrompt: nil)
         }
 
-        if matchesAny(text, [
-            "read this url", "read this web url", "fetch and summarize", "fetch the page at"
-        ]) || isURLFetchIntent(text) {
-            return IntentRoutingDecision(intent: .webSearch, allowedToolIDs: webSearchToolIDs, requiresClarification: false, clarificationPrompt: nil)
+        if isExplicitWebFetchRequest(text) {
+            let hasURL = containsHTTPURL(text)
+            return IntentRoutingDecision(
+                intent: .webSearch,
+                allowedToolIDs: ["web.fetch"],
+                requiresClarification: !hasURL,
+                clarificationPrompt: hasURL ? nil : "Which URL should I fetch?"
+            )
         }
 
         if matchesAny(text, [
@@ -651,6 +655,14 @@ nonisolated enum IntentRouter {
         return false
     }
 
+    static func isExplicitWebFetchRequest(_ userMessage: String) -> Bool {
+        let text = normalized(userMessage)
+        return matchesAny(text, [
+            "fetch url", "fetch the url", "open url", "read this url", "read this web url",
+            "read this website", "fetch and summarize", "fetch the page at"
+        ]) || isURLFetchIntent(text)
+    }
+
     /// Determines if the message requests fetching, reading, opening, or summarizing a URL.
     /// - Returns: `true` if the message contains such a request with an HTTP or HTTPS URL, `false` otherwise.
     private static func isURLFetchIntent(_ text: String) -> Bool {
@@ -658,6 +670,10 @@ nonisolated enum IntentRouter {
             of: #"(?i)\b(read|fetch|open|summarize)\b.{0,80}\bhttps?://\S+"#,
             options: .regularExpression
         ) != nil
+    }
+
+    private static func containsHTTPURL(_ text: String) -> Bool {
+        text.range(of: #"(?i)\bhttps?://\S+"#, options: .regularExpression) != nil
     }
 
     private static func normalized(_ text: String) -> String {

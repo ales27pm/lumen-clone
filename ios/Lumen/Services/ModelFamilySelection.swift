@@ -4,8 +4,6 @@ nonisolated enum LumenModelFamily: String, CaseIterable, Identifiable, Codable, 
     case qwen25 = "qwen2.5"
     case qwen3 = "qwen3"
 
-    private static let defaultsKey = "selectedModelFamilyID"
-
     var id: String { rawValue }
 
     var displayName: String {
@@ -39,26 +37,35 @@ nonisolated enum LumenModelFamily: String, CaseIterable, Identifiable, Codable, 
     }
 
     static var persistedSelected: LumenModelFamily {
-        get { fromStoredID(UserDefaults.standard.string(forKey: defaultsKey)) }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey) }
+        get { PersistedModelSelectionStore.selectedFamily() }
+        set {
+            let current = PersistedModelSelectionStore.loadOrMigrate()
+            _ = try? PersistedModelSelectionStore.commit(
+                chatModelID: current.chatModelID,
+                embeddingModelID: current.embeddingModelID,
+                family: newValue,
+                provisioningPlanID: current.familyID == newValue.rawValue ? current.provisioningPlanID : nil
+            )
+        }
     }
 }
 
 nonisolated extension LumenModelFleetCatalog {
     static var qwen25BootstrapModels: [CatalogModel] {
-        [
-            CatalogModel(id: "fleet-bootstrap-qwen2.5-chat-base-q4", name: "Qwen2.5 Bootstrap Chat Base", repoId: "Qwen/Qwen2.5-1.5B-Instruct-GGUF", fileName: "qwen2.5-1.5b-instruct-q4_k_m.gguf", parameters: "1.5B", quantization: "Q4_K_M", sizeBytes: 1_117_000_000, role: .chat, description: "Qwen2.5 baseline shared chat base. Use this family as the rollback/baseline candidate.", tags: ["bootstrap", "qwen2.5", "baseline", "shared-base"]),
-            CatalogModel(id: "fleet-bootstrap-qwen2.5-embedding-nomic-q4", name: "Qwen2.5 Bootstrap Embedding — Nomic", repoId: "nomic-ai/nomic-embed-text-v1.5-GGUF", fileName: "nomic-embed-text-v1.5.Q4_K_M.gguf", parameters: "137M", quantization: "Q4_K_M", sizeBytes: 85_000_000, role: .embedding, description: "Small embedding model for the Qwen2.5 baseline family.", tags: ["bootstrap", "qwen2.5", "embedding", "nomic"]),
+        let contract = LumenTrainedModelRuntimeRegistry.contract(for: .qwen25)
+        return [
+            CatalogModel(id: "fleet-bootstrap-qwen2.5-chat-base-q4", name: "Qwen2.5 Bootstrap Chat Base", repoId: contract.sharedBaseRepoID, fileName: contract.sharedBaseFileName, parameters: "1.5B", quantization: "Q4_K_M", sizeBytes: contract.sharedBaseSizeBytes, role: .chat, description: "Qwen2.5 baseline shared chat base. Use this family as the rollback/baseline candidate.", tags: ["bootstrap", "qwen2.5", "baseline", "shared-base"], sourceRevision: contract.sharedBaseSourceRevision, expectedSHA256: contract.sharedBaseExpectedSHA256),
+            CatalogModel(id: "fleet-bootstrap-qwen2.5-embedding-nomic-q4", name: "Qwen2.5 Bootstrap Embedding — Nomic", repoId: contract.embeddingRepoID ?? "", fileName: contract.embeddingFileName ?? "", parameters: "137M", quantization: "Q4_K_M", sizeBytes: contract.embeddingSizeBytes ?? 0, role: .embedding, description: "Small embedding model for the Qwen2.5 baseline family.", tags: ["bootstrap", "qwen2.5", "embedding", "nomic"], sourceRevision: contract.embeddingSourceRevision ?? "", expectedSHA256: contract.embeddingExpectedSHA256 ?? ""),
         ]
     }
 
     static var qwen3BootstrapModels: [CatalogModel] {
         let contract = LumenTrainedModelRuntimeRegistry.qwen3AdapterBootstrapContract
         return [
-            CatalogModel(id: "fleet-bootstrap-qwen3-fast-shared-q4", name: "Qwen3 Fast Shared Chat Base", repoId: contract.sharedBaseRepoID, fileName: contract.sharedBaseFileName, parameters: "1.7B", quantization: "Q4_K_M", sizeBytes: 1_350_000_000, role: .chat, description: "Shared Qwen3 chat base loaded once for all Lumen role adapters.", tags: ["bootstrap", "qwen3", "adapter-runtime", "shared-base"]),
-            CatalogModel(id: "fleet-bootstrap-qwen3-embedding-0.6b-q8", name: "Qwen3 Bootstrap Embedding 0.6B", repoId: contract.embeddingRepoID ?? "", fileName: contract.embeddingFileName ?? "", parameters: "0.6B", quantization: "Q8_0", sizeBytes: 650_000_000, role: .embedding, description: "Qwen3 embedding candidate for source-map, tool-schema, memory, RAG, and repair retrieval.", tags: ["bootstrap", "qwen3", "embedding", "current", "q8"]),
+            CatalogModel(id: "fleet-bootstrap-qwen3-fast-shared-q4", name: "Qwen3 Fast Shared Chat Base", repoId: contract.sharedBaseRepoID, fileName: contract.sharedBaseFileName, parameters: "1.7B", quantization: "Q4_K_M", sizeBytes: contract.sharedBaseSizeBytes, role: .chat, description: "Shared Qwen3 chat base loaded once for all Lumen role adapters.", tags: ["bootstrap", "qwen3", "adapter-runtime", "shared-base"], sourceRevision: contract.sharedBaseSourceRevision, expectedSHA256: contract.sharedBaseExpectedSHA256),
+            CatalogModel(id: "fleet-bootstrap-qwen3-embedding-0.6b-q8", name: "Qwen3 Bootstrap Embedding 0.6B", repoId: contract.embeddingRepoID ?? "", fileName: contract.embeddingFileName ?? "", parameters: "0.6B", quantization: "Q8_0", sizeBytes: contract.embeddingSizeBytes ?? 0, role: .embedding, description: "Qwen3 embedding candidate for source-map, tool-schema, memory, RAG, and repair retrieval.", tags: ["bootstrap", "qwen3", "embedding", "current", "q8"], sourceRevision: contract.embeddingSourceRevision ?? "", expectedSHA256: contract.embeddingExpectedSHA256 ?? ""),
         ] + contract.adapterRoles.map { adapter in
-            CatalogModel(id: "fleet-bootstrap-qwen3-\(adapter.roleID)-lora", name: "Qwen3 \(adapter.roleID.capitalized) LoRA Adapter", repoId: adapter.adapterRepoID, fileName: adapter.adapterFileName, parameters: "LoRA", quantization: "GGUF", sizeBytes: 70_000_000, role: .roleAdapter, description: "Role-specific Qwen3 LoRA adapter for the \(adapter.roleID) runtime role.", tags: ["bootstrap", "qwen3", "adapter-runtime", "role-adapter", adapter.roleID], sourcePath: adapter.adapterSourcePath)
+            CatalogModel(id: "fleet-bootstrap-qwen3-\(adapter.roleID)-lora", name: "Qwen3 \(adapter.roleID.capitalized) LoRA Adapter", repoId: adapter.adapterRepoID, fileName: adapter.adapterFileName, parameters: "LoRA", quantization: "GGUF", sizeBytes: adapter.adapterSizeBytes, role: .roleAdapter, description: "Role-specific Qwen3 LoRA adapter for the \(adapter.roleID) runtime role.", tags: ["bootstrap", "qwen3", "adapter-runtime", "role-adapter", adapter.roleID], sourceRevision: adapter.adapterSourceRevision, expectedSHA256: adapter.adapterExpectedSHA256, sourcePath: adapter.adapterSourcePath)
         }
     }
 

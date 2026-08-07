@@ -289,6 +289,68 @@ extension IntentRouterTests {
         }
     }
 
+    @Test func bareFetchURLKeepsSpecificToolScopeButCannotExecuteWithoutURL() async {
+        let direct = IntentRouter.classify("Fetch URL")
+        #expect(direct.intent == .webSearch)
+        #expect(direct.requiresClarification)
+        #expect(direct.clarificationPrompt == "Which URL should I fetch?")
+        #expect(IntentRouter.isToolAllowed("web.fetch", for: direct))
+        #expect(!IntentRouter.isToolAllowed("web.search", for: direct))
+
+        let routed = await IntentClassifierService.shared.route("Fetch URL")
+        #expect(routed.requiresClarification)
+        #expect(IntentRouter.isToolAllowed("web.fetch", for: routed))
+        #expect(!IntentRouter.isToolAllowed("web.search", for: routed))
+
+        let selected = DeterministicToolPlanner.plan(
+            routing: routed,
+            prompt: "Fetch URL",
+            availableToolIDs: routed.allowedToolIDs
+        )
+        #expect(selected?.tool == "web.fetch")
+        #expect(selected?.args["url"] == nil)
+        #expect(DeterministicToolPlanner.planSteps(
+            routing: routed,
+            prompt: "Fetch URL",
+            availableToolIDs: routed.allowedToolIDs
+        ).isEmpty)
+    }
+
+    @Test func alarmAuthorizationCheckIsNoArgumentStatusCommand() async {
+        let routed = await IntentClassifierService.shared.route("Check alarm authorization")
+
+        #expect(routed.intent == .alarm)
+        #expect(!routed.requiresClarification)
+        #expect(IntentRouter.isToolAllowed("alarm.authorization_status", for: routed))
+        let action = DeterministicToolPlanner.plan(
+            routing: routed,
+            prompt: "Check alarm authorization",
+            availableToolIDs: routed.allowedToolIDs
+        )
+        #expect(action?.tool == "alarm.authorization_status")
+        #expect(action?.args.isEmpty == true)
+    }
+
+    @Test func bareDirectionsSelectsSpecificToolButCannotExecuteWithoutDestination() async {
+        let routed = await IntentClassifierService.shared.route("Directions")
+
+        #expect(routed.intent == .maps)
+        #expect(routed.requiresClarification)
+        #expect(IntentRouter.isToolAllowed("maps.directions", for: routed))
+        let selected = DeterministicToolPlanner.plan(
+            routing: routed,
+            prompt: "Directions",
+            availableToolIDs: routed.allowedToolIDs
+        )
+        #expect(selected?.tool == "maps.directions")
+        #expect(selected?.args["destination"] == nil)
+        #expect(DeterministicToolPlanner.planSteps(
+            routing: routed,
+            prompt: "Directions",
+            availableToolIDs: routed.allowedToolIDs
+        ).isEmpty)
+    }
+
     @Test func identityRecallPromptsRouteToMemoryRecall() async throws {
         for prompt in ["What is my name?", "Who am I?", "Do you know my name?", "What's my name?", "What did I say my name was?"] {
             let decision = IntentRouter.classify(prompt)

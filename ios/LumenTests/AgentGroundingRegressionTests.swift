@@ -145,6 +145,85 @@ struct AgentGroundingRegressionTests {
         #expect(redacted.promptCharCount == 44)
     }
 
+    @Test func recorderAndEvidenceExportsNeverRetainRawTraceCanaries() throws {
+        AgentBehaviorTraceRecorder.clear()
+        defer { AgentBehaviorTraceRecorder.clear() }
+
+        let canarySuffix = UUID().uuidString
+        let promptCanary = "prompt-canary-\(canarySuffix)"
+        let outputCanary = "output-canary-\(canarySuffix)"
+        let argumentCanary = "argument-canary-\(canarySuffix)"
+        let trace = AgentBehaviorTrace(
+            id: UUID(),
+            createdAt: Date(timeIntervalSince1970: 1_800_000_100),
+            event: .toolAction,
+            slot: "executor",
+            stage: "agent-json-step-0",
+            intent: "mail",
+            promptPrefix: "Send this private prompt: \(promptCanary)",
+            rawOutputPrefix: #"{"action":{"tool":"outlook.mail.send"}}"# + outputCanary,
+            selectedToolID: "outlook.mail.send",
+            toolArguments: ["body": argumentCanary],
+            allowedToolIDs: ["outlook.mail.send"],
+            requiresApproval: true,
+            approvalMode: "foreground",
+            parseError: nil,
+            emittedFinalInActionTurn: false,
+            runtimePath: "agent-model"
+        )
+        let canaries = [promptCanary, outputCanary, argumentCanary]
+
+        AgentBehaviorTraceRecorder.record(trace)
+
+        let traceFile = try AgentBehaviorTraceRecorder.diagnosticsDirectory()
+            .appendingPathComponent("agent-behavior-traces.jsonl", isDirectory: false)
+        let jsonlText = String(decoding: try Data(contentsOf: traceFile), as: UTF8.self)
+        for canary in canaries {
+            #expect(!jsonlText.contains(canary))
+        }
+        #expect(jsonlText.contains("sha256="))
+
+        try FileManager.default.removeItem(at: traceFile)
+        let recentTrace = try #require(AgentBehaviorTraceRecorder.recent(limit: 1).last)
+        #expect(recentTrace.promptPrefix.contains("sha256="))
+        #expect(recentTrace.rawOutputPrefix.contains("sha256="))
+        #expect(recentTrace.toolArguments["body"]?.contains("sha256=") == true)
+        let recentText = String(decoding: try JSONEncoder().encode(recentTrace), as: UTF8.self)
+        for canary in canaries {
+            #expect(!recentText.contains(canary))
+        }
+
+        let package = InAppDatasetPackageExporter.makePackage(
+            manifestSource: "test-manifest",
+            usedRuntimeFallback: false,
+            runtimeManifestAudit: nil,
+            behaviorAudit: nil,
+            scenarioResults: [],
+            traceLimit: 1
+        )
+        let packageText = String(decoding: try JSONEncoder().encode(package), as: UTF8.self)
+        for canary in canaries {
+            #expect(!packageText.contains(canary))
+        }
+
+        let report = E2ETestReport(
+            id: UUID(),
+            startedAt: trace.createdAt,
+            finishedAt: trace.createdAt,
+            passed: 0,
+            failed: 0,
+            results: []
+        )
+        let directPackage = InAppDatasetPackageExporter.makePackageForTests(
+            liveE2EReport: report,
+            traces: [trace]
+        )
+        let directPackageText = String(decoding: try JSONEncoder().encode(directPackage), as: UTF8.self)
+        for canary in canaries {
+            #expect(!directPackageText.contains(canary))
+        }
+    }
+
     @Test func persistentAgentBehaviorTracePreservesOnlyEvidenceRuntimePathCategories() {
         func redactedRuntimePath(_ runtimePath: String) -> String? {
             AgentBehaviorTrace(
@@ -2101,17 +2180,25 @@ struct AgentGroundingRegressionTests {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let text = String(decoding: try encoder.encode(package), as: UTF8.self)
 
-        #expect(trace.runtimePath == "sharedAdapter")
+        #expect(trace.runtimePath == AgentDiagnosticFileRedactor.summary(label: "runtimePath", text: "sharedAdapter"))
         #expect(trace.adapterSlot == "mouth")
         #expect(trace.adapterApplied == true)
-        #expect(trace.baseModelPath == "lumen-qwen3.gguf")
-        #expect(trace.adapterPath == "lumen-mouth-lora.gguf")
+        #expect(trace.baseModelPath == AgentDiagnosticFileRedactor.summary(
+            label: "baseModelPath",
+            text: "/Users/tester/Models/lumen-qwen3.gguf"
+        ))
+        #expect(trace.adapterPath == AgentDiagnosticFileRedactor.summary(
+            label: "adapterPath",
+            text: "/private/var/mobile/Containers/Data/lumen-mouth-lora.gguf"
+        ))
         #expect(trace.modelIdentifier == "Qwen/Qwen3-1.7B")
         #expect(trace.toolArguments["body"] == "[redacted]")
         #expect(trace.toolArguments["empty"] == "")
         #expect(!trace.promptPrefix.contains("My private question"))
         #expect(!trace.promptPrefix.contains("alexis@example.com"))
         #expect(!trace.rawOutputPrefix.contains("hidden plan"))
+        let redactedRuntimePath = try #require(trace.runtimePath)
+        let redactedAdapterPath = try #require(trace.adapterPath)
 
         for forbidden in [
             traceID.uuidString,
@@ -2119,7 +2206,7 @@ struct AgentGroundingRegressionTests {
             "33333333-3333-4333-8333-333333333333",
             "44444444-4444-4444-8444-444444444444",
             "alexis@example.com",
-            "/Users/ales27pm",
+            "/Users/tester",
             "/private/var",
             "secret reasoning",
             "hidden plan",
@@ -2128,8 +2215,10 @@ struct AgentGroundingRegressionTests {
         ] {
             #expect(!text.contains(forbidden))
         }
-        #expect(text.contains("sharedAdapter"))
-        #expect(text.contains("lumen-mouth-lora.gguf"))
+        #expect(text.contains(redactedRuntimePath))
+        #expect(text.contains(redactedAdapterPath))
+        #expect(!text.contains("sharedAdapter"))
+        #expect(!text.contains("lumen-mouth-lora.gguf"))
     }
 
     @Test func agentGroundingPackageFlagsSlowRuntimeModelTurns() throws {

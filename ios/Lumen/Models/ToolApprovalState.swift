@@ -191,6 +191,36 @@ nonisolated enum ToolApprovalPayloadCodec {
     }
 
     @MainActor
+    static func verifyPendingApproval(
+        from args: [String: String],
+        matchingToolID expectedToolID: String
+    ) -> Result<ExecutorPendingApproval, ToolApprovalPayloadVerificationError> {
+        verifyPendingApproval(from: args, matchingToolID: expectedToolID, queue: .shared)
+    }
+
+    @MainActor
+    static func verifyPendingApproval(
+        from args: [String: String],
+        matchingToolID expectedToolID: String,
+        queue: ToolApprovalQueue
+    ) -> Result<ExecutorPendingApproval, ToolApprovalPayloadVerificationError> {
+        guard containsPendingActionIDField(args) else {
+            return .failure(.missingPendingActionID)
+        }
+        guard let pendingID = pendingActionID(from: args) else {
+            return .failure(.malformedPendingActionID)
+        }
+        guard let pending = queue.resolve(pendingID) else {
+            return .failure(.expiredOrMismatchedPendingAction)
+        }
+        guard !pending.isExpired(), pending.toolID == expectedToolID else {
+            queue.clear(pendingID)
+            return .failure(.expiredOrMismatchedPendingAction)
+        }
+        return .success(pending)
+    }
+
+    @MainActor
     static func consumePendingApproval(
         from args: [String: String],
         matchingToolID expectedToolID: String
@@ -204,16 +234,15 @@ nonisolated enum ToolApprovalPayloadCodec {
         matchingToolID expectedToolID: String,
         queue: ToolApprovalQueue
     ) -> Result<ExecutorPendingApproval, ToolApprovalPayloadVerificationError> {
-        guard containsPendingActionIDField(args) else {
-            return .failure(.missingPendingActionID)
+        switch verifyPendingApproval(from: args, matchingToolID: expectedToolID, queue: queue) {
+        case .success(let pending):
+            guard let consumed = queue.consume(pending.pendingActionID, matchingToolID: expectedToolID) else {
+                return .failure(.expiredOrMismatchedPendingAction)
+            }
+            return .success(consumed)
+        case .failure(let error):
+            return .failure(error)
         }
-        guard let pendingID = pendingActionID(from: args) else {
-            return .failure(.malformedPendingActionID)
-        }
-        guard let pending = queue.consume(pendingID, matchingToolID: expectedToolID) else {
-            return .failure(.expiredOrMismatchedPendingAction)
-        }
-        return .success(pending)
     }
 
     static func containsPendingActionIDField(_ args: [String: String]) -> Bool {

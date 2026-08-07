@@ -8249,7 +8249,9 @@ def test_fleet_sft_finalization_balances_native_proxy_by_pruning_public_only() -
             )
 
 
-def test_fleet_sft_optimizer_geometry_is_bounded_from_immutable_candidates() -> None:
+def test_fleet_sft_optimizer_geometry_is_bounded_from_immutable_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def sft(
         index: int,
         *,
@@ -8315,10 +8317,26 @@ def test_fleet_sft_optimizer_geometry_is_bounded_from_immutable_candidates() -> 
         for index in range(100)
     ]
     records = [*primary, *supplemental, *public]
+    records_snapshot = copy.deepcopy(records)
     config = FineTuningDatasetConfig(
         max_fleet_sft_optimizer_records=(
             FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
         )
+    )
+
+    serialized_record_ids: list[int] = []
+    serialize_canonical_record = (
+        fine_tuning_module._serialize_canonical_record
+    )
+
+    def tracked_serialize_canonical_record(record: dict[str, Any]) -> str:
+        serialized_record_ids.append(id(record))
+        return serialize_canonical_record(record)
+
+    monkeypatch.setattr(
+        fine_tuning_module,
+        "_serialize_canonical_record",
+        tracked_serialize_canonical_record,
     )
 
     finalized = _finalize_fleet_optimizer_lane(
@@ -8326,13 +8344,29 @@ def test_fleet_sft_optimizer_geometry_is_bounded_from_immutable_candidates() -> 
         lane="sft",
         config=config,
     )
+    assert Counter(serialized_record_ids) == Counter(
+        {id(record): 1 for record in records}
+    )
+    serialized_record_ids.clear()
     repeated = _finalize_fleet_optimizer_lane(
         list(reversed(records)),
         lane="sft",
         config=config,
     )
+    assert Counter(serialized_record_ids) == Counter(
+        {id(record): 1 for record in records}
+    )
 
     assert finalized == repeated
+    assert records == records_snapshot
+    mutation_probe = copy.deepcopy(records[0])
+    original_probe_key = fine_tuning_module._canonical_record_key(
+        mutation_probe
+    )
+    mutation_probe["metadata"]["cacheScopeProbe"] = True
+    assert fine_tuning_module._canonical_record_key(
+        mutation_probe
+    ) != original_probe_key
     assert len(finalized) == FLEET_SFT_OPTIMIZER_MAX_TRAIN_RECORDS
     assert {
         _canonical_messages_key(record) for record in primary

@@ -5,6 +5,77 @@ nonisolated enum UserSettingsStorageKeys {
     static let networkToolsEnabled = "networkToolsEnabled"
 }
 
+nonisolated struct PersistedModelSelectionV2: Codable, Equatable, Sendable {
+    let schemaVersion: Int
+    let chatModelID: String?
+    let embeddingModelID: String?
+    let familyID: String
+    let provisioningPlanID: String?
+}
+
+nonisolated enum PersistedModelSelectionStore {
+    static let defaultsKey = "persistedModelSelectionV2"
+    static let legacyChatKey = "activeChatModelID"
+    static let legacyEmbeddingKey = "activeEmbeddingModelID"
+    static let legacyFamilyKey = "selectedModelFamilyID"
+    private static let schemaVersion = 2
+
+    static func load(defaults: UserDefaults = .standard) -> PersistedModelSelectionV2? {
+        guard let data = defaults.data(forKey: defaultsKey),
+              let value = try? JSONDecoder().decode(PersistedModelSelectionV2.self, from: data),
+              value.schemaVersion == schemaVersion,
+              LumenModelFamily(rawValue: value.familyID) != nil
+        else { return nil }
+        return value
+    }
+
+    @discardableResult
+    static func loadOrMigrate(defaults: UserDefaults = .standard) -> PersistedModelSelectionV2 {
+        if let current = load(defaults: defaults) { return current }
+        let migrated = PersistedModelSelectionV2(
+            schemaVersion: schemaVersion,
+            chatModelID: defaults.string(forKey: legacyChatKey),
+            embeddingModelID: defaults.string(forKey: legacyEmbeddingKey),
+            familyID: LumenModelFamily.fromStoredID(defaults.string(forKey: legacyFamilyKey)).rawValue,
+            provisioningPlanID: nil
+        )
+        if let data = try? JSONEncoder().encode(migrated) {
+            defaults.set(data, forKey: defaultsKey)
+        }
+        return migrated
+    }
+
+    static func selectedFamily(defaults: UserDefaults = .standard) -> LumenModelFamily {
+        LumenModelFamily.fromStoredID(loadOrMigrate(defaults: defaults).familyID)
+    }
+
+    @discardableResult
+    static func commit(
+        chatModelID: String?,
+        embeddingModelID: String?,
+        family: LumenModelFamily,
+        provisioningPlanID: String?,
+        defaults: UserDefaults = .standard
+    ) throws -> PersistedModelSelectionV2 {
+        let value = PersistedModelSelectionV2(
+            schemaVersion: schemaVersion,
+            chatModelID: chatModelID,
+            embeddingModelID: embeddingModelID,
+            familyID: family.rawValue,
+            provisioningPlanID: provisioningPlanID
+        )
+        let data = try JSONEncoder().encode(value)
+
+        // The canonical record is written first. Readers prefer it over the legacy
+        // mirrors, so an interruption cannot expose a half-updated chat/embed pair.
+        defaults.set(data, forKey: defaultsKey)
+        defaults.set(chatModelID, forKey: legacyChatKey)
+        defaults.set(embeddingModelID, forKey: legacyEmbeddingKey)
+        defaults.set(family.rawValue, forKey: legacyFamilyKey)
+        return value
+    }
+}
+
 fileprivate nonisolated enum UserSettingsKeys {
     static let activeChatModelID = "activeChatModelID"
     static let activeEmbeddingModelID = "activeEmbeddingModelID"
@@ -103,11 +174,18 @@ final class UserSettings {
     @ObservationIgnored
     private let defaults: UserDefaults
 
+    @ObservationIgnored
+    private var isApplyingAtomicModelSelection = false
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
-        activeChatModelID = defaults.string(forKey: UserSettingsKeys.activeChatModelID)
-        activeEmbeddingModelID = defaults.string(forKey: UserSettingsKeys.activeEmbeddingModelID)
+        // AppState owns one UserSettings instance created before provisioning can
+        // start, making this the relaunch boundary for an interrupted final commit.
+        _ = ModelProvisioningSwitchJournalStore.recoverIfNeeded(defaults: defaults)
+        let persistedSelection = PersistedModelSelectionStore.loadOrMigrate(defaults: defaults)
+        activeChatModelID = persistedSelection.chatModelID
+        activeEmbeddingModelID = persistedSelection.embeddingModelID
 
         disabledToolIDs = ToolSettingsRegistrySnapshot.loadDisabledToolIDs(defaults: defaults, persistLegacyMigration: true)
 
@@ -136,12 +214,22 @@ final class UserSettings {
         #endif
         networkToolsEnabled = defaults.object(forKey: UserSettingsKeys.networkToolsEnabled) as? Bool ?? false
         autoDownloadFleetModels = defaults.object(forKey: UserSettingsKeys.autoDownloadFleetModels) as? Bool ?? true
-        confirmFleetDownloads = defaults.object(forKey: UserSettingsKeys.confirmFleetDownloads) as? Bool ?? false
+        confirmFleetDownloads = defaults.object(forKey: UserSettingsKeys.confirmFleetDownloads) as? Bool ?? true
     }
 
     private func save() {
-        defaults.set(activeChatModelID, forKey: UserSettingsKeys.activeChatModelID)
-        defaults.set(activeEmbeddingModelID, forKey: UserSettingsKeys.activeEmbeddingModelID)
+        if !isApplyingAtomicModelSelection {
+            let currentSelection = PersistedModelSelectionStore.loadOrMigrate(defaults: defaults)
+            let modelPairIsUnchanged = currentSelection.chatModelID == activeChatModelID
+                && currentSelection.embeddingModelID == activeEmbeddingModelID
+            _ = try? PersistedModelSelectionStore.commit(
+                chatModelID: activeChatModelID,
+                embeddingModelID: activeEmbeddingModelID,
+                family: LumenModelFamily.fromStoredID(currentSelection.familyID),
+                provisioningPlanID: modelPairIsUnchanged ? currentSelection.provisioningPlanID : nil,
+                defaults: defaults
+            )
+        }
         defaults.set(Array(disabledToolIDs), forKey: UserSettingsKeys.disabledToolIDs)
         defaults.set(Array(enabledToolIDs), forKey: UserSettingsKeys.enabledToolIDs)
         defaults.set(systemPrompt, forKey: UserSettingsKeys.systemPrompt)
@@ -168,6 +256,25 @@ final class UserSettings {
         defaults.set(networkToolsEnabled, forKey: UserSettingsKeys.networkToolsEnabled)
         defaults.set(autoDownloadFleetModels, forKey: UserSettingsKeys.autoDownloadFleetModels)
         defaults.set(confirmFleetDownloads, forKey: UserSettingsKeys.confirmFleetDownloads)
+    }
+
+    func commitActiveModelSelection(
+        chatModelID: String?,
+        embeddingModelID: String?,
+        family: LumenModelFamily,
+        provisioningPlanID: String?
+    ) throws {
+        _ = try PersistedModelSelectionStore.commit(
+            chatModelID: chatModelID,
+            embeddingModelID: embeddingModelID,
+            family: family,
+            provisioningPlanID: provisioningPlanID,
+            defaults: defaults
+        )
+        isApplyingAtomicModelSelection = true
+        activeChatModelID = chatModelID
+        activeEmbeddingModelID = embeddingModelID
+        isApplyingAtomicModelSelection = false
     }
 
     func toggleTool(_ id: String) {
@@ -259,9 +366,10 @@ nonisolated struct SettingsSnapshot: Sendable {
         let current = ToolSettingsRegistrySnapshot.currentToolIDs
         let disabled = ToolSettingsRegistrySnapshot.loadDisabledToolIDs(defaults: defaults, persistLegacyMigration: false)
         let enabled = current.subtracting(disabled)
+        let persistedSelection = PersistedModelSelectionStore.loadOrMigrate(defaults: defaults)
         return SettingsSnapshot(
-            activeChatModelID: defaults.string(forKey: UserSettingsKeys.activeChatModelID),
-            activeEmbeddingModelID: defaults.string(forKey: UserSettingsKeys.activeEmbeddingModelID),
+            activeChatModelID: persistedSelection.chatModelID,
+            activeEmbeddingModelID: persistedSelection.embeddingModelID,
             enabledToolIDs: enabled,
             systemPrompt: defaults.string(forKey: UserSettingsKeys.systemPrompt) ?? Presets.general.prompt,
             temperature: defaults.object(forKey: UserSettingsKeys.temperature) as? Double ?? 0.7,
@@ -279,7 +387,7 @@ nonisolated struct SettingsSnapshot: Sendable {
             developerReasoningCaptureEnabled: Self.debugDeveloperReasoningCaptureEnabled(defaults: defaults),
             networkToolsEnabled: defaults.object(forKey: UserSettingsKeys.networkToolsEnabled) as? Bool ?? false,
             autoDownloadFleetModels: defaults.object(forKey: UserSettingsKeys.autoDownloadFleetModels) as? Bool ?? true,
-            confirmFleetDownloads: defaults.object(forKey: UserSettingsKeys.confirmFleetDownloads) as? Bool ?? false
+            confirmFleetDownloads: defaults.object(forKey: UserSettingsKeys.confirmFleetDownloads) as? Bool ?? true
         )
     }
 }

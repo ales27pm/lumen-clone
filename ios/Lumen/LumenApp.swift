@@ -151,9 +151,10 @@ final class AppStartupCoordinator {
     /// All UI updates go through `await MainActor.run { ... }`.
     ///
     /// IMPORTANT: Fleet model checks and model loading are deliberately NOT done here.
-    /// They are deferred to on-demand loading (ModelLoader.ensureChatLoaded / ensureEmbedLoaded)
-    /// when the user first interacts with the chat. This keeps startup under 1 second
-    /// and prevents watchdog (0x8BADF00D) kills from blocking the main actor.
+    /// RootView restores the selected chat and embedding runtimes after this
+    /// bootstrap dismisses the splash and while the scene is active. This keeps
+    /// blocking bootstrap work bounded and prevents watchdog (0x8BADF00D) kills
+    /// from blocking the main actor.
     nonisolated private static func defaultBootstrap(appState: AppState, ctx: ModelContext) async throws {
         // Phase 1: Lightweight validation (fast, no I/O heavy work)
         try await withStage(.bootstrap) {
@@ -167,14 +168,12 @@ final class AppStartupCoordinator {
         await MainActor.run {
             appState.runtime.updateBootStep(id: "triggers", detail: "Registering background tasks", state: .running)
         }
-        await BackgroundOrchestrator.shared.register()
-        await BackgroundOrchestrator.shared.schedule()
-        await BackgroundOrchestrator.shared.requestPermission()
+        await BackgroundOrchestrator.shared.prepareForStartup()
         await MainActor.run {
             appState.runtime.updateBootStep(id: "triggers", detail: "Background tasks ready", state: .complete)
         }
 
-        // Boot is complete. Dismiss the splash immediately — models load on-demand.
+        // Boot is complete. Dismiss the splash before foreground model restoration.
         await MainActor.run {
             appState.runtime.bootHeadline = "Lumen is ready"
             appState.runtime.dismissBootSplash()

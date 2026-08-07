@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Lumen
 
@@ -87,6 +88,10 @@ struct LumenFleetTests {
     }
 
     @Test @MainActor func resolverAssignsAllTextSlotsFromSingleSharedAdapterFirstBase() async throws {
+        let previousFamily = LumenModelFamily.persistedSelected
+        LumenModelFamily.persistedSelected = .qwen25
+        defer { LumenModelFamily.persistedSelected = previousFamily }
+
         let chat = StoredModel(
             name: "Fleet v1 Adapter Base — Qwen 2.5 1.5B",
             repoId: "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
@@ -129,7 +134,11 @@ struct LumenFleetTests {
         #expect(snapshot.runtimeResidentSlots.isEmpty)
     }
 
-    @Test @MainActor func fleetResolverKeepsEmbeddingAssignmentWhenHintsDoNotMatch() async throws {
+    @Test @MainActor func fleetResolverRequiresExplicitEmbeddingSelection() async throws {
+        let previousFamily = LumenModelFamily.persistedSelected
+        LumenModelFamily.persistedSelected = .qwen25
+        defer { LumenModelFamily.persistedSelected = previousFamily }
+
         let chat = StoredModel(
             name: "Local Chat",
             repoId: "local/chat",
@@ -152,17 +161,80 @@ struct LumenFleetTests {
         )
         try materializeModelFiles(chat, customEmbedding)
 
-        let snapshot = LumenModelFleetResolver.resolveV1(
+        let unselected = LumenModelFleetResolver.resolveV1(
             activeChatModelID: chat.id.uuidString,
             activeEmbeddingModelID: nil,
             storedModels: [chat, customEmbedding]
         )
 
-        #expect(snapshot.assignment(for: .embedding)?.modelID == customEmbedding.id)
-        #expect(!snapshot.missingSlots.contains(.embedding))
+        #expect(unselected.assignment(for: .embedding) == nil)
+        #expect(unselected.missingSlots.contains(.embedding))
+
+        let selected = LumenModelFleetResolver.resolveV1(
+            activeChatModelID: chat.id.uuidString,
+            activeEmbeddingModelID: customEmbedding.id.uuidString,
+            storedModels: [chat, customEmbedding]
+        )
+        #expect(selected.assignment(for: .embedding)?.modelID == customEmbedding.id)
+        #expect(!selected.missingSlots.contains(.embedding))
     }
 
-    @Test @MainActor func resolverPrefersReleaseBakedSlotModelWhenAvailable() async throws {
+    @Test @MainActor func launchSnapshotResolverRequiresAndHonorsTheExactPersistedPair() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumen-exact-autoload-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chat = StoredModel(
+            name: "Selected Chat",
+            repoId: "local/selected-chat",
+            fileName: "selected-chat.gguf",
+            sizeBytes: 1,
+            quantization: "local",
+            parameters: "local",
+            role: .chat,
+            localPath: root.appendingPathComponent("selected-chat.gguf").path
+        )
+        let embedding = StoredModel(
+            name: "Selected Embedding",
+            repoId: "local/selected-embedding",
+            fileName: "selected-embedding.gguf",
+            sizeBytes: 1,
+            quantization: "local",
+            parameters: "local",
+            role: .embedding,
+            localPath: root.appendingPathComponent("selected-embedding.gguf").path
+        )
+        try materializeModelFiles(chat, embedding)
+        let items = [StoredModelLoadItem(stored: chat), StoredModelLoadItem(stored: embedding)]
+
+        let unselected = LumenModelFleetResolver.resolveV1(snapshot: ModelLoadSnapshot(
+            activeChatModelID: nil,
+            activeEmbeddingModelID: nil,
+            contextSize: 2_048,
+            selectedModelFamily: .qwen25,
+            storedModels: items
+        ))
+        #expect(unselected.assignments.isEmpty)
+
+        let selected = LumenModelFleetResolver.resolveV1(snapshot: ModelLoadSnapshot(
+            activeChatModelID: chat.id.uuidString,
+            activeEmbeddingModelID: embedding.id.uuidString,
+            contextSize: 2_048,
+            selectedModelFamily: .qwen25,
+            storedModels: items
+        ))
+        #expect(selected.assignment(for: .cortex)?.modelID == chat.id)
+        #expect(selected.assignment(for: .executor)?.modelID == chat.id)
+        #expect(selected.assignment(for: .mouth)?.modelID == chat.id)
+        #expect(selected.assignment(for: .mimicry)?.modelID == chat.id)
+        #expect(selected.assignment(for: .rem)?.modelID == chat.id)
+        #expect(selected.assignment(for: .embedding)?.modelID == embedding.id)
+    }
+
+    @Test @MainActor func resolverDoesNotSubstituteAnUnselectedReleaseBake() async throws {
+        let previousFamily = LumenModelFamily.persistedSelected
+        LumenModelFamily.persistedSelected = .qwen25
+        defer { LumenModelFamily.persistedSelected = previousFamily }
+
         let sharedBase = StoredModel(
             name: "Fleet v1 Adapter Base — Qwen 2.5 1.5B",
             repoId: "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
@@ -185,17 +257,29 @@ struct LumenFleetTests {
         )
         try materializeModelFiles(sharedBase, cortexReleaseBake)
 
-        let snapshot = LumenModelFleetResolver.resolveV1(
+        let sharedBaseSelected = LumenModelFleetResolver.resolveV1(
             activeChatModelID: sharedBase.id.uuidString,
             activeEmbeddingModelID: nil,
             storedModels: [sharedBase, cortexReleaseBake]
         )
 
-        #expect(snapshot.assignment(for: .cortex)?.modelID == cortexReleaseBake.id)
-        #expect(snapshot.assignment(for: .executor)?.modelID == sharedBase.id)
+        #expect(sharedBaseSelected.assignment(for: .cortex)?.modelID == sharedBase.id)
+        #expect(sharedBaseSelected.assignment(for: .executor)?.modelID == sharedBase.id)
+
+        let releaseBakeSelected = LumenModelFleetResolver.resolveV1(
+            activeChatModelID: cortexReleaseBake.id.uuidString,
+            activeEmbeddingModelID: nil,
+            storedModels: [sharedBase, cortexReleaseBake]
+        )
+        #expect(releaseBakeSelected.assignment(for: .cortex)?.modelID == cortexReleaseBake.id)
+        #expect(releaseBakeSelected.assignment(for: .executor)?.modelID == cortexReleaseBake.id)
     }
 
     @Test @MainActor func resolverDoesNotLoadAdapterOnlyArtifactsAsStandaloneChatModels() async throws {
+        let previousFamily = LumenModelFamily.persistedSelected
+        LumenModelFamily.persistedSelected = .qwen25
+        defer { LumenModelFamily.persistedSelected = previousFamily }
+
         let sharedBase = StoredModel(
             name: "Fleet v1 Adapter Base — Qwen 2.5 1.5B",
             repoId: "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
@@ -241,6 +325,78 @@ struct LumenFleetTests {
         #expect(contract.traceValues["trainedBaseModelID"] == "Qwen/Qwen3-1.7B")
     }
 
+    @Test func qwen3SharedBaseCompatibilityRequiresExactSizeAndSHA256() {
+        let contract = LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+        #expect(LumenModelSelectionPolicy.isChatModelCompatible(
+            repoID: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: contract.sharedBaseSizeBytes,
+            expectedSHA256: contract.sharedBaseExpectedSHA256,
+            family: .qwen3
+        ))
+        #expect(!LumenModelSelectionPolicy.isChatModelCompatible(
+            repoID: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: contract.sharedBaseSizeBytes - 1,
+            expectedSHA256: contract.sharedBaseExpectedSHA256,
+            family: .qwen3
+        ))
+        #expect(!LumenModelSelectionPolicy.isChatModelCompatible(
+            repoID: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: contract.sharedBaseSizeBytes,
+            expectedSHA256: nil,
+            family: .qwen3
+        ))
+        #expect(!LumenModelSelectionPolicy.isChatModelCompatible(
+            repoID: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: contract.sharedBaseSizeBytes,
+            expectedSHA256: String(repeating: "0", count: 64),
+            family: .qwen3
+        ))
+        #expect(!LumenModelSelectionPolicy.isChatModelCompatible(
+            repoID: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: contract.sharedBaseSizeBytes,
+            expectedSHA256: "not-a-sha256",
+            family: .qwen3
+        ))
+        #expect(LumenModelSelectionPolicy.trustedExpectedSHA256(
+            repoID: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: contract.sharedBaseSizeBytes,
+            family: .qwen3
+        ) == contract.sharedBaseExpectedSHA256)
+    }
+
+    @Test func qwen3SharedBaseIntegrityRejectsSameSizeTamperedValidGGUF() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumen-tampered-valid-gguf-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("tampered.gguf")
+        let originalBytes = [UInt8]("GGUFtrusted-payload".utf8)
+        try Data(originalBytes).write(to: url)
+        let trustedSHA256 = try SHA256FileHasher.sha256Hex(for: url)
+        var tamperedBytes = originalBytes
+        tamperedBytes[tamperedBytes.index(before: tamperedBytes.endIndex)] ^= 0x01
+        try Data(tamperedBytes).write(to: url)
+
+        let result = await ModelFileIntegrity.validateInstalledFileWithDiagnosticsAsync(
+            localPath: url.path,
+            fileName: url.lastPathComponent,
+            expectedSizeBytes: Int64(tamperedBytes.count),
+            expectedSHA256: trustedSHA256
+        )
+        guard case .failure(.hashMismatch(let expected, let actual)) = result else {
+            Issue.record("Expected same-size valid-GGUF tampering to fail SHA-256 validation")
+            return
+        }
+        #expect(expected == trustedSHA256)
+        #expect(actual != expected)
+    }
+
     @Test @MainActor func qwen3ResolverReportsMissingRoleAdapters() async throws {
         let previousFamily = LumenModelFamily.persistedSelected
         LumenModelFamily.persistedSelected = .qwen3
@@ -251,7 +407,7 @@ struct LumenFleetTests {
             name: "Qwen3 Fast Shared Chat Base",
             repoId: contract.sharedBaseRepoID,
             fileName: contract.sharedBaseFileName,
-            sizeBytes: 1,
+            sizeBytes: contract.sharedBaseSizeBytes,
             quantization: "Q4_K_M",
             parameters: "1.7B",
             role: .chat,
@@ -272,8 +428,24 @@ struct LumenFleetTests {
         #expect(snapshot.assignment(for: .executor)?.hasConfiguredRoleAdapter == false)
         #expect(snapshot.assignment(for: .executor)?.usesRoleAdapter == false)
         #expect(snapshot.assignment(for: .executor)?.requiresRoleAdapterForRuntime == true)
+        #expect(snapshot.assignment(for: .executor)?.sizeBytes == contract.sharedBaseSizeBytes)
+        #expect(snapshot.assignment(for: .executor)?.expectedSHA256 == contract.sharedBaseExpectedSHA256)
+        #expect(snapshot.assignment(for: .executor)?.configuredSharedBaseMatchesContract == true)
         #expect(snapshot.assignment(for: .executor)?.expectedRoleAdapterRepoID == contract.adapterRepoID)
         #expect(snapshot.assignment(for: .executor)?.expectedRoleAdapterFileName == contract.adapterRole(for: .executor)?.adapterFileName)
+
+        let cortexAssignment = try #require(snapshot.assignment(for: .cortex))
+        await SlotModelRuntimeCoordinator.shared.configure(
+            assignments: [.cortex: cortexAssignment],
+            contextSize: 2_048,
+            preferExclusiveChatRuntime: true
+        )
+        #expect(await SlotModelRuntimeCoordinator.shared.resolvedAssignmentForTesting(for: .mouth) == nil)
+        await SlotModelRuntimeCoordinator.shared.configure(
+            assignments: [:],
+            contextSize: 2_048,
+            preferExclusiveChatRuntime: true
+        )
     }
 
     @Test @MainActor func qwen3ResolverPrefersContractAdapterArtifactOverLooseHints() async throws {
@@ -287,7 +459,7 @@ struct LumenFleetTests {
             name: "Qwen3 Fast Shared Chat Base",
             repoId: contract.sharedBaseRepoID,
             fileName: contract.sharedBaseFileName,
-            sizeBytes: 1,
+            sizeBytes: contract.sharedBaseSizeBytes,
             quantization: "Q4_K_M",
             parameters: "1.7B",
             role: .chat,
@@ -322,17 +494,86 @@ struct LumenFleetTests {
         )
 
         #expect(snapshot.assignment(for: .executor)?.adapterID == exactExecutorAdapter.id)
+        #expect(snapshot.assignment(for: .executor)?.adapterRepoID == executorRole.adapterRepoID)
         #expect(snapshot.assignment(for: .executor)?.adapterFileName == executorRole.adapterFileName)
         #expect(snapshot.assignment(for: .executor)?.adapterPath == exactExecutorAdapter.localPath)
+        #expect(snapshot.assignment(for: .executor)?.adapterSizeBytes == executorRole.adapterSizeBytes)
+        #expect(snapshot.assignment(for: .executor)?.adapterExpectedSHA256 == executorRole.adapterExpectedSHA256)
         #expect(snapshot.assignment(for: .executor)?.hasConfiguredRoleAdapter == true)
         #expect(snapshot.assignment(for: .executor)?.usesRoleAdapter == true)
         #expect(snapshot.assignment(for: .executor)?.requiresRoleAdapterForRuntime == true)
+        #expect(snapshot.assignment(for: .executor)?.configuredRoleAdapterMatchesContract == true)
+    }
+
+    @Test @MainActor func qwen3ResolverRejectsFilenameOnlyAndLooseHintAdapters() async throws {
+        let previousFamily = LumenModelFamily.persistedSelected
+        LumenModelFamily.persistedSelected = .qwen3
+        defer { LumenModelFamily.persistedSelected = previousFamily }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumen-strict-model-identity-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let contract = LumenTrainedModelRuntimeRegistry.contract(for: .qwen3)
+        let executorRole = try #require(contract.adapterRole(for: .executor))
+        let sharedBase = StoredModel(
+            name: "Qwen3 Fast Shared Chat Base",
+            repoId: contract.sharedBaseRepoID,
+            fileName: contract.sharedBaseFileName,
+            sizeBytes: contract.sharedBaseSizeBytes,
+            quantization: "Q4_K_M",
+            parameters: "1.7B",
+            role: .chat,
+            localPath: root.appendingPathComponent(contract.sharedBaseFileName).path
+        )
+        let filenameOnlyAdapter = StoredModel(
+            name: "Executor filename impostor",
+            repoId: "local/wrong-adapter-repository",
+            fileName: executorRole.adapterFileName,
+            sizeBytes: executorRole.adapterSizeBytes,
+            quantization: "GGUF",
+            parameters: "LoRA",
+            role: .roleAdapter,
+            localPath: root.appendingPathComponent("filename-only-\(executorRole.adapterFileName)").path
+        )
+        let looseHintAdapter = StoredModel(
+            name: "Executor-looking wrong artifact",
+            repoId: "local/misleading-adapters",
+            fileName: "not-the-trained-executor-lora.gguf",
+            sizeBytes: executorRole.adapterSizeBytes,
+            quantization: "GGUF",
+            parameters: "LoRA",
+            role: .roleAdapter,
+            localPath: root.appendingPathComponent("not-the-trained-executor-lora.gguf").path
+        )
+        try materializeModelFiles(sharedBase, filenameOnlyAdapter, looseHintAdapter)
+
+        let snapshot = LumenModelFleetResolver.resolveV1(
+            activeChatModelID: sharedBase.id.uuidString,
+            activeEmbeddingModelID: nil,
+            storedModels: [sharedBase, filenameOnlyAdapter, looseHintAdapter]
+        )
+
+        #expect(snapshot.assignment(for: .executor)?.adapterID == nil)
+        #expect(snapshot.assignment(for: .executor)?.adapterPath == nil)
+        #expect(snapshot.assignment(for: .executor)?.configuredRoleAdapterMatchesContract == false)
+        #expect(snapshot.missingAdapterSlots.contains(.executor))
     }
 
     @Test @MainActor func modelLoaderRegistersQwen3AdaptersBeforeStartupLoadGate() async throws {
         let previousFamily = LumenModelFamily.persistedSelected
         LumenModelFamily.persistedSelected = .qwen3
-        defer { LumenModelFamily.persistedSelected = previousFamily }
+        ResourceBudgetGate.testSnapshotOverride = .init(
+            scenePhase: .background,
+            lowPowerModeEnabled: false,
+            thermalState: .nominal,
+            recentMemoryWarningCount: 0,
+            lastMemoryWarningAt: nil
+        )
+        defer {
+            LumenModelFamily.persistedSelected = previousFamily
+            ResourceBudgetGate.testSnapshotOverride = nil
+        }
 
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("lumen-model-loader-\(UUID().uuidString)", isDirectory: true)
@@ -344,7 +585,7 @@ struct LumenFleetTests {
             name: "Qwen3 Fast Shared Chat Base",
             repoId: contract.sharedBaseRepoID,
             fileName: contract.sharedBaseFileName,
-            sizeBytes: 1,
+            sizeBytes: contract.sharedBaseSizeBytes,
             quantization: "Q4_K_M",
             parameters: "1.7B",
             role: .chat,

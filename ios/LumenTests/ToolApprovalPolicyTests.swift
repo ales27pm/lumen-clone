@@ -6,6 +6,10 @@ final class ToolApprovalPolicyTests: XCTestCase {
     private let destructive = SecureToolDefinition(id: "test.delete", displayName: "Delete", description: "", category: .destructiveAction, requiredPermissions: [], supportsBackgroundExecution: false, requiresUserApproval: false, argumentSchemaDescription: "", resultPrivacyLevel: .sensitive, maxOutputCharacters: 100)
     private let foregroundOnlyRead = SecureToolDefinition(id: "position.snapshot", displayName: "Position", description: "", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: false, requiresUserApproval: false, argumentSchemaDescription: "", resultPrivacyLevel: .low, maxOutputCharacters: 100)
     private let backgroundApprovalRead = SecureToolDefinition(id: "memory.export", displayName: "Export", description: "", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: true, argumentSchemaDescription: "", resultPrivacyLevel: .sensitive, maxOutputCharacters: 100)
+    private let headlessLocalRead = SecureToolDefinition(id: "memory.search", displayName: "Recall", description: "", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: false, argumentSchemaDescription: "", resultPrivacyLevel: .moderate, maxOutputCharacters: 100)
+    private let headlessMutationMarkedReadOnly = SecureToolDefinition(id: "memory.save", displayName: "Save", description: "", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: false, argumentSchemaDescription: "", resultPrivacyLevel: .moderate, maxOutputCharacters: 100)
+    private let headlessProtectedRead = SecureToolDefinition(id: "contacts.lookup", displayName: "Contacts", description: "", category: .permissionRead, requiredPermissions: [.contacts], supportsBackgroundExecution: false, requiresUserApproval: false, argumentSchemaDescription: "", resultPrivacyLevel: .sensitive, maxOutputCharacters: 100)
+    private let headlessPrivateReadMarkedLocal = SecureToolDefinition(id: "outlook.message.read", displayName: "Read Outlook Message", description: "", category: .readOnly, requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: false, argumentSchemaDescription: "", resultPrivacyLevel: .sensitive, maxOutputCharacters: 100)
 
     func testModelProposedOpenURLRequiresApproval() {
         let inv = ToolInvocation(id: UUID(), toolID: "open.url", arguments: ["url":"https://a.com"], source: .modelProposed, conversationID: nil, turnID: nil, createdAt: Date())
@@ -57,6 +61,34 @@ final class ToolApprovalPolicyTests: XCTestCase {
         } else {
             XCTFail()
         }
+    }
+
+    func testAppIntentAllowsOnlyBackgroundSafeLocalRead() {
+        let invocation = ToolInvocation(id: UUID(), toolID: headlessLocalRead.id, arguments: [:], source: .appIntent, conversationID: nil, turnID: nil, createdAt: Date())
+        let decision = ToolApprovalPolicy.decide(definition: headlessLocalRead, invocation: invocation, isForeground: false, permissionStates: [:], settings: .init(networkAccessEnabled: true, userAllowlist: []))
+
+        XCTAssertEqual(decision, .allow)
+    }
+
+    func testAppIntentDeniesProtectedReadEvenWhenPermissionWasPreviouslyGranted() {
+        let invocation = ToolInvocation(id: UUID(), toolID: headlessProtectedRead.id, arguments: [:], source: .appIntent, conversationID: nil, turnID: nil, createdAt: Date())
+        let decision = ToolApprovalPolicy.decide(definition: headlessProtectedRead, invocation: invocation, isForeground: false, permissionStates: [.contacts: .granted], settings: .init(networkAccessEnabled: true, userAllowlist: []))
+
+        XCTAssertEqual(decision, .deny("Tool unavailable from headless surface"))
+    }
+
+    func testAppIntentDeniesKnownMutationEvenWhenLegacyCategorySaysReadOnly() {
+        let invocation = ToolInvocation(id: UUID(), toolID: headlessMutationMarkedReadOnly.id, arguments: [:], source: .appIntent, conversationID: nil, turnID: nil, createdAt: Date())
+        let decision = ToolApprovalPolicy.decide(definition: headlessMutationMarkedReadOnly, invocation: invocation, isForeground: false, permissionStates: [:], settings: .init(networkAccessEnabled: true, userAllowlist: []))
+
+        XCTAssertEqual(decision, .deny("Tool unavailable from headless surface"))
+    }
+
+    func testAppIntentDeniesPrivateReadEvenWhenLegacyMetadataLooksHeadlessSafe() {
+        let invocation = ToolInvocation(id: UUID(), toolID: headlessPrivateReadMarkedLocal.id, arguments: [:], source: .appIntent, conversationID: nil, turnID: nil, createdAt: Date())
+        let decision = ToolApprovalPolicy.decide(definition: headlessPrivateReadMarkedLocal, invocation: invocation, isForeground: false, permissionStates: [:], settings: .init(networkAccessEnabled: true, userAllowlist: []))
+
+        XCTAssertEqual(decision, .deny("Tool unavailable from headless surface"))
     }
 
     func testNonEmptyAllowlistDeniesAbsentTool() {

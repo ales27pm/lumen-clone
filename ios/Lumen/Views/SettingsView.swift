@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var parseNoiseSummary = "• Recoverable noise traces: loading…"
     @State private var selectedModelFamily = LumenModelFamily.persistedSelected
     @State private var isSwitchingModelFamily = false
+    @State private var modelSetupError: String?
 
     var body: some View {
         @Bindable var state = appState
@@ -61,13 +62,14 @@ struct SettingsView: View {
                         Text(selectedModelFamily.description)
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
-                        Text("First launch downloads only this family’s bootstrap chat and embedding artifacts.")
+                        Text("Setup downloads this family’s verified chat, embedding, and required adapter artifacts after you confirm.")
                             .font(.caption2)
                             .foregroundStyle(Theme.textTertiary)
                     }
 
-                    Toggle("Auto-download fleet", isOn: Binding(get: { state.autoDownloadFleetModels }, set: { state.autoDownloadFleetModels = $0 }))
-                    Toggle("Ask before fleet downloads", isOn: Binding(get: { state.confirmFleetDownloads }, set: { state.confirmFleetDownloads = $0 }))
+                    Text("Downloads start only after you tap the button below. The current family and model pair remain active unless the verified setup and runtime load both succeed.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
 
                     Button {
                         switchModelFamily(selectedModelFamily)
@@ -83,7 +85,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Fleet")
                 } footer: {
-                    Text("Qwen3 is the default bootstrap family. Switching resets active model IDs and downloads only the selected family artifacts instead of the entire historical catalog.")
+                    Text("Qwen3 is the default. A successful switch persists the chat and embedding selections together and restores them automatically on future launches.")
                 }
 
                 Section("Voice") {
@@ -163,7 +165,7 @@ struct SettingsView: View {
                 Section("About") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Lumen").font(.subheadline.weight(.semibold))
-                        Text("Runs open-source language models locally via llama.cpp. Embeddings stored in local SQLite. Tool calls executed on-device. Nothing leaves your phone.")
+                        Text("Runs open-source language models locally via llama.cpp. Conversations, embeddings, and memory stay on-device by default. Network tools and connected services send only the data needed for actions you explicitly request, subject to their permissions and approvals.")
                             .font(.footnote)
                             .foregroundStyle(Theme.textSecondary)
                     }
@@ -177,13 +179,18 @@ struct SettingsView: View {
                 selectedModelFamily = LumenModelFamily.persistedSelected
                 await refreshParseFailureSummary()
             }
-            .onChange(of: selectedModelFamily) { _, family in
-                LumenModelFamily.persistedSelected = family
-            }
             .alert("Run checks", isPresented: $showDeveloperAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(developerAlertMessage)
+            }
+            .alert("Model setup failed", isPresented: Binding(
+                get: { modelSetupError != nil },
+                set: { if !$0 { modelSetupError = nil } }
+            )) {
+                Button("OK", role: .cancel) { modelSetupError = nil }
+            } message: {
+                Text(modelSetupError ?? "The selected model family could not be prepared.")
             }
         }
     }
@@ -220,9 +227,16 @@ struct SettingsView: View {
         guard !isSwitchingModelFamily else { return }
         isSwitchingModelFamily = true
         Task { @MainActor in
-            await ModelLaunchBootstrap.switchFamily(family, appState: appState, context: modelContext)
+            let result = await ModelLaunchBootstrap.switchFamily(family, appState: appState, context: modelContext)
             isSwitchingModelFamily = false
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            if result.succeeded {
+                selectedModelFamily = LumenModelFamily.persistedSelected
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            } else {
+                modelSetupError = result.errorMessage
+                    ?? "Only \(result.ready) of \(result.required) verified artifacts became ready."
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
         }
     }
 
@@ -600,7 +614,7 @@ struct E2ETestRunnerView: View {
         Task { @MainActor in
             let artifactsReady = await ModelLaunchBootstrap.prepareLiveRuntimeArtifacts(appState: appState, context: modelContext)
             guard artifactsReady else {
-                let readiness = ModelLaunchBootstrap.liveRuntimeArtifactReadinessDetails(context: modelContext)
+                let readiness = await ModelLaunchBootstrap.liveRuntimeArtifactReadinessDetails(context: modelContext)
                 let report = E2ETestRunner.liveRuntimeArtifactsBlockedReport(
                     startedAt: runStartedAt ?? Date(),
                     finishedAt: Date(),

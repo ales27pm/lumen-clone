@@ -41,6 +41,179 @@ def test_nested_negated_defined_debug_condition_is_release_branch():
     assert _states_for_directive("#if !(defined(DEBUG))") == [False, False, True, True, False]
 
 
+def test_debug_or_platform_condition_is_release_reachable():
+    assert _states_for_directive("#if DEBUG || os(iOS)") == [False, False, False, False, False]
+
+
+def test_debug_equal_false_condition_is_release_branch():
+    assert _states_for_directive("#if DEBUG == false") == [False, False, True, True, False]
+
+
+def test_else_of_non_debug_condition_remains_release_reachable():
+    assert _states_for_directive("#if os(iOS)") == [False, False, False, False, False]
+
+
+def test_debug_and_platform_condition_is_debug_only():
+    assert _states_for_directive("#if DEBUG && os(iOS)") == [True, True, False, False, False]
+
+
+def test_nested_debug_condition_keeps_inner_unknown_branches_debug_only():
+    assert release_hardening.debug_stack_for_lines(
+        [
+            "#if DEBUG",
+            "#if os(iOS)",
+            "MicrosoftGraphRuntimeConfig.loadClientIDOverride()",
+            "#else",
+            "MicrosoftGraphRuntimeConfig.loadClientIDOverride()",
+            "#endif",
+            "#else",
+            "MicrosoftGraphRuntimeConfig.loadClientIDOverride()",
+            "#endif",
+        ]
+    ) == [True, True, True, True, True, True, False, False, False]
+
+
+def test_nested_debug_branch_inside_unknown_outer_condition_is_debug_only():
+    assert release_hardening.debug_stack_for_lines(
+        [
+            "#if os(iOS)",
+            "#if DEBUG",
+            "MicrosoftGraphRuntimeConfig.loadClientIDOverride()",
+            "#else",
+            "MicrosoftGraphRuntimeConfig.loadClientIDOverride()",
+            "#endif",
+            "#else",
+            "MicrosoftGraphRuntimeConfig.loadClientIDOverride()",
+            "#endif",
+        ]
+    ) == [False, True, True, False, False, False, False, False, False]
+
+
+def test_elseif_debug_branch_is_unreachable_in_release():
+    assert release_hardening.debug_stack_for_lines(
+        [
+            "#if os(iOS)",
+            "UnavailableGGUFNativeBridge()",
+            "#elseif DEBUG",
+            "UnavailableGGUFNativeBridge()",
+            "#else",
+            "UnavailableGGUFNativeBridge()",
+            "#endif",
+        ]
+    ) == [False, False, True, True, False, False, False]
+
+
+def test_microsoft_graph_release_debug_surfaces_are_rejected(tmp_path, monkeypatch):
+    source_root = tmp_path / "ios" / "Lumen"
+    views_root = source_root / "Views"
+    services_root = source_root / "Services" / "MicrosoftGraph"
+    views_root.mkdir(parents=True)
+    services_root.mkdir(parents=True)
+    (views_root / "OutlookMailView.swift").write_text(
+        """
+        struct OutlookMailView: View {
+            @State private var microsoftClientID = MicrosoftGraphRuntimeConfig.loadClientIDOverride() ?? ""
+            private var shouldShowDebugConfiguration: Bool {
+                Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+            }
+            private var debugClientIDEditor: some View {
+                TextField("Enter app client ID", text: $microsoftClientID)
+            }
+            private var debugConfigurationSection: some View {
+                Text("Debug configuration")
+            }
+        }
+        """,
+        encoding="utf-8",
+    )
+    (services_root / "MicrosoftGraphModels.swift").write_text(
+        """
+        nonisolated enum MicrosoftGraphRuntimeConfig {
+            static let clientIDDefaultsKey = "MSALClientIDOverride"
+        }
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_hardening, "ROOT", tmp_path)
+    monkeypatch.setattr(release_hardening, "SOURCE_ROOTS", [source_root])
+
+    violations = release_hardening.scan_source()
+
+    assert any("receipt-based debug authorization must be inside #if DEBUG" in item for item in violations)
+    assert any("Microsoft Graph runtime client-ID override must be inside #if DEBUG" in item for item in violations)
+    assert any("Microsoft Graph debug editor surface must be inside #if DEBUG" in item for item in violations)
+
+
+def test_microsoft_graph_debug_surfaces_are_allowed_inside_debug(tmp_path, monkeypatch):
+    source_root = tmp_path / "ios" / "Lumen"
+    views_root = source_root / "Views"
+    services_root = source_root / "Services" / "MicrosoftGraph"
+    views_root.mkdir(parents=True)
+    services_root.mkdir(parents=True)
+    (views_root / "OutlookMailView.swift").write_text(
+        """
+        struct OutlookMailView: View {
+            #if DEBUG
+            @State private var microsoftClientID = MicrosoftGraphRuntimeConfig.loadClientIDOverride() ?? ""
+            private var shouldShowDebugConfiguration: Bool {
+                Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+            }
+            private var debugClientIDEditor: some View {
+                TextField("Enter app client ID", text: $microsoftClientID)
+            }
+            private var debugConfigurationSection: some View {
+                Text("Debug configuration")
+            }
+            #endif
+
+            private var signInContent: some View {
+                Button("Sign in with Microsoft") {}
+            }
+        }
+        """,
+        encoding="utf-8",
+    )
+    (services_root / "MicrosoftGraphModels.swift").write_text(
+        """
+        #if DEBUG
+        nonisolated enum MicrosoftGraphRuntimeConfig {
+            static let clientIDDefaultsKey = "MSALClientIDOverride"
+        }
+        #endif
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_hardening, "ROOT", tmp_path)
+    monkeypatch.setattr(release_hardening, "SOURCE_ROOTS", [source_root])
+
+    assert release_hardening.scan_source() == []
+
+
+def test_microsoft_graph_debug_surface_is_rejected_in_debug_or_platform_branch(
+    tmp_path,
+    monkeypatch,
+):
+    source_root = tmp_path / "ios" / "Lumen"
+    source_root.mkdir(parents=True)
+    (source_root / "OutlookMailView.swift").write_text(
+        """
+        #if DEBUG || os(iOS)
+        let clientID = MicrosoftGraphRuntimeConfig.loadClientIDOverride()
+        #endif
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_hardening, "ROOT", tmp_path)
+    monkeypatch.setattr(release_hardening, "SOURCE_ROOTS", [source_root])
+
+    violations = release_hardening.scan_source()
+
+    assert any(
+        "Microsoft Graph runtime client-ID override must be inside #if DEBUG" in item
+        for item in violations
+    )
+
+
 def test_lossy_rag_memory_product_paths_are_rejected(tmp_path, monkeypatch):
     source_root = tmp_path / "ios" / "Lumen"
     source_root.mkdir(parents=True)
@@ -1720,6 +1893,125 @@ def test_release_family_and_fleet_catalogs_reject_fallback_surface_wording(tmp_p
     assert any("ModelFamilySelection.swift" in item and "release model catalog fallback wording" in item for item in violations)
     assert any("ModelFleetCatalog.swift" in item and "release model catalog fallback wording" in item for item in violations)
     assert any("ModelFleetCatalog.swift" in item and "release model catalog unavailable wording" in item for item in violations)
+
+
+def test_selectable_model_catalog_contract_accepts_unique_safe_immutable_artifacts():
+    source = f"""
+        LumenTrainedModelRuntimeContract(
+            sharedBaseFileName: "base.gguf",
+            sharedBaseSourceRevision: "{'a' * 40}",
+            sharedBaseExpectedSHA256: "{'b' * 64}",
+            embeddingRepoID: "owner/embedding",
+            embeddingFileName: "embedding.gguf",
+            embeddingSourceRevision: "{'c' * 40}",
+            embeddingExpectedSHA256: "{'d' * 64}"
+        )
+        LumenAdapterRoleContract(
+            adapterFileName: "adapter.gguf",
+            adapterSourcePath: "runs/pinned/adapter.gguf",
+            adapterSourceRevision: "{'e' * 40}",
+            adapterExpectedSHA256: "{'f' * 64}"
+        )
+    """
+
+    assert release_hardening._scan_model_catalog_contract(
+        release_hardening.MODEL_CATALOG_CONTRACT_FILE,
+        source,
+    ) == []
+
+
+def test_selectable_model_catalog_contract_rejects_mutable_and_malformed_pins():
+    source = f"""
+        LumenTrainedModelRuntimeContract(
+            sharedBaseFileName: "base.gguf",
+            sharedBaseSourceRevision: "main",
+            sharedBaseExpectedSHA256: "{'b' * 63}",
+            embeddingRepoID: nil
+        )
+        LumenAdapterRoleContract(
+            adapterFileName: "adapter.gguf",
+            adapterSourcePath: "runs/pinned/adapter.gguf",
+            adapterSourceRevision: "{'g' * 40}",
+            adapterExpectedSHA256: "{'z' * 64}"
+        )
+    """
+
+    violations = release_hardening._scan_model_catalog_contract(
+        release_hardening.MODEL_CATALOG_CONTRACT_FILE,
+        source,
+    )
+
+    assert any("sharedBaseSourceRevision" in item and "40-character commit hash" in item for item in violations)
+    assert any("sharedBaseExpectedSHA256" in item and "64-character SHA-256" in item for item in violations)
+    assert any("adapterSourceRevision" in item and "40-character commit hash" in item for item in violations)
+    assert any("adapterExpectedSHA256" in item and "64-character SHA-256" in item for item in violations)
+
+
+def test_selectable_model_catalog_contract_rejects_unsafe_paths_and_duplicate_destinations():
+    source = f"""
+        LumenTrainedModelRuntimeContract(
+            sharedBaseFileName: "duplicate.gguf",
+            sharedBaseSourceRevision: "{'a' * 40}",
+            sharedBaseExpectedSHA256: "{'b' * 64}",
+            embeddingRepoID: "owner/embedding",
+            embeddingFileName: "duplicate.gguf",
+            embeddingSourceRevision: "{'c' * 40}",
+            embeddingExpectedSHA256: "{'d' * 64}"
+        )
+        LumenAdapterRoleContract(
+            adapterFileName: "../escape.gguf",
+            adapterSourcePath: "runs/../escape.gguf",
+            adapterSourceRevision: "{'e' * 40}",
+            adapterExpectedSHA256: "{'f' * 64}"
+        )
+    """
+
+    violations = release_hardening._scan_model_catalog_contract(
+        release_hardening.MODEL_CATALOG_CONTRACT_FILE,
+        source,
+    )
+
+    assert any("adapter fileName must be one safe basename" in item for item in violations)
+    assert any("adapter sourcePath contains an unsafe component" in item for item in violations)
+    assert any("duplicates" in item for item in violations)
+
+
+def test_selectable_catalog_model_initializers_must_forward_revision_and_digest():
+    source = """
+        CatalogModel(
+            id: "missing-pins",
+            fileName: "model.gguf"
+        )
+    """
+
+    violations = release_hardening._scan_model_catalog_contract(
+        release_hardening.MODEL_FAMILY_SELECTION_FILE,
+        source,
+    )
+
+    assert any("must provide sourceRevision" in item for item in violations)
+    assert any("must provide expectedSHA256" in item for item in violations)
+
+
+def test_release_source_rejects_resolve_main_but_debug_only_fixture_is_allowed(tmp_path, monkeypatch):
+    source_root = tmp_path / "ios" / "Lumen"
+    source_root.mkdir(parents=True)
+    source_file = source_root / "MutableModelURL.swift"
+    source_file.write_text(
+        'let modelURL = "https://huggingface.co/owner/repo/resolve/main/model.gguf"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_hardening, "ROOT", tmp_path)
+    monkeypatch.setattr(release_hardening, "SOURCE_ROOTS", [source_root])
+
+    violations = release_hardening.scan_source()
+    assert any("mutable model resolve/main reference" in item for item in violations)
+
+    source_file.write_text(
+        '#if DEBUG\nlet modelURL = "https://huggingface.co/owner/repo/resolve/main/model.gguf"\n#endif\n',
+        encoding="utf-8",
+    )
+    assert release_hardening.scan_source() == []
 
 
 def test_release_compiled_services_must_use_effective_deterministic_compatibility_gate(tmp_path, monkeypatch):

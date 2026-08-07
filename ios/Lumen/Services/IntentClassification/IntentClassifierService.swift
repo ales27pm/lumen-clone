@@ -11,7 +11,18 @@ final class IntentClassifierService: Sendable {
     /// - Returns: The routing decision with the classified intent and allowed tools.
     func route(_ text: String) async -> IntentRoutingDecision {
         let result = await classify(text)
-        let routing = result.asRoutingDecision()
+        let classifiedRouting = result.asRoutingDecision()
+        let routing: IntentRoutingDecision
+        if let override = IntentRouter.priorityOverride(text), override.intent == classifiedRouting.intent {
+            routing = IntentRoutingDecision(
+                intent: classifiedRouting.intent,
+                allowedToolIDs: override.allowedToolIDs,
+                requiresClarification: classifiedRouting.requiresClarification,
+                clarificationPrompt: classifiedRouting.clarificationPrompt
+            )
+        } else {
+            routing = classifiedRouting
+        }
         if result.intent == .webSearch, ToolRouteGuard.shouldUseWebSearchForDynamicPublicLookup(text) {
             return IntentRoutingDecision(
                 intent: routing.intent,

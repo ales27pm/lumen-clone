@@ -51,7 +51,7 @@ final class PersistentRuntimeDiagnosticsSummaryTests: XCTestCase {
 
         XCTAssertTrue(text.contains("campaign=continuous"))
         XCTAssertTrue(text.contains("passed=2, failed=1, skipped=1"))
-        XCTAssertTrue(text.contains("Privacy: localOnly=true; network=unknown"))
+        XCTAssertTrue(text.contains("Privacy: networkToolsEnabled=false; network=unknown"))
         XCTAssertTrue(text.contains("Memory capture queue: 2 pending local captures awaiting indexing."))
         XCTAssertTrue(text.contains("Memory queue oldest: 2h old."))
         XCTAssertTrue(text.contains("Memory capture retries: max=2; lastError=embedding_runtime_unavailable."))
@@ -141,7 +141,7 @@ final class PersistentRuntimeDiagnosticsSummaryTests: XCTestCase {
                 storeKit: StoreKitCapabilitySnapshot(frameworkAvailable: true, status: "test", environment: "test")
             ),
             grounding: GroundingDiagnosticsSnapshot(contextSource: "test", degradedReasons: [], sectionCounts: [:], doubleGroundingNormalized: true),
-            privacy: PrivacyReportSnapshot(localOnlyMode: true, networkAccessState: "unknown", recentToolCategories: [], appIntentLimitations: [])
+            privacy: PrivacyReportSnapshot(networkToolsEnabled: false, networkAccessState: "unknown", recentToolCategories: [], appIntentLimitations: [])
         )
     }
 }

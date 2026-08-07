@@ -32,7 +32,8 @@ nonisolated enum PersistentRuntimeDiagnosticsSummaryRenderer {
 
         if let snapshot {
             lines.append("Runtime: FoundationModels=\(availability(snapshot.runtime.foundationModelsAvailable)); CoreML=\(availability(snapshot.runtime.coreMLAvailable)); thermal=\(snapshot.runtime.thermalState); lowPower=\(snapshot.runtime.lowPowerModeEnabled).")
-            lines.append("Privacy: localOnly=\(snapshot.privacy.localOnlyMode); network=\(snapshot.privacy.networkAccessState).")
+            let networkTools = snapshot.privacy.networkToolsEnabled.map(String.init) ?? "unknown"
+            lines.append("Privacy: networkToolsEnabled=\(networkTools); network=\(snapshot.privacy.networkAccessState).")
         }
 
         if let queue = memoryCaptureQueue ?? pendingMemoryCaptureCount.map({ MemoryCaptureQueueDiagnostics(pendingCount: $0) }) {

@@ -783,7 +783,23 @@ nonisolated enum AgentDiagnosticFileRedactor {
     static func summary(label: String, text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
+        if isRedactedSummary(trimmed, label: label) {
+            return trimmed
+        }
         return "\(label)_chars=\(trimmed.count);sha256=\(String(RuntimeFallbackLogger.promptHash(trimmed).prefix(16)))"
+    }
+
+    private static func isRedactedSummary(_ text: String, label: String) -> Bool {
+        let countPrefix = "\(label)_chars="
+        guard text.hasPrefix(countPrefix) else { return false }
+
+        let remainder = text.dropFirst(countPrefix.count)
+        guard let hashSeparator = remainder.range(of: ";sha256=") else { return false }
+        let characterCount = remainder[..<hashSeparator.lowerBound]
+        let digest = remainder[hashSeparator.upperBound...]
+        return Int(characterCount) != nil
+            && digest.count == 16
+            && digest.allSatisfy(\.isHexDigit)
     }
 
     static func redactedMap(_ values: [String: String]) -> [String: String] {
@@ -885,13 +901,14 @@ nonisolated enum AgentBehaviorTraceRecorder {
     private static let memoryCache = AgentBehaviorTraceMemoryCache()
 
     static func record(_ trace: AgentBehaviorTrace) {
-        memoryCache.remember(trace)
+        let privacySafeTrace = trace.redactedForPersistentDiagnostics()
+        memoryCache.remember(privacySafeTrace)
         do {
             let directory = try diagnosticsDirectory()
             let url = directory.appendingPathComponent(fileName, isDirectory: false)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(trace.redactedForPersistentDiagnostics())
+            let data = try encoder.encode(privacySafeTrace)
             var line = data
             line.append(0x0A)
             guard DiskWriteBudget.shared.canWrite(bytes: line.count, category: .diagnostics) else { return }
@@ -947,6 +964,7 @@ nonisolated enum AgentBehaviorTraceRecorder {
                     lineData.removeLast()
                 }
                 return try? decoder.decode(AgentBehaviorTrace.self, from: lineData)
+                    .redactedForPersistentDiagnostics()
             }
             return mergedRecentTraces(diskTraces, inMemory, limit: boundedLimit)
         } catch {

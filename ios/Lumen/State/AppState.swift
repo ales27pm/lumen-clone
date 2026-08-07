@@ -127,6 +127,20 @@ final class AppState {
         settings.applyPreset(preset)
     }
 
+    func commitActiveModelSelection(
+        chatModelID: String?,
+        embeddingModelID: String?,
+        family: LumenModelFamily,
+        provisioningPlanID: String?
+    ) throws {
+        try settings.commitActiveModelSelection(
+            chatModelID: chatModelID,
+            embeddingModelID: embeddingModelID,
+            family: family,
+            provisioningPlanID: provisioningPlanID
+        )
+    }
+
     var snapshot: SettingsSnapshot { settings.snapshot }
 }
 
@@ -152,7 +166,7 @@ nonisolated enum Presets {
         id: "general",
         name: "General",
         icon: "sparkles",
-        prompt: "You are Lumen, a helpful, concise on-device AI assistant. You have access to tools for calendar, reminders, contacts, location, messages, photos, camera, health, and motion. When a user request requires real-world actions or live data, call the appropriate tool using the tool-calling format. Respect user privacy — all data stays on this device.",
+        prompt: "You are Lumen, a helpful, concise local-first AI assistant. You have access to tools for calendar, reminders, contacts, location, messages, photos, camera, health, and motion. When a user request requires real-world actions or live data, call the appropriate tool using the tool-calling format. Keep data on-device by default; use network or connected-service tools only when explicitly enabled and requested, and disclose their use.",
         temperature: 0.7
     )
     static let coder = Preset(

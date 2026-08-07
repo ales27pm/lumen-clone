@@ -120,6 +120,10 @@ Ignored local directories such as `build/`, `.cache/`, `.local/`, `.venv/`, `.ve
 ## Development Environment
 
 - Host: macOS with Xcode capable of the iOS 18.0 deployment target. The project uses Swift 5 and Swift Package Manager through Xcode.
+- Multi-host operation: the macOS virtual machine is the Apple executor (Xcode, Simulator, signing, archive, and device work); the physical Ubuntu host is the capacity executor (CUDA/GPU, high-memory generation, model conversion, and controlled training). Either host may initiate a task, but the capability determines the executor. See [`docs/MULTI_HOST_OPERATIONS.md`](docs/MULTI_HOST_OPERATIONS.md); do not assume either host is always the controller.
+- Each host keeps an independent clone synchronized through GitHub. Never use a shared mutable checkout, shared `DerivedData`, or copied uncommitted source as a dispatch mechanism. Push reviewed source changes, then the receiving host fetches the named commit into its own clean checkout or dedicated worktree.
+- Dispatch across hosts is an explicit SSH operation with a named task, immutable commit, executor, input/output locations, and completion evidence. SSH identities, host aliases, tokens, signing material, and private network details are machine-local; never add them to the repository.
+- Lumen Clone's default training handoff is macOS crawler/self-awareness/manifest work -> reviewed GitHub commit -> Ubuntu clean checkout -> Ubuntu public-corpus preparation and cleanup -> Ubuntu controlled training and verification -> separate Apple-side candidate promotion. Do not collapse these evidence boundaries or pass mutable source/caches across them.
 - Python: the crawler declares Python `>=3.11`; `.python-version` currently records `3.11.9`; repository validation and CI-style commands intentionally use `uv --python 3.12`.
 - Shell: scripts use Bash even when the interactive shell is zsh. Invoke repository scripts with `bash path/to/script.sh` unless their documentation requires another interpreter.
 - No checked-in CocoaPods, npm, or top-level SwiftPM package manifest was found. Do not add a package manager merely to run existing work.
@@ -213,6 +217,7 @@ Static and simulator checks do not prove signed archive/export, entitlement payl
 - Do not trigger or rerun GitHub Actions unless explicitly requested. A push to a workflow-matched branch may itself consume Actions; ask before pushing when that matters.
 - Draft pull requests are the default when a PR is requested. State changed contracts, local evidence, unexecuted checks, manual device/release gaps, and generated scopes.
 - Do not equate a clean static gate with live, device, model-backed, signed, or uploaded validation.
+- A remote result is not promotable merely because it exists on the other host. Preserve its producing commit, configuration/input identity, hashes, and validation evidence; promote source through GitHub and artifacts through the reviewed lineage/receipt path.
 
 ## Known Hazards
 

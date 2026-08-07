@@ -25,6 +25,7 @@ def test_apply_generated_infoplist_capabilities_quotes_spaced_strings(tmp_path: 
         "TARGET_BUILD_DIR": str(build_dir),
         "INFOPLIST_PATH": "Info.plist",
         "INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers": "com.27pm.lumenclone.refresh",
+        "PRODUCT_BUNDLE_IDENTIFIER": "com.27pm.lumenclone",
         "PRODUCT_MODULE_NAME": "Lumen",
         "CURRENT_PROJECT_VERSION": "42",
         "CONFIGURATION": "Debug",
@@ -48,3 +49,5 @@ def test_apply_generated_infoplist_capabilities_quotes_spaced_strings(tmp_path: 
         "Lumen uses AlarmKit to schedule prominent alarms and countdowns when you ask."
     )
     assert info["LumenBuildScheme"] == "Lumen"
+    assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["msauth.com.27pm.lumenclone"]
+    assert info["LSApplicationQueriesSchemes"] == ["msauth", "msauthv2", "msauthv3"]

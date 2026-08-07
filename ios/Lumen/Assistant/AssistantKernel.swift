@@ -327,7 +327,7 @@ extension AssistantKernel {
 
 extension AssistantKernel {
     func executeTool(_ invocation: ToolInvocation, modelContext: ModelContext? = nil) async -> ToolResult {
-        let ctx = ToolExecutionContext(isForeground: invocation.source != .backgroundTrigger, appState: nil, modelContext: modelContext, permissionRegistry: .shared, metricsStore: metricsStore)
+        let ctx = ToolExecutionContext(isForeground: invocation.source.allowsPermissionPrompts, appState: nil, modelContext: modelContext, permissionRegistry: .shared, metricsStore: metricsStore)
         return await toolRegistry.execute(invocation, context: ctx)
     }
 }

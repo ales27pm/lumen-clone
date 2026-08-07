@@ -16,6 +16,9 @@ struct LumenAskIntent: AppIntent {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .result(value: "Question is required.") }
         guard trimmed.count <= 1_000 else { return .result(value: "Question is too long (max 1000 characters).") }
+        if let policyMessage = Self.policyMessage(for: trimmed) {
+            return .result(value: policyMessage)
+        }
         guard let container = SharedContainer.shared else {
             return .result(value: LumenIntentResultRenderer.degraded("model context unavailable"))
         }
@@ -25,6 +28,13 @@ struct LumenAskIntent: AppIntent {
         let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let bounded = String((text.isEmpty ? LumenIntentResultRenderer.degraded("no response") : text).prefix(500))
         return .result(value: bounded)
+    }
+
+    static func policyMessage(for prompt: String) -> String? {
+        guard let reason = LumenIntentPolicy.openAppReason(forHeadlessPrompt: prompt) else {
+            return nil
+        }
+        return LumenIntentResultRenderer.openAppRequired(reason)
     }
 }
 #endif

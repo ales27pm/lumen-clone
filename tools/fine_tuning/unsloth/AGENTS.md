@@ -49,6 +49,8 @@ Frozen inputs -> preflight/integrity -> SFT/DPO -> checkpoint -> evaluation -> a
 - Credentials exist only in the isolated upload boundary and never in logs/manifests.
 - Training/evaluation/export success does not establish iOS deployment or live model evidence.
 - One deployed role adapter must match the shared base/tokenizer/runtime contract.
+- Ubuntu is the capacity executor, not the source-of-truth checkout. Accept a remotely initiated run only after the Ubuntu clone has fetched the requested immutable commit and passed the existing clean-worktree/source-closure checks.
+- A macOS caller may request preflight, training, evaluation, or artifact verification over SSH, and an Ubuntu caller may request an Apple-only build or test. The receiving host owns execution and emits evidence; neither direction authorizes copying uncommitted work, credentials, or a live build directory between hosts.
 
 ## Coordinated Changes
 

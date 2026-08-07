@@ -162,6 +162,45 @@ enum ResourceBudgetGate {
         return allowsHeavyModelWork(reason: reason)
     }
 
+    /// Returns a single cancellable retry delay for transient foreground model-load
+    /// denials. Scene denials are retriggered by the scene lifecycle instead of a
+    /// timer; thermal and incomplete OS snapshots use a modest fixed delay, while a
+    /// recent memory warning waits for the remainder of its suppression window.
+    static func foregroundModelLoadRetryDelay(
+        snapshot: Snapshot? = nil,
+        now: Date = Date()
+    ) -> TimeInterval? {
+        let snapshot = snapshot ?? currentSnapshot()
+        guard snapshot.scenePhase == .active,
+              foregroundInteractiveDenialReason(snapshot: snapshot, reason: ModelLoadIntent.appStartup.rawValue) != nil else {
+            return nil
+        }
+
+        if hasRecentMemoryWarning(snapshot) {
+            guard let lastWarningAt = snapshot.lastMemoryWarningAt else {
+                return MemoryPressureMonitor.modelLoadSuppressionInterval
+            }
+            let remaining = MemoryPressureMonitor.modelLoadSuppressionInterval
+                - now.timeIntervalSince(lastWarningAt)
+            return min(
+                MemoryPressureMonitor.modelLoadSuppressionInterval,
+                max(1, remaining)
+            )
+        }
+
+        if snapshot.thermalState == nil || snapshot.lowPowerModeEnabled == nil {
+            return 10
+        }
+        switch snapshot.thermalState {
+        case .serious?, .critical?, .unknown?:
+            return 10
+        case .nominal?, .fair?:
+            return nil
+        case nil:
+            return 10
+        }
+    }
+
     static func shouldCancelForScenePhase(_ phase: ScenePhase) -> Bool {
         false
     }
