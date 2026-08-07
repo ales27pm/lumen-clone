@@ -437,19 +437,7 @@ extension AssistantKernel: AgentKernelRunning {
                     ))
                     continue
                 }
-                let canonicalToolID = ToolRouteGuard.canonicalToolID(validatedCall.canonicalToolID)
-                if canonicalToolID == "rag.index_files" || canonicalToolID == "rag.index_photos" {
-                    finalText = Self.finalizedToolObservation(
-                        intent: routing.intent,
-                        toolID: validatedCall.canonicalToolID,
-                        observation: observationText,
-                        originalPrompt: userMessage,
-                        resultStatus: result.status,
-                        ragIndexMode: result.structuredPayload?["ragIndexMode"].flatMap(RAGStore.IndexMode.init(rawValue:))
-                    )
-                } else {
-                    finalText = observationText
-                }
+                finalText = observationText
                 break
             }
 

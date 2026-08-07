@@ -82,7 +82,7 @@ final class RAGEngine {
         let relevanceQuery = relevanceQuery ?? query
         let mapped = search.matches.compactMap { item -> RAGRetrievalResult? in
             let ref = item.chunk.sourceRef ?? item.chunk.id.uuidString
-            let rerankedScore = Self.rerankedScore(query: query, chunk: item.chunk, baseScore: item.score)
+            let rerankedScore = Self.rerankedScore(query: relevanceQuery, chunk: item.chunk, baseScore: item.score)
             guard Self.isPostRerankRelevant(
                 query: relevanceQuery,
                 content: item.chunk.content,
@@ -145,7 +145,7 @@ final class RAGEngine {
         }
     }
 
-    nonisolated private static func rerankedScore(query: String, chunk: RAGChunk, baseScore: Double, now: Date = Date()) -> Double {
+    nonisolated static func rerankedScore(query: String, chunk: RAGChunk, baseScore: Double, now: Date = Date()) -> Double {
         let terms = queryTerms(query)
         guard !terms.isEmpty else { return clamped(baseScore) }
 
@@ -170,13 +170,15 @@ final class RAGEngine {
         guard rerankedScore.isFinite, rerankedScore >= 0 else { return false }
         let terms = queryTerms(query)
         let highConfidenceSemanticThreshold = 0.50
+        let shortQueryLexicalScoreFloor = 0.12
 
         // Strong semantic evidence may not share literal words with the query.
         if rerankedScore >= highConfidenceSemanticThreshold { return true }
 
         // Preserve acronyms embedded in ordinary requests without treating a
         // substring inside a longer word (for example, "ui" in "build") as evidence.
-        if hasDirectShortQueryMatch(query: query, content: content, title: title) {
+        if rerankedScore >= shortQueryLexicalScoreFloor,
+           hasDirectShortQueryMatch(query: query, content: content, title: title) {
             return true
         }
         guard !terms.isEmpty else { return false }
@@ -206,14 +208,15 @@ final class RAGEngine {
     /// input as the relevance anchor.
     nonisolated static func expandedSearchQuery(_ query: String) -> String {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let lower = trimmed.lowercased()
+        let queryTokens = Set(lexicalTokens(trimmed))
         let expansionTerms = ["architecture", "module", "service", "component", "package"]
-        guard expansionTerms.contains(where: { lower.contains($0) }) || lower.contains("design") || lower.contains("system") else {
+        let expansionTriggers = Set(expansionTerms + ["design", "system"])
+        guard !queryTokens.isDisjoint(with: expansionTriggers) else {
             return trimmed
         }
 
         var expanded = trimmed
-        for term in expansionTerms where !lower.contains(term) {
+        for term in expansionTerms where !queryTokens.contains(term) {
             expanded += " \(term)"
         }
         return expanded
