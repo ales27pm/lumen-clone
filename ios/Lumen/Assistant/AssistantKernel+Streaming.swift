@@ -445,7 +445,9 @@ extension AssistantKernel: AgentKernelRunning {
                 intent: routing.intent,
                 toolID: validatedCall.canonicalToolID,
                 observation: observationText,
-                originalPrompt: userMessage
+                originalPrompt: userMessage,
+                resultStatus: result.status,
+                ragIndexMode: result.structuredPayload?["ragIndexMode"].flatMap(RAGStore.IndexMode.init(rawValue:))
             )
         }
 
@@ -495,13 +497,17 @@ extension AssistantKernel: AgentKernelRunning {
         intent: UserIntent,
         toolID: String,
         observation: String,
-        originalPrompt: String
+        originalPrompt: String,
+        resultStatus: ToolResultStatus? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
     ) -> String {
         ToolObservationFinalizer.immediateFinalIfSafe(
             intent: intent,
             toolID: toolID,
             observation: observation,
-            originalPrompt: originalPrompt
+            originalPrompt: originalPrompt,
+            resultStatus: resultStatus,
+            ragIndexMode: ragIndexMode
         ) ?? observation
     }
 

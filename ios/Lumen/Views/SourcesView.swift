@@ -3,10 +3,45 @@ import SwiftData
 import UniformTypeIdentifiers
 
 struct SourcesView: View {
+    private enum ReindexTarget {
+        case files
+        case photos
+
+        var confirmationTitle: String {
+            switch self {
+            case .files: "Reindex imported files?"
+            case .photos: "Reindex photo metadata?"
+            }
+        }
+
+        var confirmationMessage: String {
+            switch self {
+            case .files:
+                "This will clear and rebuild the existing local file index from your imported files."
+            case .photos:
+                "This will clear and rebuild the existing local photo metadata index for the last six months."
+            }
+        }
+
+        var confirmationButtonTitle: String {
+            switch self {
+            case .files: "Reindex Files"
+            case .photos: "Reindex Photos"
+            }
+        }
+    }
+
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \RAGChunk.createdAt, order: .reverse) private var chunks: [RAGChunk]
+    @Query(
+        filter: #Predicate<RAGChunk> {
+            !$0.sourceType.starts(with: "__lumen_rag_replacement_staging__:")
+        },
+        sort: \RAGChunk.createdAt,
+        order: .reverse
+    ) private var chunks: [RAGChunk]
     @State private var showFilePicker = false
     @State private var showNoteSheet = false
+    @State private var pendingReindex: ReindexTarget?
     @State private var busy = false
     @State private var status: String?
 
@@ -51,8 +86,8 @@ struct SourcesView: View {
                     Menu {
                         Button { showFilePicker = true } label: { Label("Import file", systemImage: "doc.badge.plus") }
                         Button { showNoteSheet = true } label: { Label("Add note", systemImage: "note.text.badge.plus") }
-                        Button { reindexFiles() } label: { Label("Reindex files", systemImage: "arrow.clockwise") }
-                        Button { reindexPhotos() } label: { Label("Reindex photos (6mo)", systemImage: "photo.stack") }
+                        Button { pendingReindex = .files } label: { Label("Reindex files", systemImage: "arrow.clockwise") }
+                        Button { pendingReindex = .photos } label: { Label("Reindex photos (6mo)", systemImage: "photo.stack") }
                         Divider()
                         Button(role: .destructive) {
                             wipeIndex()
@@ -74,6 +109,30 @@ struct SourcesView: View {
             .sheet(isPresented: $showNoteSheet) {
                 AddNoteSheet()
                     .presentationDetents([.medium, .large])
+            }
+            .confirmationDialog(
+                pendingReindex?.confirmationTitle ?? "Reindex local sources?",
+                isPresented: Binding(
+                    get: { pendingReindex != nil },
+                    set: { isPresented in
+                        if !isPresented { pendingReindex = nil }
+                    }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let target = pendingReindex {
+                    Button(target.confirmationButtonTitle, role: .destructive) {
+                        pendingReindex = nil
+                        confirmReindex(target)
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingReindex = nil
+                }
+            } message: {
+                if let target = pendingReindex {
+                    Text(target.confirmationMessage)
+                }
             }
             .overlay {
                 if busy {
@@ -172,7 +231,13 @@ struct SourcesView: View {
     private func reindexFiles() {
         Task {
             busy = true; defer { busy = false }
-            let result = await RAGStore.indexImportedFilesWithDiagnostics(context: modelContext)
+            guard let container = SharedContainer.shared else {
+                status = "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+                return
+            }
+            // Bulk replacement may roll back its transaction on failure. Keep it
+            // isolated from unrelated unsaved edits owned by this view context.
+            let result = await RAGStore.indexImportedFilesWithDiagnostics(context: ModelContext(container))
             status = MemoryTools.ragIndexFilesMessage(from: result)
         }
     }
@@ -180,8 +245,24 @@ struct SourcesView: View {
     private func reindexPhotos() {
         Task {
             busy = true; defer { busy = false }
-            let result = await RAGStore.indexPhotosWithDiagnostics(monthsBack: 6, context: modelContext)
+            guard let container = SharedContainer.shared else {
+                status = "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+                return
+            }
+            let result = await RAGStore.indexPhotosWithDiagnostics(
+                monthsBack: 6,
+                context: ModelContext(container)
+            )
             status = MemoryTools.ragIndexPhotosMessage(from: result)
+        }
+    }
+
+    private func confirmReindex(_ target: ReindexTarget) {
+        switch target {
+        case .files:
+            reindexFiles()
+        case .photos:
+            reindexPhotos()
         }
     }
 }

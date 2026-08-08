@@ -63,7 +63,16 @@ final class RAGVectorIndex {
         modelIdentifier: String,
         dimension: Int
     ) -> VectorIndexLoadResult {
-        ensureLoaded(formatVersion: formatVersion, modelIdentifier: modelIdentifier, dimension: dimension, fetch: { try context.fetch(FetchDescriptor<RAGChunk>()) })
+        let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
+        let descriptor = FetchDescriptor<RAGChunk>(
+            predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
+        )
+        return ensureLoaded(
+            formatVersion: formatVersion,
+            modelIdentifier: modelIdentifier,
+            dimension: dimension,
+            fetch: { try context.fetch(descriptor) }
+        )
     }
 
     @discardableResult
@@ -112,7 +121,8 @@ final class RAGVectorIndex {
         ids.reserveCapacity(fetched.count)
         buckets.reserveCapacity(fetched.count)
         var d = 0
-        for c in fetched where !c.embedding.isEmpty
+        for c in fetched where !c.isReplacementStaging
+            && !c.embedding.isEmpty
             && c.embeddingFormatVersion == formatVersion
             && c.embeddingModelIdentifier == modelIdentifier
             && c.embeddingDimension == c.embedding.count

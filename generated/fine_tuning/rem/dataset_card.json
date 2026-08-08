@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "3ec0c382f1f6feef66f5311ca34ff0d2a9043379bd84a108392a7b3fddc07ddc"
+      "reportSHA256": "5148d147c4331ee7b917bcd149099e1f1911886c4c288321b363109cc0cdb0e0"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "67223adf11fd1e2f44d1bc0a7c21cc7d110284e0d7428ea8534bb168607eb31c",
-      "optimizedTrainingCorpusSHA256": "d042c2ea0eb06cdb379a55ba0ccc0511349eea40da007e21f10d8ee9f19bf384",
+      "baselineTrainingCorpusSHA256": "3868e60ff2180f9dfacb297528baba617ab8d6b2abedcf800992252e3382d330",
+      "optimizedTrainingCorpusSHA256": "b666adab5421b7f9ad5714cc46e0e3f0db7a4438ba170e25b2518f3dfe79849a",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "73699f0f0cc69bd72b221a87f780c734a120d34ba987180e0e428bfd7f6c9823",
+    "experimentManifestSHA256": "11b66af27f705b3956d259629dcb0dac900610b287345d66d0980a5cdbdfb23d",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
+  "manifestCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 39,
@@ -325,7 +325,7 @@
         "public_verified_tool_argument_extraction": 12,
         "public_verified_tool_routing": 12
       },
-      "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
+      "lumenContractSHA256": "a9e46692c2bd30ea02eee7d4ecde718d3cc47c7361958ee82a09be11967926c7",
       "partitionPolicy": {
         "allowedMLTrainingPartitions": [
           "train"
@@ -335,9 +335,9 @@
       },
       "qualityScoreSummaryByAgent": {
         "cortex": {
-          "maximum": 0.847137,
-          "mean": 0.832951,
-          "minimum": 0.766562
+          "maximum": 0.892138,
+          "mean": 0.875338,
+          "minimum": 0.767187
         },
         "executor": {
           "maximum": 0.831918,
@@ -366,7 +366,7 @@
         }
       },
       "recordCount": 3280,
-      "recordsSHA256": "8da5f97b74c716938560d203d5f8cc943b18df1c075c02458e67418fcf2fe2b7",
+      "recordsSHA256": "c5d86e9066346bab769f7e81b7be5bb05eed4667ebb04cf84c152770b39c4673",
       "schema": "lumen.public-adapter-corpus/1.1.0",
       "selectionPolicyVersion": "2026-07-12.3",
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
@@ -459,7 +459,7 @@
     "val_dpo": 7,
     "val_sft": 10
   },
-  "sourceDirty": false,
+  "sourceDirty": true,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "public_adapter_corpus_coedit_train",
@@ -475,9 +475,9 @@
     "rem_reflection": 5
   },
   "sourceIntegrity": {
-    "baseCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
-    "dirtyState": false,
-    "workingTreeDigest": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
+    "baseCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
+    "dirtyState": true,
+    "workingTreeDigest": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2"
   },
   "systemPrompt": "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
   "taskTypeCounts": {
@@ -518,5 +518,5 @@
     "ultra_specific_runtime_repair",
     "ultra_specific_training_evidence_repair"
   ],
-  "worktreeFingerprint": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
+  "worktreeFingerprint": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2"
 }

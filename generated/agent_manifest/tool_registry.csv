@@ -37,8 +37,8 @@ files.read,Read File,False,,1,ios/Lumen/Models/ToolDefinition.swift
 memory.save,Save Memory,False,,2,ios/Lumen/Models/ToolDefinition.swift
 memory.recall,Recall Memory,False,,1,ios/Lumen/Models/ToolDefinition.swift
 rag.search,Search Personal Data,False,,3,ios/Lumen/Models/ToolDefinition.swift
-rag.index_files,Reindex Files,False,,0,ios/Lumen/Models/ToolDefinition.swift
-rag.index_photos,Reindex Photos,False,NSPhotoLibraryUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
+rag.index_files,Reindex Files,True,,0,ios/Lumen/Models/ToolDefinition.swift
+rag.index_photos,Reindex Photos,True,NSPhotoLibraryUsageDescription,1,ios/Lumen/Models/ToolDefinition.swift
 trigger.create,Schedule Agent Run,True,,7,ios/Lumen/Models/ToolDefinition.swift
 trigger.list,List Triggers,False,,0,ios/Lumen/Models/ToolDefinition.swift
 trigger.cancel,Cancel Trigger,True,,2,ios/Lumen/Models/ToolDefinition.swift

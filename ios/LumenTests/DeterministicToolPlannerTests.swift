@@ -117,6 +117,7 @@ struct DeterministicToolPlannerTests {
         )
         #expect(action?.tool == "rag.search")
         #expect(action?.args["sourceScope"] == .string("documents"))
+        #expect(action?.args["query"] == .string("Search my files for architecture notes."))
         _ = try validated(action)
 
         let missing = DeterministicToolPlanner.plan(

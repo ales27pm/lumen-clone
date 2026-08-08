@@ -439,6 +439,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
             ("Schedule a trigger to summarize reminders in 10 minutes.", "trigger.create"),
             ("Call 5551234567.", "phone.call"),
             ("Schedule an alarm called Test in 10 minutes.", "alarm.schedule"),
+            ("Reindex my imported files.", "rag.index_files"),
+            ("Reindex photo metadata for the last 3 months.", "rag.index_photos"),
             ("Mark Outlook message about q3 as read.", "outlook.message.mark_read")
         ]
 
@@ -486,7 +488,12 @@ final class AssistantKernelRunContractTests: XCTestCase {
 
             let approvalStep = doneSteps.first { $0.kind == .approvalBoundary && $0.toolID == testCase.expectedToolID }
             XCTAssertNotNil(approvalStep, "Expected approval boundary for \(testCase.expectedToolID) from prompt: \(testCase.prompt)")
-            XCTAssertEqual(approvalStep?.toolArgs?.isEmpty, false)
+            let declaredArguments = ToolRegistry.find(id: testCase.expectedToolID)?.capabilityContract.arguments ?? []
+            if declaredArguments.isEmpty {
+                XCTAssertEqual(approvalStep?.toolArgs, [:])
+            } else {
+                XCTAssertEqual(approvalStep?.toolArgs?.isEmpty, false)
+            }
             XCTAssertTrue(finalText?.contains("Approval required for \(testCase.expectedToolID)") == true)
             XCTAssertFalse(doneSteps.contains { $0.kind == .action && $0.toolID == testCase.expectedToolID })
             XCTAssertTrue(invocations.isEmpty, "Approval boundary must stop before any tool invocation for \(testCase.expectedToolID)")

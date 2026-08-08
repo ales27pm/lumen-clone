@@ -30,7 +30,7 @@ struct KnowledgeLocalTool: LocalTool {
             description: catalogTool.description,
             category: Self.secureCategory(for: canonical),
             requiredPermissions: [],
-            supportsBackgroundExecution: true,
+            supportsBackgroundExecution: canonical != "rag.index_files" && canonical != "rag.index_photos",
             requiresUserApproval: catalogTool.requiresApproval,
             argumentSchemaDescription: Self.argumentSchemaDescription(from: catalogTool.description),
             resultPrivacyLevel: canonical == "web.search" || canonical == "web.fetch" ? .low : .moderate,
@@ -61,22 +61,62 @@ struct KnowledgeLocalTool: LocalTool {
         case "rag.search":
             text = await MemoryTools.ragSearch(query: args["query"] ?? "", limit: Int(args["limit"] ?? "5") ?? 5)
         case "rag.index_files":
-            text = await MemoryTools.ragIndexFiles()
+            let execution = await MemoryTools.ragIndexFilesExecution()
+            return result(
+                invocation: invocation,
+                text: execution.text,
+                status: execution.status,
+                metricsSummary: "native_knowledge_tool",
+                errorCode: execution.diagnostic,
+                ragIndexMode: execution.mode
+            )
         case "rag.index_photos":
-            text = await MemoryTools.ragIndexPhotos(months: Int(args["months"] ?? "6") ?? 6)
+            let execution = await MemoryTools.ragIndexPhotosExecution(months: Int(args["months"] ?? "6") ?? 6)
+            return result(
+                invocation: invocation,
+                text: execution.text,
+                status: execution.status,
+                metricsSummary: "native_knowledge_tool",
+                errorCode: execution.diagnostic,
+                ragIndexMode: execution.mode
+            )
         default:
             text = "Unsupported native knowledge tool: \(toolID)."
         }
         return result(invocation: invocation, text: text, status: ToolResultStatusClassifier.status(from: text), metricsSummary: "native_knowledge_tool")
     }
 
-    private func result(invocation: ToolInvocation, text: String, status: ToolResultStatus, metricsSummary: String) -> ToolResult {
-        ToolResult(invocationID: invocation.id, status: status, displayText: text, modelText: text, structuredPayload: ["toolID": toolID, "implementation": "KnowledgeLocalTool"], privacyLevel: definition.resultPrivacyLevel, metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)", errorCode: status == .success ? nil : status.rawValue)
+    private func result(
+        invocation: ToolInvocation,
+        text: String,
+        status: ToolResultStatus,
+        metricsSummary: String,
+        errorCode: String? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
+    ) -> ToolResult {
+        var payload = ["toolID": toolID, "implementation": "KnowledgeLocalTool"]
+        if let errorCode, !errorCode.isEmpty {
+            payload["diagnostic"] = errorCode
+        }
+        if let ragIndexMode {
+            payload["ragIndexMode"] = ragIndexMode.rawValue
+        }
+        return ToolResult(
+            invocationID: invocation.id,
+            status: status,
+            displayText: text,
+            modelText: text,
+            structuredPayload: payload,
+            privacyLevel: definition.resultPrivacyLevel,
+            metricsSummary: status == .success ? metricsSummary : "\(metricsSummary)_\(status.rawValue)",
+            errorCode: status == .success ? nil : (errorCode ?? status.rawValue)
+        )
     }
 
     private static func secureCategory(for canonical: String) -> SecureToolCategory {
         switch canonical {
         case "web.search", "web.fetch": return .externalNetwork
+        case "rag.index_files", "rag.index_photos": return .destructiveAction
         default: return .readOnly
         }
     }

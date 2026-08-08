@@ -802,6 +802,35 @@ struct AgentGroundingRegressionTests {
         #expect(reminders?.lowercased().contains("buy foil") == true)
     }
 
+    @Test func memoryRecallFinalizerKeepsFactsAndOmitsConversationContinuations() {
+        let memory = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: """
+            - [FACT0001] Keep in mind that I like short answers
+            and direct recommendations | kind=fact | score=0.92 | source=agent
+            - [FACT0002] I prefer concise bullet points | kind=preference | score=0.88 | source=agent
+            - [CHAT0001] User asked: Summarize my latest Outlook emails. Assistant: Outlook messages:
+            Subject: Project Lantern status | kind=conversation | score=0.35 | source=chat
+            """,
+            originalPrompt: "What do you remember about my response style?"
+        )
+
+        #expect(memory == "I remember that you like short answers and direct recommendations; you prefer concise bullet points.")
+        #expect(memory?.contains("Subject:") == false)
+        #expect(memory?.contains("Project Lantern") == false)
+        #expect(memory?.contains("kind=") == false)
+        #expect(memory?.contains("CHAT0001") == false)
+
+        let unstructuredMemory = ToolObservationFinalizer.immediateFinalIfSafe(
+            intent: .memory,
+            toolID: "memory.recall",
+            observation: "Project Northstar uses local retrieval",
+            originalPrompt: "What do you remember about Project Northstar?"
+        )
+        #expect(unstructuredMemory == "I remember that Project Northstar uses local retrieval.")
+    }
+
     @Test func nativeKernelPolicyFirstContinuesMapsSearchAfterDegradedLocation() {
         let routing = IntentRoutingDecision(
             intent: .maps,

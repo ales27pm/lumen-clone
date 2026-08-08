@@ -28,10 +28,86 @@ enum RAGStore {
 
     enum PersistenceError: Error, Equatable {
         case diskWriteBudgetDenied
+        case replacementAlreadyInProgress
+    }
+
+    private enum CorpusReplacementCommitResult {
+        case committed(PersistAndAppendResult)
+        case cancelled
+        case cpuWatchdogDegraded
+        case maintenanceBudgetDenied
+        case diskWriteBudgetDenied
+        case failed(String)
+    }
+
+    private enum CorpusReplacementStageResult {
+        case staged(Int)
+        case diskWriteBudgetDenied
+        case failed(String)
+    }
+
+    private static let replacementFetchBatchSize = 64
+    private static let replacementVectorBatchSize = 32
+    private static let replacementSaveOverheadBytes = 4 * 1024
+    private static let replacementRowOverheadBytes = 512
+    private static var activeReplacementSourceTypes: Set<RAGSourceType> = []
+
+    private struct ReplacementSourceDiagnostic {
+        let sourceHash: String
+        let mode: IndexMode
+        let diagnostic: String
+    }
+
+    private final class CorpusReplacementWriteAuthorization {
+        let budget: DiskWriteBudget
+        var cleanupReservations: [DiskWriteBudgetReservation] = []
+
+        init(budget: DiskWriteBudget) {
+            self.budget = budget
+        }
+
+        func releaseCleanupReservations() {
+            for reservation in cleanupReservations {
+                budget.releaseReservedWrite(reservation)
+            }
+            cleanupReservations.removeAll(keepingCapacity: true)
+        }
+
+        func commitCleanupReservations() {
+            for reservation in cleanupReservations {
+                budget.commitReservedWrite(reservation)
+            }
+            cleanupReservations.removeAll(keepingCapacity: true)
+        }
     }
 
     private static func sourceLogID(_ value: String) -> String {
         String(RuntimeFallbackLogger.promptHash(value).prefix(12))
+    }
+
+    @discardableResult
+    private static func recordingRAGSynchronousWork<T>(_ work: () throws -> T) rethrows -> T {
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        defer {
+            CPUWatchdogGuard.shared.recordWork(
+                category: .rag,
+                duration: ProcessInfo.processInfo.systemUptime - startedAt
+            )
+        }
+        return try work()
+    }
+
+    #if DEBUG
+    static var testCPUWatchdogDegradedOverride: Bool?
+    #endif
+
+    private static func shouldDegradeRAGWork() -> Bool {
+        #if DEBUG
+        if let testCPUWatchdogDegradedOverride {
+            return testCPUWatchdogDegradedOverride
+        }
+        #endif
+        return CPUWatchdogGuard.shared.shouldDegrade(category: .rag)
     }
 
     private static func requirePersistenceBudget() throws {
@@ -52,6 +128,444 @@ enum RAGStore {
             logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
+    }
+
+    private static func estimatedReplacementStageBytes(_ pending: [PendingVector]) -> Int {
+        let payload = pending.reduce(0) { partial, item in
+            let chunk = item.chunk
+            let strings = chunk.content.utf8.count
+                + chunk.sourceName.utf8.count
+                + (chunk.sourceRef?.utf8.count ?? 0)
+                + chunk.embeddingModelIdentifier.utf8.count
+                + item.bucket.utf8.count
+            let vectorBytes = item.vector.count.multipliedReportingOverflow(
+                by: MemoryLayout<Double>.stride
+            )
+            let rowBytes = replacementRowOverheadBytes
+                + strings
+                + (vectorBytes.overflow ? Int.max / 2 : vectorBytes.partialValue)
+            let total = partial.addingReportingOverflow(rowBytes)
+            return total.overflow ? Int.max / 2 : total.partialValue
+        }
+        let total = payload.addingReportingOverflow(replacementSaveOverheadBytes)
+        return max(replacementSaveOverheadBytes, total.overflow ? Int.max / 2 : total.partialValue)
+    }
+
+    private static func estimatedReplacementCommitBytes(stagedCount: Int, visibleCount: Int) -> Int {
+        let rowCount = max(0, stagedCount).addingReportingOverflow(max(0, visibleCount))
+        let boundedCount = rowCount.overflow ? Int.max / replacementRowOverheadBytes : rowCount.partialValue
+        let rows = boundedCount.multipliedReportingOverflow(by: replacementRowOverheadBytes)
+        let payload = rows.overflow ? Int.max / 2 : rows.partialValue
+        let total = payload.addingReportingOverflow(replacementSaveOverheadBytes)
+        return max(replacementSaveOverheadBytes, total.overflow ? Int.max / 2 : total.partialValue)
+    }
+
+    private static func reserveReplacementWrite(
+        bytes: Int,
+        authorization: CorpusReplacementWriteAuthorization
+    ) throws -> DiskWriteBudgetReservation {
+        guard let reservation = authorization.budget.reserveWrite(bytes: bytes, category: .rag) else {
+            throw PersistenceError.diskWriteBudgetDenied
+        }
+        return reservation
+    }
+
+    private static func stagedSourceType(id: UUID, kind: RAGSourceType) -> String {
+        RAGChunk.replacementStagingSourceType(id: id, kind: kind)
+    }
+
+    private static func beginCorpusReplacement(sourceTypes: Set<RAGSourceType>) -> Bool {
+        guard activeReplacementSourceTypes.isDisjoint(with: sourceTypes) else { return false }
+        activeReplacementSourceTypes.formUnion(sourceTypes)
+        return true
+    }
+
+    private static func endCorpusReplacement(sourceTypes: Set<RAGSourceType>) {
+        activeReplacementSourceTypes.subtract(sourceTypes)
+    }
+
+    private static func hasVisibleCorpus(
+        context: ModelContext,
+        sourceTypes: Set<RAGSourceType>
+    ) throws -> Bool {
+        for sourceType in sourceTypes {
+            let rawValue = sourceType.rawValue
+            var descriptor = FetchDescriptor<RAGChunk>(
+                predicate: #Predicate<RAGChunk> { $0.sourceType == rawValue }
+            )
+            descriptor.fetchLimit = 1
+            if try !context.fetch(descriptor).isEmpty {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func clearedEmptyReplacementResult(
+        context: ModelContext,
+        operation: String,
+        maintenanceReason: String,
+        sourceTypes: Set<RAGSourceType>,
+        diagnostic: String,
+        writeBudget: DiskWriteBudget,
+        save: ((ModelContext, String, String) throws -> Void)?
+    ) throws -> IndexResult? {
+        guard try !hasVisibleCorpus(context: context, sourceTypes: sourceTypes) else { return nil }
+        RAGVectorIndex.shared.invalidate()
+
+        let prefix = RAGChunk.replacementStagingSourceTypePrefix
+        var hasOrphanedStaging = false
+        for sourceType in sourceTypes {
+            let sourcePrefix = "\(prefix)\(sourceType.rawValue):"
+            var descriptor = FetchDescriptor<RAGChunk>(
+                predicate: #Predicate<RAGChunk> { $0.sourceType.starts(with: sourcePrefix) }
+            )
+            descriptor.fetchLimit = 1
+            if try !context.fetch(descriptor).isEmpty {
+                hasOrphanedStaging = true
+                break
+            }
+        }
+        guard hasOrphanedStaging else {
+            return IndexResult(indexedCount: 0, mode: .cleared, diagnostic: diagnostic)
+        }
+
+        let cleanupDiagnostic: String?
+        if shouldDegradeRAGWork() {
+            cleanupDiagnostic = "replacement_staging_cleanup_deferred:cpu_watchdog_degraded"
+        } else if !ResourceBudgetGate.allowsMaintenance(reason: maintenanceReason) {
+            cleanupDiagnostic = "replacement_staging_cleanup_deferred:maintenance_budget_denied"
+        } else {
+            switch cleanupOrphanedReplacementStaging(
+                context: context,
+                operation: operation,
+                sourceTypes: sourceTypes,
+                writeBudget: writeBudget,
+                save: save
+            ) {
+            case .staged:
+                cleanupDiagnostic = nil
+            case .diskWriteBudgetDenied:
+                cleanupDiagnostic = "replacement_staging_cleanup_deferred:disk_write_budget_denied"
+            case .failed(let failure):
+                cleanupDiagnostic = failure
+            }
+        }
+        return IndexResult(
+            indexedCount: 0,
+            mode: .cleared,
+            diagnostic: diagnosticAppendingCleanup(diagnostic, cleanup: cleanupDiagnostic)
+        )
+    }
+
+    private static func cleanupOrphanedReplacementStaging(
+        context: ModelContext,
+        operation: String,
+        sourceTypes: Set<RAGSourceType>,
+        writeBudget: DiskWriteBudget,
+        save: ((ModelContext, String, String) throws -> Void)?
+    ) -> CorpusReplacementStageResult {
+        let prefix = RAGChunk.replacementStagingSourceTypePrefix
+        var orphanCount = 0
+        do {
+            for sourceType in sourceTypes {
+                let sourcePrefix = "\(prefix)\(sourceType.rawValue):"
+                let predicate = #Predicate<RAGChunk> {
+                    $0.sourceType.starts(with: sourcePrefix)
+                }
+                let count = try context.fetchCount(FetchDescriptor<RAGChunk>(predicate: predicate))
+                let total = orphanCount.addingReportingOverflow(count)
+                orphanCount = total.overflow ? Int.max / replacementRowOverheadBytes : total.partialValue
+            }
+        } catch {
+            return .failed("replacement_staging_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+        }
+        guard orphanCount > 0 else { return .staged(0) }
+
+        let reservation: DiskWriteBudgetReservation?
+        if save == nil {
+            reservation = writeBudget.reserveWrite(
+                bytes: estimatedReplacementCommitBytes(stagedCount: 0, visibleCount: orphanCount),
+                category: .rag
+            )
+            guard reservation != nil else { return .diskWriteBudgetDenied }
+        } else {
+            reservation = nil
+        }
+
+        do {
+            for sourceType in sourceTypes {
+                let sourcePrefix = "\(prefix)\(sourceType.rawValue):"
+                let predicate = #Predicate<RAGChunk> {
+                    $0.sourceType.starts(with: sourcePrefix)
+                }
+                try context.enumerate(
+                    FetchDescriptor<RAGChunk>(predicate: predicate),
+                    batchSize: replacementFetchBatchSize,
+                    allowEscapingMutations: true
+                ) { chunk in
+                    context.delete(chunk)
+                }
+            }
+            if let save {
+                try save(context, operation, "RAGChunk")
+            } else {
+                try context.save()
+                if let reservation {
+                    writeBudget.commitReservedWrite(reservation)
+                }
+            }
+            return .staged(0)
+        } catch PersistenceError.diskWriteBudgetDenied {
+            context.rollback()
+            return .diskWriteBudgetDenied
+        } catch {
+            context.rollback()
+            if let reservation {
+                writeBudget.releaseReservedWrite(reservation)
+            }
+            return .failed("replacement_staging_cleanup_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+        }
+    }
+
+    private static func persistReplacementStage(
+        context: ModelContext,
+        operation: String,
+        stagingID: UUID,
+        pending: inout [PendingVector],
+        authorization: CorpusReplacementWriteAuthorization,
+        save: ((ModelContext, String, String) throws -> Void)?
+    ) -> CorpusReplacementStageResult {
+        guard !pending.isEmpty else { return .staged(0) }
+        let expectedMetadata = pending[0].metadata
+        guard pending.allSatisfy({ $0.metadata == expectedMetadata }) else {
+            pending.removeAll(keepingCapacity: true)
+            return .failed("embedding_identity_changed_during_index")
+        }
+        var cleanupReservation: DiskWriteBudgetReservation?
+        var forwardReservation: DiskWriteBudgetReservation?
+        if save == nil {
+            let estimatedBytes = estimatedReplacementStageBytes(pending)
+            do {
+                guard let reservedCleanup = authorization.budget.reserveCleanupWrite(
+                    bytes: estimatedBytes,
+                    category: .rag
+                ) else {
+                    throw PersistenceError.diskWriteBudgetDenied
+                }
+                cleanupReservation = reservedCleanup
+                forwardReservation = try reserveReplacementWrite(bytes: estimatedBytes, authorization: authorization)
+            } catch PersistenceError.diskWriteBudgetDenied {
+                if let cleanupReservation {
+                    authorization.budget.releaseReservedWrite(cleanupReservation)
+                }
+                pending.removeAll(keepingCapacity: true)
+                return .diskWriteBudgetDenied
+            } catch {
+                if let cleanupReservation {
+                    authorization.budget.releaseReservedWrite(cleanupReservation)
+                }
+                pending.removeAll(keepingCapacity: true)
+                return .failed("replacement_staging_authorization_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+            }
+        }
+
+        recordingRAGSynchronousWork {
+            for item in pending {
+                item.chunk.sourceType = stagedSourceType(id: stagingID, kind: item.chunk.kind)
+                context.insert(item.chunk)
+            }
+        }
+        do {
+            if let save {
+                try save(context, operation, "RAGChunk")
+            } else {
+                try context.save()
+                if let forwardReservation {
+                    authorization.budget.commitReservedWrite(forwardReservation)
+                }
+                if let cleanupReservation {
+                    authorization.cleanupReservations.append(cleanupReservation)
+                }
+            }
+        } catch PersistenceError.diskWriteBudgetDenied {
+            context.rollback()
+            if let forwardReservation {
+                authorization.budget.releaseReservedWrite(forwardReservation)
+            }
+            if let cleanupReservation {
+                authorization.budget.releaseReservedWrite(cleanupReservation)
+            }
+            pending.removeAll(keepingCapacity: true)
+            return .diskWriteBudgetDenied
+        } catch {
+            context.rollback()
+            if let forwardReservation {
+                authorization.budget.releaseReservedWrite(forwardReservation)
+            }
+            if let cleanupReservation {
+                authorization.budget.releaseReservedWrite(cleanupReservation)
+            }
+            pending.removeAll(keepingCapacity: true)
+            return .failed("replacement_staging_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+        }
+        let count = pending.count
+        pending.removeAll(keepingCapacity: true)
+        return .staged(count)
+    }
+
+    private static func discardReplacementStaging(
+        context: ModelContext,
+        operation: String,
+        stagingID: UUID,
+        sourceTypes: Set<RAGSourceType>,
+        stagedCount: Int,
+        authorization: CorpusReplacementWriteAuthorization,
+        save: ((ModelContext, String, String) throws -> Void)?
+    ) -> String? {
+        guard stagedCount > 0 else { return nil }
+        if save == nil, authorization.cleanupReservations.isEmpty {
+            return "replacement_staging_cleanup_deferred:missing_write_reservation"
+        }
+        do {
+            for sourceType in sourceTypes {
+                let stagedValue = stagedSourceType(id: stagingID, kind: sourceType)
+                let predicate = #Predicate<RAGChunk> { $0.sourceType == stagedValue }
+                try context.enumerate(
+                    FetchDescriptor<RAGChunk>(predicate: predicate),
+                    batchSize: replacementFetchBatchSize,
+                    allowEscapingMutations: true
+                ) { chunk in
+                        context.delete(chunk)
+                }
+            }
+            if let save {
+                try save(context, operation, "RAGChunk")
+            } else {
+                try context.save()
+                authorization.commitCleanupReservations()
+            }
+            return nil
+        } catch {
+            context.rollback()
+            return "replacement_staging_cleanup_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+        }
+    }
+
+    private static func commitStagedCorpusReplacement(
+        context: ModelContext,
+        replacing sourceTypes: Set<RAGSourceType>,
+        operation: String,
+        maintenanceReason: String,
+        stagingID: UUID,
+        stagedCount: Int,
+        metadata: RAGEmbeddingIndexMetadata?,
+        authorization: CorpusReplacementWriteAuthorization,
+        save: ((ModelContext, String, String) throws -> Void)? = nil
+    ) -> CorpusReplacementCommitResult {
+        guard !Task.isCancelled else { return .cancelled }
+        guard !shouldDegradeRAGWork() else { return .cpuWatchdogDegraded }
+        guard ResourceBudgetGate.allowsMaintenance(reason: maintenanceReason) else {
+            return .maintenanceBudgetDenied
+        }
+
+        var commitReservation: DiskWriteBudgetReservation?
+        if save == nil {
+            do {
+                var visibleCount = 0
+                for sourceType in sourceTypes {
+                    let rawValue = sourceType.rawValue
+                    visibleCount += try context.fetchCount(FetchDescriptor<RAGChunk>(
+                        predicate: #Predicate<RAGChunk> { $0.sourceType == rawValue }
+                    ))
+                }
+                commitReservation = try reserveReplacementWrite(
+                    bytes: estimatedReplacementCommitBytes(stagedCount: stagedCount, visibleCount: visibleCount),
+                    authorization: authorization
+                )
+            } catch PersistenceError.diskWriteBudgetDenied {
+                return .diskWriteBudgetDenied
+            } catch {
+                return .failed("replacement_authorization_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+            }
+        }
+        defer {
+            if let commitReservation {
+                authorization.budget.releaseReservedWrite(commitReservation)
+            }
+        }
+
+        guard !Task.isCancelled else { return .cancelled }
+
+        do {
+            let promotedCount = try recordingRAGSynchronousWork {
+                var promotedCount = 0
+                for sourceType in sourceTypes {
+                    let rawValue = sourceType.rawValue
+                    let existingPredicate = #Predicate<RAGChunk> { $0.sourceType == rawValue }
+                    try context.enumerate(
+                        FetchDescriptor<RAGChunk>(predicate: existingPredicate),
+                        batchSize: replacementFetchBatchSize,
+                        allowEscapingMutations: true
+                    ) { chunk in
+                        context.delete(chunk)
+                    }
+
+                    let stagedValue = stagedSourceType(id: stagingID, kind: sourceType)
+                    let stagedPredicate = #Predicate<RAGChunk> { $0.sourceType == stagedValue }
+                    try context.enumerate(
+                        FetchDescriptor<RAGChunk>(predicate: stagedPredicate),
+                        batchSize: replacementFetchBatchSize,
+                        allowEscapingMutations: true
+                    ) { chunk in
+                        promotedCount += 1
+                        chunk.sourceType = rawValue
+                    }
+                }
+                return promotedCount
+            }
+            guard promotedCount == stagedCount else {
+                context.rollback()
+                return .failed("replacement_staging_count_mismatch")
+            }
+            guard !Task.isCancelled else {
+                context.rollback()
+                return .cancelled
+            }
+            if let save {
+                try save(context, operation, "RAGChunk")
+            } else {
+                try context.save()
+                if let commitReservation {
+                    authorization.budget.commitReservedWrite(commitReservation)
+                }
+                authorization.releaseCleanupReservations()
+            }
+        } catch PersistenceError.diskWriteBudgetDenied {
+            context.rollback()
+            if let commitReservation {
+                authorization.budget.releaseReservedWrite(commitReservation)
+            }
+            return .diskWriteBudgetDenied
+        } catch {
+            context.rollback()
+            if let commitReservation {
+                authorization.budget.releaseReservedWrite(commitReservation)
+            }
+            let diagnostic = "replacement_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            logger.error("persist_failed op=\(operation, privacy: .public) scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+            return .failed(diagnostic)
+        }
+
+        RAGVectorIndex.shared.invalidate()
+        let indexState: PersistAndAppendResult.IndexState
+        if let metadata {
+            let reload = RAGVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
+            indexState = reload.mode == "failed" ? .unavailable : .reloaded
+        } else {
+            indexState = .reloaded
+        }
+        return .committed(PersistAndAppendResult(persistedCount: stagedCount, indexState: indexState))
     }
 
     static func persistAndAppendVectors(
@@ -172,6 +686,7 @@ enum RAGStore {
 
     enum IndexMode: String, Equatable {
         case indexed
+        case cleared
         case skipped
         case failed
         case partial
@@ -183,8 +698,23 @@ enum RAGStore {
         let diagnostic: String?
 
         var didIndexAllChunks: Bool {
-            mode == .indexed
+            mode == .indexed || mode == .cleared
         }
+    }
+
+    private static func isReplacementAbortDiagnostic(_ diagnostic: String?) -> Bool {
+        guard let diagnostic else { return false }
+        return diagnostic == "cancelled"
+            || diagnostic == "maintenance_budget_denied"
+            || diagnostic == "cpu_watchdog_degraded"
+            || diagnostic == "embedding_identity_changed_during_index"
+            || diagnostic.hasPrefix("cleanup_deferred:disk_write_budget_denied")
+            || diagnostic.hasPrefix("replacement_staging_")
+    }
+
+    private static func diagnosticAppendingCleanup(_ diagnostic: String, cleanup: String?) -> String {
+        guard let cleanup, !cleanup.isEmpty else { return diagnostic }
+        return "\(diagnostic);\(cleanup)"
     }
 
     static func persistPendingVectorsForEarlyExit(
@@ -410,7 +940,10 @@ enum RAGStore {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { $0.count >= 3 }
         guard !terms.isEmpty else { return LexicalSearchResult(matches: [], diagnostic: "lexical_empty_terms") }
-        var descriptor = FetchDescriptor<RAGChunk>()
+        let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
+        var descriptor = FetchDescriptor<RAGChunk>(
+            predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
+        )
         descriptor.fetchLimit = 400
         let all: [RAGChunk]
         do {
@@ -501,9 +1034,13 @@ enum RAGStore {
     }
 
     private static func hasStaleEmbeddings(context: ModelContext, modelIdentifier: String, dimension: Int) -> Bool {
-        guard let chunks = try? context.fetch(FetchDescriptor<RAGChunk>()) else { return false }
+        let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
+        let descriptor = FetchDescriptor<RAGChunk>(
+            predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
+        )
+        guard let chunks = try? context.fetch(descriptor) else { return false }
         return chunks.contains {
-            !$0.embedding.isEmpty && (
+            !$0.isReplacementStaging && !$0.embedding.isEmpty && (
                 $0.embeddingFormatVersion != SemanticEmbeddingText.formatVersion
                     || $0.embeddingModelIdentifier != modelIdentifier
                     || $0.embeddingDimension != dimension
@@ -553,7 +1090,10 @@ enum RAGStore {
     private static func fetchedChunksByPersistentIDResult(context: ModelContext) -> (chunksByID: [PersistentIdentifier: RAGChunk], diagnostic: String?) {
         let chunks: [RAGChunk]
         do {
-            chunks = try context.fetch(FetchDescriptor<RAGChunk>())
+            let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
+            chunks = try context.fetch(FetchDescriptor<RAGChunk>(
+                predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
+            ))
         } catch {
             let diagnostic = "semantic_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
             logger.error("rag_fetch_failed op=resolveVectorCandidates diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
@@ -561,7 +1101,7 @@ enum RAGStore {
         }
         var byID: [PersistentIdentifier: RAGChunk] = [:]
         byID.reserveCapacity(chunks.count)
-        for chunk in chunks {
+        for chunk in chunks where !chunk.isReplacementStaging {
             byID[chunk.persistentModelID] = chunk
         }
         return (byID, nil)
@@ -574,18 +1114,26 @@ enum RAGStore {
     static func countsWithDiagnostics(context: ModelContext) -> CountsResult {
         let all: [RAGChunk]
         do {
-            all = try context.fetch(FetchDescriptor<RAGChunk>())
+            let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
+            all = try context.fetch(FetchDescriptor<RAGChunk>(
+                predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
+            ))
         } catch {
             let diagnostic = "counts_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
             logger.error("rag_fetch_failed op=counts diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return CountsResult(counts: [:], mode: "failed", diagnostic: diagnostic)
         }
         var out: [RAGSourceType: Int] = [:]
-        for c in all { out[c.kind, default: 0] += 1 }
+        for c in all where !c.isReplacementStaging { out[c.kind, default: 0] += 1 }
         return CountsResult(counts: out, mode: "loaded", diagnostic: nil)
     }
 
     private static func wipe(_ types: Set<RAGSourceType>?, context: ModelContext) throws {
+        let mutationSourceTypes = types ?? Set(RAGSourceType.allCases)
+        guard beginCorpusReplacement(sourceTypes: mutationSourceTypes) else {
+            throw PersistenceError.replacementAlreadyInProgress
+        }
+        defer { endCorpusReplacement(sourceTypes: mutationSourceTypes) }
         let all = try context.fetch(FetchDescriptor<RAGChunk>())
         try requirePersistenceBudget()
         for c in all {
@@ -612,14 +1160,17 @@ enum RAGStore {
     static func chunksWithDiagnostics(for type: RAGSourceType, context: ModelContext) -> ChunkListResult {
         let raw: [RAGChunk]
         do {
-            raw = try context.fetch(FetchDescriptor<RAGChunk>())
+            let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
+            raw = try context.fetch(FetchDescriptor<RAGChunk>(
+                predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
+            ))
         } catch {
             let diagnostic = "chunks_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
             logger.error("rag_fetch_failed op=chunks type=\(type.rawValue, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             return ChunkListResult(chunks: [], mode: "failed", diagnostic: diagnostic)
         }
         return ChunkListResult(
-            chunks: raw.filter { $0.kind == type }.sorted { $0.createdAt > $1.createdAt },
+            chunks: raw.filter { !$0.isReplacementStaging && $0.kind == type }.sorted { $0.createdAt > $1.createdAt },
             mode: "loaded",
             diagnostic: nil
         )
@@ -634,45 +1185,363 @@ enum RAGStore {
     static func indexImportedFilesWithDiagnostics(
         context: ModelContext,
         progress: ((Double) -> Void)? = nil,
-        importedFilesResult: FileStore.ImportedFilesResult? = nil
+        importedFilesResult: FileStore.ImportedFilesResult? = nil,
+        embed: (String) async throws -> EmbeddingRuntimeResult = { text in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: text)
+        },
+        save: ((ModelContext, String, String) throws -> Void)? = nil,
+        writeBudget: DiskWriteBudget = .shared
     ) async -> IndexResult {
         let imports = importedFilesResult ?? FileStore.importedFilesWithDiagnostics()
         if imports.mode == "failed" {
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: imports.diagnostic ?? "imports_list_failed")
         }
         let files = imports.files
-        do {
-            try wipe([.file, .pdf], context: context)
-        } catch PersistenceError.diskWriteBudgetDenied {
+        let replacementSourceTypes: Set<RAGSourceType> = [.file, .pdf]
+        guard beginCorpusReplacement(sourceTypes: replacementSourceTypes) else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "replacement_already_in_progress")
+        }
+        defer { endCorpusReplacement(sourceTypes: replacementSourceTypes) }
+        if files.isEmpty {
+            do {
+                if let result = try clearedEmptyReplacementResult(
+                    context: context,
+                    operation: "indexImportedFiles.cleanupEmptyOrphans",
+                    maintenanceReason: "rag.indexImportedFiles",
+                    sourceTypes: replacementSourceTypes,
+                    diagnostic: imports.diagnostic ?? "no_imported_files",
+                    writeBudget: writeBudget,
+                    save: save
+                ) {
+                    return result
+                }
+            } catch {
+                return IndexResult(
+                    indexedCount: 0,
+                    mode: .failed,
+                    diagnostic: "replacement_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+                )
+            }
+        }
+
+        guard !shouldDegradeRAGWork() else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cpu_watchdog_degraded")
+        }
+        guard ResourceBudgetGate.allowsMaintenance(reason: "rag.indexImportedFiles") else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "maintenance_budget_denied")
+        }
+
+        let stagingID = UUID()
+        let writeAuthorization = CorpusReplacementWriteAuthorization(budget: writeBudget)
+        defer { writeAuthorization.releaseCleanupReservations() }
+        switch cleanupOrphanedReplacementStaging(
+            context: context,
+            operation: "indexImportedFiles.cleanupOrphans",
+            sourceTypes: replacementSourceTypes,
+            writeBudget: writeBudget,
+            save: save
+        ) {
+        case .staged:
+            break
+        case .diskWriteBudgetDenied:
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cleanup_deferred:disk_write_budget_denied")
-        } catch {
-            let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.error("persist_failed op=indexImportedFiles.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+        case .failed(let diagnostic):
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
-        guard !files.isEmpty else {
-            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: imports.diagnostic ?? "no_imported_files")
-        }
-        var total = 0
-        var degraded = 0
-        var diagnostics: [String] = []
+
+        var activeEmbeddingMetadata: RAGEmbeddingIndexMetadata?
+        var stagedCount = 0
+        var sourceDiagnostics: [ReplacementSourceDiagnostic] = []
+        let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
+        defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
+
         for (idx, url) in files.enumerated() {
-            let result = await indexFileWithDiagnostics(url: url, context: context)
-            total += result.indexedCount
-            if result.didIndexAllChunks == false {
-                degraded += 1
-                if let diagnostic = result.diagnostic, diagnostics.count < 3 {
-                    diagnostics.append(diagnostic)
+            var filePending: [PendingVector] = []
+            let staged = await stageFileVectors(
+                url: url,
+                pending: &filePending,
+                activeEmbeddingMetadata: &activeEmbeddingMetadata,
+                embed: embed,
+                flush: { batch in
+                    let result = persistReplacementStage(
+                        context: context,
+                        operation: "indexImportedFiles.stage",
+                        stagingID: stagingID,
+                        pending: &batch,
+                        authorization: writeAuthorization,
+                        save: save
+                    )
+                    if case .staged(let count) = result {
+                        stagedCount += count
+                    }
+                    return result
                 }
-                logger.error("rag_index_file_degraded op=indexImportedFiles source_hash=\(Self.sourceLogID(url.lastPathComponent), privacy: .public) status=\(result.mode.rawValue, privacy: .public) diagnostic=\(result.diagnostic ?? "none", privacy: .public)")
+            )
+            if staged.didIndexAllChunks {
+                switch persistReplacementStage(
+                    context: context,
+                    operation: "indexImportedFiles.stage",
+                    stagingID: stagingID,
+                    pending: &filePending,
+                    authorization: writeAuthorization,
+                    save: save
+                ) {
+                case .staged(let count):
+                    stagedCount += count
+                case .diskWriteBudgetDenied:
+                    let cleanup = discardReplacementStaging(
+                        context: context,
+                        operation: "indexImportedFiles.discard",
+                        stagingID: stagingID,
+                        sourceTypes: replacementSourceTypes,
+                        stagedCount: stagedCount,
+                        authorization: writeAuthorization,
+                        save: save
+                    )
+                    return IndexResult(
+                        indexedCount: 0,
+                        mode: .skipped,
+                        diagnostic: diagnosticAppendingCleanup("cleanup_deferred:disk_write_budget_denied", cleanup: cleanup)
+                    )
+                case .failed(let diagnostic):
+                    let cleanup = discardReplacementStaging(
+                        context: context,
+                        operation: "indexImportedFiles.discard",
+                        stagingID: stagingID,
+                        sourceTypes: replacementSourceTypes,
+                        stagedCount: stagedCount,
+                        authorization: writeAuthorization,
+                        save: save
+                    )
+                    return IndexResult(
+                        indexedCount: 0,
+                        mode: .failed,
+                        diagnostic: diagnosticAppendingCleanup(diagnostic, cleanup: cleanup)
+                    )
+                }
+            } else {
+                logger.error("rag_index_file_degraded op=indexImportedFiles source_hash=\(Self.sourceLogID(url.lastPathComponent), privacy: .public) status=\(staged.mode.rawValue, privacy: .public) diagnostic=\(staged.diagnostic ?? "none", privacy: .public)")
+                if isReplacementAbortDiagnostic(staged.diagnostic) {
+                    let cleanup = discardReplacementStaging(
+                        context: context,
+                        operation: "indexImportedFiles.discard",
+                        stagingID: stagingID,
+                        sourceTypes: replacementSourceTypes,
+                        stagedCount: stagedCount,
+                        authorization: writeAuthorization,
+                        save: save
+                    )
+                    return IndexResult(
+                        indexedCount: 0,
+                        mode: staged.mode,
+                        diagnostic: diagnosticAppendingCleanup(staged.diagnostic ?? "replacement_aborted", cleanup: cleanup)
+                    )
+                }
+                sourceDiagnostics.append(ReplacementSourceDiagnostic(
+                    sourceHash: sourceLogID(url.lastPathComponent),
+                    mode: staged.mode,
+                    diagnostic: staged.diagnostic ?? "source_index_failed"
+                ))
             }
             progress?(Double(idx + 1) / Double(max(1, files.count)))
         }
-        if degraded > 0 {
-            let diagnostic = diagnostics.isEmpty ? "file_index_failed" : diagnostics.joined(separator: ";")
-            return IndexResult(indexedCount: total, mode: total > 0 ? .partial : .failed, diagnostic: diagnostic)
+
+        if !sourceDiagnostics.isEmpty {
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexImportedFiles.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            let distinctDiagnostics = Array(Set(sourceDiagnostics.map(\.diagnostic)))
+                .sorted()
+                .prefix(4)
+                .joined(separator: ",")
+            let skippedCount = sourceDiagnostics.filter { $0.mode == .skipped }.count
+            let failedCount = sourceDiagnostics.filter { $0.mode == .failed }.count
+            let sourceDetails = sourceDiagnostics.prefix(4).map {
+                "\($0.sourceHash)|\($0.mode.rawValue)|\($0.diagnostic)"
+            }.joined(separator: ",")
+            let diagnostic = "source_failures=\(sourceDiagnostics.count):\(distinctDiagnostics);source_modes=skipped:\(skippedCount),failed:\(failedCount);sources=\(sourceDetails)"
+            return IndexResult(
+                indexedCount: 0,
+                mode: .failed,
+                diagnostic: diagnosticAppendingCleanup(diagnostic, cleanup: cleanup)
+            )
         }
-        return IndexResult(indexedCount: total, mode: .indexed, diagnostic: nil)
+
+        let commit = commitStagedCorpusReplacement(
+            context: context,
+            replacing: replacementSourceTypes,
+            operation: "indexImportedFiles.replace",
+            maintenanceReason: "rag.indexImportedFiles",
+            stagingID: stagingID,
+            stagedCount: stagedCount,
+            metadata: activeEmbeddingMetadata,
+            authorization: writeAuthorization,
+            save: save
+        )
+        switch commit {
+        case .committed(let result):
+            if result.indexState == .unavailable {
+                return IndexResult(indexedCount: result.persistedCount, mode: .partial, diagnostic: "vector_index_reload_failed")
+            }
+            guard !files.isEmpty else {
+                return IndexResult(indexedCount: 0, mode: .cleared, diagnostic: imports.diagnostic ?? "no_imported_files")
+            }
+            return IndexResult(indexedCount: result.persistedCount, mode: .indexed, diagnostic: nil)
+        case .cancelled:
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexImportedFiles.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cancelled", cleanup: cleanup))
+        case .cpuWatchdogDegraded:
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexImportedFiles.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cpu_watchdog_degraded", cleanup: cleanup))
+        case .maintenanceBudgetDenied:
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexImportedFiles.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("maintenance_budget_denied", cleanup: cleanup))
+        case .diskWriteBudgetDenied:
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexImportedFiles.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cleanup_deferred:disk_write_budget_denied", cleanup: cleanup))
+        case .failed(let diagnostic):
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexImportedFiles.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnosticAppendingCleanup(diagnostic, cleanup: cleanup))
+        }
+    }
+
+    private static func stageFileVectors(
+        url: URL,
+        pending: inout [PendingVector],
+        activeEmbeddingMetadata: inout RAGEmbeddingIndexMetadata?,
+        embed: (String) async throws -> EmbeddingRuntimeResult,
+        flush: ((inout [PendingVector]) -> CorpusReplacementStageResult)? = nil
+    ) async -> IndexResult {
+        let name = url.lastPathComponent
+        let extracted = recordingRAGSynchronousWork {
+            extractFileTextWithDiagnostics(url: url)
+        }
+        guard extracted.mode != .failed, let text = extracted.text, let type = extracted.sourceType else {
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: extracted.diagnostic ?? "file_extraction_failed")
+        }
+
+        let pieces = recordingRAGSynchronousWork {
+            chunkText(text)
+        }
+        guard !pieces.isEmpty else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_text")
+        }
+        var indexedCount = 0
+        for (index, piece) in pieces.enumerated() {
+            if Task.isCancelled {
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cancelled")
+            }
+            guard !shouldDegradeRAGWork() else {
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cpu_watchdog_degraded")
+            }
+            guard ResourceBudgetGate.allowsMaintenance(reason: "rag.indexImportedFiles") else {
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "maintenance_budget_denied")
+            }
+
+            let embeddingResult: EmbeddingRuntimeResult
+            do {
+                let embeddingText = SemanticEmbeddingText.document(
+                    content: piece,
+                    sourceName: name,
+                    sourceType: type.rawValue,
+                    chunkIndex: index
+                )
+                embeddingResult = try await embed(embeddingText)
+            } catch {
+                let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+                logger.error("rag_embedding_failed op=indexImportedFiles.stage source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
+            }
+            guard !Task.isCancelled else {
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cancelled")
+            }
+            let embedding = embeddingResult.vector
+            guard !embedding.isEmpty else {
+                logger.error("rag_embedding_empty op=indexImportedFiles.stage source_hash=\(Self.sourceLogID(name), privacy: .public)")
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_empty")
+            }
+            let metadata = embeddingMetadata(for: embeddingResult)
+            if let activeEmbeddingMetadata, activeEmbeddingMetadata != metadata {
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "embedding_identity_changed_during_index")
+            }
+            if activeEmbeddingMetadata == nil {
+                activeEmbeddingMetadata = metadata
+            }
+            let chunk = RAGChunk(
+                content: piece,
+                sourceType: type,
+                sourceName: name,
+                sourceRef: url.path,
+                chunkIndex: index,
+                embedding: embedding,
+                embeddingFormatVersion: metadata.formatVersion,
+                embeddingModelIdentifier: metadata.modelIdentifier,
+                embeddingDimension: metadata.dimension
+            )
+            pending.append(PendingVector(chunk: chunk, bucket: type.rawValue, vector: embedding, metadata: metadata))
+            indexedCount += 1
+            if pending.count >= replacementVectorBatchSize, let flush {
+                switch flush(&pending) {
+                case .staged:
+                    break
+                case .diskWriteBudgetDenied:
+                    return IndexResult(
+                        indexedCount: 0,
+                        mode: .skipped,
+                        diagnostic: "cleanup_deferred:disk_write_budget_denied"
+                    )
+                case .failed(let diagnostic):
+                    return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
+                }
+            }
+        }
+        return IndexResult(indexedCount: indexedCount, mode: .indexed, diagnostic: nil)
     }
 
     static func indexFile(url: URL, context: ModelContext) async -> Int {
@@ -697,6 +1566,11 @@ enum RAGStore {
         guard !pieces.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_text")
         }
+        let mutationSourceTypes: Set<RAGSourceType> = [type]
+        guard beginCorpusReplacement(sourceTypes: mutationSourceTypes) else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "replacement_already_in_progress")
+        }
+        defer { endCorpusReplacement(sourceTypes: mutationSourceTypes) }
         var count = 0
         var persistedCount = 0
         var pendingVectors: [PendingVector] = []
@@ -704,7 +1578,7 @@ enum RAGStore {
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
         defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for (i, piece) in pieces.enumerated() {
-            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexFile") {
+            if Task.isCancelled || shouldDegradeRAGWork() || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexFile") {
                 break
             }
             let embeddingResult: EmbeddingRuntimeResult
@@ -876,10 +1750,21 @@ enum RAGStore {
         let assets: [PHAsset]
     }
 
+    struct PhotoIndexSummary {
+        let month: String
+        let content: String
+    }
+
     static func indexPhotosWithDiagnostics(
         monthsBack: Int = 6,
         context: ModelContext,
-        photoLibrarySnapshot: PhotoLibrarySnapshot? = nil
+        photoLibrarySnapshot: PhotoLibrarySnapshot? = nil,
+        photoIndexSummaries: [PhotoIndexSummary]? = nil,
+        embed: (String) async throws -> EmbeddingRuntimeResult = { text in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: text)
+        },
+        save: ((ModelContext, String, String) throws -> Void)? = nil,
+        writeBudget: DiskWriteBudget = .shared
     ) async -> IndexResult {
         let snapshot: PhotoLibrarySnapshot
         if let photoLibrarySnapshot {
@@ -907,58 +1792,145 @@ enum RAGStore {
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "photos_permission_denied:\(photoAuthorizationDiagnostic(status))")
         }
         let assets = snapshot.assets
-        do {
-            try wipe(.photo, context: context)
-        } catch PersistenceError.diskWriteBudgetDenied {
-            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cleanup_deferred:disk_write_budget_denied")
-        } catch {
-            let diagnostic = "cleanup_persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-            logger.error("persist_failed op=indexPhotos.cleanup scope=RAGChunk diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
+        let replacementSourceTypes: Set<RAGSourceType> = [.photo]
+        guard beginCorpusReplacement(sourceTypes: replacementSourceTypes) else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "replacement_already_in_progress")
         }
-        guard !assets.isEmpty else {
-            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_photo_library")
+        defer { endCorpusReplacement(sourceTypes: replacementSourceTypes) }
+        let hasPhotoInput = photoIndexSummaries.map { !$0.isEmpty } ?? !assets.isEmpty
+        if !hasPhotoInput {
+            do {
+                if let result = try clearedEmptyReplacementResult(
+                    context: context,
+                    operation: "indexPhotos.cleanupEmptyOrphans",
+                    maintenanceReason: "rag.indexPhotos",
+                    sourceTypes: replacementSourceTypes,
+                    diagnostic: "empty_photo_library",
+                    writeBudget: writeBudget,
+                    save: save
+                ) {
+                    return result
+                }
+            } catch {
+                return IndexResult(
+                    indexedCount: 0,
+                    mode: .failed,
+                    diagnostic: "replacement_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+                )
+            }
+        }
+
+        guard !shouldDegradeRAGWork() else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cpu_watchdog_degraded")
+        }
+        guard ResourceBudgetGate.allowsMaintenance(reason: "rag.indexPhotos") else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "maintenance_budget_denied")
+        }
+
+        let stagingID = UUID()
+        let writeAuthorization = CorpusReplacementWriteAuthorization(budget: writeBudget)
+        defer { writeAuthorization.releaseCleanupReservations() }
+        switch cleanupOrphanedReplacementStaging(
+            context: context,
+            operation: "indexPhotos.cleanupOrphans",
+            sourceTypes: replacementSourceTypes,
+            writeBudget: writeBudget,
+            save: save
+        ) {
+        case .staged:
+            break
+        case .diskWriteBudgetDenied:
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cleanup_deferred:disk_write_budget_denied")
+        case .failed(let diagnostic):
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
         }
 
         var selfieIDs: Set<String> = []
-        let selfieAlbums = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .smartAlbumSelfPortraits, options: nil)
-        selfieAlbums.enumerateObjects { coll, _, _ in
-            let a = PHAsset.fetchAssets(in: coll, options: nil)
-            a.enumerateObjects { asset, _, _ in selfieIDs.insert(asset.localIdentifier) }
+        if !assets.isEmpty {
+            let selfieAlbums = PHAssetCollection.fetchAssetCollections(with: .smartAlbum, subtype: .smartAlbumSelfPortraits, options: nil)
+            selfieAlbums.enumerateObjects { coll, _, _ in
+                let a = PHAsset.fetchAssets(in: coll, options: nil)
+                a.enumerateObjects { asset, _, _ in selfieIDs.insert(asset.localIdentifier) }
+            }
         }
 
-        var buckets: [String: [PHAsset]] = [:]
-        let df = DateFormatter(); df.dateFormat = "yyyy-MM"
-        for a in assets {
-            let key = df.string(from: a.creationDate ?? Date())
-            buckets[key, default: []].append(a)
+        let buckets: [String: [PHAsset]] = recordingRAGSynchronousWork {
+            var grouped: [String: [PHAsset]] = [:]
+            let df = DateFormatter(); df.dateFormat = "yyyy-MM"
+            for asset in assets {
+                let key = df.string(from: asset.creationDate ?? Date())
+                grouped[key, default: []].append(asset)
+            }
+            return grouped
         }
 
-        var count = 0
-        var pendingVectors: [PendingVector] = []
+        let summaries: [PhotoIndexSummary] = photoIndexSummaries ?? buckets.map { month, items in
+            recordingRAGSynchronousWork {
+                let favorites = items.filter(\.isFavorite).count
+                let videos = items.filter { $0.mediaType == .video }.count
+                let screenshots = items.filter { $0.mediaSubtypes.contains(.photoScreenshot) }.count
+                let selfies = items.filter { selfieIDs.contains($0.localIdentifier) }.count
+                let livePhotos = items.filter { $0.mediaSubtypes.contains(.photoLive) }.count
+                let portraits = items.filter { $0.mediaSubtypes.contains(.photoDepthEffect) }.count
+                let geo = items.filter { $0.location != nil }.count
+
+                let df2 = DateFormatter(); df2.dateStyle = .medium
+                let first = items.last?.creationDate.map { df2.string(from: $0) } ?? "?"
+                let last = items.first?.creationDate.map { df2.string(from: $0) } ?? "?"
+
+                return PhotoIndexSummary(
+                    month: month,
+                    content: """
+                    Photos (\(month)): \(items.count) items between \(first) and \(last).
+                    \(favorites) favorites, \(videos) videos, \(screenshots) screenshots, \(selfies) selfies, \(livePhotos) live photos, \(portraits) portraits, \(geo) with location.
+                    """
+                )
+            }
+        }
+
         var activeEmbeddingMetadata: RAGEmbeddingIndexMetadata?
+        var stagedCount = 0
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
         defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
-        let totalBuckets = buckets.count
-        for (month, items) in buckets {
-            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexPhotos") { break }
-            let favorites = items.filter(\.isFavorite).count
-            let videos = items.filter { $0.mediaType == .video }.count
-            let screenshots = items.filter { $0.mediaSubtypes.contains(.photoScreenshot) }.count
-            let selfies = items.filter { selfieIDs.contains($0.localIdentifier) }.count
-            let livePhotos = items.filter { $0.mediaSubtypes.contains(.photoLive) }.count
-            let portraits = items.filter { $0.mediaSubtypes.contains(.photoDepthEffect) }.count
-            var geo = 0
-            for a in items where a.location != nil { geo += 1 }
-
-            let df2 = DateFormatter(); df2.dateStyle = .medium
-            let first = items.last?.creationDate.map { df2.string(from: $0) } ?? "?"
-            let last = items.first?.creationDate.map { df2.string(from: $0) } ?? "?"
-
-            let summary = """
-            Photos (\(month)): \(items.count) items between \(first) and \(last).
-            \(favorites) favorites, \(videos) videos, \(screenshots) screenshots, \(selfies) selfies, \(livePhotos) live photos, \(portraits) portraits, \(geo) with location.
-            """
+        for photoSummary in summaries {
+            let month = photoSummary.month
+            if Task.isCancelled {
+                let cleanup = discardReplacementStaging(
+                    context: context,
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
+                )
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cancelled", cleanup: cleanup))
+            }
+            guard !shouldDegradeRAGWork() else {
+                let cleanup = discardReplacementStaging(
+                    context: context,
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
+                )
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cpu_watchdog_degraded", cleanup: cleanup))
+            }
+            guard ResourceBudgetGate.allowsMaintenance(reason: "rag.indexPhotos") else {
+                let cleanup = discardReplacementStaging(
+                    context: context,
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
+                )
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("maintenance_budget_denied", cleanup: cleanup))
+            }
+            let summary = photoSummary.content
 
             let embeddingResult: EmbeddingRuntimeResult
             do {
@@ -968,36 +1940,66 @@ enum RAGStore {
                     sourceType: RAGSourceType.photo.rawValue,
                     chunkIndex: 0
                 )
-                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText)
+                embeddingResult = try await embed(embeddingText)
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexPhotos source=\(month, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-                return persistPendingVectorsForEarlyExit(
+                let cleanup = discardReplacementStaging(
                     context: context,
-                    operation: "indexPhotos.embeddingFailure",
-                    diagnostic: diagnostic,
-                    pending: &pendingVectors
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
                 )
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnosticAppendingCleanup(diagnostic, cleanup: cleanup))
+            }
+            guard !Task.isCancelled else {
+                let cleanup = discardReplacementStaging(
+                    context: context,
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
+                )
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cancelled", cleanup: cleanup))
             }
             let emb = embeddingResult.vector
             guard !emb.isEmpty else {
                 logger.error("rag_embedding_empty op=indexPhotos source=\(month, privacy: .public)")
-                return persistPendingVectorsForEarlyExit(
+                let cleanup = discardReplacementStaging(
                     context: context,
-                    operation: "indexPhotos.emptyEmbedding",
-                    diagnostic: "embedding_empty",
-                    pending: &pendingVectors
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
                 )
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnosticAppendingCleanup("embedding_empty", cleanup: cleanup))
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
-            if let earlyExit = prepareEmbeddingMetadata(
-                embeddingMetadata,
-                active: &activeEmbeddingMetadata,
-                pending: &pendingVectors,
-                context: context,
-                identityChangeOperation: "indexPhotos.embeddingIdentityChanged"
-            ) {
-                return earlyExit
+            if let activeEmbeddingMetadata, activeEmbeddingMetadata != embeddingMetadata {
+                let cleanup = discardReplacementStaging(
+                    context: context,
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
+                )
+                return IndexResult(
+                    indexedCount: 0,
+                    mode: .failed,
+                    diagnostic: diagnosticAppendingCleanup("embedding_identity_changed_during_index", cleanup: cleanup)
+                )
+            }
+            if activeEmbeddingMetadata == nil {
+                activeEmbeddingMetadata = embeddingMetadata
             }
             let chunk = RAGChunk(
                 content: summary,
@@ -1010,20 +2012,127 @@ enum RAGStore {
                 embeddingModelIdentifier: embeddingMetadata.modelIdentifier,
                 embeddingDimension: embeddingMetadata.dimension
             )
-            pendingVectors.append(PendingVector(chunk: chunk, bucket: RAGSourceType.photo.rawValue, vector: emb, metadata: embeddingMetadata))
-            count += 1
+            var monthPending = [PendingVector(
+                chunk: chunk,
+                bucket: RAGSourceType.photo.rawValue,
+                vector: emb,
+                metadata: embeddingMetadata
+            )]
+            switch persistReplacementStage(
+                context: context,
+                operation: "indexPhotos.stage",
+                stagingID: stagingID,
+                pending: &monthPending,
+                authorization: writeAuthorization,
+                save: save
+            ) {
+            case .staged(let count):
+                stagedCount += count
+            case .diskWriteBudgetDenied:
+                let cleanup = discardReplacementStaging(
+                    context: context,
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
+                )
+                return IndexResult(
+                    indexedCount: 0,
+                    mode: .skipped,
+                    diagnostic: diagnosticAppendingCleanup("cleanup_deferred:disk_write_budget_denied", cleanup: cleanup)
+                )
+            case .failed(let diagnostic):
+                let cleanup = discardReplacementStaging(
+                    context: context,
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
+                )
+                return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnosticAppendingCleanup(diagnostic, cleanup: cleanup))
+            }
         }
-        guard let persistResult = persistAndAppendVectors(context: context, operation: "indexPhotos.complete", pending: &pendingVectors) else {
-            logger.error("rag_index_partial_failure op=indexPhotos persisted=0 attempted=\(count, privacy: .public)")
-            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "persist_failed")
+
+        let commit = commitStagedCorpusReplacement(
+            context: context,
+            replacing: replacementSourceTypes,
+            operation: "indexPhotos.replace",
+            maintenanceReason: "rag.indexPhotos",
+            stagingID: stagingID,
+            stagedCount: stagedCount,
+            metadata: activeEmbeddingMetadata,
+            authorization: writeAuthorization,
+            save: save
+        )
+        switch commit {
+        case .committed(let result):
+            if result.indexState == .unavailable {
+                return IndexResult(indexedCount: result.persistedCount, mode: .partial, diagnostic: "vector_index_reload_failed")
+            }
+            guard hasPhotoInput else {
+                return IndexResult(indexedCount: 0, mode: .cleared, diagnostic: "empty_photo_library")
+            }
+            return IndexResult(indexedCount: result.persistedCount, mode: .indexed, diagnostic: nil)
+        case .cancelled:
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexPhotos.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cancelled", cleanup: cleanup))
+        case .cpuWatchdogDegraded:
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexPhotos.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cpu_watchdog_degraded", cleanup: cleanup))
+        case .maintenanceBudgetDenied:
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexPhotos.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("maintenance_budget_denied", cleanup: cleanup))
+        case .diskWriteBudgetDenied:
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexPhotos.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cleanup_deferred:disk_write_budget_denied", cleanup: cleanup))
+        case .failed(let diagnostic):
+            let cleanup = discardReplacementStaging(
+                context: context,
+                operation: "indexPhotos.discard",
+                stagingID: stagingID,
+                sourceTypes: replacementSourceTypes,
+                stagedCount: stagedCount,
+                authorization: writeAuthorization,
+                save: save
+            )
+            return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnosticAppendingCleanup(diagnostic, cleanup: cleanup))
         }
-        if persistResult.indexState == .unavailable {
-            return IndexResult(indexedCount: persistResult.persistedCount, mode: .partial, diagnostic: "vector_index_reload_failed")
-        }
-        if persistResult.persistedCount < totalBuckets {
-            return IndexResult(indexedCount: persistResult.persistedCount, mode: persistResult.persistedCount > 0 ? .partial : .failed, diagnostic: "maintenance_budget_or_cancellation")
-        }
-        return IndexResult(indexedCount: persistResult.persistedCount, mode: .indexed, diagnostic: nil)
     }
 
     // MARK: - Notes (plain text import via share)
@@ -1037,13 +2146,18 @@ enum RAGStore {
         guard !pieces.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_text")
         }
+        let mutationSourceTypes: Set<RAGSourceType> = [.note]
+        guard beginCorpusReplacement(sourceTypes: mutationSourceTypes) else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "replacement_already_in_progress")
+        }
+        defer { endCorpusReplacement(sourceTypes: mutationSourceTypes) }
         var count = 0
         var pendingVectors: [PendingVector] = []
         var activeEmbeddingMetadata: RAGEmbeddingIndexMetadata?
         let cpuToken = CPUWatchdogGuard.shared.begin(category: .rag)
         defer { CPUWatchdogGuard.shared.end(token: cpuToken) }
         for (i, piece) in pieces.enumerated() {
-            if Task.isCancelled || CPUWatchdogGuard.shared.shouldDegrade(category: .rag) || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexNote") { break }
+            if Task.isCancelled || shouldDegradeRAGWork() || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexNote") { break }
             let embeddingResult: EmbeddingRuntimeResult
             do {
                 let embeddingText = SemanticEmbeddingText.document(

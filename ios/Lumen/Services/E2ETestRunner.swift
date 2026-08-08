@@ -948,6 +948,8 @@ nonisolated enum E2ETestRunner {
         var lastPerformanceSampleAt: Date?
         var hasAcceptedModelEvidenceForScenario = !scenario.requiresAgentRun
         var deterministicChatFallbackRemediationApplied = false
+        var finalIntentValidationOutcome: FinalIntentValidationOutcome?
+        var acceptedRuntimeEvidenceKind: String?
         let totalMemoryMB = Double(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024)
 
         func event(_ phase: String, _ message: String) async {
@@ -1195,6 +1197,7 @@ nonisolated enum E2ETestRunner {
                 )
                 hasAcceptedModelEvidenceForScenario = evidenceDiagnosis.evidence != nil
                 if let evidence = evidenceDiagnosis.evidence {
+                    acceptedRuntimeEvidenceKind = evidence.evidenceKind
                     let elapsed = evidence.generationElapsedMs.map(String.init) ?? "unknown"
                     let tokens = evidence.outputTokenCount.map(String.init) ?? "unknown"
                     let adapter = evidence.adapterSlot ?? "none"
@@ -1214,7 +1217,19 @@ nonisolated enum E2ETestRunner {
                 try Task.checkCancellation()
                 await Task.yield()
                 agentSteps = steps
-                rawFinalText = FinalIntentValidator.validate(rawFinalText, routing: routing, fallback: nil)
+                let validationOutcome = FinalIntentValidator.validateWithOutcome(
+                    rawFinalText,
+                    routing: routing,
+                    fallback: nil
+                )
+                finalIntentValidationOutcome = validationOutcome
+                rawFinalText = validationOutcome.text
+                if !validationOutcome.acceptedCandidate {
+                    await event(
+                        "finalizer",
+                        "final intent candidate replaced; source=\(validationOutcome.replacementSource), reason=\(validationOutcome.rejectionReason ?? "unknown")"
+                    )
+                }
                 if let synthesized = deterministicWebSynthesisFallback(
                     scenario: scenario,
                     rawFinalText: rawFinalText,
@@ -1445,6 +1460,16 @@ nonisolated enum E2ETestRunner {
             metadata["failureKind"] = "genericFallbackFinal"
             metadata["trainingSignal"] = "true"
             metadata["remediationApplied"] = "deterministicUserVisibleFallback"
+        }
+        if let finalIntentValidationOutcome {
+            for (key, value) in deterministicFinalIntentValidationMetadata(
+                scenario: scenario,
+                outcome: finalIntentValidationOutcome,
+                evidenceKind: acceptedRuntimeEvidenceKind,
+                hasFailures: !failures.isEmpty
+            ) {
+                metadata[key] = value
+            }
         }
         return E2ETestResult(id: UUID(), scenarioID: scenario.id, kind: scenario.kind.rawValue, title: scenario.title, prompt: scenario.prompt, expectedIntent: scenario.expectedIntent.rawValue, actualIntent: routing.intent.rawValue, e2eRunID: e2eRunID, agentRunID: agentRunID, conversationID: conversationID, turnID: turnID, requiresAgentRun: scenario.requiresAgentRun, evidenceMode: scenario.evidenceMode.rawValue, passed: failures.isEmpty, failures: failures, finalText: finalText, missingHints: missingHints, rewriteAttempted: rewriteAttempted, rewriteSuccess: rewriteSuccess, events: events, startedAt: started, finishedAt: endedAt, rawFinalPrefix: rawPrefix, sanitizedFinalPrefix: sanitizedPrefix, rawFinalHadUnsafeLeakage: hygieneState.hadUnsafeLeakage, sanitizedFinalRemovedArtifacts: mergedAuditArtifacts.map(\.rawValue), outputHygieneFailures: outputHygieneFailures, performanceMatrix: matrix, metadata: metadata)
     }
@@ -2780,6 +2805,20 @@ nonisolated enum E2ETestRunner {
         )
     }
 
+    nonisolated static func deterministicFinalIntentValidationMetadataForTests(
+        scenario: E2ETestScenario,
+        outcome: FinalIntentValidationOutcome,
+        evidenceKind: String,
+        hasFailures: Bool = true
+    ) -> [String: String] {
+        deterministicFinalIntentValidationMetadata(
+            scenario: scenario,
+            outcome: outcome,
+            evidenceKind: evidenceKind,
+            hasFailures: hasFailures
+        )
+    }
+
     nonisolated static func nonActionableQuarantineFailureForTests(metadata: [String: String]) -> String? {
         nonActionableQuarantineFailure(metadata: metadata)
     }
@@ -3369,6 +3408,26 @@ nonisolated enum E2ETestRunner {
         return metadata
     }
 
+    nonisolated private static func deterministicFinalIntentValidationMetadata(
+        scenario: E2ETestScenario,
+        outcome: FinalIntentValidationOutcome,
+        evidenceKind: String?,
+        hasFailures: Bool
+    ) -> [String: String] {
+        guard scenario.evidenceMode == .policyFirstAllowed,
+              evidenceKind == "policy-first-deterministic",
+              hasFailures,
+              !outcome.acceptedCandidate else {
+            return [:]
+        }
+        return [
+            "failureKind": "deterministicFinalIntentValidation",
+            "actionable": "true",
+            "trainingSignal": "false",
+            "runtimeEvidence": "deterministic-finalizer"
+        ]
+    }
+
     nonisolated private static func nonActionableQuarantineFailure(metadata: [String: String]) -> String? {
         guard metadata["actionable"]?.lowercased() == "false" else { return nil }
         switch metadata["failureKind"] {
@@ -3553,6 +3612,18 @@ nonisolated enum E2ETestRunner {
             return EvalRewriteOutcome(finalText: originalFinal, missingHints: [], rewriteAttempted: false, rewriteSuccess: false)
         }
 
+        // RAG hints are factual claims about retrieved user data. A rewrite cannot
+        // manufacture missing grounding (for example, module names or citations).
+        // Preserve the original answer and let the evidence assertion fail closed.
+        if scenario.expectedIntent == .rag || routing.intent == .rag {
+            return EvalRewriteOutcome(
+                finalText: originalFinal,
+                missingHints: firstMissing,
+                rewriteAttempted: false,
+                rewriteSuccess: false
+            )
+        }
+
         let rewritten = await rewriteFinalTextForEvalHints(
             originalFinal: originalFinal,
             prompt: scenario.prompt,
@@ -3634,34 +3705,12 @@ nonisolated enum E2ETestRunner {
         }
         let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
         let candidate = trimmed.isEmpty ? originalFinal : trimmed
-        let grounded = enforceEvalGrounding(candidate, intent: intent)
         return enforceEvalHintConstraints(
-            grounded,
+            candidate,
             intent: intent,
             requiredHints: requiredHints,
             forbiddenHints: forbiddenHints
         )
-    }
-
-    nonisolated private static func enforceEvalGrounding(_ text: String, intent: UserIntent) -> String {
-        guard intent == .rag else { return text }
-        let lower = text.lowercased()
-        let ragEvidence = ragRetrievalEvidenceState(finalText: text, agentSteps: [], events: [])
-        if ragEvidence == .empty || ragEvidence == .contradictory || liveAgentInvalidFinalReason(lowerRaw: lower, lowerFinal: lower) != nil {
-            return text
-        }
-        var out = text
-        if !(lower.contains("module") || lower.contains("modules")) {
-            out += "\nKey modules: core module details were retrieved from local file snippets [1]."
-        }
-        let loweredOut = out.lowercased()
-        if !loweredOut.contains("[1]") {
-            out += " [1]"
-        }
-        if !(loweredOut.contains("snippet") || loweredOut.contains("source") || loweredOut.contains("file") || loweredOut.contains("retrieved")) {
-            out += " Source: retrieved file snippet [1]."
-        }
-        return out
     }
 
     nonisolated private static func enforceEvalHintConstraints(
@@ -3704,9 +3753,6 @@ nonisolated enum E2ETestRunner {
         }
         if lower.contains("precision/recall") {
             return "In plain English: precision means how many returned results are relevant, while recall means how many relevant results were found overall."
-        }
-        if lower == "module(s)" {
-            return "Key modules: core module details were retrieved from local file snippets [1]."
         }
         if intent == .memory && lower == "remember" {
             return "I remember your preference."

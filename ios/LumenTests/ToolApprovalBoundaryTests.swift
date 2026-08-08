@@ -7,7 +7,7 @@ struct ToolApprovalBoundaryTests {
         "outlook.message.mark_read","outlook.message.mark_unread","outlook.message.move","outlook.message.archive",
         "outlook.message.delete","outlook.message.reply","outlook.message.reply_all","outlook.message.forward","phone.call",
         "camera.capture","trigger.create","trigger.cancel","alarm.request_authorization","alarm.schedule","alarm.countdown",
-        "alarm.pause","alarm.resume","alarm.stop","alarm.snooze","alarm.cancel"
+        "alarm.pause","alarm.resume","alarm.stop","alarm.snooze","alarm.cancel","rag.index_files","rag.index_photos"
     ]
 
     @Test func requiresApprovalMatrixMatchesRegistry() {
@@ -60,6 +60,19 @@ struct ToolApprovalBoundaryTests {
         #expect(triggerArgs["intervalSeconds"]?.type == "number")
         #expect(triggerArgs["schedule"]?.type == "enum")
         #expect(triggerArgs["schedule"]?.allowedValues == ["absolute", "interval", "relative"])
+    }
+
+    @MainActor @Test func ragReindexToolsAreDestructiveAndApprovalGated() throws {
+        let secureTools = Dictionary(uniqueKeysWithValues: KnowledgeLocalTool.all.map { ($0.definition.id, $0.definition) })
+
+        for id in ["rag.index_files", "rag.index_photos"] {
+            let catalog = try #require(ToolRegistry.find(id: id))
+            let secure = try #require(secureTools[id])
+            #expect(catalog.requiresApproval)
+            #expect(secure.requiresUserApproval)
+            #expect(secure.category == .destructiveAction)
+            #expect(!secure.supportsBackgroundExecution)
+        }
     }
 
     @Test func finalizerRejectsApprovalToolObservationWithoutTrustedApproval() throws {
