@@ -70,6 +70,11 @@ nonisolated enum FinalIntentValidator {
             return true
         }
 
+        if lower.hasPrefix("approval required for")
+            || lower.hasPrefix("this tool requires explicit user approval before it can run:") {
+            return isValidApprovalBoundaryFinal(text, lower: lower, routing: routing)
+        }
+
         switch routing.intent {
         case .weather:
             return containsAny(lower, ["weather", "temperature", "humidity", "wind", "feels like", "°c", "rain", "snow", "cloud", "gps", "location access", "network", "timeout", "unreachable", "open-meteo", "service unavailable"])
@@ -105,8 +110,8 @@ nonisolated enum FinalIntentValidator {
         case .rag:
             let hasRagTopic = containsAny(lower, ["search", "index", "indexed", "files", "photos", "local"])
             let hasGrounding = containsAny(lower, ["[1]", "[2]", "snippet", "source", "retrieved", "file", "pdf", "note", "module", "modules"])
-            let hasIndexCompletion = containsAny(lower, ["index updated", "indexed", "reindexed"])
-            let explicitUnavailable = containsAny(lower, ["unavailable", "couldn’t", "couldn't", "no relevant", "no matching"]) 
+            let hasIndexCompletion = containsAny(lower, ["index updated", "index cleared", "indexed", "reindexed"])
+            let explicitUnavailable = containsAny(lower, ["unavailable", "couldn’t", "couldn't", "no relevant", "no matching"])
             return (hasRagTopic && hasGrounding) || hasIndexCompletion || explicitUnavailable
         case .trigger:
             return containsAny(lower, ["trigger", "scheduled", "agent", "background", "cancel", "unavailable", "couldn’t", "couldn't"])
@@ -218,6 +223,100 @@ nonisolated enum FinalIntentValidator {
         guard !looksLikeEmailLeak(lower, unless: routing.intent == .emailDraft || routing.intent == .outlook) else { return false }
         guard !looksLikeWebSearchLeak(lower, unless: routing.intent == .webSearch) else { return false }
         return true
+    }
+
+    private static func isValidApprovalBoundaryFinal(
+        _ text: String,
+        lower: String,
+        routing: IntentRoutingDecision
+    ) -> Bool {
+        guard passesLeakFilters(text: text, lower: lower, routing: routing) else { return false }
+        guard let reference = approvalBoundaryReference(in: lower) else { return false }
+        let canonicalToolID = ToolRouteGuard.canonicalToolID(reference.toolID)
+        let allowedToolIDs = Set(routing.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))
+        guard allowedToolIDs.contains(canonicalToolID) else { return false }
+        guard ToolRouteGuard.requiresUserApproval(canonicalToolID) else { return false }
+        guard !hasContradictoryExecutionEvidence(reference.postToolText, canonicalToolID: canonicalToolID) else {
+            return false
+        }
+        if reference.usesTrustedGenericHeader,
+           hasOnlyBoundaryPunctuation(reference.postToolText) {
+            return true
+        }
+        return hasExplicitNonExecutionEvidence(reference.postToolText, canonicalToolID: canonicalToolID)
+    }
+
+    private static func approvalBoundaryReference(
+        in lower: String
+    ) -> (toolID: String, postToolText: String, usesTrustedGenericHeader: Bool)? {
+        let pattern = #"^(approval required for\s+|this tool requires explicit user approval before it can run:\s*)([a-z0-9][a-z0-9._-]*)"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let fullRange = NSRange(lower.startIndex..<lower.endIndex, in: lower)
+        guard let match = expression.firstMatch(in: lower, range: fullRange),
+              let prefixRange = Range(match.range(at: 1), in: lower),
+              let toolRange = Range(match.range(at: 2), in: lower) else {
+            return nil
+        }
+        let prefix = String(lower[prefixRange])
+        return (
+            toolID: String(lower[toolRange]).trimmingCharacters(in: CharacterSet(charactersIn: ".")),
+            postToolText: String(lower[toolRange.upperBound...]),
+            usesTrustedGenericHeader: prefix.hasPrefix("this tool requires explicit user approval before it can run:")
+        )
+    }
+
+    private static func hasOnlyBoundaryPunctuation(_ postToolText: String) -> Bool {
+        let allowed = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".,:;!?") )
+        return postToolText.unicodeScalars.allSatisfy(allowed.contains)
+    }
+
+    private static func hasContradictoryExecutionEvidence(_ postToolText: String, canonicalToolID: String) -> Bool {
+        let commonSuccessMarkers = [
+            "completed successfully",
+            "executed successfully",
+            "ran successfully",
+            "was executed successfully",
+            "has been executed",
+            "successfully created",
+            "successfully sent",
+            "successfully scheduled"
+        ]
+        if containsAny(postToolText, commonSuccessMarkers) {
+            return true
+        }
+        if canonicalToolID == "rag.index_files" || canonicalToolID == "rag.index_photos" {
+            return containsAny(postToolText, [
+                "index updated",
+                "updated successfully",
+                "indexing completed",
+                "indexing succeeded",
+                "indexed successfully",
+                "reindex completed",
+                "reindexed successfully"
+            ])
+        }
+        return false
+    }
+
+    private static func hasExplicitNonExecutionEvidence(_ postToolText: String, canonicalToolID: String) -> Bool {
+        if canonicalToolID == "rag.index_files" || canonicalToolID == "rag.index_photos" {
+            return containsAny(postToolText, [
+                "i did not run it",
+                "i didn't run it",
+                "i didn’t run it",
+                "it was not run",
+                "it has not been run"
+            ])
+        }
+        return containsAny(postToolText, [
+            "i did not ",
+            "i didn't ",
+            "i didn’t ",
+            "it was not run",
+            "it has not been run",
+            "after you approve",
+            "after approval"
+        ])
     }
 
     private static func replacementReason(for text: String, lower: String, routing: IntentRoutingDecision) -> String {

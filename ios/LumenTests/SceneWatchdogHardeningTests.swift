@@ -151,6 +151,56 @@ final class SceneWatchdogHardeningTests: XCTestCase {
         XCTAssertFalse(budget.canWrite(bytes: 200, category: .diagnostics))
     }
 
+    func testDiskWriteBudgetReservationHoldsAndReleasesHeadroom() throws {
+        let budget = DiskWriteBudget(oneMinuteLimit: 1_000, fifteenMinuteLimit: 2_000, dayLimit: 3_000)
+        let reservation = try XCTUnwrap(budget.reserveWrite(bytes: 800, category: .rag))
+
+        XCTAssertFalse(budget.canWrite(bytes: 300, category: .rag))
+        XCTAssertTrue(budget.releaseReservedWrite(reservation))
+        XCTAssertTrue(budget.canWrite(bytes: 300, category: .rag))
+        XCTAssertFalse(budget.releaseReservedWrite(reservation))
+    }
+
+    func testDiskWriteBudgetReservationCommitRecordsWriteOnce() throws {
+        let budget = DiskWriteBudget(oneMinuteLimit: 1_000, fifteenMinuteLimit: 2_000, dayLimit: 3_000)
+        let reservation = try XCTUnwrap(budget.reserveWrite(bytes: 700, category: .rag))
+
+        XCTAssertTrue(budget.commitReservedWrite(reservation))
+        XCTAssertFalse(budget.commitReservedWrite(reservation))
+        XCTAssertEqual(budget.snapshot().bytes1Minute, 700)
+        XCTAssertEqual(budget.snapshot().bytesByCategory24Hours[.rag], 700)
+        XCTAssertFalse(budget.canWrite(bytes: 301, category: .rag))
+    }
+
+    func testDiskWriteBudgetGenerationBlocksNewReservationButAllowsHeldCommit() throws {
+        let budget = DiskWriteBudget(oneMinuteLimit: 1_000, fifteenMinuteLimit: 2_000, dayLimit: 3_000)
+        let reservation = try XCTUnwrap(budget.reserveWrite(bytes: 600, category: .rag))
+        budget.setGenerationActive(true)
+        defer { budget.setGenerationActive(false) }
+
+        XCTAssertNil(budget.reserveWrite(bytes: 100, category: .rag))
+        XCTAssertTrue(budget.commitReservedWrite(reservation))
+        XCTAssertEqual(budget.snapshot().bytes1Minute, 600)
+    }
+
+    func testDiskWriteBudgetFailsClosedAndSaturatesAtIntegerLimits() throws {
+        let budget = DiskWriteBudget(
+            oneMinuteLimit: .max,
+            fifteenMinuteLimit: .max,
+            dayLimit: .max
+        )
+        let reservation = try XCTUnwrap(budget.reserveWrite(bytes: Int.max - 1, category: .rag))
+
+        XCTAssertNil(budget.reserveWrite(bytes: 2, category: .rag))
+        XCTAssertTrue(budget.releaseReservedWrite(reservation))
+
+        budget.recordWrite(bytes: Int.max, category: .rag)
+        XCTAssertTrue(budget.shouldDefer(bytes: 1, category: .rag))
+        budget.recordWrite(bytes: Int.max, category: .rag)
+        XCTAssertEqual(budget.snapshot().bytes1Minute, .max)
+        XCTAssertEqual(budget.snapshot().bytesByCategory24Hours[.rag], .max)
+    }
+
     func testDiagnosticsOpeningUsesCachedSnapshot() {
         let provider = DiagnosticsProvider()
         _ = provider.cachedSnapshot()

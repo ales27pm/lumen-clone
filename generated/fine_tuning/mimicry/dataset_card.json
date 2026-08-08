@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "955ff13f4123ef5512e7fee5951445e0b7725c1187ebfbb7042ec1adce31f6d8"
+      "reportSHA256": "ea292c91de6481b37795e60018e3255a942446c6e5659d58166826b19416e899"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "5ee5144c8597d0facd7d261d56471acd1234293ccfee8e5597cda8adc146adad",
-      "optimizedTrainingCorpusSHA256": "fd286f136ce131aaf31b3cbbd1b351e29c3ae3876d6339f96c1ae616475de354",
+      "baselineTrainingCorpusSHA256": "5fe88ed65697c3d024079dbe19559727671812679935def61e12aaf28be76511",
+      "optimizedTrainingCorpusSHA256": "f4a805bb657d89bb0f5ff7fe8ae7051e997cc497ba2c8f7fed7457451ea83a84",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 600,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "f1bb1588d27b8fd9356a08a4f9682cec0ff2c4ca7d282aa8e125858e78c689d8",
+    "experimentManifestSHA256": "e5afa7cc61b063aaf72d01ed808b9393a7f92462e9eb4fd1cf3165ecf2500472",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
+  "manifestCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 61,
@@ -306,7 +306,7 @@
         "public_verified_tool_argument_extraction": 12,
         "public_verified_tool_routing": 12
       },
-      "lumenContractSHA256": "08aa2dbe29f8d31fb783f66763222177058f027a1fdad17d3c0221a6e5dc5456",
+      "lumenContractSHA256": "a9e46692c2bd30ea02eee7d4ecde718d3cc47c7361958ee82a09be11967926c7",
       "partitionPolicy": {
         "allowedMLTrainingPartitions": [
           "train"
@@ -316,9 +316,9 @@
       },
       "qualityScoreSummaryByAgent": {
         "cortex": {
-          "maximum": 0.847137,
-          "mean": 0.832951,
-          "minimum": 0.766562
+          "maximum": 0.892138,
+          "mean": 0.875338,
+          "minimum": 0.767187
         },
         "executor": {
           "maximum": 0.831918,
@@ -347,7 +347,7 @@
         }
       },
       "recordCount": 3280,
-      "recordsSHA256": "8da5f97b74c716938560d203d5f8cc943b18df1c075c02458e67418fcf2fe2b7",
+      "recordsSHA256": "c5d86e9066346bab769f7e81b7be5bb05eed4667ebb04cf84c152770b39c4673",
       "schema": "lumen.public-adapter-corpus/1.1.0",
       "selectionPolicyVersion": "2026-07-12.3",
       "sourceManifestSHA256": "4e536f9201d9af13854d70cd45ba7d04b580fdb51898c2b3406a08cc471bb7aa"
@@ -426,7 +426,7 @@
     "val_dpo": 6,
     "val_sft": 9
   },
-  "sourceDirty": false,
+  "sourceDirty": true,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "mimicry_style",
@@ -438,9 +438,9 @@
     "public_adapter_corpus_coedit_train": 14
   },
   "sourceIntegrity": {
-    "baseCommit": "d45cb92075345a99cdc9b4b19466e5f39102e801",
-    "dirtyState": false,
-    "workingTreeDigest": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
+    "baseCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
+    "dirtyState": true,
+    "workingTreeDigest": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2"
   },
   "systemPrompt": "You are Mimicry, Lumen's style adaptation agent. Adapt tone within safety and privacy boundaries.",
   "taskTypeCounts": {
@@ -463,5 +463,5 @@
     "style_profile_detection",
     "ultra_specific_style_profile_detection"
   ],
-  "worktreeFingerprint": "4691f8362ac7da107f77abdd2992cc59e500082dd1784eb890edddd842e3b31f"
+  "worktreeFingerprint": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2"
 }

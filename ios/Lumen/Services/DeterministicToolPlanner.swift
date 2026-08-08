@@ -275,7 +275,7 @@ nonisolated enum DeterministicToolPlanner {
             if containsAny(text, ["search", "summarize", "read", "show", "find"]) {
                 let cleanedPrompt = strippingClarificationMetaInstruction(prompt)
                 guard isConcreteRAGSearchIntent(cleanedPrompt) else { return nil }
-                let query = expandRAGQueryIfNeeded(originalPrompt: cleanedPrompt)
+                let query = ragSearchQuery(originalPrompt: cleanedPrompt)
                 var args: AgentJSONArguments = ["query": .string(query)]
                 if let scope = RAGSourceScope.inferred(fromUserPrompt: cleanedPrompt) {
                     args["sourceScope"] = .string(scope.rawValue)
@@ -439,16 +439,10 @@ nonisolated enum DeterministicToolPlanner {
     private static func containsAny(_ value: String, _ needles: [String]) -> Bool { needles.contains { value.contains($0) } }
     private static func intArgument(_ value: Int) -> AgentJSONValue { .number(Double(value)) }
 
-    private static func expandRAGQueryIfNeeded(originalPrompt: String) -> String {
+    private static func ragSearchQuery(originalPrompt: String) -> String {
         let base = extractWebQuery(from: originalPrompt)
         let normalizedBase = base.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallback = normalizedBase.isEmpty ? originalPrompt : normalizedBase
-        let lower = normalized(fallback)
-        let architectureTerms = ["architecture", "module", "service", "component", "package"]
-        guard containsAny(lower, ["architecture", "module", "service", "component", "package", "design", "system"]) else { return fallback }
-        var query = fallback
-        for term in architectureTerms where !lower.contains(term) { query += " " + term }
-        return query
+        return normalizedBase.isEmpty ? originalPrompt : normalizedBase
     }
 
     private static func isConcreteRAGSearchIntent(_ cleanedPrompt: String) -> Bool {

@@ -112,6 +112,27 @@ final class SecureToolRegistry {
         modelContext: ModelContext? = nil,
         isBackground: Bool = false
     ) async -> String {
+        let result = await executeToolCommandResult(
+            rawToolID,
+            arguments: arguments,
+            approval: approval,
+            conversationID: conversationID,
+            turnID: turnID,
+            modelContext: modelContext,
+            isBackground: isBackground
+        )
+        return Self.commandText(from: result)
+    }
+
+    func executeToolCommandResult(
+        _ rawToolID: String,
+        arguments: AgentJSONArguments,
+        approval: ToolExecutionApproval,
+        conversationID: UUID? = nil,
+        turnID: UUID? = nil,
+        modelContext: ModelContext? = nil,
+        isBackground: Bool = false
+    ) async -> ToolResult {
         let canonicalToolID = ToolRouteGuard.canonicalToolID(rawToolID)
         let normalizedArguments = ToolRouteGuard.normalizedArguments(
             for: canonicalToolID,
@@ -142,7 +163,10 @@ final class SecureToolRegistry {
             permissionRegistry: .shared,
             metricsStore: .shared
         )
-        let result = await execute(invocation, context: context)
+        return await execute(invocation, context: context)
+    }
+
+    nonisolated static func commandText(from result: ToolResult) -> String {
         if result.modelText == "Approval required." || result.modelText.isEmpty {
             return result.displayText
         }

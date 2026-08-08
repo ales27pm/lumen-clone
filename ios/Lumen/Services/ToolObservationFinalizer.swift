@@ -34,8 +34,22 @@ nonisolated enum ToolObservationFinalizer {
 
     /// Converts a raw tool observation into a sanitized, intent-appropriate final string.
     /// - Returns: A formatted observation string, or `nil` if the observation is empty, unsafe, or does not match the expected intent.
-    static func immediateFinalIfSafe(intent: UserIntent, toolID: String, observation: String, originalPrompt: String) -> String? {
-        immediateFinalOutcome(intent: intent, toolID: toolID, observation: observation, originalPrompt: originalPrompt).text
+    static func immediateFinalIfSafe(
+        intent: UserIntent,
+        toolID: String,
+        observation: String,
+        originalPrompt: String,
+        resultStatus: ToolResultStatus? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
+    ) -> String? {
+        immediateFinalOutcome(
+            intent: intent,
+            toolID: toolID,
+            observation: observation,
+            originalPrompt: originalPrompt,
+            resultStatus: resultStatus,
+            ragIndexMode: ragIndexMode
+        ).text
     }
 
     static func immediateFinalOutcome(
@@ -43,7 +57,9 @@ nonisolated enum ToolObservationFinalizer {
         tool: ToolDefinition,
         observation: String,
         originalPrompt: String,
-        trustedApprovalCaptured: Bool
+        trustedApprovalCaptured: Bool,
+        resultStatus: ToolResultStatus? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
     ) -> ToolObservationFinalizationOutcome {
         if tool.requiresApproval && !trustedApprovalCaptured {
             return rejected("approval-required")
@@ -52,11 +68,20 @@ nonisolated enum ToolObservationFinalizer {
             intent: intent,
             toolID: tool.id,
             observation: observation,
-            originalPrompt: originalPrompt
+            originalPrompt: originalPrompt,
+            resultStatus: resultStatus,
+            ragIndexMode: ragIndexMode
         )
     }
 
-    static func immediateFinalOutcome(intent: UserIntent, toolID: String, observation: String, originalPrompt: String) -> ToolObservationFinalizationOutcome {
+    static func immediateFinalOutcome(
+        intent: UserIntent,
+        toolID: String,
+        observation: String,
+        originalPrompt: String,
+        resultStatus: ToolResultStatus? = nil,
+        ragIndexMode: RAGStore.IndexMode? = nil
+    ) -> ToolObservationFinalizationOutcome {
         let canonicalTool = ToolRouteGuard.canonicalToolID(toolID)
         let strippedObservation = ModelOutputSanitizer.stripHiddenBlocksPreservingPayloadMarkers(observation)
         let cleanObservation = canonicalTool.hasPrefix("outlook.")
@@ -136,10 +161,10 @@ nonisolated enum ToolObservationFinalizer {
             return accepted("Health summary:\n\(plainObservation)\(payloadMarkers)")
         case "rag.index_files":
             guard intent == .rag else { return rejected("intent-mismatch") }
-            return accepted("Local file index updated: \(plainObservation)\(payloadMarkers)")
+            return accepted("\(ragIndexFinal(label: "Local file index", observation: plainObservation, mode: ragIndexMode, status: resultStatus))\(payloadMarkers)")
         case "rag.index_photos":
             guard intent == .rag else { return rejected("intent-mismatch") }
-            return accepted("Photo index updated: \(plainObservation)\(payloadMarkers)")
+            return accepted("\(ragIndexFinal(label: "Photo index", observation: plainObservation, mode: ragIndexMode, status: resultStatus))\(payloadMarkers)")
         case "rag.search":
             guard intent == .rag else { return rejected("intent-mismatch") }
             return accepted("RAG search results:\n\(groundedRAGObservation(plainObservation))\(payloadMarkers)")
@@ -207,6 +232,53 @@ nonisolated enum ToolObservationFinalizer {
         return "[1] \(trimmed)\nSource: local RAG index snippet."
     }
 
+    private static func ragIndexFinal(
+        label: String,
+        observation: String,
+        mode: RAGStore.IndexMode?,
+        status: ToolResultStatus?
+    ) -> String {
+        if let mode {
+            switch mode {
+            case .indexed:
+                return "\(label) updated: \(observation)"
+            case .cleared:
+                return "\(label) cleared: \(observation)"
+            case .skipped:
+                return "\(label) unchanged: \(observation)"
+            case .partial:
+                return "\(label) partially updated: \(observation)"
+            case .failed:
+                return "\(label) update failed: \(observation)"
+            }
+        }
+        if let status {
+            switch status {
+            case .success:
+                return "\(label) updated: \(observation)"
+            case .requiresApproval, .unavailable:
+                return "\(label) unchanged: \(observation)"
+            case .denied, .failed:
+                return "\(label) update failed: \(observation)"
+            }
+        }
+
+        let lower = observation.lowercased()
+        if lower.contains("cleared") {
+            return "\(label) cleared: \(observation)"
+        }
+        if lower.contains("partially completed") || lower.contains("partial") {
+            return "\(label) partially updated: \(observation)"
+        }
+        if lower.contains("skipped") || lower.contains("deferred") {
+            return "\(label) unchanged: \(observation)"
+        }
+        if lower.contains("failed") || lower.contains("unavailable") {
+            return "\(label) update failed: \(observation)"
+        }
+        return "\(label) updated: \(observation)"
+    }
+
     private static func memoryRecallFinal(from observation: String) -> String {
         let trimmed = observation.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "No matching memories." }
@@ -218,10 +290,8 @@ nonisolated enum ToolObservationFinalizer {
             return "No matching memories."
         }
 
-        let remembered = trimmed
-            .split(whereSeparator: \.isNewline)
-            .map { memoryFactCandidate(from: String($0)) }
-            .filter { !$0.isEmpty }
+        let parsed = memoryFactCandidates(from: trimmed)
+        let remembered = parsed.facts
             .map { rememberedMemoryFragment(from: $0) }
             .filter { !$0.isEmpty }
         let uniqueRemembered = remembered.reduce(into: [String]()) { partial, fragment in
@@ -230,8 +300,136 @@ nonisolated enum ToolObservationFinalizer {
             }
         }
 
-        guard !uniqueRemembered.isEmpty else { return "Memory recall:\n\(trimmed)" }
+        guard !uniqueRemembered.isEmpty else {
+            return parsed.usedStructuredRecords ? "No matching memories." : "Memory recall:\n\(trimmed)"
+        }
         return sentenceCased("I remember that \(uniqueRemembered.joined(separator: "; "))")
+    }
+
+    private static func memoryFactCandidates(from observation: String) -> (facts: [String], usedStructuredRecords: Bool) {
+        let lines = observation.components(separatedBy: .newlines)
+        let records = memoryRecallRecords(from: lines)
+        guard !records.isEmpty,
+              records.allSatisfy(hasMemoryRecallRecordMetadata) else {
+            return (
+                unstructuredMemoryRecords(from: lines)
+                    .compactMap(unstructuredMemoryFactCandidate)
+                    .filter { !$0.isEmpty },
+                false
+            )
+        }
+
+        let facts = records.compactMap { record -> String? in
+            guard !isConversationMemoryRecord(record) else { return nil }
+            let candidate = memoryFactCandidate(from: record)
+            return candidate.isEmpty ? nil : candidate
+        }
+        return (facts, true)
+    }
+
+    private static func memoryRecallRecords(from lines: [String]) -> [String] {
+        var records: [String] = []
+        var currentRecordLines: [String] = []
+
+        for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLine.isEmpty else { continue }
+
+            if isMemoryRecallRecordStart(line) {
+                if !currentRecordLines.isEmpty {
+                    records.append(currentRecordLines.joined(separator: " "))
+                }
+                currentRecordLines = [line]
+            } else if !currentRecordLines.isEmpty {
+                currentRecordLines.append(line)
+            }
+        }
+
+        if !currentRecordLines.isEmpty {
+            records.append(currentRecordLines.joined(separator: " "))
+        }
+        return records
+    }
+
+    private static func isMemoryRecallRecordStart(_ line: String) -> Bool {
+        line.range(
+            of: #"^\s*(?:[•\-]\s*)?\[(?:[0-9a-f]{8}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[a-z]{4}[0-9]{4})\]\s*"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func unstructuredMemoryRecords(from lines: [String]) -> [String] {
+        var records: [String] = []
+        var currentLines: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let startsBullet = line.range(of: #"^\s*[•\-]\s+"#, options: .regularExpression) != nil
+            if startsBullet {
+                if !currentLines.isEmpty {
+                    records.append(currentLines.joined(separator: " "))
+                }
+                currentLines = [line]
+            } else if currentLines.isEmpty {
+                records.append(line)
+            } else {
+                currentLines.append(line)
+            }
+        }
+        if !currentLines.isEmpty {
+            records.append(currentLines.joined(separator: " "))
+        }
+        return records
+    }
+
+    private static func isConversationMemoryRecord(_ record: String) -> Bool {
+        record.lowercased().range(
+            of: #"(?:^|\|)\s*kind\s*=\s*conversation(?:\s*(?:\||$))"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func hasMemoryRecallRecordMetadata(_ record: String) -> Bool {
+        record.range(
+            of: #"\|\s*kind\s*=\s*[^|\r\n]+"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+
+    private static func unstructuredMemoryFactCandidate(from record: String) -> String? {
+        guard !isConversationMemoryRecord(record) else { return nil }
+        let metadataPattern = #"\s*\|\s*(?:kind|score|source)\s*=.*$"#
+        let hasTrailingMetadata = record.range(
+            of: metadataPattern,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+
+        var candidate = record
+            .replacingOccurrences(of: #"^\s*[•\-]\s*"#, with: "", options: .regularExpression)
+            .replacingOccurrences(
+                of: metadataPattern,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if hasTrailingMetadata {
+            candidate = candidate.replacingOccurrences(
+                of: #"^\[[^\]\r\n]+\]\s*"#,
+                with: "",
+                options: .regularExpression
+            )
+        } else {
+            candidate = candidate.replacingOccurrences(
+                of: #"^\[(?:[0-9a-f]{8}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[a-z]{4}[0-9]{4})\]\s*"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+        }
+
+        candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        return candidate.isEmpty ? nil : candidate
     }
 
     private static func memoryFactCandidate(from line: String) -> String {
@@ -252,6 +450,9 @@ nonisolated enum ToolObservationFinalizer {
         }
         if lower.hasPrefix("user prefers to be called ") {
             return "you prefer to be called \(String(trimmed.dropFirst("User prefers to be called ".count)))"
+        }
+        if lower.hasPrefix("keep in mind that i ") {
+            return "you \(String(trimmed.dropFirst("Keep in mind that I ".count)))"
         }
         if lower.hasPrefix("i prefer ") {
             return "you prefer \(String(trimmed.dropFirst("I prefer ".count)))"
