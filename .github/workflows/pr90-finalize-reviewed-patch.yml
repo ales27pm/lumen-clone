@@ -1,11 +1,11 @@
 name: PR90 finalize reviewed patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/fix-rag-memory-e2e-root-causes
-    paths:
-      - .github/workflows/pr90-finalize-reviewed-patch.yml
+      - main
+    types:
+      - synchronize
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   apply-reviewed-patch:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.number == 90 && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check out temporary PR head
@@ -29,7 +29,7 @@ jobs:
         shell: bash
         env:
           ORIGINAL_HEAD: 19f598eb244d1d0794906fc9a98bb1909dbbc4ad
-          TEMP_HEAD: ${{ github.sha }}
+          TEMP_HEAD: ${{ github.event.pull_request.head.sha }}
           PATCH_URL: https://hatchable.com/s/eyJwIjozOTI1LCJrIjoicHI5MC1maW5hbGl6ZVwvcHI5MC1yZXZpZXdlZC5wYXRjaCJ9.7c98761da0af175df0d783d3ad0fbb7285e50a986a166e08c1c6cfe337c19b3f
         run: |
           set -euo pipefail
@@ -48,7 +48,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          # Preferred path: replace the temporary workflow commits with one reviewed patch commit.
+          # Preferred path: replace temporary workflow commits with one reviewed patch commit.
           git reset --hard "$ORIGINAL_HEAD"
           git apply --check /tmp/pr90.patch
           git apply /tmp/pr90.patch
