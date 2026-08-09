@@ -1,7 +1,7 @@
 {
   "agent": "cortex",
   "availableSFTRecords": 1267,
-  "candidateSFTRecords": 16627,
+  "candidateSFTRecords": 17115,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": null,
@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "a238f90bbe81c6997d1511b908f2241b14a073806572c4f85238c4225e62d54c"
+      "reportSHA256": "e1b2034fa3d52ae04258c7843cce775ca8e96f161250735291ca25300047c686"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "36b7348d95308a71addf8b4738fe7312da74623aed1a4045693270c6d92ffddd",
-      "optimizedTrainingCorpusSHA256": "3b0033b4f692c41981d4cb7e04e235cd60ff41f0fcad7a4ada3dc9ebe5b6647d",
+      "baselineTrainingCorpusSHA256": "b685c50bbbb4c4e76d475399536025bf91f4ebd5eb8500643220749f009f92eb",
+      "optimizedTrainingCorpusSHA256": "5d8822f076ac51bc955794f8c30107e5e0be55949d81b63110ab775fd2de8702",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 92,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "17db77485586b5160d61207b7d5186a4e32c80573b23e4e790571b6da944e8cc",
+    "experimentManifestSHA256": "7000c176dfda45d571985af655b74aa58e67801e164fa5b617014e6a0c5ebcc1",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
+  "manifestCommit": "9cf0c01154061b9505673e4b0f07d58753326ee4",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 822,
@@ -386,7 +386,7 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.045577,
+        "target": 0.04557,
         "total": 0.070284
       },
       "val_dpo": {
@@ -400,11 +400,11 @@
     }
   },
   "quality": {
-    "assistantTargetCharCount": 413508,
-    "assistantTargetTokenProxyCount": 103837,
+    "assistantTargetCharCount": 413564,
+    "assistantTargetTokenProxyCount": 103851,
     "cortexCodebaseChunkRecordCount": 17,
     "cortexCodebaseFileRecordCount": 51,
-    "cortexCodebaseSelfAwarenessCandidateRecordCount": 8255,
+    "cortexCodebaseSelfAwarenessCandidateRecordCount": 8505,
     "cortexCodebaseSelfAwarenessCoverage": "deterministic_supplemental_sample_of_git_tracked_text_files",
     "cortexCodebaseSelfAwarenessRecordCount": 70,
     "cortexCodebaseSelfAwarenessSourceFamily": "cortex_codebase_self_awareness",
@@ -426,11 +426,11 @@
       "status": "source_side_selection_proxy_not_exact_token_count",
       "strategy": "max_whitespace_terms_utf8_byte_ceiling"
     },
-    "supplementalAssistantTargetCharCount": 61909,
-    "supplementalAssistantTargetCharShare": 0.1497165713843505,
-    "supplementalAssistantTargetTokenProxyCount": 15516,
-    "supplementalAssistantTargetTokenProxyShare": 0.1494265050030336,
-    "supplementalBalanceDroppedRecordCount": 15157,
+    "supplementalAssistantTargetCharCount": 61965,
+    "supplementalAssistantTargetCharShare": 0.14983170682167693,
+    "supplementalAssistantTargetTokenProxyCount": 15530,
+    "supplementalAssistantTargetTokenProxyShare": 0.14954116956023533,
+    "supplementalBalanceDroppedRecordCount": 15645,
     "supplementalSFTRecordCount": 110,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
     "ultraSpecificRecordCount": 903,
@@ -443,7 +443,7 @@
     "val_dpo": 58,
     "val_sft": 83
   },
-  "sourceDirty": true,
+  "sourceDirty": false,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "codebase_home_chunk_sft",
@@ -465,9 +465,9 @@
     "public_adapter_corpus_toolace_train": 12
   },
   "sourceIntegrity": {
-    "baseCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
-    "dirtyState": true,
-    "workingTreeDigest": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2"
+    "baseCommit": "9cf0c01154061b9505673e4b0f07d58753326ee4",
+    "dirtyState": false,
+    "workingTreeDigest": "c480beb717e3d209e59e88d80cbb8574a4b910ad435a72da473722887df649ce"
   },
   "systemPrompt": "You are Cortex, Lumen's manifest-bound routing agent. Task mode: Cortex route mode. Return exactly one valid JSON object and nothing else. Use only exact manifest tool IDs and never construct Executor arguments. Serialize every response in this visible key order: selectedToolID, intent, one concise manifest-row grounding reasoningSummary, then any route-state fields, then requiresApproval and nextModel. The summary is not hidden chain-of-thought. A complete actionable route also has actionStep exactly {\"type\":\"tool_call\",\"toolID\":\"<selectedToolID>\",\"mustPersistBeforeFinal\":true}; it has no status, missingArguments, or clarification. An incomplete route omits actionStep, uses status needs_clarification, lists only the exact still-missing required arguments in manifest order, asks one clarification question, and routes next to mouth. A selection response is only the five common fields. A request with no allowed tool uses selectedToolID null and status no_tool_route; a named nonexistent tool uses selectedToolID null and status invalid_tool. Never emit rejected-tool lists, aliases, handoff objects, source-map objects, prose, markdown, or hidden reasoning in route mode. Set requiresApproval from the manifest. For a complete actionable route or five-field selection, route next to approval when true and executor when false; an incomplete route always routes to mouth.",
   "taskTypeCounts": {
@@ -530,5 +530,5 @@
     "ultra_specific_missing_required_argument_clarification",
     "ultra_specific_regression_routing"
   ],
-  "worktreeFingerprint": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2"
+  "worktreeFingerprint": "c480beb717e3d209e59e88d80cbb8574a4b910ad435a72da473722887df649ce"
 }

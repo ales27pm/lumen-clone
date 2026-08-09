@@ -7,9 +7,9 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "baseCommit": "70912358f7a32d3db8ffd8d967e27ddfa7d93c06",
-    "workingTreeDigest": "c20ee7612ee0a217520c82081f6268cf4cbe0b507a500e20e822c67e8ea279b2",
-    "dirtyState": true,
+    "baseCommit": "9cf0c01154061b9505673e4b0f07d58753326ee4",
+    "workingTreeDigest": "c480beb717e3d209e59e88d80cbb8574a4b910ad435a72da473722887df649ce",
+    "dirtyState": false,
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -25,11 +25,11 @@
       },
       {
         "path": "ios/Lumen/Models/ToolDefinition.swift",
-        "sha256": "22c58bb0907be7e7e06a952904c4a1cd90a939459c547cb96d049bf9203d3049"
+        "sha256": "00fa685f8c57a21a2f309b14cac51bcaa848f6496ad4e03bb245716e9b5c4d72"
       },
       {
         "path": "ios/Lumen/Models/Trigger.swift",
-        "sha256": "3530718dbcda8e6c21aa666096d70c7493b5db4f0704c757b83de2750acac1d7"
+        "sha256": "74e4790c85e493ba90d203b841b843515de450c30e015690c221e5170d85ea0b"
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
@@ -57,7 +57,7 @@
       },
       {
         "path": "ios/Lumen/Services/Tools/AlarmTools.swift",
-        "sha256": "f5de0bf635e01ed28f916c4b6cc1aacb0da59d9e89192a7b3b6205ccb0c6cc5d"
+        "sha256": "844a35beec804b3f7db8402f639a7fe52c4b44a0957c45b08524e1c8df76e8c5"
       },
       {
         "path": "ios/Lumen/Views/ChatView.swift",
