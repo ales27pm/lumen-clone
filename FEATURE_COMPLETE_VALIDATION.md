@@ -8,9 +8,9 @@ Background headless execution now carries typed completed, deferred, failed, and
 
 Release Settings no longer exposes the Developer Console and Release file sharing is disabled. Persisted E2E results and exports, behavior traces, and in-app AgentGrounding packages use versioned `redacted-v1` filenames, one-way hash/count summaries for free-form content, complete file protection, and startup/export cleanup for known legacy raw-content names. The current tree removes quarantined historical raw E2E artifacts and records their paths and hashes in `runtime-audits/PRIVACY_QUARANTINE.md`; prior Git objects and remote clones remain outside this current-tree containment until a separately authorized history rewrite.
 
-Fresh focused evidence used a physical iPhone 16 Pro running iOS 26.6 beta. A signed Debug device build and device `build-for-testing` completed. Device XCTest passed 57 of 57 tests across `BackgroundTriggerOutcomeTests`, `NumericToolArgumentSafetyTests`, `SecureToolRegistryTests`, and `ToolSchemaBridgeTests`, plus 16 of 16 `OutlookToolAvailabilityTests`. No simulator result is used for this checkpoint.
+Fresh signed evidence used a physical iPhone 16 Pro running iOS 26.6. A signed Debug device build and device `build-for-testing` completed. The latest runtime-hardening physical-device risk suite passed 237 of 237 tests with 0 failures and 0 skips, superseding the earlier 57-test and 16-test subsets as the current risk-focused XCTest checkpoint. The corrected diagnostics resource-budget regression passed on device. No simulator result is used for this checkpoint.
 
-This remains a production-readiness checkpoint, not a completed release qualification. It does not yet prove a final post-edit install/launch smoke, real-device local-model generation, live native tools, RAG indexing/search, memory extraction/storage, voice, App Intents, background scheduling, Microsoft OAuth/mailbox behavior, signed Release archive/export, entitlement payloads, privacy-manifest handling, TestFlight behavior, App Store upload, or App Store acceptance.
+The signed app was installed and launched with `devicectl`, and its process was verified alive. This is install/launch process-liveness evidence only, not an interactive product feature smoke. A valid Apple Distribution signing identity and matching App Store provisioning profile were verified, with the profile valid through 2027-08-09, but no archive, export, TestFlight submission, or App Store upload was performed. This remains a production-readiness checkpoint, not a completed release qualification: interactive live model generation, native tools, RAG indexing/search, memory extraction/storage, voice, App Intents, real background scheduling, Microsoft OAuth/mailbox behavior, signed Release entitlement and privacy-manifest payloads, TestFlight behavior, App Store upload, and App Store acceptance remain unproven.
 
 ## Ubuntu training exact-model lineage hardening (local validation)
 
@@ -152,7 +152,7 @@ The latest strict-boundary pass removed the Release-compiled `StructuredAgentKer
 
 The latest live-E2E completeness pass closed the remaining known scoring gaps from the post-merge live reports. Final-output hygiene now rejects dangling completions such as `an`, `a`, `the`, `with`, `because`, and `you do not need an`; weather observation turns repair truncated finals from the trusted tool observation before scoring. Model-backed training runs check CPU watchdog state before entering generation and emit one non-actionable runtime-preflight result when degraded. Deterministic maps planning keeps `maps.search` actionable for nearby search prompts, including degraded `location.current` observations, and missing-argument `files.read` requests clarify with `Which file should I read?` instead of returning generic safe failure text.
 
-This is not a claim that every future product target is complete. The Release product surface now excludes experimental or legacy paths that are not release-safe, and documents those exclusions explicitly. Hardware, TestFlight, signed archive/export, and real model/device checks still require Apple credentials and physical device coverage.
+This is not a claim that every future product target is complete. The Release product surface now excludes experimental or legacy paths that are not release-safe, and documents those exclusions explicitly. Signed physical-device compile, risk-focused XCTest, install, and process-liveness coverage now exists; TestFlight, signed archive/export, real-model generation, and interactive device flows still require separate evidence.
 
 ## Files Changed
 
@@ -1131,6 +1131,9 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 
 ## Remaining Release Evidence Gaps
 
+- The 2026-08-09 runtime-hardening physical-device risk suite passed 237 of 237 tests with 0 failures and 0 skips, including the corrected diagnostics resource-budget regression. It supersedes the earlier 57-test and 16-test device subsets as the current risk-focused XCTest checkpoint; it is not a claim that every historical simulator-focused suite below was executed on the device.
+- The signed app was installed and launched with `devicectl`, and its process was verified alive. No interactive feature flow was exercised, so this is not a product feature smoke pass.
+- A valid Apple Distribution signing identity and matching App Store provisioning profile were verified, with the profile valid through 2027-08-09. No current-source archive, export, TestFlight submission, App Store upload, or acceptance proof exists yet.
 - Executed XCTest proof now exists for the new native approval-boundary regression test using `test-without-building` on the dedicated `Lumen Focused Test iPhone`; broader full-suite simulator XCTest proof is still missing.
 - Executed XCTest proof now exists for the Chat approval UI mapping regression test using the bounded focused simulator runner on the dedicated `Lumen Focused Test iPhone`; broader full-suite simulator XCTest proof is still missing.
 - Executed XCTest proof now exists for the strict Agent Kernel boundary guard tests using `test-without-building` on `iPhone 16`; broader full-suite simulator XCTest proof is still missing.
@@ -1165,6 +1168,7 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 - Executed XCTest proof for the new planner/schema parity tests is still missing. The dedicated simulator reached SpringBoard/backboardd readiness through the probe fallback, but `test-without-building` stalled in Xcode's test-manager handoff before any XCTest output; the non-launching `build-for-testing` checkpoint compiled the tests successfully.
 - Fresh executed proof now exists for `ExecutorPreflightTests`, but the attached live E2E weather scenario was not rerun after the preflight gate fix in this documentation pass. Do not claim live model-backed scenario success until a new report proves it.
 - Live device/TestFlight evidence is still needed for model-backed tool-call loops, voice, AppIntent, RAG, memory, permissions, and real local model artifacts.
+- Live device/TestFlight evidence is still needed for real background scheduling and Microsoft OAuth/mailbox behavior.
 - The native kernel path currently executes validated intent-planned tool actions and surfaces the tool result honestly; model-driven post-tool synthesis still needs live runtime evidence before claiming full parity with every shipped workflow.
 
 ## Manual Validations Still Required
@@ -1181,3 +1185,6 @@ These require Apple credentials, signing assets, TestFlight, or physical hardwar
 - Live RAG indexing/search with user files/photos where permissions are granted.
 - Live memory extraction/storage with real model embeddings.
 - Voice and AppIntent flows for the exact submitted Release build.
+- Real background scheduling and execution for the exact submitted Release build.
+- Microsoft OAuth and mailbox behavior for the exact submitted Release build.
+- App Store upload, processing, and acceptance.

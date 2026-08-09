@@ -89,16 +89,18 @@ The simulator commands above are fallback/coverage tools. Do not combine their o
 
 ## Current Hardening Evidence (2026-08-09)
 
-- A signed Debug build and signed `build-for-testing` completed on a physical iPhone 16 Pro running iOS 26.6 beta. The device identifier is intentionally not recorded here.
-- A focused physical-device XCTest run passed 57 tests with 0 failures and 0 skips: 6 `BackgroundTriggerOutcomeTests`, 7 `NumericToolArgumentSafetyTests`, 23 `SecureToolRegistryTests`, and 21 `ToolSchemaBridgeTests`.
-- A separate physical-device `OutlookToolAvailabilityTests` run passed 16 tests with 0 failures and 0 skips.
+- A signed Debug build and signed `build-for-testing` completed on a physical iPhone 16 Pro running iOS 26.6. The device identifier is intentionally not recorded here.
+- The latest runtime-hardening physical-device risk suite passed 237 of 237 tests with 0 failures and 0 skips. This supersedes the earlier 57-test and 16-test subsets as the current risk-focused XCTest checkpoint.
+- The corrected diagnostics resource-budget regression passed on the physical device, confirming that persistent runtime diagnostics use the canonical heavy-model-work gate.
+- The signed app was installed and launched with `devicectl`, and its process was verified alive. This is install/launch process-liveness evidence only; no interactive product feature smoke was performed.
 - No simulator was used as evidence for this hardening checkpoint.
+- A valid Apple Distribution signing identity and matching App Store provisioning profile were verified; the profile expires on 2027-08-09. No archive, export, TestFlight submission, or App Store upload was performed for this checkpoint.
 - The checked-in configuration pins MSAL exactly to `1.9.0`; the link and release validators enforce the exact requirement.
 - Release/minimal AgentGrounding packaging fails closed on missing, drifted, invalid, warning-bearing, failed, or hash-mismatched runtime resources and on missing, unsafe, or hash-mismatched source files declared by `sourceIntegrity`. Only an explicit Debug diagnostic build may produce an empty fallback bundle.
 - Background trigger/headless execution now distinguishes completed, deferred, failed, and cancelled outcomes. A background task succeeds only for a completed trigger scan; `beforeNextEvent` creation reports typed unavailability.
 - Persisted E2E results/exports, behavior traces, and in-app grounding packages are versioned `redacted-v1`; raw-content legacy filenames are purged and the current-tree privacy checker rejects legacy checked-in E2E artifacts.
 
-These are focused hardening and signed-device test results, not a final release qualification. A final post-edit install/launch smoke and every live product/release check listed below remain unproven unless separately recorded.
+These are signed-device build, risk-focused XCTest, install, and process-liveness results, not a final release qualification or product feature smoke. Interactive live model generation and the product/release checks listed below remain unproven unless separately recorded.
 
 Release submission validation also requires credentialed or physical-device checks:
 
@@ -106,11 +108,14 @@ Release submission validation also requires credentialed or physical-device chec
 - signed entitlement inspection
 - privacy manifest validation
 - TestFlight or real-device smoke test
-- real-device local model load
+- real-device local model load and interactive generation
 - live tool-call validation
 - live RAG indexing and search
 - live memory extraction and storage
-- voice/AppIntent flows that are enabled in the submitted build
+- live voice and AppIntent flows that are enabled in the submitted build
+- real background scheduling and execution
+- Microsoft OAuth and mailbox behavior
+- App Store upload, processing, and acceptance
 
 ## App Store Connect Submission Evidence
 
