@@ -625,8 +625,10 @@ actor PersistentRuntimeDiagnosticsRunner {
     private func environmentAllowsDiagnostics() async -> Bool {
         await MainActor.run {
             let snapshot = ResourceBudgetGate.diagnosticSnapshot()
-            guard snapshot.thermalState != .serious && snapshot.thermalState != .critical else { return false }
-            return true
+            return ResourceBudgetGate.allowsHeavyModelWork(
+                snapshot: snapshot,
+                reason: ModelLoadIntent.diagnostics.rawValue
+            )
         }
     }
 
