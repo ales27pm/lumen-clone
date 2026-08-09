@@ -61,8 +61,8 @@
     }
   ],
   "comparisonEligibility": {
-    "baselineTrainingCorpusSHA256": "53da153948fdb4f7edc0e79b5e2375dd44d3f51dfc7ebbee8222c754e4ef3dea",
-    "optimizedTrainingCorpusSHA256": "2c1243308aef63fba8a4a9420107b120332424f1bf3b9b8b43bde02880c02cbc",
+    "baselineTrainingCorpusSHA256": "b4ff843059dabe0499fc085394700b77390ab99a4f70b6b69d3ab1db6e1943fe",
+    "optimizedTrainingCorpusSHA256": "a38f6515e873e1da9b41fbc858ad3c92c901f5146fa1de253b45562f8df21935",
     "promotionEligible": true,
     "promotionProhibited": false,
     "publicRecordCount": 500,
@@ -71,12 +71,12 @@
   },
   "contamination": {
     "contaminated": false,
-    "evaluationRecordsSHA256": "29278f9ae9f5b2c9400f20c4c548a60f87c2c2e5390fa08f6200d636743eca18",
+    "evaluationRecordsSHA256": "8685f9fe841127852fd9ff4cfd65e8c558b7021ba5bf80441366235f7b3ab11a",
     "matchCount": 0,
     "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
     "publicEvaluationRowCount": 1040,
-    "reportSHA256": "6136157df09aab35e96c75b553c3090c9e91ff4fe3bec9343ad71e7f9340f2ba",
-    "trainingRecordsSHA256": "53da153948fdb4f7edc0e79b5e2375dd44d3f51dfc7ebbee8222c754e4ef3dea"
+    "reportSHA256": "b5e745e76209c250e99c144b7d7ffb4144378ac5297ce58ef120b0adea6f6656",
+    "trainingRecordsSHA256": "b4ff843059dabe0499fc085394700b77390ab99a4f70b6b69d3ab1db6e1943fe"
   },
   "controlledTrainingConfig": {
     "agent": "fleet",
@@ -2004,7 +2004,7 @@
     },
     "trainSFT": {
       "count": 615,
-      "sha256": "75fff56c74e25ff064aed9ab534b7b1119f3dc3b03c308d8c78404d38c928582"
+      "sha256": "af8faf02ae24a1196096584f13fef3aeda8b1e7468a20bb86c85f98cd17ef5df"
     },
     "validationDPO": {
       "count": 24,
@@ -2012,7 +2012,7 @@
     },
     "validationSFT": {
       "count": 128,
-      "sha256": "6d5e28cc9ed7f27b5526e87c8f62a582fbdef494368a51b622758ab9d1630779"
+      "sha256": "4941a04ce2c1d3f86356aee2953ea025a8cd46c2015b368da4a6a34e512015f2"
     }
   },
   "dpoTraining": {
@@ -2021,7 +2021,7 @@
     "status": "generated_not_trained"
   },
   "expectedRuntimeSourceRevision": null,
-  "frozenEvaluationSHA256": "29278f9ae9f5b2c9400f20c4c548a60f87c2c2e5390fa08f6200d636743eca18",
+  "frozenEvaluationSHA256": "8685f9fe841127852fd9ff4cfd65e8c558b7021ba5bf80441366235f7b3ab11a",
   "observedAccelerator": null,
   "observedRepositoryRevision": null,
   "observedRuntimeRevision": null,
@@ -3327,7 +3327,7 @@
   },
   "trainingConfigInvariantSHA256": "e7b6b4ae3cf219fc34d00f105764ee2c3a5ef8ab6842b8a0c1bc383d263ecc4c",
   "trainingConfigSHA256": "4db5d5f4b5f458cc8b9bfcfbf660848dea42e807e4baac0d19dc1db1b918cdfb",
-  "trainingCorpusSHA256": "53da153948fdb4f7edc0e79b5e2375dd44d3f51dfc7ebbee8222c754e4ef3dea",
+  "trainingCorpusSHA256": "b4ff843059dabe0499fc085394700b77390ab99a4f70b6b69d3ab1db6e1943fe",
   "trainingDependencyLock": {
     "cudaVersion": "12.8",
     "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -3398,7 +3398,7 @@
   "trainingEnvironmentSHA256": null,
   "validationSamplingPolicy": {
     "allSamplingInputStrataPreserved": true,
-    "candidateBeforePublicSelectionRecordCount": 1137,
+    "candidateBeforePublicSelectionRecordCount": 1140,
     "candidateStratumCount": 43,
     "deterministic": true,
     "explicitValidationAssignmentCount": 35,
@@ -3408,11 +3408,11 @@
     "optimizerLossShareCapsApplied": false,
     "publicCorpusSelectionAppliedBeforeSampling": true,
     "rejectedByPublicSelectionCount": 16,
-    "rejectedByValidationSamplingCount": 993,
-    "samplingInputRecordCount": 1121,
+    "rejectedByValidationSamplingCount": 996,
+    "samplingInputRecordCount": 1124,
     "samplingInputStratumCount": 43,
     "schemaVersion": "lumen.fleet-validation-sampling/1.0.0",
-    "selectedCohortSHA256": "30bc81f62961e11bf75573d41957575406258fec952d7be400441345e8522cdf",
+    "selectedCohortSHA256": "d53cc474d2d031d21913f6fb3b681869b082c44d0105282722e379d30eb7d4a0",
     "selectedRecordCount": 128,
     "selectedStratumCount": 43,
     "selectionStrategy": "least_represented_stratum_then_salted_stable_hash_v1",
@@ -3432,7 +3432,7 @@
     }
   },
   "variant": "internal_plus_public_baseline",
-  "variantManifestSHA256": "b175fca4379eb8906753a80ada292733ed9ac49a3319c76a34c54775acede37a",
+  "variantManifestSHA256": "efa3f3f1c8d84426ef668f440e357c2f6ec7e91e9891080c5dd096984aabea74",
   "zeroGPUDurationSeconds": null,
   "zeroGPUSize": null
 }

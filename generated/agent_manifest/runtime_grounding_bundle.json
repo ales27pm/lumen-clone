@@ -9,8 +9,8 @@
       "python": 175,
       "resolved": 1,
       "shell": 17,
-      "swift": 519,
-      "text": 4,
+      "swift": 521,
+      "text": 5,
       "toml": 1,
       "xcode_project": 1,
       "xml": 1,
@@ -38,6 +38,7 @@
       "Models": 16,
       "Permissions": 7,
       "RAG": 10,
+      "Resources": 1,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
       "Scripts": 2,
       "Services": 67,
@@ -55,7 +56,7 @@
       "System": 17,
       "Tools": 15,
       "Tools/Builtin": 12,
-      "Views": 33,
+      "Views": 34,
       "Voice": 8,
       "app": 6,
       "datasets": 1,
@@ -66,7 +67,7 @@
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 171,
+      "ios/LumenTests": 172,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 10,
@@ -85,7 +86,7 @@
       "tools/pipeline/tests": 11,
       "tools/security": 1
     },
-    "recordCount": 851,
+    "recordCount": 854,
     "selectedFiles": [
       {
         "imports": [],
@@ -2211,13 +2212,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "9cf0c01154061b9505673e4b0f07d58753326ee4",
+  "manifestCommit": "9506489a5321095904efd03510338d1ae063b884",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "13f7473abd88f5c703dd161c8a25af606e0534fbe700ad971df114002954efec",
+    "promptSHA256": "01675514bd179e14cdf22c16d8b875cdcfeea545b490ad52af15e2f2024168eb",
     "promptUTF8ByteCount": 26041,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2229,8 +2230,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "9cf0c01154061b9505673e4b0f07d58753326ee4",
+    "baseCommit": "9506489a5321095904efd03510338d1ae063b884",
     "dirtyState": false,
-    "workingTreeDigest": "c480beb717e3d209e59e88d80cbb8574a4b910ad435a72da473722887df649ce"
+    "workingTreeDigest": "66ee429cff71b9a25cfeaab0a12534c5a37223aae7d9f8898f67a64bed18da55"
   }
 }
