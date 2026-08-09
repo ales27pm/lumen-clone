@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import csv
+import errno
+import fcntl
+import hashlib
 import json
+import os
 import shutil
+import stat
+import tempfile
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Iterator
 
 from lumen_manifest_crawler.fleet_artifacts import FleetArtifacts
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ValidationReport
@@ -58,6 +65,59 @@ CROSS_MODEL_ARTIFACT_FILENAMES = (
     "train_sft_cross.jsonl",
     "val_sft_cross.jsonl",
 )
+
+_DEFAULT_ARTIFACT_MODE = 0o644
+_GENERATION_LOCK_ROOT = (
+    Path(tempfile.gettempdir())
+    / f"lumen-manifest-crawler-{os.getuid()}-generation-locks"
+)
+
+
+class ConcurrentGenerationError(RuntimeError):
+    """Raised when another process is already writing the same output tree."""
+
+
+def _generation_lock_path(output_dir: Path) -> Path:
+    canonical_output = output_dir.resolve()
+    digest = hashlib.sha256(os.fsencode(canonical_output)).hexdigest()
+    return _GENERATION_LOCK_ROOT / f"{digest}.lock"
+
+
+@contextmanager
+def _generation_lock(output_dir: Path) -> Iterator[None]:
+    """Hold the persistent, output-scoped writer lock without waiting."""
+    _GENERATION_LOCK_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock_path = _generation_lock_path(output_dir)
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            if error.errno not in (errno.EACCES, errno.EAGAIN):
+                raise
+            raise ConcurrentGenerationError(
+                "Another manifest generator is already writing "
+                f"the output tree at {output_dir.resolve()}"
+            ) from None
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
+@contextmanager
+def _generation_locks(output_dirs: Iterable[Path]) -> Iterator[None]:
+    """Acquire every owned output lock in stable order to prevent deadlocks."""
+    canonical_outputs = sorted(
+        {output_dir.resolve() for output_dir in output_dirs},
+        key=os.fspath,
+    )
+    with ExitStack() as stack:
+        for output_dir in canonical_outputs:
+            stack.enter_context(_generation_lock(output_dir))
+        yield
 
 
 def cross_model_artifact_directories_match(
@@ -158,6 +218,46 @@ def cross_model_artifact_directory_matches_manifest(
 
 
 def write_outputs(
+    output_dir: Path,
+    manifest: AgentBehaviorManifest,
+    report: ValidationReport,
+    datasets: dict[str, list[dict[str, Any]]],
+    *,
+    pretty: bool,
+    fleet_artifacts: FleetArtifacts | None = None,
+    manifest_markdown: str | None = None,
+    cross_model_train_dir: Path | None = None,
+    incremental_fingerprint: str | None = None,
+    fine_tuning_datasets: dict[str, AgentFineTuningDataset] | None = None,
+    fine_tuning_output_dir: Path | None = None,
+) -> None:
+    owned_output_dirs = [output_dir]
+    if cross_model_train_dir is not None:
+        owned_output_dirs.append(cross_model_train_dir)
+    if fine_tuning_output_dir is not None:
+        owned_output_dirs.append(fine_tuning_output_dir)
+    elif fine_tuning_datasets is not None:
+        owned_output_dirs.append(output_dir / "fine_tuning")
+
+    # The stable multi-lock spans every write, including optional trees outside
+    # the canonical manifest root. Partial acquisition unwinds on contention.
+    with _generation_locks(owned_output_dirs):
+        _write_outputs_unlocked(
+            output_dir,
+            manifest,
+            report,
+            datasets,
+            pretty=pretty,
+            fleet_artifacts=fleet_artifacts,
+            manifest_markdown=manifest_markdown,
+            cross_model_train_dir=cross_model_train_dir,
+            incremental_fingerprint=incremental_fingerprint,
+            fine_tuning_datasets=fine_tuning_datasets,
+            fine_tuning_output_dir=fine_tuning_output_dir,
+        )
+
+
+def _write_outputs_unlocked(
     output_dir: Path,
     manifest: AgentBehaviorManifest,
     report: ValidationReport,
@@ -295,9 +395,37 @@ def _stable_split_records(records: list[dict[str, Any]]) -> tuple[list[dict[str,
 
 def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+    artifact_mode = _artifact_mode(path)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, artifact_mode)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            for record in records:
+                line = json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
+                handle.write(line.encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary_path.unlink(missing_ok=True)
+
+
+def _artifact_mode(path: Path) -> int:
+    try:
+        current_mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return _DEFAULT_ARTIFACT_MODE
+    if not stat.S_ISREG(current_mode):
+        return _DEFAULT_ARTIFACT_MODE
+    return stat.S_IMODE(current_mode)
 
 
 def _write_dataset_aliases(dataset_dir: Path, datasets: dict[str, list[dict[str, Any]]]) -> None:
