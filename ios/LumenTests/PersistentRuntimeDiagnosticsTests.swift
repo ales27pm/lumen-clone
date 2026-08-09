@@ -708,8 +708,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let data = await store.readLogDataForExport(full: true)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let entries = data.split(separator: 0x0A).flatMap { line in
-            (try? decoder.decode([PersistentDiagnosticLogEntry].self, from: Data(line))) ?? []
+        let entries = data.split(separator: 0x0A).compactMap { line in
+            try? decoder.decode(PersistentDiagnosticLogEntry.self, from: Data(line))
         }
         XCTAssertEqual(entries.count, 50)
     }
