@@ -22,6 +22,22 @@ DOC_ROOTS = [
     ROOT / "docs" / "TOOL_SECURITY_MODEL.md",
 ]
 
+ALGORITHMIC_PHILOSOPHY_CANONICAL_ROOT = pathlib.Path(
+    "generated/algorithmic_philosophies"
+)
+ALGORITHMIC_PHILOSOPHY_APP_ROOT = pathlib.Path(
+    "ios/Lumen/Resources/AlgorithmicPhilosophies"
+)
+ALGORITHMIC_PHILOSOPHY_MIRROR_FILES = (
+    pathlib.Path("latent_liturgy/latent_liturgy.html"),
+    pathlib.Path("latent_liturgy/latent_liturgy.js"),
+)
+REMOVED_P5_RUNTIME_PATHS = (
+    ALGORITHMIC_PHILOSOPHY_CANONICAL_ROOT / "p5.min.js",
+    ALGORITHMIC_PHILOSOPHY_APP_ROOT / "p5.min.js",
+)
+P5_REFERENCE_PATTERN = re.compile(r"(?<![A-Za-z0-9_])p5(?=$|[^A-Za-z0-9_])", re.IGNORECASE)
+
 FORBIDDEN_SOURCE_PATTERNS = {
     "removed generation sentinel": re.compile(r"\bgenerationNotImplemented\b"),
     "removed embedding sentinel": re.compile(r"\bembeddingExtractionNotImplemented\b"),
@@ -999,8 +1015,66 @@ def scan_docs() -> list[str]:
     return violations
 
 
+def scan_redistribution_resources() -> list[str]:
+    """Fail closed when the removed LGPL runtime or mirror drift returns."""
+
+    violations: list[str] = []
+
+    for relative_path in REMOVED_P5_RUNTIME_PATHS:
+        path = ROOT / relative_path
+        if path.exists():
+            violations.append(
+                f"{relative_path.as_posix()}: removed p5 runtime must not be distributed"
+            )
+
+    for relative_file in ALGORITHMIC_PHILOSOPHY_MIRROR_FILES:
+        canonical_relative = ALGORITHMIC_PHILOSOPHY_CANONICAL_ROOT / relative_file
+        app_relative = ALGORITHMIC_PHILOSOPHY_APP_ROOT / relative_file
+        canonical_path = ROOT / canonical_relative
+        app_path = ROOT / app_relative
+
+        missing = False
+        for relative_path, path in (
+            (canonical_relative, canonical_path),
+            (app_relative, app_path),
+        ):
+            if not path.is_file():
+                violations.append(
+                    f"{relative_path.as_posix()}: required algorithmic philosophy resource is missing"
+                )
+                missing = True
+        if missing:
+            continue
+
+        canonical_bytes = canonical_path.read_bytes()
+        app_bytes = app_path.read_bytes()
+        if canonical_bytes != app_bytes:
+            violations.append(
+                f"{app_relative.as_posix()}: algorithmic philosophy app resource differs from "
+                f"canonical {canonical_relative.as_posix()}"
+            )
+
+        for relative_path, payload in (
+            (canonical_relative, canonical_bytes),
+            (app_relative, app_bytes),
+        ):
+            try:
+                text = payload.decode("utf-8")
+            except UnicodeDecodeError:
+                violations.append(
+                    f"{relative_path.as_posix()}: algorithmic philosophy resource must be UTF-8 text"
+                )
+                continue
+            if P5_REFERENCE_PATTERN.search(text):
+                violations.append(
+                    f"{relative_path.as_posix()}: removed p5 runtime reference must not be distributed"
+                )
+
+    return violations
+
+
 def main() -> int:
-    violations = scan_source() + scan_docs()
+    violations = scan_source() + scan_docs() + scan_redistribution_resources()
     if violations:
         print("Release hardening violations detected:", file=sys.stderr)
         for violation in violations:

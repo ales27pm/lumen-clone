@@ -1,6 +1,83 @@
 import tools.check_release_hardening as release_hardening
 
 
+def _write_algorithmic_philosophy_mirrors(
+    root,
+    *,
+    canonical_html: str = '<script src="latent_liturgy.js"></script>',
+    app_html: str | None = None,
+    canonical_javascript: str = "const runtime = 'canvas';",
+    app_javascript: str | None = None,
+) -> None:
+    canonical_root = root / "generated" / "algorithmic_philosophies"
+    app_root = root / "ios" / "Lumen" / "Resources" / "AlgorithmicPhilosophies"
+    for artifact_root in (canonical_root, app_root):
+        (artifact_root / "latent_liturgy").mkdir(parents=True)
+
+    (canonical_root / "latent_liturgy" / "latent_liturgy.html").write_text(
+        canonical_html,
+        encoding="utf-8",
+    )
+    (app_root / "latent_liturgy" / "latent_liturgy.html").write_text(
+        canonical_html if app_html is None else app_html,
+        encoding="utf-8",
+    )
+    (canonical_root / "latent_liturgy" / "latent_liturgy.js").write_text(
+        canonical_javascript,
+        encoding="utf-8",
+    )
+    (app_root / "latent_liturgy" / "latent_liturgy.js").write_text(
+        canonical_javascript if app_javascript is None else app_javascript,
+        encoding="utf-8",
+    )
+
+
+def test_redistribution_resources_accept_first_party_byte_identical_mirrors(tmp_path, monkeypatch):
+    _write_algorithmic_philosophy_mirrors(tmp_path)
+    monkeypatch.setattr(release_hardening, "ROOT", tmp_path)
+
+    assert release_hardening.scan_redistribution_resources() == []
+
+
+def test_redistribution_resources_reject_missing_mirror_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(release_hardening, "ROOT", tmp_path)
+
+    violations = release_hardening.scan_redistribution_resources()
+
+    assert len(violations) == 4
+    assert all("required algorithmic philosophy resource is missing" in item for item in violations)
+
+
+def test_redistribution_resources_reject_canonical_app_mirror_drift(tmp_path, monkeypatch):
+    _write_algorithmic_philosophy_mirrors(
+        tmp_path,
+        app_javascript="const runtime = 'different';",
+    )
+    monkeypatch.setattr(release_hardening, "ROOT", tmp_path)
+
+    violations = release_hardening.scan_redistribution_resources()
+
+    assert any("app resource differs from canonical" in item for item in violations)
+
+
+def test_redistribution_resources_reject_p5_runtime_and_case_insensitive_references(tmp_path, monkeypatch):
+    _write_algorithmic_philosophy_mirrors(
+        tmp_path,
+        canonical_html='<script src="../P5.MIN.JS"></script>',
+        canonical_javascript="const vector = P5.Vector.random2D();",
+    )
+    canonical_p5 = tmp_path / "generated" / "algorithmic_philosophies" / "p5.min.js"
+    app_p5 = tmp_path / "ios" / "Lumen" / "Resources" / "AlgorithmicPhilosophies" / "p5.min.js"
+    canonical_p5.write_text("P5 runtime", encoding="utf-8")
+    app_p5.write_text("P5 runtime", encoding="utf-8")
+    monkeypatch.setattr(release_hardening, "ROOT", tmp_path)
+
+    violations = release_hardening.scan_redistribution_resources()
+
+    assert sum("removed p5 runtime must not be distributed" in item for item in violations) == 2
+    assert sum("removed p5 runtime reference must not be distributed" in item for item in violations) == 4
+
+
 def _states_for_directive(directive: str) -> list[bool]:
     return release_hardening.debug_stack_for_lines(
         [

@@ -174,6 +174,13 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                     .padding(.vertical, 2)
+
+                    NavigationLink {
+                        ThirdPartyNoticesView()
+                    } label: {
+                        Label("Open-source licenses", systemImage: "doc.text")
+                    }
+                    .accessibilityIdentifier("settings.about.openSourceLicenses")
                 }
             }
             .scrollContentBackground(.hidden)

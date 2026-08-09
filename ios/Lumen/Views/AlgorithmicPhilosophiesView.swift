@@ -293,7 +293,7 @@ private struct ArtifactReflectionPanel: View {
                     Text("Runtime mirror")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.textPrimary)
-                    Text("App background: TimelineView → hidden clauses → live Canvas tracer. Artifact view: HTML/p5 viewer → SVG tracer → manifesto/source/reflection. Both surfaces expose the same computational philosophy through different renderers.")
+                    Text("App background: TimelineView → hidden clauses → live Canvas tracer. Artifact view: self-contained HTML Canvas viewer → SVG tracer → manifesto/source/reflection. Both surfaces expose the same computational philosophy through different renderers.")
                         .font(.caption)
                         .foregroundStyle(Theme.textTertiary)
                         .textSelection(.enabled)
