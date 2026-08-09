@@ -46,9 +46,11 @@ struct SettingsView: View {
                     }
                 }
 
+                #if DEBUG
                 if LumenLaunchArguments.isUITesting {
                     developerSection
                 }
+                #endif
 
                 Section {
                     Picker("Model family", selection: $selectedModelFamily) {
@@ -143,9 +145,11 @@ struct SettingsView: View {
                     Toggle("Auto-remember", isOn: Binding(get: { state.autoMemory }, set: { state.autoMemory = $0 }))
                 }
 
+                #if DEBUG
                 if !LumenLaunchArguments.isUITesting {
                     developerSection
                 }
+                #endif
 
                 Section {
                     Toggle("Network tools", isOn: Binding(get: { state.networkToolsEnabled }, set: { state.networkToolsEnabled = $0 }))
@@ -195,6 +199,7 @@ struct SettingsView: View {
         }
     }
 
+    #if DEBUG
     @ViewBuilder
     private var developerSection: some View {
         Section("Developer") {
@@ -214,6 +219,7 @@ struct SettingsView: View {
             .accessibilityIdentifier("settings.developer.console")
         }
     }
+    #endif
 
     private var currentVoiceName: String {
         if let id = appState.voiceID,
@@ -695,20 +701,7 @@ struct E2ETestRunnerView: View {
     private func exportLatestReport() {
         guard let latestReport else { return }
         do {
-            let result = try EvidenceLayerExporter.writeLayer(
-                payload: latestReport,
-                filePrefix: "lumen-live-e2e-report",
-                format: "live-e2e-test-report-json",
-                sourceLayer: "e2eTestReport",
-                ownsLiveE2EScenarios: true,
-                includesDeterministicStaticScenarios: latestReport.results.contains { !$0.requiresAgentRun },
-                privacy: "Contains prompts, final outputs, failures, and event logs from the current local E2E run. Review before sharing outside the improve-loop.",
-                notes: [
-                    "This is the live E2E model/test layer export.",
-                    "modelBackedRequired scenarios must exercise the AssistantKernel model-backed structured generation path and record fresh AgentBehaviorTrace modelTurn evidence.",
-                    "Routing-only tool coverage scenarios are static guard checks; if a live scenario says no model loaded, routing-only checks completed, or has no model-evidence event, the offline ingester treats it as invalid E2E evidence."
-                ]
-            )
+            let result = try EvidenceLayerExporter.writeLiveE2EReport(latestReport)
             lastExportURL = result.url
             exportError = nil
         } catch {

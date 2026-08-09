@@ -39,6 +39,105 @@ nonisolated struct OutlookMessageReference: Codable, Hashable, Sendable {
     }
 }
 
+/// Process-local context for ordinal references such as "the second message".
+///
+/// Message identifiers and mailbox metadata are deliberately never persisted. The
+/// context is usable only for the currently authenticated account and is purged on
+/// an account transition. A request that started under an older account is not
+/// allowed to repopulate the context after a switch.
+@MainActor
+final class OutlookRecentMessageReferenceStore {
+    static let shared = OutlookRecentMessageReferenceStore()
+
+    private static let legacyDefaultsKey = "OutlookTools.recentMessageReferences.v1"
+    private let ttl: TimeInterval
+    private let legacyDefaults: UserDefaults
+    private var activeAccountID: String?
+    private var activeAuthorization: MicrosoftGraphAuthEpoch.Snapshot?
+    private var references: [OutlookMessageReference] = []
+
+    init(ttl: TimeInterval = 30 * 60, legacyDefaults: UserDefaults = .standard) {
+        self.ttl = ttl
+        self.legacyDefaults = legacyDefaults
+        purgeLegacyPersistedReferences()
+    }
+
+    func activate(
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) {
+        purgeLegacyPersistedReferences()
+        guard authorization.accountID == accountID else {
+            activeAccountID = nil
+            activeAuthorization = nil
+            references.removeAll(keepingCapacity: false)
+            return
+        }
+        guard activeAccountID != accountID || activeAuthorization != authorization else { return }
+        activeAccountID = accountID
+        activeAuthorization = authorization
+        references.removeAll(keepingCapacity: false)
+    }
+
+    func isActive(
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) -> Bool {
+        activeAccountID == accountID && activeAuthorization == authorization
+    }
+
+    func load(
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot,
+        now: Date = Date()
+    ) -> [OutlookMessageReference] {
+        guard isActive(accountID: accountID, authorization: authorization) else { return [] }
+        let cutoff = now.addingTimeInterval(-ttl)
+        references = references.filter { $0.cachedAt >= cutoff }
+        return references
+    }
+
+    func save(
+        _ newReferences: [OutlookMessageReference],
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) {
+        // Account IDs can recur after an A -> B -> A transition. Require the exact
+        // authorization generation captured by the request, not just its account.
+        guard isActive(accountID: accountID, authorization: authorization) else { return }
+        references = newReferences.prefix(50).enumerated().map { index, reference in
+            OutlookMessageReference(
+                ordinal: index + 1,
+                id: reference.id,
+                subject: reference.subject,
+                sender: reference.sender,
+                receivedDateTime: reference.receivedDateTime,
+                source: reference.source,
+                cachedAt: reference.cachedAt
+            )
+        }
+    }
+
+    func activeReferences(
+        authorization: MicrosoftGraphAuthEpoch.Snapshot,
+        now: Date = Date()
+    ) -> [OutlookMessageReference] {
+        guard let activeAccountID else { return [] }
+        return load(accountID: activeAccountID, authorization: authorization, now: now)
+    }
+
+    func clearAll() {
+        purgeLegacyPersistedReferences()
+        activeAccountID = nil
+        activeAuthorization = nil
+        references.removeAll(keepingCapacity: false)
+    }
+
+    private func purgeLegacyPersistedReferences() {
+        legacyDefaults.removeObject(forKey: Self.legacyDefaultsKey)
+    }
+}
+
 nonisolated enum OutlookToolAvailabilityState: String, Codable, Equatable, Sendable {
     case configured
     case notConfigured = "not_configured"
@@ -47,6 +146,11 @@ nonisolated enum OutlookToolAvailabilityState: String, Codable, Equatable, Senda
     case networkUnavailable = "network_unavailable"
     case providerError = "provider_error"
     case validEmptyResult = "valid_empty_result"
+}
+
+nonisolated enum OutlookOperationEffect: Sendable {
+    case readOnly
+    case mutation
 }
 
 nonisolated struct OutlookToolOutcome: Equatable, Sendable {
@@ -85,6 +189,19 @@ nonisolated struct OutlookToolOutcome: Equatable, Sendable {
         diagnostics: [String: String] = [:]
     ) -> OutlookToolOutcome {
         OutlookToolOutcome(text: text, status: .unavailable, availability: .authUnavailable, errorCode: errorCode, diagnostics: diagnostics)
+    }
+
+    static func mutationIndeterminate(diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
+        var safeDiagnostics = diagnostics
+        safeDiagnostics["retryable"] = "false"
+        safeDiagnostics["completionState"] = "indeterminate"
+        return OutlookToolOutcome(
+            text: "The Outlook action may have completed after the account changed; verify in Outlook before taking another action.",
+            status: .failed,
+            availability: .authUnavailable,
+            errorCode: "outlook_mutation_indeterminate",
+            diagnostics: safeDiagnostics
+        )
     }
 
     static func failure(from error: Error, diagnostics: [String: String] = [:]) -> OutlookToolOutcome {
@@ -155,6 +272,12 @@ nonisolated struct OutlookToolOutcome: Equatable, Sendable {
         case MicrosoftGraphAuthError.msalNotLinked,
              MicrosoftGraphAuthError.presentationAnchorUnavailable:
             return authUnavailable("Outlook authentication is unavailable in this build.", diagnostics: diagnostics)
+        case MicrosoftGraphAuthEpochError.staleCompletion:
+            return authUnavailable(
+                "Outlook account changed while the request was in progress. Try again.",
+                errorCode: "outlook_account_changed",
+                diagnostics: diagnostics
+            )
         case let error as URLError:
             return networkFailure(error, diagnostics: diagnostics)
         case let error as GraphHTTPError:
@@ -591,8 +714,7 @@ nonisolated enum OutlookToolUserVisibleOutput {
 @MainActor
 enum OutlookTools {
     private static let client = OutlookGraphToolClient()
-    private static let recentMessageReferencesKey = "OutlookTools.recentMessageReferences.v1"
-    private static let recentMessageTTL: TimeInterval = 30 * 60
+    private static let recentReferenceStore = OutlookRecentMessageReferenceStore.shared
 
     static func status() async -> OutlookToolOutcome {
         do {
@@ -606,17 +728,18 @@ enum OutlookTools {
         if let authError = auth.lastError {
             return OutlookToolOutcome.failure(from: authError, diagnostics: diagnostics)
         }
-        guard auth.isSignedIn else {
-            return .authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
-        }
-        let username = auth.account?.username ?? auth.account?.name ?? "Microsoft account"
-        let cached = loadRecentReferences()
-        let contextLine = cached.isEmpty ? "No cached message context." : "Cached message context: \(cached.count) recent message(s)."
-        return .success("Outlook signed in as \(username). Auth provider: \(auth.authProviderDescription). \(contextLine)", diagnostics: diagnostics)
+        return completedStatusOutcome(
+            account: auth.account,
+            authorizationEpoch: auth.authorizationState,
+            authEpoch: .shared,
+            authProviderDescription: auth.authProviderDescription,
+            diagnostics: diagnostics,
+            referenceStore: recentReferenceStore
+        )
     }
 
     static func listFolders(args: [String: String]) async -> OutlookToolOutcome {
-        await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
+        await perform(scopes: MicrosoftGraphScope.inboxRead) { token, _, _ in
             let folders = try await client.listFolders(accessToken: token, includeHidden: bool(args["includeHidden"]))
             if folders.isEmpty { return .validEmpty("No Outlook mail folders found.") }
             return .success(folders.map { folder in
@@ -626,14 +749,14 @@ enum OutlookTools {
     }
 
     static func listMessages(args: [String: String]) async -> OutlookToolOutcome {
-        await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
+        await perform(scopes: MicrosoftGraphScope.inboxRead) { token, accountID, authorization in
             let messages = try await client.listMessages(
                 folderID: folderID(from: args),
                 pageSize: int(args["limit"] ?? args["top"], defaultValue: 10),
                 unreadOnly: bool(args["unreadOnly"] ?? args["unread"]),
                 accessToken: token
             )
-            remember(messages: messages, source: "list")
+            remember(messages: messages, source: "list", accountID: accountID, authorization: authorization)
             return messages.isEmpty
                 ? .validEmpty(formatMessages(messages, includeBody: false))
                 : .success(formatMessages(messages, includeBody: false))
@@ -643,14 +766,14 @@ enum OutlookTools {
     static func searchMessages(args: [String: String]) async -> OutlookToolOutcome {
         let query = args["query"] ?? args["q"] ?? args["search"] ?? ""
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .invalidArguments("Missing Outlook search query.") }
-        return await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
+        return await perform(scopes: MicrosoftGraphScope.inboxRead) { token, accountID, authorization in
             let messages = try await client.searchMessages(
                 query: query,
                 folderID: folderID(from: args),
                 pageSize: int(args["limit"] ?? args["top"], defaultValue: 10),
                 accessToken: token
             )
-            remember(messages: messages, source: "search: \(query)")
+            remember(messages: messages, source: "search: \(query)", accountID: accountID, authorization: authorization)
             return messages.isEmpty
                 ? .validEmpty(formatMessages(messages, includeBody: false))
                 : .success(formatMessages(messages, includeBody: false))
@@ -658,17 +781,21 @@ enum OutlookTools {
     }
 
     static func readMessage(args: [String: String]) async -> OutlookToolOutcome {
-        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "read")) }
-        return await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
+        await perform(scopes: MicrosoftGraphScope.inboxRead) { token, accountID, authorization in
+            guard let id = messageID(from: args, accountID: accountID, authorization: authorization) else {
+                return .invalidArguments(missingMessageContextMessage(action: "read", accountID: accountID, authorization: authorization))
+            }
             let message = try await client.readMessage(messageID: id, accessToken: token)
-            remember(message: message, source: "read")
+            remember(message: message, source: "read", accountID: accountID, authorization: authorization)
             return .success(formatMessage(message, includeBody: true))
         }
     }
 
     static func listAttachments(args: [String: String]) async -> OutlookToolOutcome {
-        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "list attachments for")) }
-        return await perform(scopes: MicrosoftGraphScope.inboxRead) { token in
+        await perform(scopes: MicrosoftGraphScope.inboxRead) { token, accountID, authorization in
+            guard let id = messageID(from: args, accountID: accountID, authorization: authorization) else {
+                return .invalidArguments(missingMessageContextMessage(action: "list attachments for", accountID: accountID, authorization: authorization))
+            }
             let attachments = try await client.listAttachments(messageID: id, accessToken: token)
             if attachments.isEmpty { return .validEmpty("No attachments found for message \(id).") }
             return .success(attachments.map { attachment in
@@ -683,9 +810,9 @@ enum OutlookTools {
         let subject = args["subject"] ?? ""
         let body = args["body"] ?? args["message"] ?? args["text"] ?? ""
         guard !subject.isEmpty || !body.isEmpty else { return .invalidArguments("Missing Outlook draft subject/body.") }
-        return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
+        return await perform(scopes: MicrosoftGraphScope.readWriteMail, effect: .mutation) { token, accountID, authorization in
             let draft = try await client.createDraft(subject: subject, body: body, recipients: recipients, accessToken: token)
-            remember(message: draft, source: "draft")
+            remember(message: draft, source: "draft", accountID: accountID, authorization: authorization)
             return .success("Created Outlook draft: \(draft.subject ?? "(No subject)")\nMessage id: \(draft.id)")
         }
     }
@@ -696,46 +823,54 @@ enum OutlookTools {
         let subject = args["subject"] ?? ""
         let body = args["body"] ?? args["message"] ?? args["text"] ?? ""
         guard !subject.isEmpty || !body.isEmpty else { return .invalidArguments("Missing Outlook send subject/body.") }
-        return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
+        return await perform(scopes: MicrosoftGraphScope.readWriteMail, effect: .mutation) { token, _, _ in
             try await client.sendMail(subject: subject, body: body, recipients: recipients, accessToken: token)
             return .success("Sent Outlook email to \(recipients.joined(separator: ", ")).")
         }
     }
 
     static func markRead(args: [String: String], isRead: Bool) async -> OutlookToolOutcome {
-        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: isRead ? "mark read" : "mark unread")) }
-        return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
+        await perform(scopes: MicrosoftGraphScope.readWriteMail, effect: .mutation) { token, accountID, authorization in
+            guard let id = messageID(from: args, accountID: accountID, authorization: authorization) else {
+                return .invalidArguments(missingMessageContextMessage(action: isRead ? "mark read" : "mark unread", accountID: accountID, authorization: authorization))
+            }
             let message = try await client.markRead(messageID: id, isRead: isRead, accessToken: token)
-            remember(message: message, source: isRead ? "mark_read" : "mark_unread")
+            remember(message: message, source: isRead ? "mark_read" : "mark_unread", accountID: accountID, authorization: authorization)
             return .success("Marked Outlook message as \(isRead ? "read" : "unread"): \(message.subject ?? id)")
         }
     }
 
     static func moveMessage(args: [String: String]) async -> OutlookToolOutcome {
-        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "move")) }
         let destination = args["destinationId"] ?? args["destination"] ?? args["folderId"] ?? args["folder"] ?? ""
         guard !destination.isEmpty else { return .invalidArguments("Missing destination folder id/name. Use archive, deleteditems, junkemail, inbox, or a folder id.") }
-        return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
+        return await perform(scopes: MicrosoftGraphScope.readWriteMail, effect: .mutation) { token, accountID, authorization in
+            guard let id = messageID(from: args, accountID: accountID, authorization: authorization) else {
+                return .invalidArguments(missingMessageContextMessage(action: "move", accountID: accountID, authorization: authorization))
+            }
             let moved = try await client.moveMessage(messageID: id, destinationID: canonicalFolderID(destination), accessToken: token)
-            remember(message: moved, source: "move: \(destination)")
+            remember(message: moved, source: "move: \(destination)", accountID: accountID, authorization: authorization)
             return .success("Moved Outlook message to \(destination). New message id: \(moved.id)")
         }
     }
 
     static func deleteMessage(args: [String: String]) async -> OutlookToolOutcome {
-        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "delete")) }
-        return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
+        await perform(scopes: MicrosoftGraphScope.readWriteMail, effect: .mutation) { token, accountID, authorization in
+            guard let id = messageID(from: args, accountID: accountID, authorization: authorization) else {
+                return .invalidArguments(missingMessageContextMessage(action: "delete", accountID: accountID, authorization: authorization))
+            }
             try await client.deleteMessage(messageID: id, accessToken: token)
-            removeFromRecentReferences(messageID: id)
+            removeFromRecentReferences(messageID: id, accountID: accountID, authorization: authorization)
             return .success("Deleted Outlook message: \(id)")
         }
     }
 
     static func reply(args: [String: String], replyAll: Bool) async -> OutlookToolOutcome {
-        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: replyAll ? "reply-all to" : "reply to")) }
         let comment = args["body"] ?? args["comment"] ?? args["message"] ?? args["text"] ?? ""
         guard !comment.isEmpty else { return .invalidArguments("Missing reply body/comment.") }
-        return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
+        return await perform(scopes: MicrosoftGraphScope.readWriteMail, effect: .mutation) { token, accountID, authorization in
+            guard let id = messageID(from: args, accountID: accountID, authorization: authorization) else {
+                return .invalidArguments(missingMessageContextMessage(action: replyAll ? "reply-all to" : "reply to", accountID: accountID, authorization: authorization))
+            }
             if replyAll { try await client.replyAll(messageID: id, comment: comment, accessToken: token) }
             else { try await client.reply(messageID: id, comment: comment, accessToken: token) }
             return .success(replyAll ? "Sent Outlook reply-all to cached message \(id)." : "Sent Outlook reply to cached message \(id).")
@@ -743,23 +878,35 @@ enum OutlookTools {
     }
 
     static func forward(args: [String: String]) async -> OutlookToolOutcome {
-        guard let id = messageID(from: args) else { return .invalidArguments(missingMessageContextMessage(action: "forward")) }
         let to = recipients(from: args)
         guard !to.isEmpty else { return .invalidArguments("Missing forward recipient.") }
         let comment = args["body"] ?? args["comment"] ?? args["message"] ?? args["text"] ?? ""
-        return await perform(scopes: MicrosoftGraphScope.readWriteMail) { token in
+        return await perform(scopes: MicrosoftGraphScope.readWriteMail, effect: .mutation) { token, accountID, authorization in
+            guard let id = messageID(from: args, accountID: accountID, authorization: authorization) else {
+                return .invalidArguments(missingMessageContextMessage(action: "forward", accountID: accountID, authorization: authorization))
+            }
             try await client.forward(messageID: id, comment: comment, recipients: to, accessToken: token)
             return .success("Forwarded Outlook message \(id) to \(to.joined(separator: ", ")).")
         }
     }
 
     static func recentContextSummary() -> String {
-        let refs = loadRecentReferences()
+        let refs = recentReferenceStore.activeReferences(
+            authorization: MicrosoftGraphAuthEpoch.shared.capture()
+        )
         if refs.isEmpty { return "No cached Outlook message context. List or search messages first." }
         return refs.map(\.displayLine).joined(separator: "\n")
     }
 
-    private static func perform(scopes: [String], operation: @escaping (String) async throws -> OutlookToolOutcome) async -> OutlookToolOutcome {
+    private static func perform(
+        scopes: [String],
+        effect: OutlookOperationEffect = .readOnly,
+        operation: @escaping (
+            String,
+            String,
+            MicrosoftGraphAuthEpoch.Snapshot
+        ) async throws -> OutlookToolOutcome
+    ) async -> OutlookToolOutcome {
         do {
             _ = try MicrosoftGraphConfiguration.load()
             let auth = MicrosoftGraphAuthManager()
@@ -772,20 +919,121 @@ enum OutlookTools {
                 return .authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
             }
             let token = try await auth.acquireToken(scopes: scopes, preferredAccountID: auth.account?.id)
-            var outcome = try await operation(token)
-            if outcome.diagnostics.isEmpty {
-                outcome = OutlookToolOutcome(
-                    text: outcome.text,
-                    status: outcome.status,
-                    availability: outcome.availability,
-                    errorCode: outcome.errorCode,
-                    diagnostics: diagnostics
-                )
+            guard let authorizedAccountID = auth.account?.id else {
+                return .authUnavailable("Outlook is not signed in. Open Outlook in Lumen and sign in first.", diagnostics: diagnostics)
             }
-            return outcome
+            let authorizationEpoch = MicrosoftGraphAuthEpoch.shared.capture()
+            try MicrosoftGraphAuthEpoch.shared.requireCurrent(
+                authorizationEpoch,
+                accountID: authorizedAccountID
+            )
+            recentReferenceStore.activate(
+                accountID: authorizedAccountID,
+                authorization: authorizationEpoch
+            )
+            let outcome: OutlookToolOutcome
+            do {
+                outcome = try await operation(token, authorizedAccountID, authorizationEpoch)
+            } catch {
+                if effect == .mutation,
+                   (!MicrosoftGraphAuthEpoch.shared.isCurrent(
+                       authorizationEpoch,
+                       accountID: authorizedAccountID
+                   ) || !recentReferenceStore.isActive(
+                       accountID: authorizedAccountID,
+                       authorization: authorizationEpoch
+                   )) {
+                    return .mutationIndeterminate(diagnostics: diagnostics)
+                }
+                throw error
+            }
+            return completedOperationOutcome(
+                outcome,
+                authorizedAccountID: authorizedAccountID,
+                authorizationEpoch: authorizationEpoch,
+                authEpoch: .shared,
+                diagnostics: diagnostics,
+                referenceStore: recentReferenceStore,
+                effect: effect
+            )
         } catch {
             return OutlookToolOutcome.failure(from: error, diagnostics: buildDiagnostics())
         }
+    }
+
+    static func completedOperationOutcome(
+        _ outcome: OutlookToolOutcome,
+        authorizedAccountID: String,
+        authorizationEpoch: MicrosoftGraphAuthEpoch.Snapshot,
+        authEpoch: MicrosoftGraphAuthEpoch,
+        diagnostics: [String: String],
+        referenceStore: OutlookRecentMessageReferenceStore,
+        effect: OutlookOperationEffect = .readOnly
+    ) -> OutlookToolOutcome {
+        // A different auth flow may switch or clear the process-wide account while
+        // this request is awaiting Graph. Never release the completed old-account
+        // result, even though its reference-store writes were already discarded.
+        guard authEpoch.isCurrent(authorizationEpoch, accountID: authorizedAccountID),
+              referenceStore.isActive(
+                  accountID: authorizedAccountID,
+                  authorization: authorizationEpoch
+              ) else {
+            if effect == .mutation {
+                return .mutationIndeterminate(diagnostics: diagnostics)
+            }
+            return .authUnavailable(
+                "Outlook account changed while the request was in progress. Try again.",
+                errorCode: "outlook_account_changed",
+                diagnostics: diagnostics
+            )
+        }
+        guard outcome.diagnostics.isEmpty else { return outcome }
+        return OutlookToolOutcome(
+            text: outcome.text,
+            status: outcome.status,
+            availability: outcome.availability,
+            errorCode: outcome.errorCode,
+            diagnostics: diagnostics
+        )
+    }
+
+    static func completedStatusOutcome(
+        account: MicrosoftGraphAccountSnapshot?,
+        authorizationEpoch: MicrosoftGraphAuthEpoch.Snapshot,
+        authEpoch: MicrosoftGraphAuthEpoch,
+        authProviderDescription: String,
+        diagnostics: [String: String],
+        referenceStore: OutlookRecentMessageReferenceStore
+    ) -> OutlookToolOutcome {
+        guard let account else {
+            return .authUnavailable(
+                "Outlook is not signed in. Open Outlook in Lumen and sign in first.",
+                diagnostics: diagnostics
+            )
+        }
+        guard authEpoch.isCurrent(authorizationEpoch, accountID: account.id) else {
+            return .authUnavailable(
+                "Outlook account changed while status was loading. Open Outlook in Lumen to continue.",
+                errorCode: "outlook_account_changed",
+                diagnostics: diagnostics
+            )
+        }
+
+        // No actor suspension is permitted between this epoch check, reference
+        // activation, and status construction, so all three commit as one account.
+        referenceStore.activate(accountID: account.id, authorization: authorizationEpoch)
+        let username = account.username ?? account.name ?? "Microsoft account"
+        let cached = referenceStore.load(
+            accountID: account.id,
+            authorization: authorizationEpoch
+        )
+        let contextLine = cached.isEmpty
+            ? "No cached message context."
+            : "Cached message context: \(cached.count) recent message(s)."
+        return .success(
+            "Outlook signed in as \(username). Auth provider: \(authProviderDescription). \(contextLine)",
+            diagnostics: diagnostics
+        )
     }
 
     private static func buildDiagnostics(auth: MicrosoftGraphAuthManager? = nil) -> [String: String] {
@@ -845,7 +1093,12 @@ enum OutlookTools {
         return lines.joined(separator: "\n")
     }
 
-    private static func remember(messages: [GraphMailMessage], source: String) {
+    private static func remember(
+        messages: [GraphMailMessage],
+        source: String,
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) {
         let refs = messages.prefix(50).enumerated().map { index, message in
             OutlookMessageReference(
                 ordinal: index + 1,
@@ -857,11 +1110,19 @@ enum OutlookTools {
                 cachedAt: Date()
             )
         }
-        saveRecentReferences(Array(refs))
+        saveRecentReferences(Array(refs), accountID: accountID, authorization: authorization)
     }
 
-    private static func remember(message: GraphMailMessage, source: String) {
-        let current = loadRecentReferences().filter { $0.id != message.id }
+    private static func remember(
+        message: GraphMailMessage,
+        source: String,
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) {
+        let current = loadRecentReferences(
+            accountID: accountID,
+            authorization: authorization
+        ).filter { $0.id != message.id }
         let newRef = OutlookMessageReference(
             ordinal: 1,
             id: message.id,
@@ -882,11 +1143,18 @@ enum OutlookTools {
                 cachedAt: ref.cachedAt
             )
         }
-        saveRecentReferences(Array(merged))
+        saveRecentReferences(Array(merged), accountID: accountID, authorization: authorization)
     }
 
-    private static func removeFromRecentReferences(messageID: String) {
-        let remaining = loadRecentReferences().filter { $0.id != messageID }.enumerated().map { index, ref in
+    private static func removeFromRecentReferences(
+        messageID: String,
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) {
+        let remaining = loadRecentReferences(
+            accountID: accountID,
+            authorization: authorization
+        ).filter { $0.id != messageID }.enumerated().map { index, ref in
             OutlookMessageReference(
                 ordinal: index + 1,
                 id: ref.id,
@@ -897,33 +1165,26 @@ enum OutlookTools {
                 cachedAt: ref.cachedAt
             )
         }
-        saveRecentReferences(remaining)
+        saveRecentReferences(remaining, accountID: accountID, authorization: authorization)
     }
 
-    private static func loadRecentReferences() -> [OutlookMessageReference] {
-        guard let data = UserDefaults.standard.data(forKey: recentMessageReferencesKey),
-              let refs = try? JSONDecoder().decode([OutlookMessageReference].self, from: data) else { return [] }
-        let cutoff = Date().addingTimeInterval(-recentMessageTTL)
-        let fresh = refs.filter { $0.cachedAt >= cutoff }
-        if fresh.count != refs.count { saveRecentReferences(fresh) }
-        return fresh
+    private static func loadRecentReferences(
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) -> [OutlookMessageReference] {
+        recentReferenceStore.load(accountID: accountID, authorization: authorization)
     }
 
-    private static func saveRecentReferences(_ refs: [OutlookMessageReference]) {
-        let normalized = refs.prefix(50).enumerated().map { index, ref in
-            OutlookMessageReference(
-                ordinal: index + 1,
-                id: ref.id,
-                subject: ref.subject,
-                sender: ref.sender,
-                receivedDateTime: ref.receivedDateTime,
-                source: ref.source,
-                cachedAt: ref.cachedAt
-            )
-        }
-        if let data = try? JSONEncoder().encode(Array(normalized)) {
-            UserDefaults.standard.set(data, forKey: recentMessageReferencesKey)
-        }
+    private static func saveRecentReferences(
+        _ refs: [OutlookMessageReference],
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) {
+        recentReferenceStore.save(
+            refs,
+            accountID: accountID,
+            authorization: authorization
+        )
     }
 
     private static func recipients(from args: [String: String]) -> [String] {
@@ -933,13 +1194,21 @@ enum OutlookTools {
             .filter { !$0.isEmpty }
     }
 
-    private static func messageID(from args: [String: String]) -> String? {
+    private static func messageID(
+        from args: [String: String],
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) -> String? {
         let raw = args["messageId"] ?? args["messageID"] ?? args["id"] ?? args["message"] ?? args["reference"] ?? args["ordinal"]
         guard let raw else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if let resolved = resolveCachedMessageID(trimmed) { return resolved }
+        if let resolved = resolveCachedMessageID(
+            trimmed,
+            accountID: accountID,
+            authorization: authorization
+        ) { return resolved }
 
         let lowered = trimmed.lowercased()
         let contextWords: Set<String> = [
@@ -950,8 +1219,12 @@ enum OutlookTools {
         return trimmed
     }
 
-    private static func resolveCachedMessageID(_ reference: String) -> String? {
-        let refs = loadRecentReferences()
+    private static func resolveCachedMessageID(
+        _ reference: String,
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) -> String? {
+        let refs = loadRecentReferences(accountID: accountID, authorization: authorization)
         guard !refs.isEmpty else { return nil }
         let normalized = reference.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             .replacingOccurrences(of: "message", with: "")
@@ -984,8 +1257,12 @@ enum OutlookTools {
         return nil
     }
 
-    private static func missingMessageContextMessage(action: String) -> String {
-        let refs = loadRecentReferences()
+    private static func missingMessageContextMessage(
+        action: String,
+        accountID: String,
+        authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) -> String {
+        let refs = loadRecentReferences(accountID: accountID, authorization: authorization)
         guard !refs.isEmpty else {
             return "Missing Outlook message context. Ask me to list or search Outlook messages first, then say which one to \(action)."
         }

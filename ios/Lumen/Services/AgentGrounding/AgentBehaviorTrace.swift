@@ -41,6 +41,32 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
             )
         }
 
+        func redactedForPersistentDiagnostics() -> SelfModelDecisionSummary {
+            SelfModelDecisionSummary(
+                included: included,
+                schemaVersion: schemaVersion.map {
+                    AgentDiagnosticFileRedactor.summary(label: "selfModelSchemaVersion", text: $0)
+                },
+                mode: mode.map {
+                    AgentDiagnosticFileRedactor.summary(label: "selfModelMode", text: $0)
+                },
+                activeSlot: activeSlot.map {
+                    AgentDiagnosticFileRedactor.summary(label: "selfModelActiveSlot", text: $0)
+                },
+                sourceIDs: sourceIDs.map {
+                    AgentDiagnosticFileRedactor.summary(label: "selfModelSourceID", text: $0)
+                },
+                runtimeEvidenceSourceLayer: runtimeEvidenceSourceLayer.map {
+                    AgentDiagnosticFileRedactor.summary(label: "selfModelRuntimeEvidenceSourceLayer", text: $0)
+                },
+                selectedToolID: AgentDiagnosticFileRedactor.privacySafeSelectedToolID(selectedToolID),
+                requiresApproval: requiresApproval,
+                approvalMode: approvalMode.map {
+                    AgentDiagnosticFileRedactor.summary(label: "selfModelApprovalMode", text: $0)
+                }
+            )
+        }
+
         private static func selfModelBlock(in prompt: String) -> String? {
             guard let range = prompt.range(of: "[SELF MODEL]") else { return nil }
             let tail = prompt[range.upperBound...]
@@ -427,36 +453,48 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
 }
 
 nonisolated extension AgentBehaviorTrace {
-    func redactedForPersistentDiagnostics() -> AgentBehaviorTrace {
-        AgentBehaviorTrace(
-            id: id,
+    func redactedForPersistentDiagnostics(preserveLiveCorrelation: Bool = false) -> AgentBehaviorTrace {
+        let privacySafeSelectedToolID = AgentDiagnosticFileRedactor.privacySafeSelectedToolID(selectedToolID)
+        return AgentBehaviorTrace(
+            // The live trace identifier is required only while correlating an
+            // in-memory E2E run. Every persisted/shareable projection receives
+            // a fresh identifier so separate artifacts cannot be joined back
+            // to the live trace or to one another.
+            id: preserveLiveCorrelation ? id : UUID(),
             createdAt: createdAt,
             event: event,
             slot: slot,
             stage: stage,
-            scenarioID: scenarioID,
-            e2eRunID: e2eRunID,
-            agentRunID: agentRunID,
-            conversationID: conversationID,
-            turnID: turnID,
+            scenarioID: scenarioID.map {
+                preserveLiveCorrelation
+                    ? $0
+                    : AgentDiagnosticFileRedactor.summary(label: "scenarioID", text: $0)
+            },
+            e2eRunID: preserveLiveCorrelation ? e2eRunID : nil,
+            agentRunID: preserveLiveCorrelation ? agentRunID : nil,
+            conversationID: preserveLiveCorrelation ? conversationID : nil,
+            turnID: preserveLiveCorrelation ? turnID : nil,
             intent: intent,
             promptPrefix: AgentDiagnosticFileRedactor.summary(label: "prompt", text: promptPrefix),
             rawOutputPrefix: AgentDiagnosticFileRedactor.summary(label: "rawOutput", text: rawOutputPrefix),
-            selectedToolID: selectedToolID,
-            toolArguments: AgentDiagnosticFileRedactor.redactedMap(toolArguments),
-            allowedToolIDs: allowedToolIDs,
+            selectedToolID: privacySafeSelectedToolID,
+            toolArguments: AgentDiagnosticFileRedactor.privacySafeToolArguments(
+                toolArguments,
+                selectedToolID: selectedToolID
+            ),
+            allowedToolIDs: AgentDiagnosticFileRedactor.privacySafeAllowedToolIDs(allowedToolIDs),
             requiresApproval: requiresApproval,
             approvalMode: approvalMode,
             parseError: parseError,
             emittedFinalInActionTurn: emittedFinalInActionTurn,
             modelFamily: modelFamily,
             baseModelPath: baseModelPath.map { AgentDiagnosticFileRedactor.summary(label: "baseModelPath", text: $0) },
-            adapterID: adapterID,
+            adapterID: adapterID.map { AgentDiagnosticFileRedactor.summary(label: "adapterID", text: $0) },
             adapterSlot: adapterSlot,
             adapterPath: adapterPath.map { AgentDiagnosticFileRedactor.summary(label: "adapterPath", text: $0) },
             adapterApplied: adapterApplied,
             adapterScale: adapterScale,
-            adapterFailureReason: adapterFailureReason,
+            adapterFailureReason: adapterFailureReason.map { AgentDiagnosticFileRedactor.summary(label: "adapterFailure", text: $0) },
             generationElapsedMs: generationElapsedMs,
             firstTokenLatencyMs: firstTokenLatencyMs,
             outputTokenCount: outputTokenCount,
@@ -472,13 +510,13 @@ nonisolated extension AgentBehaviorTrace {
             maxTokensRequested: maxTokensRequested,
             maxTokensEffective: maxTokensEffective,
             promptCharCount: promptCharCount,
-            accelerationDiagnostic: accelerationDiagnostic,
-            accelerationDiagnostics: accelerationDiagnostics,
+            accelerationDiagnostic: accelerationDiagnostic.map { AgentDiagnosticFileRedactor.summary(label: "acceleration", text: $0) },
+            accelerationDiagnostics: nil,
             emptyOutputReason: emptyOutputReason,
             streamStarted: streamStarted,
             selectedRuntime: selectedRuntime,
-            selectedAdapter: selectedAdapter,
-            modelIdentifier: modelIdentifier,
+            selectedAdapter: selectedAdapter.map { AgentDiagnosticFileRedactor.summary(label: "selectedAdapter", text: $0) },
+            modelIdentifier: modelIdentifier.map { AgentDiagnosticFileRedactor.summary(label: "modelIdentifier", text: $0) },
             modelLoaded: modelLoaded,
             stopSequences: stopSequences.map { AgentDiagnosticFileRedactor.summary(label: "stop", text: $0) },
             temperature: temperature,
@@ -494,7 +532,7 @@ nonisolated extension AgentBehaviorTrace {
             finalValidatorAcceptedCandidate: finalValidatorAcceptedCandidate,
             finalValidatorReplacementSource: finalValidatorReplacementSource,
             finalValidatorRejectionReason: finalValidatorRejectionReason,
-            selfModel: selfModel
+            selfModel: selfModel?.redactedForPersistentDiagnostics()
         )
     }
 }
@@ -775,6 +813,7 @@ nonisolated enum AgentBehaviorTraceEmitter {
 }
 
 nonisolated enum AgentDiagnosticFileRedactor {
+    private static let opaqueToolArgumentKeyPrefix = "toolArg_"
     private static let persistentRuntimePathAllowlist: Set<String> = [
         "agent-model",
         "deterministic-compatibility"
@@ -806,6 +845,60 @@ nonisolated enum AgentDiagnosticFileRedactor {
         Dictionary(uniqueKeysWithValues: values.map { key, value in
             (key, summary(label: key, text: value))
         })
+    }
+
+    static func privacySafeSelectedToolID(_ value: String?) -> String? {
+        privacySafeToolID(value, summaryLabel: "selectedToolID")
+    }
+
+    static func privacySafeAllowedToolIDs(_ values: [String]) -> [String] {
+        Array(Set(values.compactMap { privacySafeToolID($0, summaryLabel: "allowedToolID") })).sorted()
+    }
+
+    static func privacySafeToolArguments(
+        _ values: [String: String],
+        selectedToolID: String?
+    ) -> [String: String] {
+        let definition = registeredToolDefinition(for: selectedToolID)
+        let allowedKeys = Set(definition?.capabilityContract.arguments.map(\.name) ?? [])
+        return values.keys.sorted().reduce(into: [:]) { result, rawKey in
+            let exportedKey: String
+            if allowedKeys.contains(rawKey) {
+                exportedKey = rawKey
+            } else if isOpaqueToolArgumentKey(rawKey) {
+                exportedKey = rawKey
+            } else {
+                exportedKey = opaqueToolArgumentKeyPrefix
+                    + String(RuntimeFallbackLogger.promptHash(rawKey).prefix(16))
+            }
+            let rawValue = values[rawKey] ?? ""
+            result[exportedKey] = summary(label: "toolArgValue", text: rawValue)
+        }
+    }
+
+    private static func privacySafeToolID(_ value: String?, summaryLabel: String) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if isRedactedSummary(trimmed, label: summaryLabel) {
+            return trimmed
+        }
+        if let definition = registeredToolDefinition(for: trimmed) {
+            return definition.id
+        }
+        return summary(label: summaryLabel, text: trimmed)
+    }
+
+    private static func registeredToolDefinition(for value: String?) -> ToolDefinition? {
+        guard let value else { return nil }
+        let canonical = ToolRouteGuard.canonicalToolID(value)
+        return ToolRegistry.all.first { $0.id == canonical }
+    }
+
+    private static func isOpaqueToolArgumentKey(_ value: String) -> Bool {
+        guard value.hasPrefix(opaqueToolArgumentKeyPrefix) else { return false }
+        let digest = value.dropFirst(opaqueToolArgumentKeyPrefix.count)
+        return digest.count == 16 && digest.allSatisfy(\.isHexDigit)
     }
 
     static func redactedRuntimePath(_ value: String?) -> String? {
@@ -871,13 +964,19 @@ nonisolated struct AgentBehaviorRepairSample: Codable, Sendable, Identifiable, H
 private final class AgentBehaviorTraceMemoryCache: @unchecked Sendable {
     private let lock = NSLock()
     private var traces: [AgentBehaviorTrace] = []
+    private var persistentProjectionIDsByLiveID: [UUID: UUID] = [:]
     private let maxTraces = 512
 
-    func remember(_ trace: AgentBehaviorTrace) {
+    func remember(_ trace: AgentBehaviorTrace, persistentProjectionID: UUID) {
         lock.lock()
         traces.append(trace)
+        persistentProjectionIDsByLiveID[trace.id] = persistentProjectionID
         if traces.count > maxTraces {
-            traces.removeFirst(traces.count - maxTraces)
+            let removed = traces.prefix(traces.count - maxTraces)
+            for trace in removed {
+                persistentProjectionIDsByLiveID.removeValue(forKey: trace.id)
+            }
+            traces.removeFirst(removed.count)
         }
         lock.unlock()
     }
@@ -888,23 +987,38 @@ private final class AgentBehaviorTraceMemoryCache: @unchecked Sendable {
         return Array(traces.suffix(max(0, limit)))
     }
 
+    func persistentProjectionIDs() -> Set<UUID> {
+        lock.lock()
+        defer { lock.unlock() }
+        return Set(persistentProjectionIDsByLiveID.values)
+    }
+
     func clear() {
         lock.lock()
         traces.removeAll()
+        persistentProjectionIDsByLiveID.removeAll()
         lock.unlock()
     }
 }
 
 nonisolated enum AgentBehaviorTraceRecorder {
-    private static let fileName = "agent-behavior-traces.jsonl"
+    private static let fileName = "agent-behavior-traces-redacted-v1.jsonl"
+    private static let legacyUnsafeFileNames = ["agent-behavior-traces.jsonl"]
     private static let maxRecentReadBytes = 1_048_576
     private static let memoryCache = AgentBehaviorTraceMemoryCache()
 
     static func record(_ trace: AgentBehaviorTrace) {
         let privacySafeTrace = trace.redactedForPersistentDiagnostics()
-        memoryCache.remember(privacySafeTrace)
+        // The current in-memory run keeps its catalog/correlation scenario key
+        // so E2E evidence can still join before export. Disk and every shareable
+        // package use the hash-summary form above.
+        memoryCache.remember(
+            trace.redactedForPersistentDiagnostics(preserveLiveCorrelation: true),
+            persistentProjectionID: privacySafeTrace.id
+        )
         do {
             let directory = try diagnosticsDirectory()
+            try purgeLegacyUnsafeArtifacts(in: directory)
             let url = directory.appendingPathComponent(fileName, isDirectory: false)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
@@ -919,7 +1033,7 @@ nonisolated enum AgentBehaviorTraceRecorder {
                 try handle.seekToEnd()
                 try handle.write(contentsOf: line)
             } else {
-                try line.write(to: url, options: [.atomic])
+                try line.write(to: url, options: [.atomic, .completeFileProtection])
             }
             DiskWriteBudget.shared.recordWrite(bytes: line.count, category: .diagnostics)
         } catch {
@@ -931,9 +1045,12 @@ nonisolated enum AgentBehaviorTraceRecorder {
         let boundedLimit = max(0, limit)
         guard boundedLimit > 0, !Task.isCancelled else { return [] }
         let inMemory = memoryCache.recent(limit: boundedLimit)
+        let inMemoryProjectionIDs = memoryCache.persistentProjectionIDs()
 
         do {
-            let url = try diagnosticsDirectory().appendingPathComponent(fileName, isDirectory: false)
+            let directory = try diagnosticsDirectory()
+            try purgeLegacyUnsafeArtifacts(in: directory)
+            let url = directory.appendingPathComponent(fileName, isDirectory: false)
             let path = url.path(percentEncoded: false)
             guard FileManager.default.fileExists(atPath: path) else { return inMemory }
 
@@ -963,8 +1080,11 @@ nonisolated enum AgentBehaviorTraceRecorder {
                 if lineData.last == 0x0D {
                     lineData.removeLast()
                 }
-                return try? decoder.decode(AgentBehaviorTrace.self, from: lineData)
-                    .redactedForPersistentDiagnostics()
+                guard let trace = try? decoder.decode(AgentBehaviorTrace.self, from: lineData),
+                      !inMemoryProjectionIDs.contains(trace.id) else {
+                    return nil
+                }
+                return trace.redactedForPersistentDiagnostics()
             }
             return mergedRecentTraces(diskTraces, inMemory, limit: boundedLimit)
         } catch {
@@ -1011,9 +1131,12 @@ nonisolated enum AgentBehaviorTraceRecorder {
     static func clear() {
         memoryCache.clear()
         do {
-            let url = try diagnosticsDirectory().appendingPathComponent(fileName, isDirectory: false)
-            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
-                try FileManager.default.removeItem(at: url)
+            let directory = try diagnosticsDirectory()
+            for candidate in [fileName] + legacyUnsafeFileNames {
+                let url = directory.appendingPathComponent(candidate, isDirectory: false)
+                if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+                    try FileManager.default.removeItem(at: url)
+                }
             }
         } catch {
             // Diagnostics cleanup must never break app execution.
@@ -1027,5 +1150,18 @@ nonisolated enum AgentBehaviorTraceRecorder {
             .appendingPathComponent("AgentBehavior", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    static func purgeLegacyUnsafeArtifacts() throws {
+        try purgeLegacyUnsafeArtifacts(in: diagnosticsDirectory())
+    }
+
+    private static func purgeLegacyUnsafeArtifacts(in directory: URL) throws {
+        for fileName in legacyUnsafeFileNames {
+            let url = directory.appendingPathComponent(fileName, isDirectory: false)
+            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
     }
 }

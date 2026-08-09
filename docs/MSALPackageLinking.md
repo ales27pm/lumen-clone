@@ -25,10 +25,10 @@ git commit -m "Link MSAL package to Lumen target"
 https://github.com/AzureAD/microsoft-authentication-library-for-objc.git
 ```
 
-- Package requirement:
+- Audited package requirement:
 
 ```text
-upToNextMajorVersion from 1.7.0
+exact version 1.9.0
 ```
 
 - Product dependency:

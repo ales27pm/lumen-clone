@@ -135,4 +135,24 @@ struct AppStartupCoordinatorTests {
         try? FileManager.default.removeItem(at: temporaryRoot)
     }
 
+    @Test func legacyPrivacyCleanupFailureDoesNotAbortRemainingCleanups() {
+        var attemptedComponents: [String] = []
+
+        let failures = AppStartupCoordinator.runLegacyPrivacyCleanups([
+            ("first", {
+                attemptedComponents.append("first")
+                throw TestError.failed
+            }),
+            ("second", {
+                attemptedComponents.append("second")
+            }),
+            ("third", {
+                attemptedComponents.append("third")
+            }),
+        ])
+
+        #expect(attemptedComponents == ["first", "second", "third"])
+        #expect(failures == ["first"])
+    }
+
 }

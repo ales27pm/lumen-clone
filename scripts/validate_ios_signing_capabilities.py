@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Mapping
 
 ALLOWED_CARPLAY_ENTITLEMENTS = {
     "com.apple.developer.carplay-voice-based-conversation",
@@ -50,13 +51,13 @@ APP_SOURCE_SUFFIXES = {".swift", ".plist", ".entitlements", ".fragment"}
 
 STANDARD_SIGNED_ENTITLEMENTS = {
     "application-identifier",
-    "aps-environment",
     "beta-reports-active",
     "com.apple.application-identifier",
     "com.apple.developer.team-identifier",
-    "com.apple.security.application-groups",
     "get-task-allow",
 }
+
+BUILD_SETTING_REFERENCE = re.compile(r"\$\(([^)]+)\)|\$\{([^}]+)\}")
 
 SIGNING_STAGES = {"archive", "app-store"}
 APPLE_DEVELOPMENT_AUTHORITY = "Apple Development"
@@ -156,14 +157,39 @@ def format_plist_value(value: Any) -> str:
     return repr(value)
 
 
-def value_matches_expected(expected: Any, actual: Any) -> bool:
-    if expected == actual:
-        return True
-    if isinstance(expected, str) and "$(" in expected and isinstance(actual, str):
-        return True
-    if isinstance(expected, list) and isinstance(actual, list) and len(expected) == len(actual):
-        return all(value_matches_expected(expected_item, actual_item) for expected_item, actual_item in zip(expected, actual))
-    return False
+def resolve_expected_build_settings(
+    expected: Any,
+    build_settings: Mapping[str, str],
+) -> Any:
+    """Resolve entitlement build-setting references to exact signed values."""
+    if isinstance(expected, str):
+        unresolved: set[str] = set()
+
+        def replacement(match: re.Match[str]) -> str:
+            key = match.group(1) or match.group(2)
+            value = build_settings.get(key)
+            if value is None:
+                unresolved.add(key)
+                return match.group(0)
+            return value
+
+        resolved = BUILD_SETTING_REFERENCE.sub(replacement, expected)
+        if unresolved:
+            raise ValueError(
+                "unresolved build setting(s): " + ", ".join(sorted(unresolved))
+            )
+        return resolved
+    if isinstance(expected, list):
+        return [
+            resolve_expected_build_settings(item, build_settings)
+            for item in expected
+        ]
+    if isinstance(expected, dict):
+        return {
+            key: resolve_expected_build_settings(value, build_settings)
+            for key, value in expected.items()
+        }
+    return expected
 
 
 def validate_app_store_entitlements_match(development_path: Path, app_store_path: Path) -> list[str]:
@@ -625,8 +651,11 @@ def validate_signed_entitlements(
     signed_entitlements: dict[str, Any],
     expected_entitlements_path: Path,
     source: str,
+    *,
+    build_settings: Mapping[str, str] | None = None,
 ) -> list[str]:
     expected_entitlements = read_plist(expected_entitlements_path)
+    resolved_build_settings = build_settings or {}
     failures: list[str] = []
     for key in signed_entitlements:
         if message := sanitized_entitlement_message(key):
@@ -634,14 +663,25 @@ def validate_signed_entitlements(
         elif message := disallowed_entitlement_message(key):
             failures.append(f"{source}: disallowed signed entitlement '{key}'. {message}")
 
-    for key, expected_value in expected_entitlements.items():
+    for key, unresolved_expected_value in expected_entitlements.items():
+        try:
+            expected_value = resolve_expected_build_settings(
+                unresolved_expected_value,
+                resolved_build_settings,
+            )
+        except ValueError as error:
+            failures.append(
+                f"{source}: cannot resolve expected signed entitlement '{key}' "
+                f"from {expected_entitlements_path}: {error}"
+            )
+            continue
         if key not in signed_entitlements:
             failures.append(
                 f"{source}: missing expected signed entitlement '{key}' from {expected_entitlements_path}"
             )
             continue
         actual_value = signed_entitlements[key]
-        if not value_matches_expected(expected_value, actual_value):
+        if expected_value != actual_value:
             failures.append(
                 f"{source}: signed entitlement '{key}' is {format_plist_value(actual_value)}; "
                 f"expected {format_plist_value(expected_value)} from {expected_entitlements_path}"
@@ -652,15 +692,40 @@ def validate_signed_entitlements(
         for key in signed_entitlements
         if key not in expected_entitlements
         and key not in STANDARD_SIGNED_ENTITLEMENTS
-        and not key.startswith("com.apple.developer.associated-domains")
     )
     if extra_project_keys:
-        print(
-            f"warning: {source} has additional signed entitlements not tracked in "
-            f"{expected_entitlements_path}: {', '.join(extra_project_keys)}",
-            file=sys.stderr,
+        failures.append(
+            f"{source}: unexpected signed entitlements not allowlisted or tracked in "
+            f"{expected_entitlements_path}: {', '.join(extra_project_keys)}"
         )
     return failures
+
+
+def entitlement_build_settings(evidence: SignedArtifactEvidence) -> dict[str, str]:
+    """Derive the exact values Xcode substituted into signed entitlements."""
+    suffix = f".{evidence.bundle_identifier}"
+    signed_app_identifier = evidence.signed_entitlements.get("application-identifier")
+    app_identifier_prefix = ""
+    if isinstance(signed_app_identifier, str) and signed_app_identifier.endswith(suffix):
+        app_identifier_prefix = signed_app_identifier[: -len(suffix)]
+    if not app_identifier_prefix:
+        profile_prefixes = sorted(
+            _string_values(evidence.profile.get("ApplicationIdentifierPrefix"))
+        )
+        if len(profile_prefixes) == 1:
+            app_identifier_prefix = profile_prefixes[0].rstrip(".")
+
+    prefix_value = f"{app_identifier_prefix}." if app_identifier_prefix else ""
+    team_identifier = evidence.signature_team_identifier
+    settings: dict[str, str] = {}
+    if prefix_value:
+        settings["AppIdentifierPrefix"] = prefix_value
+        settings["TeamIdentifierPrefix"] = prefix_value
+    if team_identifier:
+        settings["DEVELOPMENT_TEAM"] = team_identifier
+        settings["DevelopmentTeam"] = team_identifier
+        settings["TeamIdentifier"] = team_identifier
+    return settings
 
 
 def validate_signed_app(
@@ -676,6 +741,7 @@ def validate_signed_app(
                 evidence.signed_entitlements,
                 expected_entitlements_path,
                 source,
+                build_settings=entitlement_build_settings(evidence),
             ),
             *validate_signing_evidence(evidence, signing_stage, source),
         ]

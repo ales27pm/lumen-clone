@@ -71,6 +71,7 @@ nonisolated enum StructuredToolCallValidationError: Error, Equatable, Sendable {
     case toolNotAvailable(String)
     case missingRequiredArgument(tool: String, argument: String)
     case invalidArgumentType(tool: String, argument: String, expected: ToolArgumentValueType)
+    case invalidArgumentValue(tool: String, argument: String)
     case invalidEnumValue(tool: String, argument: String, allowed: [String])
     case extraArguments(tool: String, arguments: [String])
 
@@ -84,6 +85,8 @@ nonisolated enum StructuredToolCallValidationError: Error, Equatable, Sendable {
             return "missing_required_argument:\(tool).\(argument)"
         case .invalidArgumentType(let tool, let argument, let expected):
             return "invalid_argument_type:\(tool).\(argument):expected_\(expected.rawValue)"
+        case .invalidArgumentValue(let tool, let argument):
+            return "invalid_argument_value:\(tool).\(argument)"
         case .invalidEnumValue(let tool, let argument, let allowed):
             return "invalid_enum_value:\(tool).\(argument):allowed_\(allowed.sorted().joined(separator: "|"))"
         case .extraArguments(let tool, let arguments):
@@ -144,6 +147,10 @@ nonisolated enum StructuredToolCallValidator {
             guard let definition = contractByName[name] else { continue }
             guard isValue(value, compatibleWith: definition.type) else {
                 return .failure(.invalidArgumentType(tool: canonicalToolID, argument: name, expected: definition.type))
+            }
+            if let valueDomain = definition.valueDomain,
+               !valueDomain.accepts(value) {
+                return .failure(.invalidArgumentValue(tool: canonicalToolID, argument: name))
             }
             if definition.type == .enumeration,
                let allowedValues = definition.allowedValues,

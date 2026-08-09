@@ -2,7 +2,6 @@ import Foundation
 import SwiftData
 import BackgroundTasks
 import UserNotifications
-import EventKit
 import UIKit
 import OSLog
 
@@ -69,16 +68,96 @@ struct BackgroundTaskRegistrationOutcome: Equatable, Sendable {
 
 nonisolated enum TriggerRunOutcome: Equatable, Sendable {
     case completed(String)
-    case blocked(String)
+    case deferred(TriggerExecutionIssue)
+    case failed(TriggerExecutionIssue)
+    case cancelled(TriggerExecutionIssue)
+    case blocked(TriggerExecutionIssue)
     case persistenceFailed(TriggerPersistenceFailure)
 
     var renderedText: String {
         switch self {
-        case .completed(let text), .blocked(let text):
+        case .completed(let text):
             text
+        case .deferred(let issue), .failed(let issue), .cancelled(let issue), .blocked(let issue):
+            issue.message
         case .persistenceFailed(let failure):
             failure.userMessage
         }
+    }
+}
+
+nonisolated enum TriggerExecutionIssueCategory: String, Hashable, Sendable {
+    case transientUnavailable
+    case userInteractionRequired
+    case unsupportedSchedule
+    case executionFailure
+    case cancellation
+    case persistenceFailure
+}
+
+nonisolated struct TriggerExecutionIssue: Equatable, Sendable {
+    let category: TriggerExecutionIssueCategory
+    let code: String
+    let message: String
+
+    init(
+        category: TriggerExecutionIssueCategory = .transientUnavailable,
+        code: String,
+        message: String
+    ) {
+        self.category = category
+        self.code = code
+        self.message = message
+    }
+}
+
+nonisolated struct TriggerScanOutcome: Equatable, Sendable {
+    nonisolated enum Severity: String, Equatable, Sendable {
+        case completed
+        case deferred
+        case failed
+    }
+
+    let completedCount: Int
+    let deferredIssues: [TriggerExecutionIssue]
+    let failedIssues: [TriggerExecutionIssue]
+
+    static var completed: Self {
+        Self(completedCount: 0, deferredIssues: [], failedIssues: [])
+    }
+
+    static func deferred(_ issue: TriggerExecutionIssue) -> Self {
+        Self(completedCount: 0, deferredIssues: [issue], failedIssues: [])
+    }
+
+    static func failed(_ issue: TriggerExecutionIssue) -> Self {
+        Self(completedCount: 0, deferredIssues: [], failedIssues: [issue])
+    }
+
+    static func aggregate(
+        completedCount: Int,
+        deferredIssues: [TriggerExecutionIssue],
+        failedIssues: [TriggerExecutionIssue]
+    ) -> Self {
+        Self(
+            completedCount: completedCount,
+            deferredIssues: deferredIssues,
+            failedIssues: failedIssues
+        )
+    }
+
+    var severity: Severity {
+        if !failedIssues.isEmpty { return .failed }
+        if !deferredIssues.isEmpty { return .deferred }
+        return .completed
+    }
+
+    var backgroundTaskSucceeded: Bool {
+        severity == .completed
+    }
+
+    var issue: TriggerExecutionIssue? {
+        failedIssues.first ?? deferredIssues.first
     }
 }
 
@@ -120,6 +199,7 @@ final class TriggerScheduler {
     private let registrar: any BackgroundTaskRegistering
     private let submitter: any BackgroundTaskSubmitting
     private let executionSafetyStore: any TriggerExecutionSafetyStoring
+    private let headlessRun: @MainActor (String, SettingsSnapshot, ModelContext, Int) async -> HeadlessAgentRunResult
     private var registeredTaskIdentifiers: Set<String> = []
     private(set) var lastRegistrationOutcomes: [BackgroundTaskRegistrationOutcome] = []
     private var isRunning = false
@@ -134,11 +214,21 @@ final class TriggerScheduler {
     init(
         registrar: any BackgroundTaskRegistering,
         submitter: any BackgroundTaskSubmitting,
-        executionSafetyStore: any TriggerExecutionSafetyStoring
+        executionSafetyStore: any TriggerExecutionSafetyStoring,
+        headlessRun: @escaping @MainActor (String, SettingsSnapshot, ModelContext, Int) async -> HeadlessAgentRunResult = { prompt, settings, context, maxSteps in
+            await HeadlessAgentKernelRunner.runWithOutcome(
+                prompt: prompt,
+                settings: settings,
+                context: context,
+                maxSteps: maxSteps,
+                source: .trigger
+            )
+        }
     ) {
         self.registrar = registrar
         self.submitter = submitter
         self.executionSafetyStore = executionSafetyStore
+        self.headlessRun = headlessRun
     }
 
     convenience init(registrar: any BackgroundTaskRegistering) {
@@ -301,16 +391,25 @@ final class TriggerScheduler {
     // MARK: - Firing
 
     @discardableResult
-    func fireDueTriggers(context: ModelContext, appState: AppState) async -> String? {
+    func fireDueTriggers(context: ModelContext, appState: AppState) async -> TriggerScanOutcome {
         await fireDueTriggers(context: context, settings: appState.snapshot)
     }
 
     @discardableResult
-    func fireDueTriggers(context: ModelContext, settings: SettingsSnapshot) async -> String? {
+    func fireDueTriggers(context: ModelContext, settings: SettingsSnapshot) async -> TriggerScanOutcome {
         guard !isAutonomousExecutionSuspended else {
-            return Self.autonomousExecutionSuspendedMessage
+            return .deferred(.init(
+                category: .persistenceFailure,
+                code: "trigger_persistence_safety_interlock",
+                message: Self.autonomousExecutionSuspendedMessage
+            ))
         }
-        guard !isRunning else { return nil }
+        guard !isRunning else {
+            return .deferred(.init(
+                code: "trigger_scan_already_running",
+                message: "Trigger scan deferred because another scan is already active."
+            ))
+        }
         let deadline = Date().addingTimeInterval(4.5)
         isRunning = true
         defer { isRunning = false }
@@ -320,11 +419,50 @@ final class TriggerScheduler {
         do {
             all = try context.fetch(FetchDescriptor<Trigger>())
         } catch {
-            return Self.triggerFetchFailureMessage(error: error)
+            return .failed(.init(
+                category: .executionFailure,
+                code: "trigger_fetch_failed",
+                message: Self.triggerFetchFailureMessage(error: error)
+            ))
         }
-        for t in all where !t.isPaused {
-            guard !isAutonomousExecutionSuspended else { break }
-            guard Date() < deadline else { break }
+
+        var completedCount = 0
+        var deferredIssues: [TriggerExecutionIssue] = []
+        var failedIssues: [TriggerExecutionIssue] = []
+        var mustSkipFinalPersistence = false
+
+        scan: for t in all where !t.isPaused {
+            if isAutonomousExecutionSuspended {
+                deferredIssues.append(.init(
+                    category: .persistenceFailure,
+                    code: "trigger_persistence_safety_interlock",
+                    message: Self.autonomousExecutionSuspendedMessage
+                ))
+                mustSkipFinalPersistence = true
+                break scan
+            }
+            guard Date() < deadline else {
+                deferredIssues.append(.init(
+                    code: "trigger_scan_deadline_exceeded",
+                    message: "Trigger scan deferred because its execution deadline expired."
+                ))
+                break scan
+            }
+
+            if let unavailability = t.kind.creationUnavailability {
+                // Legacy records may predate the fail-closed creation contract.
+                // Quarantine them without touching EventKit or requesting access,
+                // then continue so independent due triggers are not starved.
+                t.isPaused = true
+                t.nextFireAt = nil
+                failedIssues.append(.init(
+                    category: .unsupportedSchedule,
+                    code: unavailability.rawValue,
+                    message: unavailability.message
+                ))
+                continue scan
+            }
+
             if let next = t.nextFireAt ?? t.computeNextFire(from: now), next <= now.addingTimeInterval(30) {
                 let outcome = await runTriggerWithPersistenceOutcome(
                     t,
@@ -334,25 +472,45 @@ final class TriggerScheduler {
                 )
                 switch outcome {
                 case .completed:
-                    break
-                case .blocked(let message):
-                    return message
+                    completedCount += 1
+                case .deferred(let issue), .cancelled(let issue):
+                    deferredIssues.append(issue)
+                case .failed(let issue), .blocked(let issue):
+                    failedIssues.append(issue)
                 case .persistenceFailed(let failure):
-                    // Do not perform the generic scan save below. It could make
-                    // the run-state write succeed without clearing its durable
-                    // retry token, leaving execution suspended indefinitely.
-                    return failure.userMessage
+                    // A generic save could commit run-state without clearing the
+                    // durable retry token. Stop this scan and leave the safety
+                    // interlock authoritative until explicit recovery.
+                    failedIssues.append(.init(
+                        category: .persistenceFailure,
+                        code: failure.errorCode,
+                        message: failure.userMessage
+                    ))
+                    mustSkipFinalPersistence = true
+                    break scan
                 }
             } else if t.nextFireAt == nil {
                 t.nextFireAt = t.computeNextFire(from: now)
             }
         }
-        do {
-            try persist(context, operation: "fireDueTriggers", scope: "Trigger")
-        } catch {
-            return Self.triggerPersistenceFailureMessage(error: error)
+
+        if !mustSkipFinalPersistence {
+            do {
+                try persist(context, operation: "fireDueTriggers", scope: "Trigger")
+            } catch {
+                failedIssues.append(.init(
+                    category: .persistenceFailure,
+                    code: "trigger_scan_persistence_failed",
+                    message: Self.triggerPersistenceFailureMessage(error: error)
+                ))
+            }
         }
-        return nil
+
+        return .aggregate(
+            completedCount: completedCount,
+            deferredIssues: deferredIssues,
+            failedIssues: failedIssues
+        )
     }
 
     @discardableResult
@@ -396,9 +554,55 @@ final class TriggerScheduler {
         notify: Bool
     ) async -> TriggerRunOutcome {
         if notify, isAutonomousExecutionSuspended {
-            return .blocked(Self.autonomousExecutionSuspendedMessage)
+            return .blocked(.init(
+                category: .persistenceFailure,
+                code: "trigger_persistence_safety_interlock",
+                message: Self.autonomousExecutionSuspendedMessage
+            ))
         }
-        let result = await HeadlessAgentKernelRunner.run(prompt: trigger.prompt, settings: settings, context: context, maxSteps: min(settings.maxAgentSteps, 3), source: .trigger)
+        let result = await headlessRun(
+            trigger.prompt,
+            settings,
+            context,
+            min(settings.maxAgentSteps, 3)
+        )
+        switch result.status {
+        case .completed:
+            break
+        case .deferred:
+            return .deferred(.init(
+                category: Self.issueCategory(for: result, fallback: .transientUnavailable),
+                code: result.code ?? "headless_trigger_deferred",
+                message: result.text
+            ))
+        case .blocked:
+            let issue = TriggerExecutionIssue(
+                category: Self.issueCategory(for: result, fallback: .userInteractionRequired),
+                code: result.code ?? "headless_trigger_requires_user_interaction",
+                message: result.text
+            )
+            trigger.isPaused = true
+            trigger.nextFireAt = nil
+            if let failure = persistRunState(
+                triggerID: trigger.id,
+                save: { try persist(context, operation: "blockTrigger", scope: "Trigger") }
+            ) {
+                return .persistenceFailed(failure)
+            }
+            return .blocked(issue)
+        case .failed:
+            return .failed(.init(
+                category: Self.issueCategory(for: result, fallback: .executionFailure),
+                code: result.code ?? "headless_trigger_failed",
+                message: result.text
+            ))
+        case .cancelled:
+            return .cancelled(.init(
+                category: Self.issueCategory(for: result, fallback: .cancellation),
+                code: result.code ?? "headless_trigger_cancelled",
+                message: result.text
+            ))
+        }
         trigger.lastRunAt = Date()
         trigger.lastResult = result.text
         updateNextFireAfterRun(for: trigger)
@@ -449,6 +653,23 @@ final class TriggerScheduler {
         return "Trigger fetch failed (\(errorCode))."
     }
 
+    private nonisolated static func issueCategory(
+        for result: HeadlessAgentRunResult,
+        fallback: TriggerExecutionIssueCategory
+    ) -> TriggerExecutionIssueCategory {
+        guard let category = result.issueCategory else { return fallback }
+        switch category {
+        case .transientUnavailable:
+            return .transientUnavailable
+        case .userInteractionRequired:
+            return .userInteractionRequired
+        case .executionFailure:
+            return .executionFailure
+        case .cancellation:
+            return .cancellation
+        }
+    }
+
     private func updateNextFireAfterRun(for trigger: Trigger) {
         switch trigger.kind {
         case .once:
@@ -492,17 +713,4 @@ final class TriggerScheduler {
         return nil
     }
 
-    // MARK: - Calendar helpers
-
-    func minutesUntilNextEvent() async -> Int? {
-        let store = EKEventStore()
-        let granted = (try? await store.requestFullAccessToEvents()) ?? false
-        guard granted else { return nil }
-        let now = Date()
-        let end = now.addingTimeInterval(24 * 3600)
-        let pred = store.predicateForEvents(withStart: now, end: end, calendars: nil)
-        let events = store.events(matching: pred).filter { $0.startDate > now }.sorted { $0.startDate < $1.startDate }
-        guard let next = events.first else { return nil }
-        return Int(next.startDate.timeIntervalSince(now) / 60)
-    }
 }

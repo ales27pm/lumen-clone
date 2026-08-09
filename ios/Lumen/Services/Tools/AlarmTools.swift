@@ -9,9 +9,29 @@ private struct LumenAlarmMetadata: AlarmMetadata {
 }
 #endif
 
+nonisolated struct AlarmScheduleArguments: Equatable, Sendable {
+    let title: String
+    let fireDate: Date
+    let repeats: Bool
+    let snoozeMinutes: Int
+}
+
+nonisolated enum AlarmScheduleArgumentError: Error, Equatable, Sendable {
+    case missingSchedule
+    case invalidArgument(String)
+}
+
+nonisolated enum AlarmCountdownArgumentError: Error, Equatable, Sendable {
+    case missingDuration
+    case invalidArgument(String)
+}
+
 @MainActor
 enum AlarmTools {
     nonisolated static let unavailableMessage = "AlarmKit availability: unavailable (requires iOS 26.0+ and an AlarmKit-capable device runtime)."
+    nonisolated static let maximumScheduleDelayMinutes = ToolArgumentValueDomains.maximumScheduleDelayMinutes
+    nonisolated static let maximumSnoozeMinutes = ToolArgumentValueDomains.maximumSnoozeMinutes
+    nonisolated static let maximumDurationSeconds = ToolArgumentValueDomains.maximumCountdownDurationSeconds
 
     nonisolated static func isRuntimeUnavailableText(_ text: String) -> Bool {
         let lower = text.lowercased()
@@ -47,47 +67,137 @@ enum AlarmTools {
     }
 
     static func schedule(args: [String: String]) async -> String {
-        let title = args["title"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            ? args["title"]!
-            : "Alarm"
-        let snoozeMinutes = Int(args["snoozeMinutes"] ?? "5") ?? 5
-        let repeats = (args["repeats"] ?? "false").lowercased() == "true"
-        if repeats {
+        let arguments: AlarmScheduleArguments
+        switch scheduleArguments(from: args) {
+        case .success(let validated):
+            arguments = validated
+        case .failure(let error):
+            return invalidScheduleArgumentsMessage(error)
+        }
+
+        if arguments.repeats {
             return "Alarm scheduling failed: repeating alarms are not supported by this tool path yet."
         }
 
-        if let inMinutes = Int(args["inMinutes"] ?? "") {
-            let fireDate = Date().addingTimeInterval(TimeInterval(max(1, inMinutes) * 60))
-            return await scheduleAlarm(
-                title: title,
-                fireDate: fireDate,
-                repeats: repeats,
-                snoozeMinutes: max(1, snoozeMinutes)
-            )
-        }
-
-        if let unix = TimeInterval(args["timestamp"] ?? "") {
-            let fireDate = Date(timeIntervalSince1970: unix)
-            return await scheduleAlarm(
-                title: title,
-                fireDate: fireDate,
-                repeats: repeats,
-                snoozeMinutes: max(1, snoozeMinutes)
-            )
-        }
-
-        return "Missing schedule. Provide `inMinutes` or `timestamp` (Unix seconds)."
+        return await scheduleAlarm(
+            title: arguments.title,
+            fireDate: arguments.fireDate,
+            repeats: arguments.repeats,
+            snoozeMinutes: arguments.snoozeMinutes
+        )
     }
 
     static func countdown(args: [String: String]) async -> String {
         let title = args["title"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
             ? args["title"]!
             : "Countdown"
-        let duration = Int(args["durationSeconds"] ?? "") ?? 0
-        guard duration > 0 else {
-            return "Missing duration. Provide `durationSeconds` greater than 0."
+        let duration: Int
+        switch countdownDurationSeconds(from: args) {
+        case .success(let validated):
+            duration = validated
+        case .failure(let error):
+            return invalidCountdownArgumentsMessage(error)
         }
         return await scheduleCountdown(title: title, durationSeconds: duration)
+    }
+
+    nonisolated static func countdownDurationSeconds(
+        from args: [String: String]
+    ) -> Result<Int, AlarmCountdownArgumentError> {
+        guard let rawDuration = args["durationSeconds"] else {
+            return .failure(.missingDuration)
+        }
+        guard let duration = ToolArgumentValueDomains.alarmCountdownSeconds.integerValue(from: rawDuration) else {
+            return .failure(.invalidArgument("durationSeconds"))
+        }
+        return .success(duration)
+    }
+
+    nonisolated static func scheduleArguments(
+        from args: [String: String],
+        now: Date = Date()
+    ) -> Result<AlarmScheduleArguments, AlarmScheduleArgumentError> {
+        let title = args["title"]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? args["title"]!
+            : "Alarm"
+        guard let snoozeMinutes = integerArgument(
+            args["snoozeMinutes"],
+            defaultValue: 5,
+            domain: ToolArgumentValueDomains.alarmSnoozeMinutes
+        ) else {
+            return .failure(.invalidArgument("snoozeMinutes"))
+        }
+        let repeats = (args["repeats"] ?? "false").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "true"
+
+        let fireDate: Date
+        if let rawMinutes = args["inMinutes"] {
+            guard let inMinutes = ToolArgumentValueDomains.alarmScheduleDelayMinutes.integerValue(from: rawMinutes),
+                  let seconds = seconds(fromScheduleDelayMinutes: inMinutes) else {
+                return .failure(.invalidArgument("inMinutes"))
+            }
+            fireDate = now.addingTimeInterval(TimeInterval(seconds))
+            guard fireDate.timeIntervalSinceReferenceDate.isFinite else {
+                return .failure(.invalidArgument("inMinutes"))
+            }
+        } else if let rawTimestamp = args["timestamp"] {
+            guard let unix = TimeInterval(rawTimestamp), unix.isFinite else {
+                return .failure(.invalidArgument("timestamp"))
+            }
+            fireDate = Date(timeIntervalSince1970: unix)
+            guard fireDate.timeIntervalSinceReferenceDate.isFinite else {
+                return .failure(.invalidArgument("timestamp"))
+            }
+        } else {
+            return .failure(.missingSchedule)
+        }
+
+        return .success(AlarmScheduleArguments(
+            title: title,
+            fireDate: fireDate,
+            repeats: repeats,
+            snoozeMinutes: snoozeMinutes
+        ))
+    }
+
+    nonisolated static func seconds(fromScheduleDelayMinutes minutes: Int) -> Int? {
+        seconds(fromMinutes: minutes, maximum: maximumScheduleDelayMinutes)
+    }
+
+    nonisolated static func seconds(fromSnoozeMinutes minutes: Int) -> Int? {
+        seconds(fromMinutes: minutes, maximum: maximumSnoozeMinutes)
+    }
+
+    private nonisolated static func seconds(fromMinutes minutes: Int, maximum: Int) -> Int? {
+        guard (1...maximum).contains(minutes) else { return nil }
+        let result = minutes.multipliedReportingOverflow(by: 60)
+        return result.overflow ? nil : result.partialValue
+    }
+
+    nonisolated static func invalidScheduleArgumentsMessage(_ error: AlarmScheduleArgumentError) -> String {
+        switch error {
+        case .missingSchedule:
+            return "Missing schedule. Provide `inMinutes` or `timestamp` (Unix seconds)."
+        case .invalidArgument(let argument):
+            return "Alarm scheduling failed: invalid argument `\(argument)`."
+        }
+    }
+
+    nonisolated static func invalidCountdownArgumentsMessage(_ error: AlarmCountdownArgumentError) -> String {
+        switch error {
+        case .missingDuration:
+            return "Missing duration. Provide `durationSeconds` greater than 0."
+        case .invalidArgument(let argument):
+            return "Alarm countdown failed: invalid argument `\(argument)`."
+        }
+    }
+
+    private nonisolated static func integerArgument(
+        _ rawValue: String?,
+        defaultValue: Int,
+        domain: ToolArgumentValueDomain
+    ) -> Int? {
+        guard let rawValue else { return defaultValue }
+        return domain.integerValue(from: rawValue)
     }
 
     static func list() async -> String {
@@ -181,6 +291,9 @@ enum AlarmTools {
     }
 
     private static func scheduleAlarm(title: String, fireDate: Date, repeats: Bool, snoozeMinutes: Int) async -> String {
+        guard let snoozeSeconds = seconds(fromSnoozeMinutes: snoozeMinutes) else {
+            return invalidScheduleArgumentsMessage(.invalidArgument("snoozeMinutes"))
+        }
         guard alarmUsageDescriptionPresent() else { return missingUsageDescriptionMessage }
 #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
@@ -189,7 +302,7 @@ enum AlarmTools {
                 let configuration = AlarmManager.AlarmConfiguration<LumenAlarmMetadata>(
                     countdownDuration: Alarm.CountdownDuration(
                         preAlert: nil,
-                        postAlert: TimeInterval(max(1, snoozeMinutes) * 60)
+                        postAlert: TimeInterval(snoozeSeconds)
                     ),
                     schedule: .fixed(fireDate),
                     attributes: alarmAttributes(title: title)

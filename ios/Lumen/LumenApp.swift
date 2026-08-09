@@ -160,6 +160,11 @@ final class AppStartupCoordinator {
         try await withStage(.bootstrap) {
             try LumenModelSlotContract.validateCompletenessAtStartup()
         }
+        runLegacyPrivacyCleanups([
+            ("e2e-test-log", { try E2ETestLogStore.purgeLegacyUnsafeArtifacts() }),
+            ("agent-behavior-trace", { try AgentBehaviorTraceRecorder.purgeLegacyUnsafeArtifacts() }),
+            ("dataset-package", { try InAppDatasetPackageExporter.purgeLegacyUnsafeArtifacts() }),
+        ])
 
         // Phase 2: Grounding resources — parsed on background actor
         await loadGroundingResourcesOnBackground(appState: appState)
@@ -201,6 +206,24 @@ final class AppStartupCoordinator {
                 appState.runtime.updateBootStep(id: "grounding", detail: "Grounding resources unavailable — limited mode", state: .complete)
             }
         }
+    }
+
+    @discardableResult
+    nonisolated static func runLegacyPrivacyCleanups(
+        _ operations: [(component: String, cleanup: () throws -> Void)]
+    ) -> [String] {
+        var failedComponents: [String] = []
+        for operation in operations {
+            do {
+                try operation.cleanup()
+            } catch {
+                failedComponents.append(operation.component)
+                Logger(subsystem: "ai.lumen.app", category: "startup").warning(
+                    "Legacy privacy cleanup failed component=\(operation.component, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public). Continuing bootstrap; affected diagnostics remain fail closed."
+                )
+            }
+        }
+        return failedComponents
     }
 
     private static func withStage(_ stage: Stage, operation: () async throws -> Void) async throws {

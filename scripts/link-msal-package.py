@@ -29,6 +29,7 @@ SWIFT_LLAMA_PRODUCT_DEP_ID = "9A1B2C3D4E5F678901234571"
 SWIFT_LLAMA_PACKAGE_REF_ID = "9A1B2C3D4E5F678901234572"
 
 MSAL_REPO_URL = "https://github.com/AzureAD/microsoft-authentication-library-for-objc.git"
+MSAL_VERSION = "1.9.0"
 
 
 def replace_once(text: str, old: str, new: str) -> str:
@@ -49,6 +50,29 @@ def ensure_line_after(
     if already_present and already_present in text:
         return text
     return replace_once(text, anchor, anchor + line)
+
+
+def enforce_exact_msal_version(text: str) -> str:
+    package_anchor = (
+        f'\t\t{MSAL_PACKAGE_REF_ID} /* XCRemoteSwiftPackageReference '
+        '"microsoft-authentication-library-for-objc" */ = {'
+    )
+    package_start = text.find(package_anchor)
+    if package_start < 0:
+        raise RuntimeError("MSAL package reference block was not found")
+
+    requirement_start = text.find("\t\t\trequirement = {\n", package_start)
+    requirement_end = text.find("\t\t\t};\n", requirement_start)
+    if requirement_start < 0 or requirement_end < 0:
+        raise RuntimeError("MSAL package requirement block was not found")
+    requirement_end += len("\t\t\t};\n")
+    exact_requirement = (
+        "\t\t\trequirement = {\n"
+        "\t\t\t\tkind = exactVersion;\n"
+        f"\t\t\t\tversion = {MSAL_VERSION};\n"
+        "\t\t\t};\n"
+    )
+    return text[:requirement_start] + exact_requirement + text[requirement_end:]
 
 
 def main() -> int:
@@ -96,8 +120,8 @@ def main() -> int:
 \t\t\tisa = XCRemoteSwiftPackageReference;
 \t\t\trepositoryURL = \"{MSAL_REPO_URL}\";
 \t\t\trequirement = {{
-\t\t\t\tkind = upToNextMajorVersion;
-\t\t\t\tminimumVersion = 1.7.0;
+\t\t\t\tkind = exactVersion;
+\t\t\t\tversion = {MSAL_VERSION};
 \t\t\t}};
 \t\t}};
 """
@@ -111,6 +135,8 @@ def main() -> int:
             "\t\t};\n/* End XCRemoteSwiftPackageReference section */",
             "\t\t};\n" + msal_remote_ref + "/* End XCRemoteSwiftPackageReference section */",
         )
+
+    text = enforce_exact_msal_version(text)
 
     # XCSwiftPackageProductDependency section.
     msal_product_dep = f"""\t\t{MSAL_PRODUCT_DEP_ID} /* MSAL */ = {{
@@ -131,6 +157,8 @@ def main() -> int:
         f"{MSAL_BUILD_FILE_ID} /* MSAL in Frameworks */",
         f"{MSAL_PRODUCT_DEP_ID} /* MSAL */",
         "productName = MSAL;",
+        "kind = exactVersion;",
+        f"version = {MSAL_VERSION};",
     ]
     missing = [fragment for fragment in required if fragment not in text]
     if missing:

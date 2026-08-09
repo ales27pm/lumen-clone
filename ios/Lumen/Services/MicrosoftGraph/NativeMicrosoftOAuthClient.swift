@@ -4,7 +4,7 @@ import Foundation
 import OSLog
 import Security
 
-nonisolated struct NativeMicrosoftOAuthTokenSet: Codable, Sendable {
+nonisolated struct NativeMicrosoftOAuthTokenSet: Codable, Hashable, Sendable {
     let accessToken: String
     let refreshToken: String?
     let idToken: String?
@@ -24,9 +24,77 @@ nonisolated struct NativeMicrosoftOAuthProfile: Codable, Sendable {
     let mail: String?
 }
 
-nonisolated struct NativeMicrosoftOAuthSession: Codable, Sendable {
+nonisolated struct NativeMicrosoftOAuthSession: Codable, Hashable, Sendable {
     let account: MicrosoftGraphAccountSnapshot
     let token: NativeMicrosoftOAuthTokenSet
+}
+
+typealias NativeMicrosoftOAuthRefreshOperation = @MainActor (
+    _ refreshToken: String,
+    _ scopes: [String]
+) async throws -> NativeMicrosoftOAuthTokenSet
+
+/// Process-wide singleflight and serialization for native refresh-token use.
+///
+/// Refresh-token rotation is ordered by the provider, not by response arrival.
+/// Allowing two requests to leave with the same token can therefore leave the app
+/// holding a server-obsolete token even if local persistence uses compare-and-swap.
+@MainActor
+final class NativeMicrosoftOAuthRefreshCoordinator {
+    static let shared = NativeMicrosoftOAuthRefreshCoordinator()
+
+    private struct InFlightRefresh {
+        let id: UUID
+        let scopes: Set<String>
+        let task: Task<NativeMicrosoftOAuthTokenSet, Error>
+    }
+
+    private var inFlightByAccountID: [String: InFlightRefresh] = [:]
+    private(set) var joinedRequestCount = 0
+
+    func refreshToken(
+        for accountID: String,
+        scopes: [String],
+        operation: @escaping @MainActor () async throws -> NativeMicrosoftOAuthTokenSet
+    ) async throws -> NativeMicrosoftOAuthTokenSet {
+        let requestedScopes = Set(
+            scopes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+        if let inFlight = inFlightByAccountID[accountID] {
+            if inFlight.scopes.isSuperset(of: requestedScopes) {
+                joinedRequestCount += 1
+                return try await inFlight.task.value
+            }
+
+            // A narrower request is already using this account's refresh token.
+            // Wait for it to commit (or fail), then re-read the protected session
+            // in a new serialized operation for the broader scope set.
+            _ = try? await inFlight.task.value
+            return try await refreshToken(
+                for: accountID,
+                scopes: scopes,
+                operation: operation
+            )
+        }
+
+        let id = UUID()
+        let task = Task { @MainActor [self] in
+            defer { finishRefresh(id: id, accountID: accountID) }
+            return try await operation()
+        }
+        inFlightByAccountID[accountID] = InFlightRefresh(
+            id: id,
+            scopes: requestedScopes,
+            task: task
+        )
+        return try await task.value
+    }
+
+    private func finishRefresh(id: UUID, accountID: String) {
+        guard inFlightByAccountID[accountID]?.id == id else { return }
+        inFlightByAccountID[accountID] = nil
+    }
 }
 
 @MainActor
@@ -35,15 +103,51 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
     private let callbackScheme: String
     private var activeSession: ASWebAuthenticationSession?
     private weak var presentationAnchor: UIWindow?
+    private let keychainStore: NativeMicrosoftOAuthKeychainStore
+    private let authEpoch: MicrosoftGraphAuthEpoch
+    private let refreshCoordinator: NativeMicrosoftOAuthRefreshCoordinator
+    private let refreshOperation: NativeMicrosoftOAuthRefreshOperation?
 
-    override init() {
+    override convenience init() {
+        self.init(
+            keychainStore: NativeMicrosoftOAuthKeychainStore(),
+            authEpoch: .shared
+        )
+    }
+
+    convenience init(keychainStore: NativeMicrosoftOAuthKeychainStore) {
+        self.init(keychainStore: keychainStore, authEpoch: .shared)
+    }
+
+    convenience init(
+        keychainStore: NativeMicrosoftOAuthKeychainStore,
+        authEpoch: MicrosoftGraphAuthEpoch
+    ) {
+        self.init(
+            keychainStore: keychainStore,
+            authEpoch: authEpoch,
+            refreshCoordinator: .shared,
+            refreshOperation: nil
+        )
+    }
+
+    init(
+        keychainStore: NativeMicrosoftOAuthKeychainStore,
+        authEpoch: MicrosoftGraphAuthEpoch,
+        refreshCoordinator: NativeMicrosoftOAuthRefreshCoordinator,
+        refreshOperation: NativeMicrosoftOAuthRefreshOperation?
+    ) {
         let bundleID = Bundle.main.bundleIdentifier ?? "com.27pm.lumenclone"
         self.callbackScheme = "msauth.\(bundleID)"
+        self.keychainStore = keychainStore
+        self.authEpoch = authEpoch
+        self.refreshCoordinator = refreshCoordinator
+        self.refreshOperation = refreshOperation
         super.init()
     }
 
     func loadCachedSession() -> NativeMicrosoftOAuthSession? {
-        NativeMicrosoftOAuthKeychainStore.load()
+        keychainStore.load()
     }
 
     func cachedAccounts() -> [MicrosoftGraphAccountSnapshot] {
@@ -51,7 +155,14 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
         return [session.account]
     }
 
-    func signIn(scopes: [String], presentationViewController: UIViewController) async throws -> NativeMicrosoftOAuthSession {
+    func signIn(
+        scopes: [String],
+        presentationViewController: UIViewController,
+        expectedEpoch: MicrosoftGraphAuthEpoch.Snapshot
+    ) async throws -> (
+        session: NativeMicrosoftOAuthSession,
+        authorizationEpoch: MicrosoftGraphAuthEpoch.Snapshot
+    ) {
         let config = try MicrosoftGraphConfiguration.load()
         let verifier = try Self.makeCodeVerifier()
         let challenge = Self.makeCodeChallenge(verifier: verifier)
@@ -67,25 +178,98 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
         let token = try await exchangeCode(config: config, code: code, redirectURI: redirectURI, verifier: verifier, scopes: scopes)
         let account = try await fetchAccount(accessToken: token.accessToken)
         let session = NativeMicrosoftOAuthSession(account: account, token: token)
-        NativeMicrosoftOAuthKeychainStore.save(session)
-        return session
+        let committedEpoch = try authEpoch.replaceAccountIfCurrent(expectedEpoch, with: account.id) {
+            try keychainStore.save(session)
+        }
+        return (session, committedEpoch)
     }
 
-    func acquireToken(scopes: [String], forceRefresh: Bool) async throws -> NativeMicrosoftOAuthTokenSet {
-        guard let session = loadCachedSession() else { throw MicrosoftGraphAuthError.noAccount }
-        if !forceRefresh && !session.token.shouldRefreshProactively && token(session.token, satisfies: scopes) {
-            return session.token
+    func acquireToken(
+        scopes: [String],
+        forceRefresh: Bool,
+        expectedEpoch: MicrosoftGraphAuthEpoch.Snapshot
+    ) async throws -> NativeMicrosoftOAuthTokenSet {
+        guard let observedSession = loadCachedSession() else {
+            throw MicrosoftGraphAuthError.noAccount
         }
-        guard let refreshToken = session.token.refreshToken else { throw MicrosoftGraphAuthError.interactionRequired }
-        let config = try MicrosoftGraphConfiguration.load()
-        let refreshed = try await refresh(config: config, refreshToken: refreshToken, scopes: scopes)
-        let updated = NativeMicrosoftOAuthSession(account: session.account, token: refreshed)
-        NativeMicrosoftOAuthKeychainStore.save(updated)
+        let accountID = observedSession.account.id
+        try authEpoch.requireCurrent(expectedEpoch, accountID: accountID)
+        if !forceRefresh,
+           !observedSession.token.shouldRefreshProactively,
+           token(observedSession.token, satisfies: scopes) {
+            return observedSession.token
+        }
+
+        let refreshed = try await refreshCoordinator.refreshToken(
+            for: accountID,
+            scopes: scopes
+        ) { [self] in
+            try authEpoch.requireCurrent(expectedEpoch, accountID: accountID)
+            guard let currentSession = loadCachedSession(),
+                  currentSession.account.id == accountID else {
+                throw MicrosoftGraphAuthEpochError.staleCompletion
+            }
+            if !forceRefresh,
+               !currentSession.token.shouldRefreshProactively,
+               token(currentSession.token, satisfies: scopes) {
+                return currentSession.token
+            }
+            guard let currentRefreshToken = currentSession.token.refreshToken else {
+                throw MicrosoftGraphAuthError.interactionRequired
+            }
+            let responseToken: NativeMicrosoftOAuthTokenSet
+            if let refreshOperation {
+                responseToken = try await refreshOperation(currentRefreshToken, scopes)
+            } else {
+                let config = try MicrosoftGraphConfiguration.load()
+                responseToken = try await refresh(
+                    config: config,
+                    refreshToken: currentRefreshToken,
+                    scopes: scopes
+                )
+            }
+            return try commitRefreshedTokenIfCurrent(
+                responseToken,
+                expectedEpoch: expectedEpoch,
+                expectedSession: currentSession
+            )
+        }
+        guard token(refreshed, satisfies: scopes) else {
+            throw MicrosoftGraphAuthError.invalidScope
+        }
         return refreshed
     }
 
-    func signOut() {
-        NativeMicrosoftOAuthKeychainStore.clear()
+    /// Linearizes a refresh completion against both the shared account epoch and
+    /// the exact protected session used to dispatch it. Concurrent refreshes may
+    /// both return an explicit rotated refresh token, so a completion based on an
+    /// older session must be rejected rather than merged over a newer commit.
+    func commitRefreshedTokenIfCurrent(
+        _ responseToken: NativeMicrosoftOAuthTokenSet,
+        expectedEpoch: MicrosoftGraphAuthEpoch.Snapshot,
+        expectedSession: NativeMicrosoftOAuthSession
+    ) throws -> NativeMicrosoftOAuthTokenSet {
+        let accountID = expectedSession.account.id
+        try authEpoch.requireCurrent(expectedEpoch, accountID: accountID)
+        guard let latestSession = keychainStore.load(),
+              latestSession == expectedSession else {
+            throw MicrosoftGraphAuthEpochError.staleCompletion
+        }
+        let mergedToken = Self.preservingRefreshState(
+            responseToken,
+            from: latestSession.token
+        )
+        try keychainStore.save(
+            NativeMicrosoftOAuthSession(
+                account: latestSession.account,
+                token: mergedToken
+            )
+        )
+        return mergedToken
+    }
+
+    func signOut() throws {
+        try keychainStore.clear()
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
@@ -250,6 +434,20 @@ final class NativeMicrosoftOAuthClient: NSObject, ASWebAuthenticationPresentatio
         return requested.isSubset(of: granted)
     }
 
+    nonisolated static func preservingRefreshState(
+        _ refreshed: NativeMicrosoftOAuthTokenSet,
+        from previous: NativeMicrosoftOAuthTokenSet
+    ) -> NativeMicrosoftOAuthTokenSet {
+        NativeMicrosoftOAuthTokenSet(
+            accessToken: refreshed.accessToken,
+            refreshToken: refreshed.refreshToken ?? previous.refreshToken,
+            idToken: refreshed.idToken ?? previous.idToken,
+            expiresOn: refreshed.expiresOn,
+            scope: refreshed.scope ?? previous.scope,
+            tokenType: refreshed.tokenType
+        )
+    }
+
     nonisolated static func authErrorForTokenEndpointFailure(
         errorCode: String?,
         suberror: String? = nil,
@@ -360,11 +558,30 @@ private nonisolated struct NativeOAuthErrorResponse: Decodable {
     }
 }
 
-private nonisolated enum NativeMicrosoftOAuthKeychainStore {
-    private static let service = "ai.lumen.microsoftgraph.native-oauth"
-    private static let account = "default"
+nonisolated enum NativeMicrosoftOAuthKeychainStoreError: LocalizedError, Equatable, Sendable {
+    case unexpectedStatus(OSStatus)
 
-    static func load() -> NativeMicrosoftOAuthSession? {
+    var errorDescription: String? {
+        switch self {
+        case .unexpectedStatus:
+            return "Lumen could not update the protected Microsoft authentication session."
+        }
+    }
+}
+
+nonisolated struct NativeMicrosoftOAuthKeychainStore: Sendable {
+    private let service: String
+    private let account: String
+
+    init(
+        service: String = "ai.lumen.microsoftgraph.native-oauth",
+        account: String = "default"
+    ) {
+        self.service = service
+        self.account = account
+    }
+
+    func load() -> NativeMicrosoftOAuthSession? {
         var query = baseQuery()
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -374,20 +591,40 @@ private nonisolated enum NativeMicrosoftOAuthKeychainStore {
         return try? JSONDecoder().decode(NativeMicrosoftOAuthSession.self, from: data)
     }
 
-    static func save(_ session: NativeMicrosoftOAuthSession) {
-        guard let data = try? JSONEncoder().encode(session) else { return }
-        clear()
-        var query = baseQuery()
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(query as CFDictionary, nil)
+    func save(_ session: NativeMicrosoftOAuthSession) throws {
+        let data = try JSONEncoder().encode(session)
+        let updateAttributes: [String: Any] = [kSecValueData as String: data]
+        let updateStatus = SecItemUpdate(baseQuery() as CFDictionary, updateAttributes as CFDictionary)
+        switch updateStatus {
+        case errSecSuccess:
+            return
+        case errSecItemNotFound:
+            var addQuery = baseQuery()
+            addQuery[kSecValueData as String] = data
+            addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+            if addStatus == errSecSuccess { return }
+            if addStatus == errSecDuplicateItem {
+                let retryStatus = SecItemUpdate(baseQuery() as CFDictionary, updateAttributes as CFDictionary)
+                guard retryStatus == errSecSuccess else {
+                    throw NativeMicrosoftOAuthKeychainStoreError.unexpectedStatus(retryStatus)
+                }
+                return
+            }
+            throw NativeMicrosoftOAuthKeychainStoreError.unexpectedStatus(addStatus)
+        default:
+            throw NativeMicrosoftOAuthKeychainStoreError.unexpectedStatus(updateStatus)
+        }
     }
 
-    static func clear() {
-        SecItemDelete(baseQuery() as CFDictionary)
+    func clear() throws {
+        let status = SecItemDelete(baseQuery() as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw NativeMicrosoftOAuthKeychainStoreError.unexpectedStatus(status)
+        }
     }
 
-    private static func baseQuery() -> [String: Any] {
+    private func baseQuery() -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

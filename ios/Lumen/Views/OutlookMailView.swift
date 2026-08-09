@@ -4,7 +4,9 @@ import UIKit
 struct OutlookMailView: View {
     @State private var auth = MicrosoftGraphAuthManager()
     @State private var viewModel: MicrosoftGraphInboxViewModel?
+    @State private var presentedAccount: OutlookPresentationAccountGate?
     @State private var selectedMessage: GraphMailMessage?
+    @State private var selectedMessageAccount: OutlookPresentationAccountGate?
     @State private var showingCompose = false
     @State private var composeTo = ""
     @State private var composeSubject = ""
@@ -18,7 +20,7 @@ struct OutlookMailView: View {
 
     var body: some View {
         Group {
-            if auth.isSignedIn {
+            if hasCurrentAccountPresentation {
                 inboxContent
             } else {
                 signInContent
@@ -27,7 +29,7 @@ struct OutlookMailView: View {
         .navigationTitle("Outlook")
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if auth.isSignedIn {
+                if hasCurrentAccountPresentation {
                     Button {
                         showingCompose = true
                     } label: {
@@ -43,13 +45,43 @@ struct OutlookMailView: View {
         }
         .task {
             await auth.bootstrap()
-            ensureViewModel()
+            guard bindCurrentAccountPresentation() else {
+                let authorization = auth.authorizationState
+                if authorization.accountID != nil {
+                    await reloadForSharedAuthorization(authorization)
+                }
+                return
+            }
             viewModel?.loadCached()
-            if auth.isSignedIn { await viewModel?.refresh() }
+            await viewModel?.refresh()
         }
-        .sheet(isPresented: $showingCompose) { composeSheet }
+        .onChange(of: auth.authorizationState) { _, authorization in
+            sharedAuthorizationDidChange(to: authorization)
+        }
+        .sheet(isPresented: $showingCompose) {
+            if hasCurrentAccountPresentation {
+                composeSheet
+            } else {
+                ContentUnavailableView(
+                    "Microsoft account changed",
+                    systemImage: "person.crop.circle.badge.exclamationmark",
+                    description: Text("Reopen Outlook before composing a message.")
+                )
+            }
+        }
         .sheet(item: $selectedMessage) { message in
-            MailMessageDetailView(message: message, auth: auth)
+            if let selectedMessageAccount {
+                MailMessageDetailView(
+                    message: message,
+                    auth: auth,
+                    presentation: selectedMessageAccount
+                )
+            } else {
+                ContentUnavailableView(
+                    "Microsoft account changed",
+                    systemImage: "person.crop.circle.badge.exclamationmark"
+                )
+            }
         }
     }
 
@@ -208,7 +240,7 @@ struct OutlookMailView: View {
             Section("Inbox") {
                 ForEach(viewModel?.messages ?? []) { message in
                     Button {
-                        selectedMessage = message
+                        select(message)
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack(alignment: .firstTextBaseline) {
@@ -240,8 +272,14 @@ struct OutlookMailView: View {
             HStack {
                 Button("Sign Out", role: .destructive) {
                     Task {
-                        await auth.signOutCurrentAccount()
-                        viewModel = nil
+                        do {
+                            try await auth.signOutCurrentAccount()
+                        } catch {
+                            // Authentication and local account state are cleared
+                            // even when protected cache/provider cleanup fails;
+                            // auth.lastError presents the typed failure below.
+                        }
+                        resetAccountBoundPresentation()
                     }
                 }
                 Spacer()
@@ -287,8 +325,74 @@ struct OutlookMailView: View {
         }
     }
 
-    private func ensureViewModel() {
-        if viewModel == nil { viewModel = MicrosoftGraphInboxViewModel(auth: auth) }
+    private var hasCurrentAccountPresentation: Bool {
+        guard auth.isSignedIn, let presentedAccount else { return false }
+        return presentedAccount.isCurrent(auth.authorizationState)
+    }
+
+    @discardableResult
+    private func bindCurrentAccountPresentation() -> Bool {
+        guard let account = auth.account,
+              auth.isSignedIn,
+              let authorization = try? auth.captureAuthorization(for: account.id) else {
+            resetAccountBoundPresentation()
+            return false
+        }
+        presentedAccount = OutlookPresentationAccountGate(
+            accountID: account.id,
+            authorization: authorization
+        )
+        if viewModel == nil {
+            viewModel = MicrosoftGraphInboxViewModel(auth: auth)
+        }
+        return true
+    }
+
+    private func select(_ message: GraphMailMessage) {
+        guard let presentedAccount,
+              presentedAccount.isCurrent(auth.authorizationState) else {
+            resetAccountBoundPresentation()
+            return
+        }
+        selectedMessageAccount = presentedAccount
+        selectedMessage = message
+    }
+
+    private func sharedAuthorizationDidChange(
+        to authorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) {
+        guard let presentedAccount,
+              !presentedAccount.isCurrent(authorization) else { return }
+
+        // Clear every captured mailbox value synchronously. Rendering is also
+        // gated by the same snapshot, so old content is suppressed before an
+        // asynchronous reload for a newly selected account can begin.
+        resetAccountBoundPresentation()
+        guard authorization.accountID != nil else { return }
+        Task { await reloadForSharedAuthorization(authorization) }
+    }
+
+    private func reloadForSharedAuthorization(
+        _ expectedAuthorization: MicrosoftGraphAuthEpoch.Snapshot
+    ) async {
+        await auth.reloadCachedAccounts()
+        guard auth.authorizationState == expectedAuthorization,
+              bindCurrentAccountPresentation() else { return }
+        viewModel?.loadCached()
+        await viewModel?.refresh()
+    }
+
+    private func resetAccountBoundPresentation() {
+        viewModel = nil
+        presentedAccount = nil
+        selectedMessage = nil
+        selectedMessageAccount = nil
+        showingCompose = false
+        composeTo = ""
+        composeSubject = ""
+        composeBody = ""
+        composeError = nil
+        isSending = false
     }
 
     private func signIn() async {
@@ -298,7 +402,7 @@ struct OutlookMailView: View {
         }
         do {
             try await auth.signIn(presentationViewController: presenter)
-            ensureViewModel()
+            guard bindCurrentAccountPresentation() else { return }
             viewModel?.loadCached()
             await viewModel?.refresh()
         } catch {
@@ -307,21 +411,32 @@ struct OutlookMailView: View {
     }
 
     private func sendCompose() async {
-        ensureViewModel()
+        guard let composePresentation = presentedAccount,
+              composePresentation.isCurrent(auth.authorizationState) else {
+            resetAccountBoundPresentation()
+            return
+        }
+        if viewModel == nil, !bindCurrentAccountPresentation() { return }
         isSending = true
-        defer { isSending = false }
+        defer {
+            if composePresentation.isCurrent(auth.authorizationState) {
+                isSending = false
+            }
+        }
         do {
             let recipients = composeTo
                 .split(separator: ",")
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             try await viewModel?.send(subject: composeSubject, body: composeBody, recipients: recipients, sendAsHTML: true)
+            guard composePresentation.isCurrent(auth.authorizationState) else { return }
             composeTo = ""
             composeSubject = ""
             composeBody = ""
             composeError = nil
             showingCompose = false
         } catch {
+            guard composePresentation.isCurrent(auth.authorizationState) else { return }
             composeError = error.localizedDescription
         }
     }
@@ -330,6 +445,7 @@ struct OutlookMailView: View {
 private struct MailMessageDetailView: View {
     let message: GraphMailMessage
     let auth: MicrosoftGraphAuthManager
+    let presentation: OutlookPresentationAccountGate
     @State private var loadedMessage: GraphMailMessage?
     @State private var isLoading = false
     @State private var error: Error?
@@ -337,41 +453,71 @@ private struct MailMessageDetailView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text((loadedMessage ?? message).subjectText)
-                        .font(.title2.weight(.semibold))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("From: \((loadedMessage ?? message).senderLine)")
-                        if let received = (loadedMessage ?? message).receivedDateTime {
-                            Text(received)
+            Group {
+                if presentation.isCurrent(auth.authorizationState) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text((loadedMessage ?? message).subjectText)
+                                .font(.title2.weight(.semibold))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("From: \((loadedMessage ?? message).senderLine)")
+                                if let received = (loadedMessage ?? message).receivedDateTime {
+                                    Text(received)
+                                }
+                            }
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+
+                            if isLoading { ProgressView("Loading body…") }
+                            if let error { Text(error.localizedDescription).foregroundStyle(.red) }
+
+                            MessageBodyContentView(message: loadedMessage ?? message)
                         }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                    if isLoading { ProgressView("Loading body…") }
-                    if let error { Text(error.localizedDescription).foregroundStyle(.red) }
-
-                    MessageBodyContentView(message: loadedMessage ?? message)
+                } else {
+                    ContentUnavailableView(
+                        "Microsoft account changed",
+                        systemImage: "person.crop.circle.badge.exclamationmark",
+                        description: Text("Close this message and reopen it from the current Outlook account.")
+                    )
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .navigationTitle("Message")
             .navigationBarTitleDisplayMode(.inline)
             .task { await loadBody() }
+            .onChange(of: auth.authorizationState) { _, authorization in
+                guard !presentation.isCurrent(authorization) else { return }
+                loadedMessage = nil
+                isLoading = false
+                error = MicrosoftGraphAuthEpochError.staleCompletion
+            }
         }
     }
 
     private func loadBody() async {
-        guard loadedMessage == nil else { return }
+        guard loadedMessage == nil,
+              presentation.isCurrent(auth.authorizationState) else {
+            error = MicrosoftGraphAuthEpochError.staleCompletion
+            return
+        }
         isLoading = true
         defer { isLoading = false }
         do {
-            let token = try await auth.acquireToken(scopes: MicrosoftGraphScope.inboxRead, preferredAccountID: auth.account?.id)
-            loadedMessage = try await client.fetchMessageBody(messageID: message.id, accessToken: token)
+            try await MicrosoftGraphMessageBodyLoader.loadAndPublish(
+                messageID: message.id,
+                accountID: presentation.accountID,
+                auth: auth,
+                client: client,
+                publish: { loadedMessage = $0 }
+            )
         } catch {
+            if !presentation.isCurrent(auth.authorizationState) {
+                loadedMessage = nil
+                self.error = MicrosoftGraphAuthEpochError.staleCompletion
+                return
+            }
             self.error = error
         }
     }

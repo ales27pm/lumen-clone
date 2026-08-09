@@ -25,6 +25,7 @@ nonisolated enum FileStore {
         case persistentDirectoryUnavailable
         case directoryCreationFailed(String)
         case contentsUnavailable(String)
+        case stagedImportCleanupFailed
 
         var errorDescription: String? {
             switch self {
@@ -36,9 +37,15 @@ nonisolated enum FileStore {
                 return "Could not create the imports directory at \(path)."
             case .contentsUnavailable:
                 return "Could not list imported files."
+            case .stagedImportCleanupFailed:
+                return "Could not clean up an interrupted file import."
             }
         }
     }
+
+    private static let stagingFilePrefix = ".lumen-import-"
+    private static let stagingFileSuffix = ".staged"
+    private static let stagingProcessID = UUID().uuidString.lowercased()
 
     static var importsDirectory: URL {
         (try? importsDirectoryOrThrow()) ?? unavailableImportsDirectoryURL(fileManager: .default)
@@ -49,10 +56,43 @@ nonisolated enum FileStore {
         let dir = base.appendingPathComponent("Imports", isDirectory: true)
         do {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try purgeStaleImportStages(in: dir, fileManager: fm)
         } catch {
+            if let fileStoreError = error as? FileStoreError {
+                throw fileStoreError
+            }
             throw FileStoreError.directoryCreationFailed(dir.path)
         }
         return dir
+    }
+
+    static func purgeStaleImportStages(in directory: URL, fileManager fm: FileManager = .default) throws {
+        let candidates: [URL]
+        do {
+            candidates = try fm.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: []
+            )
+        } catch {
+            throw FileStoreError.stagedImportCleanupFailed
+        }
+
+        for candidate in candidates where isInternalStagingFile(candidate) && !isCurrentProcessStagingFile(candidate) {
+            do {
+                let values = try candidate.resourceValues(forKeys: [.isRegularFileKey])
+                guard values.isRegularFile == true else {
+                    throw FileStoreError.stagedImportCleanupFailed
+                }
+                try fm.removeItem(at: candidate)
+            } catch {
+                let cocoaError = error as NSError
+                if cocoaError.domain == NSCocoaErrorDomain && cocoaError.code == NSFileNoSuchFileError {
+                    continue
+                }
+                throw FileStoreError.stagedImportCleanupFailed
+            }
+        }
     }
 
     static func documentsDirectoryURL(fileManager: FileManager = .default) throws -> URL {
@@ -116,7 +156,13 @@ nonisolated enum FileStore {
         }
         do {
             let files = try contents(directory)
-            return ImportedFilesResult(directory: directory, files: files, mode: "loaded", diagnostic: files.isEmpty ? "empty_imports" : nil)
+            let visibleFiles = files.filter { !isInternalStagingFile($0) }
+            return ImportedFilesResult(
+                directory: directory,
+                files: visibleFiles,
+                mode: "loaded",
+                diagnostic: visibleFiles.isEmpty ? "empty_imports" : nil
+            )
         } catch {
             return ImportedFilesResult(
                 directory: directory,
@@ -138,8 +184,36 @@ nonisolated enum FileStore {
             source: source,
             importsDirectory: { try importsDirectoryOrThrow(fileManager: fm) },
             destinationExists: { fm.fileExists(atPath: $0.path) },
-            removeExisting: { try fm.removeItem(at: $0) },
-            copyItem: { try fm.copyItem(at: $0, to: $1) }
+            stageItem: { try fm.copyItem(at: $0, to: $1) },
+            commitStagedItem: { staged, destination, destinationExists in
+                if destinationExists {
+                    _ = try fm.replaceItemAt(destination, withItemAt: staged)
+                } else {
+                    try fm.moveItem(at: staged, to: destination)
+                }
+            },
+            cleanupStagedItem: { try? fm.removeItem(at: $0) }
+        )
+    }
+
+    static func importFileWithDiagnosticsForTests(
+        source: URL,
+        importsDirectory: URL,
+        fileManager fm: FileManager = .default
+    ) -> ImportFileResult {
+        importFileWithDiagnostics(
+            source: source,
+            importsDirectory: { importsDirectory },
+            destinationExists: { fm.fileExists(atPath: $0.path) },
+            stageItem: { try fm.copyItem(at: $0, to: $1) },
+            commitStagedItem: { staged, destination, destinationExists in
+                if destinationExists {
+                    _ = try fm.replaceItemAt(destination, withItemAt: staged)
+                } else {
+                    try fm.moveItem(at: staged, to: destination)
+                }
+            },
+            cleanupStagedItem: { try? fm.removeItem(at: $0) }
         )
     }
 
@@ -147,15 +221,17 @@ nonisolated enum FileStore {
         source: URL,
         importsDirectory: () throws -> URL,
         destinationExists: (URL) -> Bool,
-        removeExisting: (URL) throws -> Void,
-        copyItem: (URL, URL) throws -> Void
+        stageItem: (URL, URL) throws -> Void,
+        commitStagedItem: (URL, URL, Bool) throws -> Void,
+        cleanupStagedItem: (URL) -> Void
     ) -> ImportFileResult {
         importFileWithDiagnostics(
             source: source,
             importsDirectory: importsDirectory,
             destinationExists: destinationExists,
-            removeExisting: removeExisting,
-            copyItem: copyItem
+            stageItem: stageItem,
+            commitStagedItem: commitStagedItem,
+            cleanupStagedItem: cleanupStagedItem
         )
     }
 
@@ -163,8 +239,9 @@ nonisolated enum FileStore {
         source: URL,
         importsDirectory: () throws -> URL,
         destinationExists: (URL) -> Bool,
-        removeExisting: (URL) throws -> Void,
-        copyItem: (URL, URL) throws -> Void
+        stageItem: (URL, URL) throws -> Void,
+        commitStagedItem: (URL, URL, Bool) throws -> Void,
+        cleanupStagedItem: (URL) -> Void
     ) -> ImportFileResult {
         let directory: URL
         do {
@@ -177,25 +254,26 @@ nonisolated enum FileStore {
             )
         }
         let dest = directory.appendingPathComponent(source.lastPathComponent)
-        if destinationExists(dest) {
-            do {
-                try removeExisting(dest)
-            } catch {
-                return ImportFileResult(
-                    url: nil,
-                    mode: "failed",
-                    diagnostic: "import_remove_existing_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
-                )
-            }
-        }
+        let staged = stagingURL(in: directory)
         do {
-            try copyItem(source, dest)
-            return ImportFileResult(url: dest, mode: "imported", diagnostic: nil)
+            try stageItem(source, staged)
         } catch {
+            cleanupStagedItem(staged)
             return ImportFileResult(
                 url: nil,
                 mode: "failed",
                 diagnostic: "import_copy_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            )
+        }
+        do {
+            try commitStagedItem(staged, dest, destinationExists(dest))
+            return ImportFileResult(url: dest, mode: "imported", diagnostic: nil)
+        } catch {
+            cleanupStagedItem(staged)
+            return ImportFileResult(
+                url: nil,
+                mode: "failed",
+                diagnostic: "import_commit_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
             )
         }
     }
@@ -209,5 +287,48 @@ nonisolated enum FileStore {
         fileManager.temporaryDirectory
             .appendingPathComponent("LumenPersistentDirectoryUnavailable", isDirectory: true)
             .appendingPathComponent("Imports", isDirectory: true)
+    }
+
+    private static func stagingURL(in directory: URL) -> URL {
+        directory.appendingPathComponent(
+            "\(stagingFilePrefix)\(stagingProcessID)-\(UUID().uuidString.lowercased())\(stagingFileSuffix)"
+        )
+    }
+
+    private static func isInternalStagingFile(_ url: URL) -> Bool {
+        stagingIdentity(in: url.lastPathComponent) != nil
+    }
+
+    private static func isCurrentProcessStagingFile(_ url: URL) -> Bool {
+        guard let identity = stagingIdentity(in: url.lastPathComponent),
+              let processID = identity.processID else {
+            return false
+        }
+        return processID == stagingProcessID
+    }
+
+    private static func stagingIdentity(in filename: String) -> (processID: String?, itemID: String)? {
+        guard filename.hasPrefix(stagingFilePrefix), filename.hasSuffix(stagingFileSuffix) else {
+            return nil
+        }
+
+        let bodyStart = filename.index(filename.startIndex, offsetBy: stagingFilePrefix.count)
+        let bodyEnd = filename.index(filename.endIndex, offsetBy: -stagingFileSuffix.count)
+        let body = String(filename[bodyStart..<bodyEnd]).lowercased()
+
+        if UUID(uuidString: body) != nil {
+            return (processID: nil, itemID: body)
+        }
+
+        guard body.count == 73 else { return nil }
+        let separator = body.index(body.startIndex, offsetBy: 36)
+        guard body[separator] == "-" else { return nil }
+        let itemStart = body.index(after: separator)
+        let processID = String(body[..<separator])
+        let itemID = String(body[itemStart...])
+        guard UUID(uuidString: processID) != nil, UUID(uuidString: itemID) != nil else {
+            return nil
+        }
+        return (processID: processID, itemID: itemID)
     }
 }

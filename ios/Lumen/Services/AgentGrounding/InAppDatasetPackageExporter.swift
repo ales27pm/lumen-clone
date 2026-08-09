@@ -186,7 +186,7 @@ nonisolated enum InAppDatasetPackageExporter {
     static let schemaVersion = "2.0.0"
     static let exportKind = "testflight-agent-grounding-runtime-export"
     static let sourceAction = "Agent Grounding > Export TestFlight + Agent Grounding Package"
-    static let filePrefix = "lumen-testflight-agent-grounding"
+    static let filePrefix = "lumen-testflight-agent-grounding-redacted-v1"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
     static let severeModelTurnThresholdMs = 120_000
@@ -246,72 +246,56 @@ nonisolated enum InAppDatasetPackageExporter {
         _ report: E2ETestReport,
         correlationContext: ExportCorrelationContext
     ) -> E2ETestReport {
-        E2ETestReport(
+        let privacySafeReport = EvidenceLayerExporter.privacySafeE2EReportForExport(report)
+        return E2ETestReport(
             id: redactedUUID(report.id, key: correlationContext.key, domain: "report"),
             startedAt: report.startedAt,
             finishedAt: report.finishedAt,
             passed: report.passed,
             failed: report.failed,
-            results: report.results.map { result in
-                let redact = { (text: String) in
-                    redactingCorrelationIdentifiers(in: text, for: result)
-                }
+            results: zip(report.results, privacySafeReport.results).map { result, privacySafeResult in
                 return E2ETestResult(
                     id: redactedUUID(result.id, key: correlationContext.key, domain: "result"),
-                    scenarioID: result.scenarioID,
-                    kind: result.kind,
-                    title: redact(result.title),
-                    prompt: redact(result.prompt),
-                    expectedIntent: result.expectedIntent,
-                    actualIntent: result.actualIntent,
+                    scenarioID: privacySafeResult.scenarioID,
+                    kind: privacySafeResult.kind,
+                    title: privacySafeResult.title,
+                    prompt: privacySafeResult.prompt,
+                    expectedIntent: privacySafeResult.expectedIntent,
+                    actualIntent: privacySafeResult.actualIntent,
                     e2eRunID: nil,
                     agentRunID: nil,
                     conversationID: nil,
                     turnID: nil,
                     correlationToken: correlationContext.resultTokens[result.id],
-                    requiresAgentRun: result.requiresAgentRun,
-                    evidenceMode: result.evidenceMode,
-                    passed: result.passed,
-                    failures: result.failures.map(redact),
-                    finalText: redact(result.finalText),
-                    missingHints: result.missingHints.map(redact),
-                    rewriteAttempted: result.rewriteAttempted,
-                    rewriteSuccess: result.rewriteSuccess,
-                    events: result.events.map { event in
+                    requiresAgentRun: privacySafeResult.requiresAgentRun,
+                    evidenceMode: privacySafeResult.evidenceMode,
+                    passed: privacySafeResult.passed,
+                    failures: privacySafeResult.failures,
+                    finalText: privacySafeResult.finalText,
+                    missingHints: privacySafeResult.missingHints,
+                    rewriteAttempted: privacySafeResult.rewriteAttempted,
+                    rewriteSuccess: privacySafeResult.rewriteSuccess,
+                    events: zip(result.events, privacySafeResult.events).map { event, privacySafeEvent in
                         E2ETestEvent(
                             id: redactedUUID(event.id, key: correlationContext.key, domain: "event"),
-                            createdAt: event.createdAt,
-                            scenarioID: event.scenarioID,
-                            phase: event.phase,
-                            message: redact(event.message)
+                            createdAt: privacySafeEvent.createdAt,
+                            scenarioID: privacySafeEvent.scenarioID,
+                            phase: privacySafeEvent.phase,
+                            message: privacySafeEvent.message
                         )
                     },
-                    startedAt: result.startedAt,
-                    finishedAt: result.finishedAt,
-                    rawFinalPrefix: redact(result.rawFinalPrefix),
-                    sanitizedFinalPrefix: redact(result.sanitizedFinalPrefix),
-                    rawFinalHadUnsafeLeakage: result.rawFinalHadUnsafeLeakage,
-                    sanitizedFinalRemovedArtifacts: result.sanitizedFinalRemovedArtifacts.map(redact),
-                    outputHygieneFailures: result.outputHygieneFailures.map(redact),
-                    performanceMatrix: result.performanceMatrix,
-                    metadata: result.metadata.reduce(into: [:]) { redacted, entry in
-                        redacted[redact(entry.key)] = redact(entry.value)
-                    }
+                    startedAt: privacySafeResult.startedAt,
+                    finishedAt: privacySafeResult.finishedAt,
+                    rawFinalPrefix: privacySafeResult.rawFinalPrefix,
+                    sanitizedFinalPrefix: privacySafeResult.sanitizedFinalPrefix,
+                    rawFinalHadUnsafeLeakage: privacySafeResult.rawFinalHadUnsafeLeakage,
+                    sanitizedFinalRemovedArtifacts: privacySafeResult.sanitizedFinalRemovedArtifacts,
+                    outputHygieneFailures: privacySafeResult.outputHygieneFailures,
+                    performanceMatrix: privacySafeResult.performanceMatrix,
+                    metadata: privacySafeResult.metadata
                 )
             }
         )
-    }
-
-    private static func redactingCorrelationIdentifiers(in text: String, for result: E2ETestResult) -> String {
-        [result.e2eRunID, result.agentRunID, result.conversationID, result.turnID]
-            .compactMap { $0?.uuidString }
-            .reduce(text) { redacted, identifier in
-                redacted.replacingOccurrences(
-                    of: identifier,
-                    with: "[redacted-correlation]",
-                    options: [.caseInsensitive]
-                )
-            }
     }
 
     private static func redactedUUID(_ value: UUID, key: SymmetricKey, domain: String) -> UUID {
@@ -370,19 +354,32 @@ nonisolated enum InAppDatasetPackageExporter {
         includeScenarioResults: Bool,
         traces: [AgentBehaviorTrace]
     ) -> LumenInAppDatasetPackage {
+        // Correlate while the current in-memory trace still carries ephemeral
+        // run identifiers. The persisted/shareable trace copy below drops them.
+        let correlationContext = exportCorrelationContext(report: liveE2EReport, traces: traces)
         let privacySafeTraces = traces.map { $0.redactedForPersistentDiagnostics() }
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: privacySafeTraces)
-        let exportedBehaviorAudit = redactedBehaviorAudit(mergedBehaviorAudit)
-        let correlationContext = exportCorrelationContext(report: liveE2EReport, traces: privacySafeTraces)
-        let exportedTraces = privacySafeTraces.map { trace in
-            exportTrace(trace, correlationToken: correlationContext.traceTokens[trace.id])
+        let exportedBehaviorAudit = redactedBehaviorAudit(
+            mergedBehaviorAudit,
+            identityKey: correlationContext.key
+        )
+        let exportedRuntimeManifestAudit = redactedRuntimeManifestAudit(runtimeManifestAudit)
+        let exportedScenarioResults = includeScenarioResults
+            ? scenarioResults.map(redactedScenarioResult)
+            : []
+        let exportedTraces = zip(traces, privacySafeTraces).map { sourceTrace, privacySafeTrace in
+            exportTrace(
+                privacySafeTrace,
+                id: redactedUUID(sourceTrace.id, key: correlationContext.key, domain: "trace"),
+                correlationToken: correlationContext.traceTokens[sourceTrace.id]
+            )
         }
         let app = appInfo()
         let liveReportExport = liveE2EReport.map { report in
             liveE2EReportExport(
                 from: report,
                 generatedAt: Date(),
-                traces: privacySafeTraces,
+                traces: traces,
                 correlationContext: correlationContext
             )
         }
@@ -390,15 +387,13 @@ nonisolated enum InAppDatasetPackageExporter {
             from: exportedTraces,
             liveE2EReport: liveReportExport,
             rawLiveE2EReport: liveE2EReport,
-            rawTraces: privacySafeTraces,
+            rawTraces: traces,
             correlationContext: correlationContext
         )
-        let improveLoop = ImproveLoopSampleGate.buildDataset(
-            behaviorAudit: exportedBehaviorAudit,
-            traces: privacySafeTraces,
-            scenarioResults: includeScenarioResults ? scenarioResults : [],
-            sourceCommit: exportedBehaviorAudit?.sourceCommit
-        )
+        // A shareable diagnostics package must never double as a training-data
+        // transport. Even privacy hashes are not useful supervised examples, so
+        // keep the stable dataset shape while exporting no sample records.
+        let improveLoop = emptyImproveLoopDataset()
         return LumenInAppDatasetPackage(
             schemaVersion: schemaVersion,
             generatedAt: Date(),
@@ -407,9 +402,9 @@ nonisolated enum InAppDatasetPackageExporter {
             testFlight: testFlightExportInfo(app: app, liveE2EReportIncluded: liveReportExport != nil),
             manifestSource: manifestSource,
             usedRuntimeFallback: usedRuntimeFallback,
-            runtimeManifestAudit: runtimeManifestAudit,
+            runtimeManifestAudit: exportedRuntimeManifestAudit,
             behaviorAudit: exportedBehaviorAudit,
-            scenarioResults: includeScenarioResults ? scenarioResults : [],
+            scenarioResults: exportedScenarioResults,
             recentTraces: exportedTraces,
             liveE2EReport: liveReportExport,
             traceSelectedToolAllowedCount: privacySafeTraces.reduce(into: 0) { count, trace in
@@ -429,8 +424,8 @@ nonisolated enum InAppDatasetPackageExporter {
             improveLoop: improveLoop,
             exportPolicy: InAppDatasetExportPolicy(
                 format: "testflight-agent-grounding-runtime-json-package",
-                privacy: "contains only manifest audit failures, behavior violations, redacted bounded runtime trace prefixes, opaque per-export correlation tokens, and gated improve-loop samples; no full conversations, contacts, calendar bodies, files, photos, raw trace or correlation identifiers, local paths, or tool payload bodies are exported",
-                promptPolicy: "promptPrefix and rawOutputPrefix fields are redacted, hidden-reasoning-stripped, bounded diagnostic snippets only",
+                privacy: "Contains metrics, safe categories, counts, one-way hash summaries, opaque per-export correlation tokens, and no improve-loop sample records. Raw prompts, model outputs, audit prose, scenario text, conversations, contacts, calendar bodies, files, photos, trace identifiers, correlation UUIDs, local paths, and tool payload bodies are omitted.",
+                promptPolicy: "All prompt, output, audit, repair-sample, and scenario free-form fields are replaced by one-way character-count and SHA-256 summaries; improve-loop arrays are intentionally empty.",
                 traceLimit: traceLimit,
                 source: "TestFlight app runtime + RuntimeManifestAuditor + AgentModelBehaviorAuditor + AgentBehaviorTraceRecorder",
                 sourceLayer: "agentGroundingRuntimeAudit",
@@ -475,7 +470,7 @@ nonisolated enum InAppDatasetPackageExporter {
                 sourceLayer: "e2eTestReport",
                 ownsLiveE2EScenarios: true,
                 includesDeterministicStaticScenarios: report.results.contains { !$0.requiresAgentRun },
-                privacy: "Contains prompts, final outputs, failures, redacted event identifiers, and bounded AgentBehaviorTrace sidecars joined by opaque per-export correlation tokens. Raw correlation UUIDs are omitted. Review before sharing outside the improve-loop.",
+                privacy: "Privacy-redacted live E2E metrics, safe categories, hashes, counts, and bounded AgentBehaviorTrace sidecars joined by opaque per-export correlation tokens. Raw free-form content and correlation UUIDs are omitted.",
                 notes: [
                     "Embedded TestFlight/live E2E layer exported from the app.",
                     "The parent Agent Grounding package does not own live E2E pass/fail.",
@@ -656,7 +651,8 @@ nonisolated enum InAppDatasetPackageExporter {
     }
 
     private static func traceMatches(result: E2ETestResult, trace: AgentBehaviorTrace) -> Bool {
-        guard trace.scenarioID == result.scenarioID else { return false }
+        let redactedScenarioID = privacySummary(label: "scenarioID", text: result.scenarioID)
+        guard trace.scenarioID == result.scenarioID || trace.scenarioID == redactedScenarioID else { return false }
         guard result.e2eRunID != nil
                 || result.agentRunID != nil
                 || result.conversationID != nil
@@ -858,21 +854,29 @@ nonisolated enum InAppDatasetPackageExporter {
         return false
     }
 
-    private static func exportTrace(_ trace: AgentBehaviorTrace, correlationToken: String?) -> InAppDatasetTraceExport {
-        InAppDatasetTraceExport(
-            id: redactedTraceID(for: trace),
+    private static func exportTrace(
+        _ trace: AgentBehaviorTrace,
+        id: UUID,
+        correlationToken: String?
+    ) -> InAppDatasetTraceExport {
+        let privacySafeSelectedToolID = AgentDiagnosticFileRedactor.privacySafeSelectedToolID(trace.selectedToolID)
+        return InAppDatasetTraceExport(
+            id: id,
             createdAt: trace.createdAt,
             event: trace.event,
             slot: safeCode(trace.slot),
             stage: safeCode(trace.stage),
-            scenarioID: trace.scenarioID.map { sanitizedSnippet($0, limit: 160) },
+            scenarioID: trace.scenarioID.map { privacySummary(label: "scenarioID", text: $0) },
             correlationToken: correlationToken,
             intent: trace.intent.map(safeCode),
             promptPrefix: sanitizedSnippet(trace.promptPrefix),
             rawOutputPrefix: sanitizedSnippet(trace.rawOutputPrefix),
-            selectedToolID: trace.selectedToolID.map(ToolRouteGuard.canonicalToolID),
-            toolArguments: redactedToolArguments(trace.toolArguments),
-            allowedToolIDs: Array(Set(trace.allowedToolIDs.map(ToolRouteGuard.canonicalToolID))).sorted(),
+            selectedToolID: privacySafeSelectedToolID,
+            toolArguments: AgentDiagnosticFileRedactor.privacySafeToolArguments(
+                trace.toolArguments,
+                selectedToolID: trace.selectedToolID
+            ),
+            allowedToolIDs: AgentDiagnosticFileRedactor.privacySafeAllowedToolIDs(trace.allowedToolIDs),
             requiresApproval: trace.requiresApproval,
             approvalMode: trace.approvalMode.map(safeCode),
             parseError: actionTraceParseError(trace) ?? trace.parseError.map(safeCode),
@@ -926,36 +930,14 @@ nonisolated enum InAppDatasetPackageExporter {
         )
     }
 
-    private static func redactedTraceID(for trace: AgentBehaviorTrace) -> UUID {
-        let seed = [
-            trace.createdAt.timeIntervalSince1970.description,
-            trace.event.rawValue,
-            trace.slot,
-            trace.stage,
-            trace.selectedToolID ?? "",
-            trace.modelIdentifier ?? ""
-        ].joined(separator: "|")
-        let hex = RuntimeFallbackLogger.promptHash(seed)
-        let prefix = String(hex.prefix(12)).padding(toLength: 12, withPad: "0", startingAt: 0)
-        return UUID(uuidString: "00000000-0000-4000-8000-\(prefix)") ?? UUID(uuidString: "00000000-0000-4000-8000-000000000000")!
-    }
-
     private static func redactedSelfModelSummary(_ summary: AgentBehaviorTrace.SelfModelDecisionSummary?) -> AgentBehaviorTrace.SelfModelDecisionSummary? {
-        guard let summary else { return nil }
-        return AgentBehaviorTrace.SelfModelDecisionSummary(
-            included: summary.included,
-            schemaVersion: summary.schemaVersion.map(safeIdentifier),
-            mode: summary.mode.map(safeIdentifier),
-            activeSlot: summary.activeSlot.map(safeIdentifier),
-            sourceIDs: summary.sourceIDs.map(safeIdentifier),
-            runtimeEvidenceSourceLayer: summary.runtimeEvidenceSourceLayer.map(safeIdentifier),
-            selectedToolID: summary.selectedToolID.map(ToolRouteGuard.canonicalToolID),
-            requiresApproval: summary.requiresApproval,
-            approvalMode: summary.approvalMode.map(safeIdentifier)
-        )
+        summary?.redactedForPersistentDiagnostics()
     }
 
-    private static func redactedBehaviorAudit(_ audit: AgentBehaviorAuditReport?) -> AgentBehaviorAuditReport? {
+    private static func redactedBehaviorAudit(
+        _ audit: AgentBehaviorAuditReport?,
+        identityKey: SymmetricKey
+    ) -> AgentBehaviorAuditReport? {
         guard let audit else { return nil }
         return AgentBehaviorAuditReport(
             passed: audit.passed,
@@ -964,38 +946,124 @@ nonisolated enum InAppDatasetPackageExporter {
             traceCount: audit.traceCount,
             violationCount: audit.violationCount,
             sourceCommit: audit.sourceCommit,
-            violations: audit.violations.map(redactedViolation),
-            recommendations: audit.recommendations.map { sanitizedSnippet($0, limit: 500) },
-            repairSamples: audit.repairSamples.map(redactedRepairSample)
+            violations: audit.violations.map {
+                redactedViolation($0, identityKey: identityKey)
+            },
+            recommendations: audit.recommendations.map { privacySummary(label: "recommendation", text: $0) },
+            repairSamples: audit.repairSamples.map {
+                redactedRepairSample($0, identityKey: identityKey)
+            }
         )
     }
 
-    private static func redactedViolation(_ violation: AgentBehaviorViolation) -> AgentBehaviorViolation {
+    private static func redactedRuntimeManifestAudit(
+        _ audit: RuntimeAgentManifestAuditReport?
+    ) -> RuntimeAgentManifestAuditReport? {
+        guard let audit else { return nil }
+        return privacySafeRuntimeManifestAuditForExport(audit)
+    }
+
+    static func privacySafeRuntimeManifestAuditForExport(
+        _ audit: RuntimeAgentManifestAuditReport
+    ) -> RuntimeAgentManifestAuditReport {
+        return RuntimeAgentManifestAuditReport(
+            passed: audit.passed,
+            score: audit.score,
+            failures: audit.failures.map(redactedRuntimeManifestFailure),
+            generatedAt: audit.generatedAt,
+            recommendedDatasetRepairs: audit.recommendedDatasetRepairs.map {
+                privacySummary(label: "repairRecommendation", text: $0)
+            }
+        )
+    }
+
+    private static func redactedRuntimeManifestFailure(
+        _ failure: RuntimeManifestFailure
+    ) -> RuntimeManifestFailure {
+        RuntimeManifestFailure(
+            type: safeCode(failure.type),
+            agent: failure.agent.map(safeCode),
+            expected: failure.expected.enumerated().map { index, value in
+                privacySummary(label: "expected\(index)", text: value)
+            },
+            actual: failure.actual.map { privacySummary(label: "actual", text: $0) },
+            scenario: failure.scenario.map { privacySummary(label: "scenario", text: $0) },
+            problem: privacySummary(label: "problem", text: failure.problem)
+        )
+    }
+
+    private static func redactedScenarioResult(_ result: RuntimeScenarioResult) -> RuntimeScenarioResult {
+        RuntimeScenarioResult(
+            id: privacySummary(label: "scenarioID", text: result.id),
+            scenario: RuntimeScenario(
+                id: privacySummary(label: "scenarioID", text: result.scenario.id),
+                intent: safeCode(result.scenario.intent),
+                expectedToolID: ToolRouteGuard.canonicalToolID(result.scenario.expectedToolID),
+                requiresApproval: result.scenario.requiresApproval,
+                prompt: privacySummary(label: "prompt", text: result.scenario.prompt)
+            ),
+            passed: result.passed,
+            failures: result.failures.map(redactedRuntimeManifestFailure)
+        )
+    }
+
+    static func privacySafeScenarioResultsForExport(
+        _ results: [RuntimeScenarioResult]
+    ) -> [RuntimeScenarioResult] {
+        results.map(redactedScenarioResult)
+    }
+
+    private static func emptyImproveLoopDataset() -> ImproveLoopDataset {
+        ImproveLoopDataset(
+            schemaVersion: ImproveLoopSampleGate.schemaVersion,
+            generatedAt: Date(),
+            acceptedTraining: [],
+            quarantinedSamples: [],
+            regressionTests: [],
+            counters: ImproveLoopDatasetCounters(
+                accepted: 0,
+                quarantined: 0,
+                regression: 0,
+                staleTraceRejected: 0,
+                legacyToolNamespaceRejected: 0,
+                architectureFailureRejected: 0,
+                resourceFallbackRejected: 0
+            )
+        )
+    }
+
+    private static func redactedViolation(
+        _ violation: AgentBehaviorViolation,
+        identityKey: SymmetricKey
+    ) -> AgentBehaviorViolation {
         AgentBehaviorViolation(
-            id: violation.id,
+            id: redactedUUID(violation.id, key: identityKey, domain: "behaviorViolation"),
             createdAt: violation.createdAt,
             severity: violation.severity,
             code: safeCode(violation.code),
             agent: safeCode(violation.agent),
-            expected: sanitizedSnippet(violation.expected, limit: 500),
-            actual: sanitizedSnippet(violation.actual, limit: 800),
-            promptPrefix: sanitizedSnippet(violation.promptPrefix),
-            problem: sanitizedSnippet(violation.problem, limit: 500)
+            expected: privacySummary(label: "expected", text: violation.expected),
+            actual: privacySummary(label: "actual", text: violation.actual),
+            promptPrefix: privacySummary(label: "prompt", text: violation.promptPrefix),
+            problem: privacySummary(label: "problem", text: violation.problem)
         )
     }
 
-    private static func redactedRepairSample(_ sample: AgentBehaviorRepairSample) -> AgentBehaviorRepairSample {
+    private static func redactedRepairSample(
+        _ sample: AgentBehaviorRepairSample,
+        identityKey: SymmetricKey
+    ) -> AgentBehaviorRepairSample {
         AgentBehaviorRepairSample(
-            id: sample.id,
+            id: redactedUUID(sample.id, key: identityKey, domain: "behaviorRepairSample"),
             createdAt: sample.createdAt,
             agent: safeCode(sample.agent),
             violationCode: safeCode(sample.violationCode),
-            promptPrefix: sanitizedSnippet(sample.promptPrefix),
-            expected: sanitizedSnippet(sample.expected, limit: 500),
-            badOutput: sanitizedSnippet(sample.badOutput),
-            correctedOutput: sanitizedSnippet(sample.correctedOutput),
-            lesson: sanitizedSnippet(sample.lesson, limit: 500),
-            curriculum: sanitizedSnippet(sample.curriculum, limit: 240)
+            promptPrefix: privacySummary(label: "prompt", text: sample.promptPrefix),
+            expected: privacySummary(label: "expected", text: sample.expected),
+            badOutput: privacySummary(label: "badOutput", text: sample.badOutput),
+            correctedOutput: privacySummary(label: "correctedOutput", text: sample.correctedOutput),
+            lesson: privacySummary(label: "lesson", text: sample.lesson),
+            curriculum: privacySummary(label: "curriculum", text: sample.curriculum)
         )
     }
 
@@ -1020,13 +1088,14 @@ nonisolated enum InAppDatasetPackageExporter {
             includeScenarioResults: includeScenarioResults
         )
         let directory = try exportDirectory()
+        try purgeLegacyUnsafeArtifacts(in: directory)
         let fileName = "\(filePrefix)-\(Self.safeTimestamp(package.generatedAt))-\(UUID().uuidString.lowercased()).json"
         let url = directory.appendingPathComponent(fileName, isDirectory: false)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(package)
-        try data.write(to: url, options: [.atomic])
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
         try writeImproveLoopJSONL(package.improveLoop, directory: directory, timestamp: Self.safeTimestamp(package.generatedAt))
         return InAppDatasetPackageExportResult(url: url, package: package)
     }
@@ -1038,6 +1107,38 @@ nonisolated enum InAppDatasetPackageExporter {
             .appendingPathComponent(directoryName, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    static func purgeLegacyUnsafeArtifacts() throws {
+        try purgeLegacyUnsafeArtifacts(in: exportDirectory())
+    }
+
+    static func purgeLegacyUnsafeArtifacts(in directory: URL) throws {
+        let files = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        let safePrefixes = [
+            filePrefix + "-",
+            "accepted_training-redacted-v1-",
+            "quarantined_samples-redacted-v1-",
+            "regression_tests-redacted-v1-"
+        ]
+        let legacyPrefixes = [
+            "lumen-testflight-agent-grounding-",
+            "accepted_training-",
+            "quarantined_samples-",
+            "regression_tests-"
+        ]
+        for url in files {
+            let name = url.lastPathComponent
+            guard legacyPrefixes.contains(where: name.hasPrefix),
+                  !safePrefixes.contains(where: name.hasPrefix) else {
+                continue
+            }
+            try FileManager.default.removeItem(at: url)
+        }
     }
 
     private static func mergedBehaviorAuditWithRuntimeTraceViolations(
@@ -1156,9 +1257,9 @@ nonisolated enum InAppDatasetPackageExporter {
     ///   - dataset: The improve-loop dataset containing accepted training samples, quarantined samples, and regression tests.
     /// - Throws: Errors from encoding or file write operations.
     private static func writeImproveLoopJSONL(_ dataset: ImproveLoopDataset, directory: URL, timestamp: String) throws {
-        try writeJSONL(dataset.acceptedTraining, to: directory.appendingPathComponent("accepted_training-\(timestamp).jsonl", isDirectory: false))
-        try writeJSONL(dataset.quarantinedSamples, to: directory.appendingPathComponent("quarantined_samples-\(timestamp).jsonl", isDirectory: false))
-        try writeJSONL(dataset.regressionTests, to: directory.appendingPathComponent("regression_tests-\(timestamp).jsonl", isDirectory: false))
+        try writeJSONL(dataset.acceptedTraining, to: directory.appendingPathComponent("accepted_training-redacted-v1-\(timestamp).jsonl", isDirectory: false))
+        try writeJSONL(dataset.quarantinedSamples, to: directory.appendingPathComponent("quarantined_samples-redacted-v1-\(timestamp).jsonl", isDirectory: false))
+        try writeJSONL(dataset.regressionTests, to: directory.appendingPathComponent("regression_tests-redacted-v1-\(timestamp).jsonl", isDirectory: false))
     }
 
     private static func writeJSONL<T: Encodable>(_ records: [T], to url: URL) throws {
@@ -1170,7 +1271,7 @@ nonisolated enum InAppDatasetPackageExporter {
             data.append(try encoder.encode(record))
             data.append(0x0A)
         }
-        try data.write(to: url, options: [.atomic])
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
     }
 
     private static func safeTimestamp(_ date: Date) -> String {
@@ -1187,12 +1288,8 @@ nonisolated enum InAppDatasetPackageExporter {
         return String(redacted.prefix(max(0, limit)))
     }
 
-    private static func redactedToolArguments(_ arguments: [String: String]) -> [String: String] {
-        arguments.reduce(into: [:]) { result, element in
-            let (key, value) = element
-            let redactedValue = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "[redacted]"
-            result[safeCode(key)] = redactedValue
-        }
+    private static func privacySummary(label: String, text: String) -> String {
+        AgentDiagnosticFileRedactor.summary(label: label, text: text)
     }
 
     private static func pathLeaf(_ path: String) -> String {

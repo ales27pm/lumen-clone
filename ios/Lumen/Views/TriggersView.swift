@@ -397,7 +397,7 @@ struct TriggerEditorSheet: View {
 
                 Section("Schedule") {
                     Picker("Type", selection: $kind) {
-                        ForEach(TriggerScheduleType.allCases, id: \.self) { k in
+                        ForEach(selectableScheduleTypes, id: \.self) { k in
                             Label(k.label, systemImage: k.icon).tag(k)
                         }
                     }
@@ -407,12 +407,18 @@ struct TriggerEditorSheet: View {
                     case .daily:
                         DatePicker("Time", selection: $dailyTime, displayedComponents: .hourAndMinute)
                     case .interval:
-                        Stepper(value: $intervalMinutes, in: 15...1440, step: 15) {
+                        Stepper(
+                            value: $intervalMinutes,
+                            in: TriggerScheduleContract.minimumIntervalMinutes...1440,
+                            step: TriggerScheduleContract.minimumIntervalMinutes
+                        ) {
                             HStack { Text("Every"); Spacer(); Text("\(intervalMinutes) min").foregroundStyle(Theme.textSecondary) }
                         }
                     case .beforeNextEvent:
-                        Stepper(value: $beforeMinutes, in: 5...120, step: 5) {
-                            HStack { Text("Minutes before"); Spacer(); Text("\(beforeMinutes)").foregroundStyle(Theme.textSecondary) }
+                        if let unavailability = kind.creationUnavailability {
+                            Label(unavailability.message, systemImage: "exclamationmark.triangle.fill")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
                         }
                     }
                 }
@@ -420,7 +426,8 @@ struct TriggerEditorSheet: View {
                 Section {
                     Button("Save") { save() }
                         .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty ||
-                                  prompt.trimmingCharacters(in: .whitespaces).isEmpty)
+                                  prompt.trimmingCharacters(in: .whitespaces).isEmpty ||
+                                  kind.creationUnavailability != nil)
                 }
             }
             .navigationTitle(existing == nil ? "New Trigger" : "Edit Trigger")
@@ -451,11 +458,22 @@ struct TriggerEditorSheet: View {
         if let m = e.timeOfDayMinutes {
             dailyTime = Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
         }
-        if let s = e.intervalSeconds { intervalMinutes = max(15, Int(s / 60)) }
+        if let s = e.intervalSeconds {
+            intervalMinutes = max(TriggerScheduleContract.minimumIntervalMinutes, Int(s / 60))
+        }
         if let b = e.beforeNextEventMinutes { beforeMinutes = b }
     }
 
+    private var selectableScheduleTypes: [TriggerScheduleType] {
+        var result = TriggerScheduleType.creatableCases
+        if !result.contains(kind) {
+            result.append(kind)
+        }
+        return result
+    }
+
     private func save() {
+        guard kind.creationUnavailability == nil else { return }
         let target: Trigger
         let previousSnapshot: TriggerMutationSnapshot?
         let safetyToken: String?

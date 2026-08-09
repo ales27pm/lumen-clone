@@ -1,0 +1,24 @@
+{
+  "originHash" : "55a3150e3a704f7aedf8b96d94f27e0366bc1862c9bb6acae1025489bcf6de54",
+  "pins" : [
+    {
+      "identity" : "microsoft-authentication-library-for-objc",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/AzureAD/microsoft-authentication-library-for-objc.git",
+      "state" : {
+        "revision" : "be848ee7fa9516cec47ae6de47cf1087d51bc774",
+        "version" : "1.9.0"
+      }
+    },
+    {
+      "identity" : "swift-llama-cpp",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pgorzelany/swift-llama-cpp.git",
+      "state" : {
+        "revision" : "5496bc7c9820f04bba7268dc8a271235deae436d",
+        "version" : "1.2.0"
+      }
+    }
+  ],
+  "version" : 3
+}

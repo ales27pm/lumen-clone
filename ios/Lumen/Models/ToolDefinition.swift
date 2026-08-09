@@ -10,22 +10,116 @@ nonisolated enum ToolArgumentValueType: String, Sendable {
     case enumeration = "enum"
 }
 
+nonisolated enum ToolArgumentValueDomain: Hashable, Sendable {
+    case integer(minimum: Int, maximum: Int)
+    case clockTime24Hour
+
+    func accepts(_ value: AgentJSONValue) -> Bool {
+        switch (self, value) {
+        case (.integer(let minimum, let maximum), .number(let number)):
+            guard number.isFinite,
+                  number.rounded(.towardZero) == number,
+                  number >= Double(minimum),
+                  number <= Double(maximum),
+                  let integer = Int(exactly: number) else {
+                return false
+            }
+            return (minimum...maximum).contains(integer)
+        case (.clockTime24Hour, .string(let rawValue)):
+            return clockTimeMinutes(from: rawValue) != nil
+        default:
+            return false
+        }
+    }
+
+    func integerValue(from rawValue: String) -> Int? {
+        guard case .integer(let minimum, let maximum) = self,
+              let value = Int(rawValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+              (minimum...maximum).contains(value) else {
+            return nil
+        }
+        return value
+    }
+
+    func clockTimeMinutes(from rawValue: String) -> Int? {
+        guard case .clockTime24Hour = self else { return nil }
+        let components = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: ":", omittingEmptySubsequences: false)
+        guard components.count == 2,
+              !components[0].isEmpty,
+              !components[1].isEmpty,
+              components[0].allSatisfy(\.isNumber),
+              components[1].allSatisfy(\.isNumber),
+              let hour = Int(components[0]),
+              let minute = Int(components[1]),
+              (0...23).contains(hour),
+              (0...59).contains(minute) else {
+            return nil
+        }
+        let hourMinutes = hour.multipliedReportingOverflow(by: 60)
+        guard !hourMinutes.overflow else { return nil }
+        let total = hourMinutes.partialValue.addingReportingOverflow(minute)
+        return total.overflow ? nil : total.partialValue
+    }
+}
+
+nonisolated enum ToolArgumentValueDomains {
+    // These are product limits, not merely machine-integer limits. They keep
+    // model-generated schedules within horizons the native UI and deterministic
+    // planner can meaningfully represent before any approval or platform call.
+    static let maximumScheduleDelayMinutes = 7 * 24 * 60
+    static let maximumSnoozeMinutes = 24 * 60
+    static let maximumCountdownDurationSeconds = 7 * 24 * 60 * 60
+    static let maximumTriggerIntervalSeconds = 7 * 24 * 60 * 60
+    static let maximumBeforeEventMinutes = 24 * 60
+
+    static let alarmScheduleDelayMinutes = ToolArgumentValueDomain.integer(
+        minimum: 1,
+        maximum: maximumScheduleDelayMinutes
+    )
+    static let alarmSnoozeMinutes = ToolArgumentValueDomain.integer(
+        minimum: 1,
+        maximum: maximumSnoozeMinutes
+    )
+    static let alarmCountdownSeconds = ToolArgumentValueDomain.integer(
+        minimum: 1,
+        maximum: maximumCountdownDurationSeconds
+    )
+    static let triggerDelayMinutes = ToolArgumentValueDomain.integer(
+        minimum: 1,
+        maximum: maximumScheduleDelayMinutes
+    )
+    static let triggerIntervalSeconds = ToolArgumentValueDomain.integer(
+        minimum: TriggerScheduleContract.minimumIntervalSeconds,
+        maximum: maximumTriggerIntervalSeconds
+    )
+    static let triggerBeforeEventMinutes = ToolArgumentValueDomain.integer(
+        minimum: 1,
+        maximum: maximumBeforeEventMinutes
+    )
+    static let clockTime24Hour = ToolArgumentValueDomain.clockTime24Hour
+}
+
 nonisolated struct ToolArgumentDefinition: Hashable, Sendable {
     let name: String
     let type: ToolArgumentValueType
     let required: Bool
     let allowedValues: Set<String>?
+    let valueDomain: ToolArgumentValueDomain?
 
     init(
         _ name: String,
         type: ToolArgumentValueType = .string,
         required: Bool = true,
-        allowedValues: Set<String>? = nil
+        allowedValues: Set<String>? = nil,
+        valueDomain: ToolArgumentValueDomain? = nil
     ) {
         self.name = name
         self.type = type
         self.required = required
         self.allowedValues = allowedValues
+        self.valueDomain = valueDomain
     }
 
     var runtimeArgument: RuntimeToolArgument {
@@ -205,23 +299,26 @@ private nonisolated enum ToolArgumentContractCatalog {
                 .init("title"),
                 .init("prompt"),
                 .init("schedule", type: .enumeration, allowedValues: ["absolute", "interval", "relative"]),
-                .init("inMinutes", type: .number, required: false),
-                .init("atTime", required: false),
-                .init("intervalSeconds", type: .number, required: false),
-                .init("beforeMinutes", type: .number, required: false)
+                .init("inMinutes", type: .number, required: false, valueDomain: ToolArgumentValueDomains.triggerDelayMinutes),
+                .init("atTime", required: false, valueDomain: ToolArgumentValueDomains.clockTime24Hour),
+                .init("intervalSeconds", type: .number, required: false, valueDomain: ToolArgumentValueDomains.triggerIntervalSeconds),
+                .init("beforeMinutes", type: .number, required: false, valueDomain: ToolArgumentValueDomains.triggerBeforeEventMinutes)
             ]
         case "trigger.cancel":
             return [.init("id"), .init("title", required: false)]
         case "alarm.schedule":
             return [
                 .init("title"),
-                .init("inMinutes", type: .number),
+                .init("inMinutes", type: .number, valueDomain: ToolArgumentValueDomains.alarmScheduleDelayMinutes),
                 .init("timestamp", required: false),
                 .init("repeats", type: .bool, required: false),
-                .init("snoozeMinutes", type: .number, required: false)
+                .init("snoozeMinutes", type: .number, required: false, valueDomain: ToolArgumentValueDomains.alarmSnoozeMinutes)
             ]
         case "alarm.countdown":
-            return [.init("title"), .init("durationSeconds", type: .number)]
+            return [
+                .init("title"),
+                .init("durationSeconds", type: .number, valueDomain: ToolArgumentValueDomains.alarmCountdownSeconds)
+            ]
         case "alarm.pause", "alarm.resume", "alarm.stop", "alarm.snooze", "alarm.cancel":
             return [.init("id")]
         default:

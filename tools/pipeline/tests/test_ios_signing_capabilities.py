@@ -147,7 +147,33 @@ def test_signed_entitlement_validation_rejects_development_only_keys(tmp_path: P
     assert any("must not be present" in failure for failure in failures)
 
 
-def test_signed_entitlement_validation_allows_codesign_resolved_build_settings(tmp_path: Path):
+def test_signed_entitlement_validation_resolves_codesign_prefix_and_team_values(tmp_path: Path):
+    module = _load_validator_module()
+    expected_path = _write_plist(
+        tmp_path / "LumenAppStore.entitlements",
+        {
+            "keychain-access-groups": ["$(AppIdentifierPrefix)com.microsoft.adalcache"],
+            "example.team": "$(DEVELOPMENT_TEAM)",
+        },
+    )
+
+    failures = module.validate_signed_entitlements(
+        {
+            "keychain-access-groups": ["ABCDE12345.com.microsoft.adalcache"],
+            "example.team": "ABCDE12345",
+        },
+        expected_path,
+        "SignedLumen.app",
+        build_settings={
+            "AppIdentifierPrefix": "ABCDE12345.",
+            "DEVELOPMENT_TEAM": "ABCDE12345",
+        },
+    )
+
+    assert failures == []
+
+
+def test_signed_entitlement_validation_rejects_unresolved_expected_prefix(tmp_path: Path):
     module = _load_validator_module()
     expected_path = _write_plist(
         tmp_path / "LumenAppStore.entitlements",
@@ -160,7 +186,38 @@ def test_signed_entitlement_validation_allows_codesign_resolved_build_settings(t
         "SignedLumen.app",
     )
 
-    assert failures == []
+    assert any("unresolved build setting(s): AppIdentifierPrefix" in failure for failure in failures)
+
+
+def test_signed_entitlement_validation_rejects_unexpected_non_allowlisted_key(tmp_path: Path):
+    module = _load_validator_module()
+    expected_path = _write_plist(tmp_path / "LumenAppStore.entitlements", {})
+
+    failures = module.validate_signed_entitlements(
+        {
+            "application-identifier": "ABCDE12345.com.example.lumen",
+            "com.apple.developer.associated-domains": ["applinks:unexpected.example"],
+        },
+        expected_path,
+        "SignedLumen.app",
+    )
+
+    assert any(
+        "unexpected signed entitlements not allowlisted" in failure
+        and "com.apple.developer.associated-domains" in failure
+        for failure in failures
+    )
+
+
+def test_entitlement_build_settings_use_signed_application_prefix_and_team():
+    module = _load_validator_module()
+    evidence = _signing_evidence(module)
+
+    settings = module.entitlement_build_settings(evidence)
+
+    assert settings["AppIdentifierPrefix"] == "TEAM123456."
+    assert settings["TeamIdentifierPrefix"] == "TEAM123456."
+    assert settings["DEVELOPMENT_TEAM"] == "TEAM123456"
 
 
 @pytest.mark.parametrize(
@@ -477,3 +534,18 @@ def test_archive_command_rejects_literal_empty_identity_override():
     assert result.returncode == 0, result.stderr
     assert "Archive signing-argument self-check passed." in result.stdout
     assert 'validate_archive_signing_arguments "${ARCHIVE_COMMAND[@]}"' in archive_script
+
+
+def test_archive_identity_preflight_rejects_invalid_security_lines():
+    result = subprocess.run(
+        ["bash", str(ARCHIVE_SCRIPT), "--self-check-signing-identity-output"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    archive_script = ARCHIVE_SCRIPT.read_text(encoding="utf-8")
+
+    assert result.returncode == 0, result.stderr
+    assert "Signing identity output self-check passed." in result.stdout
+    assert '| signing_identity_output_has_valid_match "$pattern"' in archive_script
+    assert 'grep -F "$pattern"' not in archive_script

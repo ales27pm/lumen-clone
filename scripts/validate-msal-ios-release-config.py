@@ -5,6 +5,7 @@ Checks:
 - MSAL client ID is present and matches expected value.
 - MSAL redirect URI uses expected format and value.
 - Lumen bundle identifier aligns with redirect URI host segment.
+- The MSAL package is pinned to the audited exact version.
 """
 from __future__ import annotations
 
@@ -18,6 +19,8 @@ CONFIG_PLIST = ROOT / "ios" / "Lumen" / "MicrosoftGraphConfig.plist"
 PBXPROJ = ROOT / "ios" / "Lumen.xcodeproj" / "project.pbxproj"
 
 EXPECTED_CLIENT_ID = "51aa8fd9-16b2-4f8e-8b97-b8618ceb6c40"
+EXPECTED_MSAL_REPOSITORY = "https://github.com/AzureAD/microsoft-authentication-library-for-objc.git"
+EXPECTED_MSAL_VERSION = "1.9.0"
 
 
 def fail(message: str) -> None:
@@ -94,6 +97,22 @@ def extract_setting(block: str, key: str) -> str | None:
     return match.group(1).strip().strip('"')
 
 
+def validate_exact_msal_package_pin(pbxproj_text: str) -> None:
+    marker = '/* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */ = {'
+    marker_index = pbxproj_text.find(marker)
+    if marker_index < 0:
+        fail("Missing MSAL Swift package reference")
+    open_index = pbxproj_text.find("{", marker_index)
+    close_index = find_matching_brace(pbxproj_text, open_index)
+    package_block = pbxproj_text[open_index : close_index + 1]
+    if f'repositoryURL = "{EXPECTED_MSAL_REPOSITORY}";' not in package_block:
+        fail("MSAL Swift package repository URL mismatch")
+    if "kind = exactVersion;" not in package_block:
+        fail(f"MSAL Swift package must use exactVersion {EXPECTED_MSAL_VERSION}")
+    if f"version = {EXPECTED_MSAL_VERSION};" not in package_block:
+        fail(f"MSAL Swift package must be pinned to version {EXPECTED_MSAL_VERSION}")
+
+
 def main() -> None:
     if not CONFIG_PLIST.exists():
         fail(f"Missing config plist: {CONFIG_PLIST}")
@@ -120,6 +139,7 @@ def main() -> None:
     redirect_bundle_id = match.group(1)
 
     pbxproj_text = PBXPROJ.read_text(encoding="utf-8")
+    validate_exact_msal_package_pin(pbxproj_text)
     app_configs: dict[str, str] = {}
     app_config_blocks: dict[str, str] = {}
     for config_name, config_id in discover_target_config_ids(pbxproj_text, "Lumen"):
@@ -160,6 +180,7 @@ def main() -> None:
     print(f"   - MSALClientID: {client_id}")
     print(f"   - MSALRedirectURI: {redirect_uri}")
     print(f"   - App bundle identifier: {release_bundle_id}")
+    print(f"   - MSAL package version: {EXPECTED_MSAL_VERSION} (exact)")
 
 
 if __name__ == "__main__":

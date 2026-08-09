@@ -60,6 +60,118 @@ final class ToolSchemaBridgeTests: XCTestCase {
         XCTAssertEqual(result.failure, .invalidEnumValue(tool: "trigger.create", argument: "schedule", allowed: ["absolute", "interval", "relative"]))
     }
 
+    func testStructuredToolCallValidatorRejectsNumericValuesOutsideToolDomainsBeforeApproval() {
+        let maximumScheduleMinutes = ToolArgumentValueDomains.maximumScheduleDelayMinutes
+        let invalidAlarmMinutes: [AgentJSONValue] = [
+            .number(-1),
+            .number(0),
+            .number(Double(maximumScheduleMinutes + 1)),
+            .number(Double.greatestFiniteMagnitude),
+            .number(.infinity),
+            .number(1.5)
+        ]
+
+        for value in invalidAlarmMinutes {
+            let result = StructuredToolCallValidator.validate(
+                action: AgentAction(tool: "alarm.schedule", args: [
+                    "title": .string("Wake up"),
+                    "inMinutes": value
+                ]),
+                availableTools: ToolRegistry.all
+            )
+            XCTAssertEqual(
+                result.failure,
+                .invalidArgumentValue(tool: "alarm.schedule", argument: "inMinutes")
+            )
+        }
+
+        let maximum = StructuredToolCallValidator.validate(
+            action: AgentAction(tool: "alarm.schedule", args: [
+                "title": .string("Wake up"),
+                "inMinutes": .number(Double(maximumScheduleMinutes))
+            ]),
+            availableTools: ToolRegistry.all
+        )
+        XCTAssertEqual(maximum.success?.arguments["inMinutes"], String(maximumScheduleMinutes))
+    }
+
+    func testStructuredToolCallValidatorRejectsInvalidTriggerClockAndSnoozeDomains() {
+        for value in ["24:00", "23:60", "999999999999999999999999:00"] {
+            let result = StructuredToolCallValidator.validate(
+                action: AgentAction(tool: "trigger.create", args: [
+                    "title": .string("Review"),
+                    "prompt": .string("Review reminders"),
+                    "schedule": .string("absolute"),
+                    "atTime": .string(value)
+                ]),
+                availableTools: ToolRegistry.all
+            )
+            XCTAssertEqual(
+                result.failure,
+                .invalidArgumentValue(tool: "trigger.create", argument: "atTime")
+            )
+        }
+
+        for value in [0, ToolArgumentValueDomains.maximumSnoozeMinutes + 1] {
+            let invalidSnooze = StructuredToolCallValidator.validate(
+                action: AgentAction(tool: "alarm.schedule", args: [
+                    "title": .string("Wake up"),
+                    "inMinutes": .number(10),
+                    "snoozeMinutes": .number(Double(value))
+                ]),
+                availableTools: ToolRegistry.all
+            )
+            XCTAssertEqual(
+                invalidSnooze.failure,
+                .invalidArgumentValue(tool: "alarm.schedule", argument: "snoozeMinutes")
+            )
+        }
+
+        let invalidInterval = StructuredToolCallValidator.validate(
+            action: AgentAction(tool: "trigger.create", args: [
+                "title": .string("Review"),
+                "prompt": .string("Review reminders"),
+                "schedule": .string("interval"),
+                "intervalSeconds": .number(Double(ToolArgumentValueDomains.maximumTriggerIntervalSeconds + 1))
+            ]),
+            availableTools: ToolRegistry.all
+        )
+        XCTAssertEqual(
+            invalidInterval.failure,
+            .invalidArgumentValue(tool: "trigger.create", argument: "intervalSeconds")
+        )
+
+        let invalidCountdown = StructuredToolCallValidator.validate(
+            action: AgentAction(tool: "alarm.countdown", args: [
+                "title": .string("Timer"),
+                "durationSeconds": .number(Double(ToolArgumentValueDomains.maximumCountdownDurationSeconds + 1))
+            ]),
+            availableTools: ToolRegistry.all
+        )
+        XCTAssertEqual(
+            invalidCountdown.failure,
+            .invalidArgumentValue(tool: "alarm.countdown", argument: "durationSeconds")
+        )
+    }
+
+    func testToolCatalogCarriesNumericDomainsWithoutChangingRuntimeArgumentShape() throws {
+        let alarm = try XCTUnwrap(ToolRegistry.find(id: "alarm.schedule"))
+        let alarmArguments = Dictionary(uniqueKeysWithValues: alarm.capabilityContract.arguments.map { ($0.name, $0) })
+        XCTAssertEqual(alarmArguments["inMinutes"]?.valueDomain, ToolArgumentValueDomains.alarmScheduleDelayMinutes)
+        XCTAssertEqual(alarmArguments["snoozeMinutes"]?.valueDomain, ToolArgumentValueDomains.alarmSnoozeMinutes)
+        XCTAssertEqual(
+            alarm.capabilityContract.runtimeArguments.first(where: { $0.name == "inMinutes" })?.type,
+            "number"
+        )
+
+        let trigger = try XCTUnwrap(ToolRegistry.find(id: "trigger.create"))
+        let triggerArguments = Dictionary(uniqueKeysWithValues: trigger.capabilityContract.arguments.map { ($0.name, $0) })
+        XCTAssertEqual(triggerArguments["inMinutes"]?.valueDomain, ToolArgumentValueDomains.triggerDelayMinutes)
+        XCTAssertEqual(triggerArguments["atTime"]?.valueDomain, ToolArgumentValueDomains.clockTime24Hour)
+        XCTAssertEqual(triggerArguments["intervalSeconds"]?.valueDomain, ToolArgumentValueDomains.triggerIntervalSeconds)
+        XCTAssertEqual(triggerArguments["beforeMinutes"]?.valueDomain, ToolArgumentValueDomains.triggerBeforeEventMinutes)
+    }
+
     func testStructuredToolCallValidatorEnforcesRAGSourceScopeEnum() {
         let valid = StructuredToolCallValidator.validate(
             action: AgentAction(tool: "rag.search", args: ["query": .string("architecture"), "sourceScope": .string("documents")]),

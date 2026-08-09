@@ -26,7 +26,12 @@ def write_config(path: Path, redirect_uri: str, client_id: str = "51aa8fd9-16b2-
         )
 
 
-def write_pbxproj(path: Path, bundle_id: str, url_scheme: str | None = None) -> None:
+def write_pbxproj(
+    path: Path,
+    bundle_id: str,
+    url_scheme: str | None = None,
+    msal_requirement: str = "kind = exactVersion;\n                version = 1.9.0;",
+) -> None:
     debug_config = "111111111111111111111111"
     release_config = "222222222222222222222222"
     config_list = "333333333333333333333333"
@@ -61,6 +66,16 @@ def write_pbxproj(path: Path, bundle_id: str, url_scheme: str | None = None) -> 
 			name = Release;
 		}};
 /* End XCBuildConfiguration section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A27B0C0D0E0F000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */ = {{
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AzureAD/microsoft-authentication-library-for-objc.git";
+			requirement = {{
+				{msal_requirement}
+			}};
+		}};
+/* End XCRemoteSwiftPackageReference section */
 """,
         encoding="utf-8",
     )
@@ -98,3 +113,24 @@ def test_validator_rejects_stale_redirect_bundle_mismatch(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "MSALRedirectURI mismatch" in output
     assert "msauth.com.27pm.lumenclone://auth" in output
+
+
+def test_validator_rejects_open_ended_msal_package_requirement(tmp_path, capsys):
+    validator = load_validator()
+    config = tmp_path / "MicrosoftGraphConfig.plist"
+    pbxproj = tmp_path / "project.pbxproj"
+    write_config(config, "msauth.com.27pm.lumenclone://auth")
+    write_pbxproj(
+        pbxproj,
+        "com.27pm.lumenclone",
+        msal_requirement="kind = upToNextMajorVersion;\n                minimumVersion = 1.7.0;",
+    )
+    validator.CONFIG_PLIST = config
+    validator.PBXPROJ = pbxproj
+
+    with pytest.raises(SystemExit) as exit_info:
+        validator.main()
+
+    assert exit_info.value.code == 1
+    output = capsys.readouterr().out
+    assert "must use exactVersion 1.9.0" in output

@@ -145,6 +145,73 @@ final class RuntimeHardeningTests: XCTestCase {
         XCTAssertEqual(result.diagnostic, "empty_imports")
     }
 
+    func testFileStoreImportedFilesHidesOnlyInternalStagingArtifacts() {
+        let directory = URL(fileURLWithPath: "/tmp/imports", isDirectory: true)
+        let visible = directory.appendingPathComponent("notes.txt")
+        let ordinaryHidden = directory.appendingPathComponent(".notes")
+        let malformedStage = directory.appendingPathComponent(".lumen-import-not-a-uuid.staged")
+        let legacyStage = directory.appendingPathComponent(".lumen-import-\(UUID().uuidString).staged")
+        let processStage = directory.appendingPathComponent(
+            ".lumen-import-\(UUID().uuidString)-\(UUID().uuidString).staged"
+        )
+        let result = FileStore.importedFilesWithDiagnosticsForTests(
+            importsDirectory: { directory },
+            contents: { _ in [visible, ordinaryHidden, malformedStage, legacyStage, processStage] }
+        )
+
+        XCTAssertEqual(result.files, [visible, ordinaryHidden, malformedStage])
+        XCTAssertEqual(result.mode, "loaded")
+        XCTAssertNil(result.diagnostic)
+    }
+
+    func testFileStorePurgesInterruptedLegacyStageWithoutRemovingOtherHiddenFiles() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumen-stage-cleanup-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let legacyStage = root.appendingPathComponent(".lumen-import-\(UUID().uuidString).staged")
+        let ordinaryHidden = root.appendingPathComponent(".notes")
+        let malformedStage = root.appendingPathComponent(".lumen-import-not-a-uuid.staged")
+        try Data("interrupted private bytes".utf8).write(to: legacyStage)
+        try Data("keep".utf8).write(to: ordinaryHidden)
+        try Data("keep".utf8).write(to: malformedStage)
+
+        try FileStore.purgeStaleImportStages(in: root)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyStage.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ordinaryHidden.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: malformedStage.path))
+    }
+
+    func testFileStoreDoesNotPurgeAnActiveProcessStageDuringConcurrentDirectoryAccess() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumen-active-stage-\(UUID().uuidString)", isDirectory: true)
+        let source = root.appendingPathComponent("source.txt")
+        let imports = root.appendingPathComponent("imports", isDirectory: true)
+        try FileManager.default.createDirectory(at: imports, withIntermediateDirectories: true)
+        try Data("replacement".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let result = FileStore.importFileWithDiagnosticsForTests(
+            source: source,
+            importsDirectory: { imports },
+            destinationExists: { _ in false },
+            stageItem: { source, staged in
+                try FileManager.default.copyItem(at: source, to: staged)
+                try FileStore.purgeStaleImportStages(in: imports)
+                XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path))
+            },
+            commitStagedItem: { staged, destination, _ in
+                try FileManager.default.moveItem(at: staged, to: destination)
+            },
+            cleanupStagedItem: { try? FileManager.default.removeItem(at: $0) }
+        )
+
+        XCTAssertEqual(result.mode, "imported")
+        XCTAssertEqual(try String(contentsOf: imports.appendingPathComponent("source.txt")), "replacement")
+    }
+
     func testFileStoreImportFileDirectoryFailureIsDiagnosticAndSanitized() {
         let rawPath = "/private/raw/imports/path"
         let result = FileStore.importFileWithDiagnosticsForTests(
@@ -153,8 +220,9 @@ final class RuntimeHardeningTests: XCTestCase {
                 throw FileStore.FileStoreError.directoryCreationFailed(rawPath)
             },
             destinationExists: { _ in false },
-            removeExisting: { _ in },
-            copyItem: { _, _ in }
+            stageItem: { _, _ in },
+            commitStagedItem: { _, _, _ in },
+            cleanupStagedItem: { _ in }
         )
 
         XCTAssertNil(result.url)
@@ -163,24 +231,30 @@ final class RuntimeHardeningTests: XCTestCase {
         XCTAssertFalse(result.diagnostic?.contains(rawPath) == true)
     }
 
-    func testFileStoreImportFileRemoveExistingFailureIsDiagnosticAndSanitized() {
+    func testFileStoreImportFileCommitFailureIsDiagnosticAndSanitized() {
         let rawPath = "/private/raw/imports/secret.txt"
+        var staged = false
+        var cleaned = false
         let result = FileStore.importFileWithDiagnosticsForTests(
             source: URL(fileURLWithPath: "/tmp/source/secret.txt"),
             importsDirectory: {
                 URL(fileURLWithPath: "/tmp/imports", isDirectory: true)
             },
             destinationExists: { _ in true },
-            removeExisting: { _ in
+            stageItem: { _, _ in staged = true },
+            commitStagedItem: { _, _, destinationExists in
+                XCTAssertTrue(destinationExists)
                 throw NSError(domain: rawPath, code: 19)
             },
-            copyItem: { _, _ in XCTFail("copy must not run after remove failure") }
+            cleanupStagedItem: { _ in cleaned = true }
         )
 
         XCTAssertNil(result.url)
         XCTAssertEqual(result.mode, "failed")
-        XCTAssertTrue(result.diagnostic?.hasPrefix("import_remove_existing_failed:") == true)
+        XCTAssertTrue(result.diagnostic?.hasPrefix("import_commit_failed:") == true)
         XCTAssertFalse(result.diagnostic?.contains(rawPath) == true)
+        XCTAssertTrue(staged)
+        XCTAssertTrue(cleaned)
     }
 
     func testFileStoreImportFileCopyFailureIsDiagnosticAndSanitized() {
@@ -191,10 +265,11 @@ final class RuntimeHardeningTests: XCTestCase {
                 URL(fileURLWithPath: "/tmp/imports", isDirectory: true)
             },
             destinationExists: { _ in false },
-            removeExisting: { _ in XCTFail("remove must not run when destination does not exist") },
-            copyItem: { _, _ in
+            stageItem: { _, _ in
                 throw NSError(domain: rawPath, code: 23)
-            }
+            },
+            commitStagedItem: { _, _, _ in XCTFail("commit must not run after copy failure") },
+            cleanupStagedItem: { _ in }
         )
 
         XCTAssertNil(result.url)
@@ -210,16 +285,65 @@ final class RuntimeHardeningTests: XCTestCase {
                 URL(fileURLWithPath: "/tmp/imports", isDirectory: true)
             },
             destinationExists: { _ in false },
-            removeExisting: { _ in XCTFail("remove must not run when destination does not exist") },
-            copyItem: { source, dest in
+            stageItem: { source, staged in
                 XCTAssertEqual(source, URL(fileURLWithPath: "/tmp/source/secret.txt"))
+                XCTAssertEqual(staged.deletingLastPathComponent(), URL(fileURLWithPath: "/tmp/imports", isDirectory: true))
+            },
+            commitStagedItem: { staged, dest, destinationExists in
+                XCTAssertEqual(staged.deletingLastPathComponent(), URL(fileURLWithPath: "/tmp/imports", isDirectory: true))
                 XCTAssertEqual(dest, URL(fileURLWithPath: "/tmp/imports/secret.txt"))
-            }
+                XCTAssertFalse(destinationExists)
+            },
+            cleanupStagedItem: { _ in XCTFail("cleanup must not run after success") }
         )
 
         XCTAssertEqual(result.url, URL(fileURLWithPath: "/tmp/imports/secret.txt"))
         XCTAssertEqual(result.mode, "imported")
         XCTAssertNil(result.diagnostic)
+    }
+
+    func testFileStoreFailedReplacementPreservesExistingImportedFile() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumen-file-import-\(UUID().uuidString)", isDirectory: true)
+        let imports = root.appendingPathComponent("imports", isDirectory: true)
+        let missingSourceDirectory = root.appendingPathComponent("missing", isDirectory: true)
+        let missingSource = missingSourceDirectory.appendingPathComponent("document.txt")
+        let existing = imports.appendingPathComponent("document.txt")
+        try FileManager.default.createDirectory(at: imports, withIntermediateDirectories: true)
+        try Data("existing contents".utf8).write(to: existing, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let result = FileStore.importFileWithDiagnosticsForTests(
+            source: missingSource,
+            importsDirectory: imports
+        )
+
+        XCTAssertEqual(result.mode, "failed")
+        XCTAssertTrue(result.diagnostic?.hasPrefix("import_copy_failed:") == true)
+        XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "existing contents")
+    }
+
+    func testFileStoreSuccessfulReplacementCommitsNewBytes() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lumen-file-import-\(UUID().uuidString)", isDirectory: true)
+        let sourceDirectory = root.appendingPathComponent("source", isDirectory: true)
+        let imports = root.appendingPathComponent("imports", isDirectory: true)
+        let source = sourceDirectory.appendingPathComponent("document.txt")
+        let existing = imports.appendingPathComponent("document.txt")
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: imports, withIntermediateDirectories: true)
+        try Data("replacement contents".utf8).write(to: source, options: [.atomic])
+        try Data("existing contents".utf8).write(to: existing, options: [.atomic])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let result = FileStore.importFileWithDiagnosticsForTests(
+            source: source,
+            importsDirectory: imports
+        )
+
+        XCTAssertEqual(result.mode, "imported")
+        XCTAssertEqual(result.url, existing)
+        XCTAssertEqual(try String(contentsOf: existing, encoding: .utf8), "replacement contents")
     }
 
     func testAttachmentResolverDoesNotInventZeroSizeWhenMetadataUnavailable() {

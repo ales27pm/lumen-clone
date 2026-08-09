@@ -451,20 +451,7 @@ final class DeveloperConsoleModel {
         }
 
         do {
-            let result = try EvidenceLayerExporter.writeLayer(
-                payload: e2eLatestReport,
-                filePrefix: "lumen-live-e2e-report",
-                format: "live-e2e-test-report-json",
-                sourceLayer: "e2eTestReport",
-                ownsLiveE2EScenarios: true,
-                includesDeterministicStaticScenarios: e2eLatestReport.results.contains { !$0.requiresAgentRun },
-                privacy: "Contains prompts, final outputs, failures, and event logs from the current local E2E run. Review before sharing outside the improve-loop.",
-                notes: [
-                    "This is the live E2E model/test layer export.",
-                    "modelBackedRequired scenarios must exercise the AssistantKernel model-backed structured generation path and record fresh AgentBehaviorTrace modelTurn evidence.",
-                    "Routing-only tool coverage scenarios are static guard checks; if a live scenario says no model loaded, routing-only checks completed, or has no model-evidence event, the offline ingester treats it as invalid E2E evidence."
-                ]
-            )
+            let result = try EvidenceLayerExporter.writeLiveE2EReport(e2eLatestReport)
             e2eLastExportURL = result.url
             e2eExportError = nil
             activeWorkflowAction = .exportLiveE2E

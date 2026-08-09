@@ -3861,13 +3861,22 @@ nonisolated enum E2ETestRunner {
 }
 
 nonisolated enum E2ETestLogStore {
+    private static let resultsFileName = "e2e-results-redacted-v1.jsonl"
+    private static let latestReportFileName = "latest-e2e-report-redacted-v1.json"
+    private static let latestSummaryFileName = "latest-e2e-report-redacted-v1.txt"
+    private static let legacyUnsafeFileNames = [
+        "e2e-results.jsonl",
+        "latest-e2e-report.json",
+        "latest-e2e-report.txt"
+    ]
+
     static func append(_ result: E2ETestResult) {
         do {
             let directory = try reportsDirectory()
-            let url = directory.appendingPathComponent("e2e-results.jsonl", isDirectory: false)
+            let url = directory.appendingPathComponent(resultsFileName, isDirectory: false)
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(result)
+            let data = try encoder.encode(EvidenceLayerExporter.privacySafeE2EResultForExport(result))
             var line = data
             line.append(0x0A)
             if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
@@ -3876,9 +3885,11 @@ nonisolated enum E2ETestLogStore {
                 try handle.seekToEnd()
                 try handle.write(contentsOf: line)
             } else {
-                try line.write(to: url, options: [.atomic])
+                try line.write(to: url, options: [.atomic, .completeFileProtection])
             }
-        } catch {}
+        } catch {
+            recordPersistenceFailure(operation: "append", error: error)
+        }
     }
 
     static func writeLatest(_ report: E2ETestReport) {
@@ -3887,20 +3898,29 @@ nonisolated enum E2ETestLogStore {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let json = try encoder.encode(report)
-            try json.write(to: directory.appendingPathComponent("latest-e2e-report.json"), options: [.atomic])
-            try report.summaryText.write(to: directory.appendingPathComponent("latest-e2e-report.txt"), atomically: true, encoding: .utf8)
-        } catch {}
+            let privacySafeReport = EvidenceLayerExporter.privacySafeE2EReportForExport(report)
+            let json = try encoder.encode(privacySafeReport)
+            try json.write(
+                to: directory.appendingPathComponent(latestReportFileName),
+                options: [.atomic, .completeFileProtection]
+            )
+            try Data(privacySafeReport.summaryText.utf8).write(
+                to: directory.appendingPathComponent(latestSummaryFileName),
+                options: [.atomic, .completeFileProtection]
+            )
+        } catch {
+            recordPersistenceFailure(operation: "writeLatest", error: error)
+        }
     }
 
     static func latestText() -> String {
-        let url = (try? reportsDirectory().appendingPathComponent("latest-e2e-report.txt"))
+        let url = (try? reportsDirectory().appendingPathComponent(latestSummaryFileName))
         guard let url, let text = try? String(contentsOf: url, encoding: .utf8) else { return "No E2E report yet." }
         return text
     }
 
     static func latestReport() -> E2ETestReport? {
-        guard let url = try? reportsDirectory().appendingPathComponent("latest-e2e-report.json"),
+        guard let url = try? reportsDirectory().appendingPathComponent(latestReportFileName),
               let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -3908,9 +3928,44 @@ nonisolated enum E2ETestLogStore {
     }
 
     static func reportsDirectory() throws -> URL {
+        let directory = try reportsDirectoryWithoutMigration()
+        try purgeLegacyUnsafeArtifacts(in: directory)
+        return directory
+    }
+
+    static func purgeLegacyUnsafeArtifacts() throws {
+        let directory = try reportsDirectoryWithoutMigration()
+        try purgeLegacyUnsafeArtifacts(in: directory)
+    }
+
+    private static func reportsDirectoryWithoutMigration() throws -> URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let directory = base.appendingPathComponent("Diagnostics", isDirectory: true).appendingPathComponent("E2E", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private static func purgeLegacyUnsafeArtifacts(in directory: URL) throws {
+        for fileName in legacyUnsafeFileNames {
+            let legacyURL = directory.appendingPathComponent(fileName, isDirectory: false)
+            if FileManager.default.fileExists(atPath: legacyURL.path(percentEncoded: false)) {
+                try FileManager.default.removeItem(at: legacyURL)
+            }
+        }
+        try EvidenceLayerExporter.purgeLegacyLiveE2EExports()
+    }
+
+    private static func recordPersistenceFailure(operation: String, error: Error) {
+        RuntimeFallbackLogger.record(
+            source: "E2ETestLogStore",
+            primaryBehavior: "persist_privacy_safe_e2e_evidence",
+            fallbackBehavior: "e2e_evidence_not_persisted",
+            reason: "persistence_failed",
+            consequence: "local_e2e_diagnostics_unavailable",
+            values: [
+                "operation": operation,
+                "errorCode": RuntimeMetricErrorSanitizer.code(for: error)
+            ]
+        )
     }
 }

@@ -4,6 +4,8 @@ Structured-agent release validation must confirm that refresh and processing han
 
 After an embedding format, model, or dimension change, run the in-app reindex workflow and confirm stale chunks report `rag_reindex_required` before reindex and become searchable afterward. Simulator compilation is not proof of real-device background registration, local model loading, or live E2E behavior.
 
+On an Apple host with a connected development device, use signed physical-device validation as the primary iOS lane. Resolve the device immediately before each run, keep its identifier out of tracked documentation, and use simulator validation only as an explicitly labeled fallback. A signed device build, `build-for-testing`, focused XCTest execution, install, launch, and live feature exercise are separate checkpoints; record only the checkpoints that actually completed.
+
 `python3 -m lumen_manifest_crawler developer-cycle --root .` is the top-level validation entrypoint. It preserves the lower-level commands for targeted use:
 
 ```bash
@@ -23,10 +25,12 @@ python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent
 - **Portable validation** is static-source safe and works in non-git ZIP/export, Linux/Codex, and macOS environments. It can skip Git-only and Xcode-only checks with explicit reasons.
 - **Local validation** adds repo-aware checks such as `git diff --check` when a git worktree is present.
 - **Release-candidate validation** requires `xcodebuild` and `scripts/validate_lumen_ios.sh`. By default this performs `build-for-testing` on a generic iOS Simulator destination with minimal AgentGrounding resources and skips simulator XCTest execution, because full simulator handoff is not deterministic on every Xcode/CoreSimulator stack. If Xcode is unavailable, the report must say skipped or failed. It must not claim compile validation passed.
+- **Signed physical-device validation** is the preferred Apple-host lane when a development iPhone is connected. Run a signed app build and `build-for-testing` against the freshly resolved device, then execute risk-focused XCTest suites. Treat install, launch, smoke, and live permission/model/tool flows as later, independently recorded checkpoints. A device `build-for-testing` does not prove that the app launched, and focused device XCTest does not prove unexercised product flows.
 - **Simulator XCTest validation** is opt-in. Use `RUN_SIMULATOR_TESTS=1` for the full validation script or `scripts/run_focused_simulator_tests.sh` for a pinned focused test. Focused simulator runs use the dedicated `Lumen Focused Test iPhone` simulator by default, minimal AgentGrounding resources, a focused `.xctestrun`, disabled parallel workers, and bounded boot/test phases. Set `PREWARM_ONLY=1` to create/boot the reusable simulator without running tests. Set `USE_DISPOSABLE_SIMULATOR=1` only when isolation is worth paying the first-boot migration cost. The focused runner accepts normal `bootstatus` completion or, when `bootstatus` stalls at System App, a Booted device with SpringBoard and backboardd running.
 - **Optimized simulator reruns** should reuse compiled products. Run `build-for-testing` once, locate the produced `.xctestrun`, then use `xcodebuild test-without-building -xctestrun ... -only-testing:LumenTests/<Suite>` for focused reruns. Do not recompile just to rerun a narrow simulator suite.
 - **CoreSimulator runtime health** matters. On this host the recurring focused-runner blocker was CoreSimulator runtime/device readiness, visible as simulator-runtime `Info.plist missing` lines, slow MobileInstallation `Preflight/Patch` timings, and fresh simulators spending more than 7 minutes in `bootstatus` migration before XCTest could start. `simctl runtime list -v`, `simctl runtime verify`, and direct `codesign --verify` can disagree on cryptex-mounted simulator runtimes, so the focused runner pins an installed runtime and treats a Booted device with SpringBoard and backboardd running as usable even when `bootstatus` does not reach terminal readiness. Runtime cleanup, `xcodebuild -downloadPlatform iOS`, dyld-cache rebuilds, prewarming a reusable simulator, and attaching Simulator.app before `bootstatus` are host repair tools before treating simulator XCTest timeout as an app regression.
 - **Runtime validation** comes from exported runtime audit/TestFlight/E2E evidence. Missing runtime evidence is not a runtime pass, and simulator XCTest success is not a substitute for live runtime evidence.
+- **Persistent evidence privacy validation** requires `redacted-v1` E2E results/exports, behavior traces, and in-app grounding packages. Run `python3 tools/check_runtime_audit_privacy.py` before accepting a checked-in runtime artifact. The version label and privacy check do not establish runtime freshness, model attribution, or a behavioral pass.
 - **Live E2E scoring** treats incomplete user-visible finals as failures. Dangling endings such as `an`, `a`, `the`, `with`, `because`, or `you do not need an` must be repaired from trusted tool observations when possible or fail hygiene. Tool-backed missing-argument scenarios should clarify rather than pass through generic safe failure text.
 - **Model-backed training pacing** checks runtime budget and CPU watchdog state before generation. If degraded before a valid generation begins, emit one non-actionable runtime-preflight result with `trainingSignal=false` instead of entering agent-json and accumulating trainable failures.
 - **Training/HF validation** is opt-in and never runs by default.
@@ -51,6 +55,22 @@ uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler --with pytes
 cd tools/lumen_manifest_crawler && uv run --python 3.12 --with pytest pytest --collect-only
 ```
 
+On an Apple host with a connected iPhone, prefer a freshly resolved physical-device destination. Keep the actual identifier machine-local:
+
+```bash
+LUMEN_DEVICE_UDID='<fresh connected-device UDID>'
+xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -configuration Debug \
+  -destination "platform=iOS,id=$LUMEN_DEVICE_UDID" \
+  -derivedDataPath build/DerivedData-DeviceProductionReady \
+  build-for-testing
+xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -configuration Debug \
+  -destination "platform=iOS,id=$LUMEN_DEVICE_UDID" \
+  -derivedDataPath build/DerivedData-DeviceProductionReady \
+  test-without-building -only-testing:LumenTests/<SuiteName>
+```
+
+Resolve the device again before install/launch work rather than treating a previously recorded identifier as durable. Report a successful build, executed tests, install, launch, and smoke separately.
+
 On a macOS/Xcode runner with the requested simulator installed:
 
 ```bash
@@ -64,6 +84,21 @@ On this host, prefer the dedicated simulator when it is available:
 xcodebuild -project ios/Lumen.xcodeproj -scheme Lumen -destination 'platform=iOS Simulator,name=Lumen Focused Test iPhone' build-for-testing CODE_SIGNING_ALLOWED=NO
 bash scripts/run_focused_simulator_tests.sh --only-testing LumenTests/<SuiteName>
 ```
+
+The simulator commands above are fallback/coverage tools. Do not combine their outcome with physical-device evidence or present them as a device pass.
+
+## Current Hardening Evidence (2026-08-09)
+
+- A signed Debug build and signed `build-for-testing` completed on a physical iPhone 16 Pro running iOS 26.6 beta. The device identifier is intentionally not recorded here.
+- A focused physical-device XCTest run passed 57 tests with 0 failures and 0 skips: 6 `BackgroundTriggerOutcomeTests`, 7 `NumericToolArgumentSafetyTests`, 23 `SecureToolRegistryTests`, and 21 `ToolSchemaBridgeTests`.
+- A separate physical-device `OutlookToolAvailabilityTests` run passed 16 tests with 0 failures and 0 skips.
+- No simulator was used as evidence for this hardening checkpoint.
+- The checked-in configuration pins MSAL exactly to `1.9.0`; the link and release validators enforce the exact requirement.
+- Release/minimal AgentGrounding packaging fails closed on missing, drifted, invalid, warning-bearing, failed, or hash-mismatched runtime resources and on missing, unsafe, or hash-mismatched source files declared by `sourceIntegrity`. Only an explicit Debug diagnostic build may produce an empty fallback bundle.
+- Background trigger/headless execution now distinguishes completed, deferred, failed, and cancelled outcomes. A background task succeeds only for a completed trigger scan; `beforeNextEvent` creation reports typed unavailability.
+- Persisted E2E results/exports, behavior traces, and in-app grounding packages are versioned `redacted-v1`; raw-content legacy filenames are purged and the current-tree privacy checker rejects legacy checked-in E2E artifacts.
+
+These are focused hardening and signed-device test results, not a final release qualification. A final post-edit install/launch smoke and every live product/release check listed below remain unproven unless separately recorded.
 
 Release submission validation also requires credentialed or physical-device checks:
 

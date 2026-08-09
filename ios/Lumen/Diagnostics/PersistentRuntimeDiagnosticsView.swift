@@ -87,7 +87,8 @@ struct PersistentRuntimeDiagnosticsView: View {
 
     @ViewBuilder
     private var exportControls: some View {
-        if let exportURL {
+        if let exportURL,
+           PersistentRuntimeDiagnosticsExporter.isPrivacySafeShareURL(exportURL) {
             Button {
                 shareItem = RuntimeDiagnosticsShareItem(url: exportURL)
             } label: {
@@ -258,6 +259,9 @@ struct PersistentRuntimeDiagnosticsView: View {
         Task {
             do {
                 let url = try await PersistentRuntimeDiagnosticsExporter.shared.export()
+                guard PersistentRuntimeDiagnosticsExporter.isPrivacySafeShareURL(url) else {
+                    throw PersistentRuntimeDiagnosticsExportError.unsafeShareURL
+                }
                 exportURL = url
                 shareItem = RuntimeDiagnosticsShareItem(url: url)
                 message = "Export ready to share."

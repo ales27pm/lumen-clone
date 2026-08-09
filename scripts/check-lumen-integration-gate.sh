@@ -29,6 +29,7 @@ run_check "Agent kernel boundary strict" python3 tools/check_agent_kernel_bounda
 run_check "Adapter runtime invariants" python3 tools/check_adapter_runtime_invariants.py
 run_check "Release hardening guard" python3 tools/check_release_hardening.py
 run_check "Generated JSONL artifacts" python3 scripts/check-generated-jsonl-artifacts.py
+run_check "Runtime audit privacy" python3 tools/check_runtime_audit_privacy.py
 run_check "iOS LoRA hardening invariants" python3 tools/check_ios_lora_hardening_invariants.py
 run_check "MSAL iOS release config" python3 scripts/validate-msal-ios-release-config.py
 run_check "iOS signing capabilities" python3 scripts/validate_ios_signing_capabilities.py

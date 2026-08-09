@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import SwiftUI
 import UIKit
 
@@ -127,6 +128,17 @@ nonisolated struct PersistentDiagnosticRunRecord: Codable, Sendable, Identifiabl
         self.failureSummary = failureSummary
         self.remediationProposals = nil
     }
+
+    func redactedForPersistentStorage() -> PersistentDiagnosticRunRecord {
+        var copy = self
+        copy.metrics = metrics.redactedForPersistentStorage()
+        copy.events = events.map { $0.redactedForPersistentStorage() }
+        copy.failureSummary = failureSummary.map {
+            PersistentRuntimeDiagnosticsRedactor.summary(label: "failureSummary", text: $0)
+        }
+        copy.remediationProposals = remediationProposals?.map { $0.redactedForPersistentStorage() }
+        return copy
+    }
 }
 
 nonisolated struct PersistentDiagnosticMetrics: Codable, Sendable, Equatable {
@@ -188,6 +200,58 @@ nonisolated struct PersistentDiagnosticMetrics: Codable, Sendable, Equatable {
         @unknown default: return "unknown"
         }
     }
+
+    func redactedForPersistentStorage() -> PersistentDiagnosticMetrics {
+        var copy = self
+        copy.scenePhase = PersistentRuntimeDiagnosticsRedactor.allowlistedCategory(
+            scenePhase,
+            allowed: ["active", "inactive", "background", "unknown"],
+            label: "scenePhase"
+        )
+        copy.thermalState = PersistentRuntimeDiagnosticsRedactor.allowlistedCategory(
+            thermalState,
+            allowed: ["nominal", "fair", "serious", "critical", "unknown"],
+            label: "thermalState"
+        )
+        copy.realScenePhase = PersistentRuntimeDiagnosticsRedactor.allowlistedCategory(
+            realScenePhase,
+            allowed: ["active", "inactive", "background", "unknown"],
+            label: "realScenePhase"
+        )
+        copy.realThermalState = PersistentRuntimeDiagnosticsRedactor.allowlistedCategory(
+            realThermalState,
+            allowed: ["nominal", "fair", "serious", "critical", "unknown"],
+            label: "realThermalState"
+        )
+        copy.simulatedScenePhase = PersistentRuntimeDiagnosticsRedactor.allowlistedCategory(
+            simulatedScenePhase,
+            allowed: ["active", "inactive", "background", "unknown"],
+            label: "simulatedScenePhase"
+        )
+        copy.simulatedThermalState = PersistentRuntimeDiagnosticsRedactor.allowlistedCategory(
+            simulatedThermalState,
+            allowed: ["nominal", "fair", "serious", "critical", "unknown"],
+            label: "simulatedThermalState"
+        )
+        copy.promptLatencyClass = PersistentRuntimeDiagnosticsRedactor.allowlistedCategory(
+            promptLatencyClass,
+            allowed: ["fastInteractive", "normalInteractive", "documentGrounded", "developerTrace"],
+            label: "promptLatencyClass"
+        )
+        copy.promptRedactionMode = promptRedactionMode.map {
+            PersistentRuntimeDiagnosticsRedactor.summary(label: "promptRedactionMode", text: $0)
+        }
+        copy.cancellationReason = cancellationReason.map {
+            PersistentRuntimeDiagnosticsRedactor.summary(label: "cancellationReason", text: $0)
+        }
+        copy.fallbackReason = fallbackReason.map {
+            PersistentRuntimeDiagnosticsRedactor.summary(label: "fallbackReason", text: $0)
+        }
+        copy.errorCodes = errorCodes.map {
+            PersistentRuntimeDiagnosticsRedactor.summary(label: "errorCode", text: $0)
+        }
+        return copy
+    }
 }
 
 nonisolated struct PersistentDiagnosticCPUWatchdogSnapshot: Codable, Sendable, Equatable {
@@ -232,6 +296,16 @@ nonisolated struct PersistentDiagnosticEvent: Codable, Sendable, Identifiable, E
         self.message = PersistentRuntimeDiagnosticsRedactor.redact(message)
         self.values = PersistentRuntimeDiagnosticsRedactor.redact(values)
     }
+
+    func redactedForPersistentStorage() -> PersistentDiagnosticEvent {
+        PersistentDiagnosticEvent(
+            id: id,
+            at: at,
+            code: PersistentRuntimeDiagnosticsRedactor.persistentEventCode(code),
+            message: PersistentRuntimeDiagnosticsRedactor.summary(label: "eventMessage", text: message),
+            values: PersistentRuntimeDiagnosticsRedactor.redactForPersistentStorage(values)
+        )
+    }
 }
 
 nonisolated enum PersistentDiagnosticRemediationSeverity: String, Codable, Sendable, Equatable {
@@ -246,6 +320,16 @@ nonisolated struct PersistentDiagnosticRemediationProposal: Codable, Sendable, E
     let rationale: String
     let action: String
     let severity: PersistentDiagnosticRemediationSeverity
+
+    func redactedForPersistentStorage() -> PersistentDiagnosticRemediationProposal {
+        PersistentDiagnosticRemediationProposal(
+            id: PersistentRuntimeDiagnosticsRedactor.summary(label: "remediationID", text: id),
+            title: PersistentRuntimeDiagnosticsRedactor.summary(label: "remediationTitle", text: title),
+            rationale: PersistentRuntimeDiagnosticsRedactor.summary(label: "remediationRationale", text: rationale),
+            action: PersistentRuntimeDiagnosticsRedactor.summary(label: "remediationAction", text: action),
+            severity: severity
+        )
+    }
 }
 
 nonisolated enum PersistentDiagnosticRemediationAdvisor {
@@ -313,6 +397,20 @@ nonisolated struct PersistentDiagnosticRunnerStatus: Codable, Sendable, Equatabl
     var lastCrashResumeStatus: String?
     var lastRemediationSummary: String?
     var lastUpdatedAt: Date = Date()
+
+    func redactedForPersistentStorage() -> PersistentDiagnosticRunnerStatus {
+        var copy = self
+        copy.lastCancellationReason = lastCancellationReason.map {
+            PersistentRuntimeDiagnosticsRedactor.summary(label: "lastCancellationReason", text: $0)
+        }
+        copy.lastCrashResumeStatus = lastCrashResumeStatus.map {
+            PersistentRuntimeDiagnosticsRedactor.summary(label: "lastCrashResumeStatus", text: $0)
+        }
+        copy.lastRemediationSummary = lastRemediationSummary.map {
+            PersistentRuntimeDiagnosticsRedactor.summary(label: "lastRemediationSummary", text: $0)
+        }
+        return copy
+    }
 }
 
 nonisolated struct PersistentDiagnosticState: Codable, Sendable, Equatable {
@@ -338,12 +436,70 @@ nonisolated struct PersistentDiagnosticState: Codable, Sendable, Equatable {
         guard completedRunIDs.count > limit else { return }
         completedRunIDs.removeFirst(completedRunIDs.count - limit)
     }
+
+    func redactedForPersistentStorage() -> PersistentDiagnosticState {
+        var copy = self
+        copy.records = records.map { $0.redactedForPersistentStorage() }
+        copy.status = status.redactedForPersistentStorage()
+        return copy
+    }
 }
 
 
 nonisolated enum PersistentRuntimeDiagnosticsRedactor {
     static let maxEventMessageChars = 160
     static let maxValueChars = 96
+
+    private static let persistentEventCodes: Set<String> = [
+        "agent_cancel_clean", "agent_cancel_stream_completed", "agent_fast_path_bounded",
+        "agent_fast_path_unbounded", "agent_run_cancelled", "agent_run_failed",
+        "agent_run_passed", "agent_tool_dry_run_bounded", "agent_tool_dry_run_unbounded",
+        "buffered_during_generation", "crash_resume", "developer_trace_bypass_expected",
+        "developer_trace_bypass_missing", "diagnostic_remediation_proposal",
+        "fast_latency_missing", "fast_prompt_too_large", "fast_tokens_too_large",
+        "kernel_migration_probe_debug_only", "lifecycle_probe_armed",
+        "lifecycle_probe_passed", "lifecycle_probe_skipped", "lifecycle_transition",
+        "live_agent_stream_passed", "manual_live_agent_stream_required",
+        "manual_probe_required", "manual_scenario_requires_explicit_request",
+        "not_manual_scenario", "pass", "resource_gate_matrix", "resource_gate_paused",
+        "resource_gate_policy_failed", "resource_gate_policy_passed", "sandboxed_tool_plan",
+        "sandboxed_tool_plan_bounded", "sandboxed_tool_plan_unbounded", "skipped_no_model",
+        "tester_action_required", "tool_prompt_used_fast_path",
+        "llamapromptbudget", "llamafirsttoken", "llamaemptyoutput", "llamacomplete",
+        "llamacancel", "llamafailure", "slotagentstart", "slotagentpath",
+        "slotagentfallback", "slotagentgroundingcomplete", "slotagenteffectiverequestbuilt",
+        "slotagentdeterministicanswerbuilt", "slotagentdoneyielded", "slotagentend",
+        "slotagentendemitted", "slotagentcontinuationfinished", "slotagentcancel",
+        "chatruntimetrace", "groundingcost", "uiupdate", "scenetransition",
+        "metrickitpersistfailure", "finalintentcandidatereplaced", "fallbackused",
+        "voicestartupfailure", "voiceaudiosessionevent"
+    ]
+    private static let persistentMetadataKeys: Set<String> = [
+        "backgrounddenied", "criticaldenied", "elapsedms", "estimatedprompttokens",
+        "estimatedtokens", "finalchars", "finalpromptchars", "firsttokenlatencyms",
+        "initialchars", "latencyclass", "lowpowerallowed", "maxsteps", "memorycount",
+        "phase", "promptchars", "realdenied", "realexpectedallowed", "sectioncount",
+        "seriousdenied", "source", "surface", "targethz", "toolcount"
+    ]
+    private static let identityMetadataKeys: Set<String> = [
+        "agentrunid", "conversationid", "correlationtoken", "currentlaunchuuid",
+        "e2erunid", "previouslaunchuuid", "requestid", "runid", "turnid"
+    ]
+    private static let numericMetadataKeys: Set<String> = [
+        "elapsedms", "estimatedprompttokens", "estimatedtokens", "finalchars",
+        "finalpromptchars", "firsttokenlatencyms", "initialchars", "maxsteps",
+        "memorycount", "promptchars", "sectioncount", "targethz", "toolcount"
+    ]
+    private static let booleanMetadataKeys: Set<String> = [
+        "backgrounddenied", "criticaldenied", "lowpowerallowed", "realdenied",
+        "realexpectedallowed", "seriousdenied"
+    ]
+    private static let categoricalMetadataValues: [String: Set<String>] = [
+        "latencyclass": ["fastinteractive", "normalinteractive", "documentgrounded", "developertrace"],
+        "phase": ["active", "inactive", "background", "unknown"],
+        "source": ["cache", "bridge", "degraded", "coordinator"],
+        "surface": ["chat", "voice"]
+    ]
 
     static func safeCode(_ code: String) -> String {
         let allowed = code.lowercased().map { ch in
@@ -369,6 +525,71 @@ nonisolated enum PersistentRuntimeDiagnosticsRedactor {
             output = output.replacingOccurrences(of: pattern, with: "[redacted]", options: [.regularExpression, .caseInsensitive])
         }
         return output
+    }
+
+    static func summary(label: String, text: String) -> String {
+        guard !text.isEmpty else { return "" }
+        if text.range(
+            of: #"^[A-Za-z][A-Za-z0-9._-]*_chars=[0-9]+;sha256=[0-9a-f]{64}$"#,
+            options: .regularExpression
+        ) != nil {
+            return text
+        }
+        let normalizedLabel = safeCode(label)
+        let safeLabel = normalizedLabel.first?.isLetter == true ? normalizedLabel : "diagnosticText"
+        let digest = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "\(safeLabel)_chars=\(text.count);sha256=\(digest)"
+    }
+
+    static func allowlistedCategory(_ value: String?, allowed: Set<String>, label: String) -> String? {
+        guard let value else { return nil }
+        let normalized = value.lowercased()
+        return allowed.map { $0.lowercased() }.contains(normalized)
+            ? value
+            : summary(label: label, text: value)
+    }
+
+    static func persistentEventCode(_ code: String) -> String {
+        let normalized = safeCode(code)
+        return persistentEventCodes.contains(normalized) ? normalized : "other"
+    }
+
+    static func redactForPersistentStorage(_ values: [String: String]) -> [String: String] {
+        values.keys.sorted().reduce(into: [:]) { result, rawKey in
+            let normalizedKey = safeCode(rawKey)
+            guard !identityMetadataKeys.contains(normalizedKey) else { return }
+            let value = values[rawKey] ?? ""
+            let key = persistentMetadataKeys.contains(normalizedKey)
+                ? normalizedKey
+                : (isOpaqueMetadataKey(normalizedKey) ? normalizedKey : opaqueMetadataKey(rawKey))
+            result[key] = persistentMetadataValue(value, key: normalizedKey)
+        }
+    }
+
+    private static func opaqueMetadataKey(_ key: String) -> String {
+        let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+        return "metadata_\(digest.prefix(16))"
+    }
+
+    private static func isOpaqueMetadataKey(_ key: String) -> Bool {
+        key.range(of: #"^metadata_[0-9a-f]{16}$"#, options: .regularExpression) != nil
+    }
+
+    private static func persistentMetadataValue(_ value: String, key: String) -> String {
+        guard !value.isEmpty else { return "" }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if numericMetadataKeys.contains(key),
+           let number = Int(normalized),
+           (-1...86_400_000).contains(number) {
+            return String(number)
+        }
+        if booleanMetadataKeys.contains(key), normalized == "true" || normalized == "false" {
+            return normalized
+        }
+        if categoricalMetadataValues[key]?.contains(normalized) == true {
+            return normalized
+        }
+        return summary(label: "diagnosticValue", text: value)
     }
 
     static func redact(_ values: [String: String]) -> [String: String] {

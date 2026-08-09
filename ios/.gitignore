@@ -21,7 +21,7 @@ xcuserdata/
 # Swift Package Manager
 .build/
 .swiftpm/
-Package.resolved
+# Package.resolved is intentionally tracked to bind release builds to reviewed revisions.
 
 # macOS
 .DS_Store

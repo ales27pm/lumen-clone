@@ -302,24 +302,32 @@ final class AssistantKernelRunContractTests: XCTestCase {
         )
 
         var skipDiagnostic: [String: String]?
-        var finalText: String?
-        var doneSteps: [AgentStep] = []
+        var errorText: String?
+        var sawFinal = false
+        var sawDone = false
+        var sawObservation = false
         for await event in kernel.run(request, modelContext: nil) {
             switch event {
             case .diagnostic(let diagnostic) where diagnostic.stage == "background-tool-execution":
                 skipDiagnostic = diagnostic.metadata
-            case .final(let text):
-                finalText = text
-            case .done(_, let steps):
-                doneSteps = steps
+            case .error(let text):
+                errorText = text
+            case .final:
+                sawFinal = true
+            case .done:
+                sawDone = true
+            case .step(let step) where step.kind == .observation:
+                sawObservation = true
             default:
                 break
             }
         }
 
         XCTAssertEqual(skipDiagnostic?["status"], BackgroundToolExecutionAssessment.Status.noBackgroundSafeRoutedTools.rawValue)
-        XCTAssertTrue(finalText?.contains("no routed tool is allowed to run in background") == true)
-        XCTAssertTrue(doneSteps.contains { $0.kind == .observation && $0.content.contains("no routed tool is allowed to run in background") })
+        XCTAssertTrue(errorText?.contains("no routed tool is allowed to run in background") == true)
+        XCTAssertFalse(sawFinal)
+        XCTAssertFalse(sawDone)
+        XCTAssertFalse(sawObservation)
         let generatedRequest = await capture.snapshot()
         XCTAssertNil(generatedRequest)
     }

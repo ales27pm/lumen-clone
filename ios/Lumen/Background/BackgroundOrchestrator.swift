@@ -24,17 +24,22 @@ final class BackgroundOrchestrator {
     private let lease: BackgroundExecutionLease
     private let metrics: RuntimeMetricsStore
     private let modelHousekeeping: @MainActor () async -> FleetRuntimeCleanupResult
+    private let triggerScan: @MainActor (ModelContext, SettingsSnapshot) async -> TriggerScanOutcome
 
     init(
         metricsStore: RuntimeMetricsStore = .shared,
         lease: BackgroundExecutionLease = BackgroundExecutionLease(),
         modelHousekeeping: @escaping @MainActor () async -> FleetRuntimeCleanupResult = {
             await FleetRuntimeCleanup.unloadOptionalChatSlotsNow()
+        },
+        triggerScan: @escaping @MainActor (ModelContext, SettingsSnapshot) async -> TriggerScanOutcome = { context, settings in
+            await TriggerScheduler.shared.fireDueTriggers(context: context, settings: settings)
         }
     ) {
         self.metrics = metricsStore
         self.lease = lease
         self.modelHousekeeping = modelHousekeeping
+        self.triggerScan = triggerScan
     }
 
     func prepareForStartup() {
@@ -67,7 +72,7 @@ final class BackgroundOrchestrator {
         }
         let context = ModelContext(container)
         do {
-            try await runTriggerScan(context: context)
+            _ = try await runTriggerScan(context: context)
         } catch is CancellationError {
             await appendBackgroundCancellationMetric(
                 taskKind: .triggerScan,
@@ -92,7 +97,8 @@ final class BackgroundOrchestrator {
         let deadline = Date().addingTimeInterval(4.5)
         let context = ModelContext(container)
         do {
-            try await runTriggerScan(context: context)
+            let scanOutcome = try await runTriggerScan(context: context)
+            guard scanOutcome.backgroundTaskSucceeded else { return }
             try await runProcessingMaintenance(until: deadline)
         } catch is CancellationError {
             await appendBackgroundCancellationMetric(
@@ -110,40 +116,52 @@ final class BackgroundOrchestrator {
         }
     }
 
-    func runTriggerScan(context: ModelContext) async throws {
+    @discardableResult
+    func runTriggerScan(context: ModelContext) async throws -> TriggerScanOutcome {
         try Task.checkCancellation()
         let decision = triggerScanDecision()
         guard decision.allow else {
+            let issue = TriggerExecutionIssue(
+                code: "background_policy_denied",
+                message: decision.denyReason ?? "background policy denied"
+            )
             await appendMetric(
                 taskKind: .triggerScan,
-                policySummary: "skipped: \(decision.denyReason ?? "background policy denied")",
-                success: true,
-                errorCode: "background_policy_denied"
+                policySummary: "deferred: \(issue.message)",
+                success: false,
+                errorCode: issue.code
             )
-            return
+            return .deferred(issue)
         }
         let startedAt = Date()
         let acquired = await lease.acquire(category: "triggerScan", reason: "background trigger scan")
         guard acquired else {
+            let issue = TriggerExecutionIssue(
+                code: "background_lease_active",
+                message: "trigger scan lease already active"
+            )
             await appendMetric(
                 taskKind: .triggerScan,
-                policySummary: "skipped: trigger scan lease already active",
-                success: true,
-                errorCode: "background_lease_active"
+                policySummary: "deferred: \(issue.message)",
+                success: false,
+                errorCode: issue.code
             )
-            return
+            return .deferred(issue)
         }
         do {
             try Task.checkCancellation()
-            await TriggerScheduler.shared.fireDueTriggers(context: context, settings: SettingsSnapshot.loadFromDisk())
+            let outcome = await triggerScan(context, SettingsSnapshot.loadFromDisk())
             try Task.checkCancellation()
+            let issue = outcome.issue
             await appendMetric(
                 taskKind: .triggerScan,
-                policySummary: "trigger scheduler fireDueTriggers; model loading denied",
-                success: true,
+                policySummary: "trigger scheduler \(outcome.severity.rawValue); model loading denied; completed=\(outcome.completedCount); deferred=\(outcome.deferredIssues.count); failed=\(outcome.failedIssues.count); detail=\(issue?.message ?? "none")",
+                success: outcome.backgroundTaskSucceeded,
+                errorCode: issue?.code,
                 latencyMs: Int(Date().timeIntervalSince(startedAt) * 1000)
             )
             await lease.release(category: "triggerScan")
+            return outcome
         } catch {
             await lease.release(category: "triggerScan")
             throw error
@@ -274,13 +292,14 @@ final class BackgroundOrchestrator {
         let work = Task { () -> Bool in
             guard let container = SharedContainer.shared else {
                 await appendSharedContainerUnavailable(taskKind: .triggerScan)
-                return true
+                return false
             }
             let deadline = Date().addingTimeInterval(4.5)
             let context = ModelContext(container)
             do {
                 try Task.checkCancellation()
-                try await runTriggerScan(context: context)
+                let scanOutcome = try await runTriggerScan(context: context)
+                guard scanOutcome.backgroundTaskSucceeded else { return false }
                 try Task.checkCancellation()
                 if runProcessingWork, Date() < deadline {
                     try await runProcessingMaintenance(until: deadline)

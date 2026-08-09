@@ -4,6 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_FILE="$REPO_ROOT/ios/Lumen.xcodeproj/project.pbxproj"
+PACKAGE_RESOLVED_PATH="$REPO_ROOT/ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+EXPECTED_MSAL_VERSION="1.9.0"
+EXPECTED_MSAL_REVISION="be848ee7fa9516cec47ae6de47cf1087d51bc774"
 PROJECT_PATH_INPUT="${LUMEN_IOS_PROJECT_PATH:-ios/Lumen.xcodeproj}"
 PROJECT_PATH="$PROJECT_PATH_INPUT"
 if [[ "$PROJECT_PATH" != /* ]]; then
@@ -35,13 +38,196 @@ CLEAR_PROVISIONING_PROFILE_SPECIFIER="${LUMEN_IOS_CLEAR_PROVISIONING_PROFILE_SPE
 AUTHENTICATION_KEY_PATH="${LUMEN_IOS_AUTHENTICATION_KEY_PATH:-}"
 AUTHENTICATION_KEY_ID="${LUMEN_IOS_AUTHENTICATION_KEY_ID:-}"
 AUTHENTICATION_KEY_ISSUER_ID="${LUMEN_IOS_AUTHENTICATION_KEY_ISSUER_ID:-}"
-LUMEN_GIT_SHA_VALUE="${LUMEN_GIT_SHA:-$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown')}"
+REQUESTED_LUMEN_GIT_SHA_VALUE="${LUMEN_GIT_SHA:-}"
+ALLOW_DIRTY_RELEASE_DIAGNOSTIC="${LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC:-0}"
+LUMEN_GIT_SHA_VALUE=""
+LUMEN_BUILD_SCHEME_VALUE=""
+RELEASE_GIT_COMMIT=""
+DIAGNOSTIC_RELEASE=0
 AGENT_GROUNDING_RESOURCE_MODE_VALUE="${LUMEN_AGENT_GROUNDING_RESOURCE_MODE:-minimal}"
+RELEASE_SCOPE_PATHS=(ios scripts generated/agent_manifest)
 
 bold() { printf "\033[1m%s\033[0m\n" "$1"; }
 info() { printf "\n➡️  %s\n" "$1"; }
 warn() { printf "\n⚠️  %s\n" "$1"; }
 fail() { printf "\n❌ %s\n" "$1"; exit 1; }
+
+is_release_configuration() {
+  case "$1" in
+    Release|AppStore|App\ Store) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+release_scope_changes_at() {
+  local repo_root="$1"
+  git -C "$repo_root" status --porcelain=v1 --untracked-files=all -- "${RELEASE_SCOPE_PATHS[@]}"
+}
+
+compute_release_provenance() {
+  local repo_root="$1"
+  local configuration="$2"
+  local requested_git_sha="$3"
+  local allow_dirty_diagnostic="$4"
+  local full_commit
+  local changes=""
+
+  case "$allow_dirty_diagnostic" in
+    0|1) ;;
+    *)
+      printf 'LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC must be 0 or 1; received %s.\n' \
+        "$allow_dirty_diagnostic" >&2
+      return 1
+      ;;
+  esac
+
+  if ! full_commit="$(git -C "$repo_root" rev-parse --verify HEAD^{commit} 2>/dev/null)"; then
+    printf 'Cannot resolve a Git commit for release provenance in %s.\n' "$repo_root" >&2
+    return 1
+  fi
+  if [[ ! "$full_commit" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
+    printf 'Release provenance requires a full Git object ID; resolved %s.\n' "$full_commit" >&2
+    return 1
+  fi
+
+  COMPUTED_RELEASE_GIT_COMMIT="$full_commit"
+  COMPUTED_LUMEN_GIT_SHA="$full_commit"
+  COMPUTED_RELEASE_PROVENANCE="production-clean:$full_commit"
+  COMPUTED_DIAGNOSTIC_RELEASE=0
+
+  if is_release_configuration "$configuration"; then
+    if ! changes="$(release_scope_changes_at "$repo_root")"; then
+      printf 'Could not inspect release-scope Git state in %s.\n' "$repo_root" >&2
+      return 1
+    fi
+    if [[ -n "$changes" ]]; then
+      if [[ "$allow_dirty_diagnostic" != "1" ]]; then
+        printf 'Release archive refused: tracked or untracked release inputs are dirty:\n%s\n' \
+          "$changes" >&2
+        printf 'Commit/stash those inputs, or use LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC=1 only for a non-distributable diagnostic artifact.\n' >&2
+        return 1
+      fi
+      COMPUTED_RELEASE_PROVENANCE="diagnostic-dirty-not-for-distribution:$full_commit"
+      COMPUTED_DIAGNOSTIC_RELEASE=1
+    fi
+  fi
+
+  if [[ -n "$requested_git_sha" && "$requested_git_sha" != "$full_commit" ]]; then
+    printf 'LUMEN_GIT_SHA=%s does not match the full release commit %s.\n' \
+      "$requested_git_sha" "$full_commit" >&2
+    return 1
+  fi
+}
+
+prepare_release_provenance() {
+  compute_release_provenance \
+    "$REPO_ROOT" \
+    "$CONFIGURATION" \
+    "$REQUESTED_LUMEN_GIT_SHA_VALUE" \
+    "$ALLOW_DIRTY_RELEASE_DIAGNOSTIC" \
+    || fail "Release provenance preflight failed before archive side effects."
+
+  RELEASE_GIT_COMMIT="$COMPUTED_RELEASE_GIT_COMMIT"
+  LUMEN_GIT_SHA_VALUE="$COMPUTED_LUMEN_GIT_SHA"
+  DIAGNOSTIC_RELEASE="$COMPUTED_DIAGNOSTIC_RELEASE"
+
+  if [[ "$DIAGNOSTIC_RELEASE" == "1" ]]; then
+    LUMEN_BUILD_SCHEME_VALUE="${SCHEME}-DIAGNOSTIC-DIRTY-NOT-FOR-DISTRIBUTION"
+    warn "DIRTY DIAGNOSTIC ONLY: this archive is stamped not-for-distribution and is not production provenance."
+  else
+    LUMEN_BUILD_SCHEME_VALUE="$SCHEME"
+    info "Release provenance pinned to full commit: $RELEASE_GIT_COMMIT"
+  fi
+}
+
+assert_release_provenance_still_valid() {
+  local current_commit
+  local changes=""
+
+  current_commit="$(git -C "$REPO_ROOT" rev-parse --verify HEAD^{commit} 2>/dev/null)" \
+    || fail "Could not re-resolve Git HEAD after archive."
+  [[ "$current_commit" == "$RELEASE_GIT_COMMIT" ]] \
+    || fail "Git HEAD changed during archive: expected $RELEASE_GIT_COMMIT, found $current_commit."
+
+  if is_release_configuration "$CONFIGURATION" && [[ "$DIAGNOSTIC_RELEASE" != "1" ]]; then
+    changes="$(release_scope_changes_at "$REPO_ROOT")" \
+      || fail "Could not re-check release-scope Git state after archive."
+    if [[ -n "$changes" ]]; then
+      printf '%s\n' "$changes" >&2
+      fail "Release-scope inputs changed during archive; the artifact is not valid production evidence."
+    fi
+  fi
+}
+
+validate_reviewed_package_resolution() {
+  [[ -f "$PACKAGE_RESOLVED_PATH" ]] \
+    || fail "Missing tracked Swift package lockfile: $PACKAGE_RESOLVED_PATH"
+
+  python3 - "$PACKAGE_RESOLVED_PATH" "$EXPECTED_MSAL_VERSION" "$EXPECTED_MSAL_REVISION" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+expected_version = sys.argv[2]
+expected_revision = sys.argv[3]
+payload = json.loads(path.read_text(encoding="utf-8"))
+pins = [
+    pin
+    for pin in payload.get("pins", [])
+    if pin.get("identity") == "microsoft-authentication-library-for-objc"
+]
+if len(pins) != 1:
+    raise SystemExit(f"error: {path} must contain exactly one MSAL pin; found {len(pins)}")
+state = pins[0].get("state") or {}
+actual_version = state.get("version")
+actual_revision = state.get("revision")
+if actual_version != expected_version or actual_revision != expected_revision:
+    raise SystemExit(
+        f"error: reviewed MSAL resolution mismatch in {path}: "
+        f"version={actual_version!r} revision={actual_revision!r}; "
+        f"expected version={expected_version!r} revision={expected_revision!r}"
+    )
+print(f"Reviewed MSAL resolution verified: {actual_version} ({actual_revision})")
+PY
+}
+
+verify_archive_provenance_metadata() {
+  local archive_path="$1"
+  local expected_git_sha="$2"
+  local expected_build_scheme="$3"
+
+  python3 - "$archive_path" "$expected_git_sha" "$expected_build_scheme" <<'PY'
+from __future__ import annotations
+
+import plistlib
+import sys
+from pathlib import Path
+
+archive = Path(sys.argv[1])
+expected_git_sha = sys.argv[2]
+expected_build_scheme = sys.argv[3]
+plists = sorted((archive / "Products" / "Applications").glob("*.app/Info.plist"))
+if len(plists) != 1:
+    raise SystemExit(f"error: expected exactly one archived app Info.plist; found {len(plists)}")
+with plists[0].open("rb") as handle:
+    info = plistlib.load(handle)
+actual_git_sha = info.get("LumenGitSHA")
+actual_build_scheme = info.get("LumenBuildScheme")
+if actual_git_sha != expected_git_sha:
+    raise SystemExit(
+        f"error: archived LumenGitSHA={actual_git_sha!r}; expected {expected_git_sha!r}"
+    )
+if actual_build_scheme != expected_build_scheme:
+    raise SystemExit(
+        f"error: archived LumenBuildScheme={actual_build_scheme!r}; "
+        f"expected {expected_build_scheme!r}"
+    )
+print(f"Archive provenance verified: {actual_git_sha} [{actual_build_scheme}]")
+PY
+}
 
 validate_archive_signing_arguments() {
   local argument
@@ -61,8 +247,140 @@ run_signing_argument_self_check() {
   printf 'Archive signing-argument self-check passed.\n'
 }
 
+signing_identity_output_has_valid_match() {
+  local expected_name="$1"
+
+  awk -v expected_name="$expected_name" '
+    /^[[:space:]]*[0-9]+\)[[:space:]]+[[:xdigit:]]+[[:space:]]+"[^"]+"[[:space:]]*$/ {
+      hash_length = length($2)
+      if ((hash_length == 40 || hash_length == 64) && index($0, expected_name) > 0) {
+        found = 1
+      }
+    }
+    END { exit found ? 0 : 1 }
+  '
+}
+
+run_signing_identity_output_self_check() {
+  local valid_development='  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Apple Development: Example (TEAM123456)"'
+  local valid_distribution='  2) 89ABCDEF0123456789ABCDEF0123456789ABCDEF "Apple Distribution: Example (TEAM123456)"'
+  local revoked_distribution='  3) FEDCBA9876543210FEDCBA9876543210FEDCBA98 "Apple Distribution: Example (TEAM123456)" (CSSMERR_TP_CERT_REVOKED)'
+  local expired_distribution='  4) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Apple Distribution: Example (TEAM123456)" (CSSMERR_TP_CERT_EXPIRED)'
+  local missing_private_key='  5) 76543210FEDCBA9876543210FEDCBA9876543210 "Apple Distribution: Example (TEAM123456)" (Missing private key)'
+  local malformed_identity='  6) not-a-certificate-hash "Apple Distribution: Example (TEAM123456)"'
+  local short_hash_identity='  7) ABCDEF "Apple Distribution: Example (TEAM123456)"'
+  local summary='     2 valid identities found'
+
+  printf '%s\n' "$valid_development" \
+    | signing_identity_output_has_valid_match "Apple Development" \
+    || fail "Signing identity output self-check rejected a valid development identity."
+  printf '%s\n' "$valid_distribution" \
+    | signing_identity_output_has_valid_match "Apple Distribution" \
+    || fail "Signing identity output self-check rejected a valid distribution identity."
+
+  local rejected_fixture
+  for rejected_fixture in \
+    "$revoked_distribution" \
+    "$expired_distribution" \
+    "$missing_private_key" \
+    "$malformed_identity" \
+    "$short_hash_identity" \
+    "$summary"; do
+    if printf '%s\n' "$rejected_fixture" \
+      | signing_identity_output_has_valid_match "Apple Distribution"; then
+      fail "Signing identity output self-check accepted an invalid distribution identity."
+    fi
+  done
+
+  if printf '%s\n' "$valid_development" "$revoked_distribution" "$summary" \
+    | signing_identity_output_has_valid_match "Apple Distribution"; then
+    fail "Signing identity output self-check accepted a revoked match from mixed output."
+  fi
+  printf '%s\n' "$valid_development" "$valid_distribution" "$revoked_distribution" "$summary" \
+    | signing_identity_output_has_valid_match "Apple Distribution" \
+    || fail "Signing identity output self-check ignored a valid match when an invalid duplicate was present."
+
+  printf 'Signing identity output self-check passed.\n'
+}
+
+run_release_provenance_self_check() {
+  local fixture_root
+  local full_commit
+
+  fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/lumen-release-provenance.XXXXXX")"
+  RELEASE_PROVENANCE_SELF_CHECK_DIR="$fixture_root"
+  trap 'rm -rf -- "$RELEASE_PROVENANCE_SELF_CHECK_DIR"' EXIT
+  mkdir -p \
+    "$fixture_root/ios" \
+    "$fixture_root/scripts" \
+    "$fixture_root/generated/agent_manifest" \
+    "$fixture_root/docs"
+  printf 'app\n' > "$fixture_root/ios/app.swift"
+  printf 'archive\n' > "$fixture_root/scripts/archive.sh"
+  printf '{}\n' > "$fixture_root/generated/agent_manifest/AgentBehaviorManifest.json"
+  git -C "$fixture_root" init -q
+  git -C "$fixture_root" add ios scripts generated/agent_manifest
+  git -C "$fixture_root" \
+    -c user.name='Lumen Release Self Check' \
+    -c user.email='lumen-release-self-check@example.invalid' \
+    commit -qm 'fixture'
+  full_commit="$(git -C "$fixture_root" rev-parse --verify HEAD^{commit})"
+
+  compute_release_provenance "$fixture_root" Release "" 0
+  [[ "$COMPUTED_LUMEN_GIT_SHA" == "$full_commit" ]] \
+    || fail "Release-provenance self-check did not preserve the full clean commit."
+  [[ "$COMPUTED_RELEASE_PROVENANCE" == "production-clean:$full_commit" ]] \
+    || fail "Release-provenance self-check produced the wrong production marker."
+
+  printf 'dirty\n' >> "$fixture_root/ios/app.swift"
+  if compute_release_provenance "$fixture_root" Release "" 0 >/dev/null 2>&1; then
+    fail "Release-provenance self-check accepted a dirty tracked release input."
+  fi
+  compute_release_provenance "$fixture_root" Release "$full_commit" 1
+  [[ "$COMPUTED_DIAGNOSTIC_RELEASE" == "1" ]] \
+    || fail "Release-provenance self-check did not classify the dirty override as diagnostic."
+  [[ "$COMPUTED_RELEASE_PROVENANCE" == "diagnostic-dirty-not-for-distribution:$full_commit" ]] \
+    || fail "Release-provenance self-check produced the wrong diagnostic marker."
+
+  git -C "$fixture_root" restore -- ios/app.swift
+  : > "$fixture_root/scripts/untracked-release-input.sh"
+  if compute_release_provenance "$fixture_root" Release "" 0 >/dev/null 2>&1; then
+    fail "Release-provenance self-check accepted an untracked release input."
+  fi
+  rm -f -- "$fixture_root/scripts/untracked-release-input.sh"
+
+  : > "$fixture_root/docs/unrelated-note.md"
+  compute_release_provenance "$fixture_root" Release "$full_commit" 0
+  [[ "$COMPUTED_DIAGNOSTIC_RELEASE" == "0" ]] \
+    || fail "Release-provenance self-check treated an out-of-scope document as a release input."
+
+  printf 'Release provenance self-check passed.\n'
+}
+
 if [[ "${1:-}" == "--self-check-signing-arguments" ]]; then
   run_signing_argument_self_check
+  exit 0
+fi
+
+if [[ "${1:-}" == "--self-check-signing-identity-output" ]]; then
+  run_signing_identity_output_self_check
+  exit 0
+fi
+
+if [[ "${1:-}" == "--self-check-release-provenance" ]]; then
+  run_release_provenance_self_check
+  exit 0
+fi
+
+if [[ "${1:-}" == "--self-check-reviewed-package-resolution" ]]; then
+  validate_reviewed_package_resolution
+  exit 0
+fi
+
+if [[ "${1:-}" == "--preflight-release-provenance" ]]; then
+  prepare_release_provenance
+  printf 'LUMEN_GIT_SHA=%s\n' "$LUMEN_GIT_SHA_VALUE"
+  printf 'LUMEN_BUILD_SCHEME=%s\n' "$LUMEN_BUILD_SCHEME_VALUE"
   exit 0
 fi
 
@@ -200,6 +518,7 @@ resolve_package_dependencies() {
         -derivedDataPath "$DERIVED_DATA_PATH" \
         -clonedSourcePackagesDirPath "$CLONED_SOURCE_PACKAGES_DIR" \
         -packageCachePath "$PACKAGE_CACHE_PATH" \
+        -onlyUsePackageVersionsFromResolvedFile \
         -resolvePackageDependencies; then
       return 0
     fi
@@ -232,7 +551,8 @@ expected_signing_identity_patterns() {
 
 has_matching_signing_identity() {
   local pattern="$1"
-  security find-identity -v -p codesigning 2>/dev/null | grep -F "$pattern" >/dev/null
+  security find-identity -v -p codesigning 2>/dev/null \
+    | signing_identity_output_has_valid_match "$pattern"
 }
 
 preflight_signing_identity() {
@@ -285,6 +605,8 @@ case "$AGENT_GROUNDING_RESOURCE_MODE_VALUE" in
 esac
 
 cd "$REPO_ROOT"
+prepare_release_provenance
+validate_reviewed_package_resolution
 mkdir -p "$LOG_DIR" "$REPO_ROOT/build"
 acquire_archive_lock
 
@@ -391,6 +713,7 @@ ARCHIVE_COMMAND+=(
   -derivedDataPath "$DERIVED_DATA_PATH"
   -clonedSourcePackagesDirPath "$CLONED_SOURCE_PACKAGES_DIR"
   -packageCachePath "$PACKAGE_CACHE_PATH"
+  -onlyUsePackageVersionsFromResolvedFile
   -configuration "$CONFIGURATION"
   -destination "generic/platform=iOS"
   -archivePath "$ARCHIVE_PATH"
@@ -413,6 +736,7 @@ ARCHIVE_COMMAND+=(
   SWIFT_WHOLE_MODULE_OPTIMIZATION=NO
   "SWIFT_OPTIMIZATION_LEVEL=$SWIFT_OPTIMIZATION_LEVEL_VALUE"
   "LUMEN_GIT_SHA=$LUMEN_GIT_SHA_VALUE"
+  "LUMEN_BUILD_SCHEME=$LUMEN_BUILD_SCHEME_VALUE"
   "AGENT_GROUNDING_RESOURCE_MODE=$AGENT_GROUNDING_RESOURCE_MODE_VALUE"
   clean
   archive
@@ -428,6 +752,12 @@ if [[ -n "$CURRENT_PROJECT_VERSION_VALUE" ]]; then
 fi
 "${INFO_PLIST_CHECK[@]}"
 
+info "Verifying archived full-commit provenance"
+verify_archive_provenance_metadata \
+  "$ARCHIVE_PATH" \
+  "$LUMEN_GIT_SHA_VALUE" \
+  "$LUMEN_BUILD_SCHEME_VALUE"
+
 info "Verifying archived app signed entitlements"
 python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
   --project-file "$PROJECT_FILE" \
@@ -435,5 +765,7 @@ python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
   --app-store-entitlements "$REPO_ROOT/ios/Lumen/LumenAppStore.entitlements" \
   --signing-stage archive \
   --signed-app-path "$ARCHIVE_PATH"
+
+assert_release_provenance_still_valid
 
 bold "✅ Archive created: $ARCHIVE_PATH"

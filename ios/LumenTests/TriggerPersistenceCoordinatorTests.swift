@@ -415,8 +415,12 @@ final class TriggerPersistenceCoordinatorTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+        let triggersViewURL = repoRoot.appendingPathComponent("ios/Lumen/Views/TriggersView.swift")
+        guard FileManager.default.fileExists(atPath: triggersViewURL.path) else {
+            throw XCTSkip("Source-layout guard requires a test host that can read the repository checkout.")
+        }
         let source = try String(
-            contentsOf: repoRoot.appendingPathComponent("ios/Lumen/Views/TriggersView.swift"),
+            contentsOf: triggersViewURL,
             encoding: .utf8
         )
 
@@ -437,7 +441,14 @@ final class TriggerPersistenceCoordinatorTests: XCTestCase {
             contentsOf: repoRoot.appendingPathComponent("ios/Lumen/Services/TriggerScheduler.swift"),
             encoding: .utf8
         )
+        XCTAssertTrue(schedulerSource.contains("case .deferred(let issue), .cancelled(let issue):"))
         XCTAssertTrue(schedulerSource.contains("case .persistenceFailed(let failure):"))
-        XCTAssertTrue(schedulerSource.contains("return failure.userMessage"))
+        XCTAssertTrue(schedulerSource.contains("message: failure.userMessage"))
+
+        let orchestratorSource = try String(
+            contentsOf: repoRoot.appendingPathComponent("ios/Lumen/Background/BackgroundOrchestrator.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(orchestratorSource.contains("guard scanOutcome.backgroundTaskSucceeded else { return false }"))
     }
 }

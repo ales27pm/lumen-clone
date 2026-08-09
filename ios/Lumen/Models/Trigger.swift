@@ -1,6 +1,11 @@
 import Foundation
 import SwiftData
 
+nonisolated enum TriggerScheduleContract {
+    static let minimumIntervalMinutes = 15
+    static let minimumIntervalSeconds = minimumIntervalMinutes * 60
+}
+
 @Model
 final class Trigger {
     var id: UUID = UUID()
@@ -53,7 +58,10 @@ final class Trigger {
             }
             return candidate
         case .interval:
-            guard let s = intervalSeconds, s > 60 else { return nil }
+            guard let s = intervalSeconds,
+                  s >= TimeInterval(TriggerScheduleContract.minimumIntervalSeconds) else {
+                return nil
+            }
             let base = lastRunAt ?? createdAt
             var t = base.addingTimeInterval(s)
             if t < now { t = now.addingTimeInterval(min(s, 3600)) }
@@ -66,6 +74,17 @@ final class Trigger {
 
 enum TriggerScheduleType: String, Codable, CaseIterable, Sendable {
     case once, daily, interval, beforeNextEvent
+
+    static let creatableCases: [TriggerScheduleType] = [.once, .daily, .interval]
+
+    var creationUnavailability: TriggerScheduleUnavailability? {
+        switch self {
+        case .once, .daily, .interval:
+            nil
+        case .beforeNextEvent:
+            .beforeNextEventRequiresForegroundCalendarIntegration
+        }
+    }
 
     var label: String {
         switch self {
@@ -82,6 +101,17 @@ enum TriggerScheduleType: String, Codable, CaseIterable, Sendable {
         case .daily: "sun.max"
         case .interval: "arrow.triangle.2.circlepath"
         case .beforeNextEvent: "calendar.badge.clock"
+        }
+    }
+}
+
+nonisolated enum TriggerScheduleUnavailability: String, Error, Equatable, Sendable {
+    case beforeNextEventRequiresForegroundCalendarIntegration = "before_next_event_unavailable"
+
+    var message: String {
+        switch self {
+        case .beforeNextEventRequiresForegroundCalendarIntegration:
+            "Before next event scheduling is unavailable because Lumen cannot resolve calendar events safely without a foreground permission-aware integration. Choose a one-time, daily, or interval schedule."
         }
     }
 }

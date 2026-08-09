@@ -1,5 +1,17 @@
 # Feature Complete Validation
 
+## 2026-08-09 production-readiness hardening checkpoint
+
+This pass closes several source/configuration-level release risks without converting them into broader runtime claims. Release/minimal AgentGrounding packaging now fails closed on missing required resources, generated/iOS manifest drift, invalid or non-passing validation reports, warnings, failures, manifest SHA-256 mismatches, and any missing, unsafe, or hash-mismatched source file declared by `sourceIntegrity`; only an explicit Debug diagnostic build may use an empty fallback bundle. The Microsoft authentication package is pinned exactly to MSAL `1.9.0`, and both the package linker and release-configuration validator enforce that requirement.
+
+Background headless execution now carries typed completed, deferred, failed, and cancelled outcomes through `HeadlessAgentKernelRunner`, `TriggerScheduler`, and `BackgroundOrchestrator`. Deferred or failed work no longer marks a background scan successful or advances a trigger as though execution completed. `beforeNextEvent` trigger creation fails closed with typed unavailability until a foreground, permission-aware calendar integration exists. Numeric alarm/trigger/tool inputs are validated within explicit semantic domains before conversion or date arithmetic.
+
+Release Settings no longer exposes the Developer Console and Release file sharing is disabled. Persisted E2E results and exports, behavior traces, and in-app AgentGrounding packages use versioned `redacted-v1` filenames, one-way hash/count summaries for free-form content, complete file protection, and startup/export cleanup for known legacy raw-content names. The current tree removes quarantined historical raw E2E artifacts and records their paths and hashes in `runtime-audits/PRIVACY_QUARANTINE.md`; prior Git objects and remote clones remain outside this current-tree containment until a separately authorized history rewrite.
+
+Fresh focused evidence used a physical iPhone 16 Pro running iOS 26.6 beta. A signed Debug device build and device `build-for-testing` completed. Device XCTest passed 57 of 57 tests across `BackgroundTriggerOutcomeTests`, `NumericToolArgumentSafetyTests`, `SecureToolRegistryTests`, and `ToolSchemaBridgeTests`, plus 16 of 16 `OutlookToolAvailabilityTests`. No simulator result is used for this checkpoint.
+
+This remains a production-readiness checkpoint, not a completed release qualification. It does not yet prove a final post-edit install/launch smoke, real-device local-model generation, live native tools, RAG indexing/search, memory extraction/storage, voice, App Intents, background scheduling, Microsoft OAuth/mailbox behavior, signed Release archive/export, entitlement payloads, privacy-manifest handling, TestFlight behavior, App Store upload, or App Store acceptance.
+
 ## Ubuntu training exact-model lineage hardening (local validation)
 
 A fresh optimized Ubuntu run, `uidfix-20260715T062939Z`, passed static/runtime preflight and completed all 98 Cortex SFT steps on the RTX 2070, then stopped before the first preference-training step. The strict DPO parent check correctly rejected the finalized adapter because Unsloth had redirected the configured and attested `Qwen/Qwen3-1.7B` base to `unsloth/qwen3-1.7b-unsloth-bnb-4bit`; accepting that mirror as an alias or rewriting the adapter metadata would have weakened provenance.

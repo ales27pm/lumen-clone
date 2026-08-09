@@ -59,6 +59,7 @@ From the repository root:
 ```bash
 git diff --check -- runtime-audits
 python3 scripts/check-generated-jsonl-artifacts.py
+python3 tools/check_runtime_audit_privacy.py
 ```
 
 These validate text/JSONL structure only. They do not re-run or authenticate the underlying runtime evidence.

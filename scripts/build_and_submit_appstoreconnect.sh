@@ -8,6 +8,27 @@ CONFIG_DIR="$REPO_ROOT/.local"
 CONFIG_FILE="$CONFIG_DIR/appstoreconnect-upload.env"
 STABLE_ARCHIVE_SCRIPT="$REPO_ROOT/scripts/archive_lumen_stable.sh"
 PROJECT_FILE="$REPO_ROOT/ios/Lumen.xcodeproj/project.pbxproj"
+RELEASE_SCOPE_PATHS=(ios scripts generated/agent_manifest)
+LOCAL_CONFIG_ENV_KEYS=(
+  ASC_PROJECT_PATH
+  ASC_SCHEME
+  ASC_CONFIGURATION
+  ASC_TEAM_ID
+  ASC_EXPORT_METHOD
+  ASC_AUTH_MODE
+  ASC_API_KEY
+  ASC_API_ISSUER
+  ASC_API_KEY_DIR
+  ASC_APPLE_ID
+  ASC_PROVIDER
+  ASC_UPLOAD_AFTER_BUILD
+  LUMEN_NO_UPLOAD
+)
+NO_UPLOAD_REQUESTED=0
+RELEASE_GIT_COMMIT=""
+RELEASE_GIT_SHA=""
+RELEASE_BUILD_SCHEME=""
+DIAGNOSTIC_RELEASE=0
 
 bold() { printf "\033[1m%s\033[0m\n" "$1"; }
 info() { printf "\n➡️  %s\n" "$1"; }
@@ -64,6 +85,20 @@ read_yes_no_with_default() {
 }
 
 load_local_config() {
+  local override_names=()
+  local override_values=()
+  local name
+  local index
+
+  # Local config supplies defaults only. Explicit process-environment values,
+  # including an explicitly empty value, always win over the sourced file.
+  for name in "${LOCAL_CONFIG_ENV_KEYS[@]}"; do
+    if printenv "$name" >/dev/null 2>&1; then
+      override_names+=("$name")
+      override_values+=("${!name}")
+    fi
+  done
+
   if [[ "${LUMEN_RESET_ASC_CONFIG:-0}" == "1" ]]; then
     rm -f "$CONFIG_FILE"
     warn "Local App Store Connect config reset: $CONFIG_FILE"
@@ -73,6 +108,90 @@ load_local_config() {
   if [[ -f "$CONFIG_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$CONFIG_FILE"
+  fi
+
+  for ((index = 0; index < ${#override_names[@]}; index += 1)); do
+    name="${override_names[$index]}"
+    printf -v "$name" '%s' "${override_values[$index]}"
+    export "$name"
+  done
+}
+
+configure_no_upload_mode() {
+  case "${LUMEN_NO_UPLOAD:-0}" in
+    0|"") NO_UPLOAD_REQUESTED=0 ;;
+    1) NO_UPLOAD_REQUESTED=1 ;;
+    *) fail "LUMEN_NO_UPLOAD must be 0 or 1; received ${LUMEN_NO_UPLOAD}." ;;
+  esac
+}
+
+is_release_configuration() {
+  case "$1" in
+    Release|AppStore|App\ Store) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+release_scope_changes() {
+  git -C "$REPO_ROOT" status --porcelain=v1 --untracked-files=all -- "${RELEASE_SCOPE_PATHS[@]}"
+}
+
+prepare_release_provenance() {
+  local configuration="$1"
+  local allow_dirty_diagnostic="${LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC:-0}"
+  local requested_git_sha="${LUMEN_GIT_SHA:-}"
+  local changes=""
+
+  case "$allow_dirty_diagnostic" in
+    0|1) ;;
+    *) fail "LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC must be 0 or 1; received $allow_dirty_diagnostic." ;;
+  esac
+
+  RELEASE_GIT_COMMIT="$(git -C "$REPO_ROOT" rev-parse --verify HEAD^{commit} 2>/dev/null)" \
+    || fail "Cannot resolve a Git commit for release provenance."
+  [[ "$RELEASE_GIT_COMMIT" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] \
+    || fail "Release provenance requires a full Git object ID; resolved $RELEASE_GIT_COMMIT."
+  if [[ -n "$requested_git_sha" && "$requested_git_sha" != "$RELEASE_GIT_COMMIT" ]]; then
+    fail "LUMEN_GIT_SHA=$requested_git_sha does not match the full release commit $RELEASE_GIT_COMMIT."
+  fi
+
+  RELEASE_GIT_SHA="$RELEASE_GIT_COMMIT"
+  RELEASE_BUILD_SCHEME="$SCHEME"
+  DIAGNOSTIC_RELEASE=0
+
+  if is_release_configuration "$configuration"; then
+    changes="$(release_scope_changes)" \
+      || fail "Could not inspect release-scope Git state."
+    if [[ -n "$changes" ]]; then
+      if [[ "$allow_dirty_diagnostic" != "1" ]]; then
+        printf '%s\n' "$changes" >&2
+        fail "Release archive refused because tracked or untracked release inputs are dirty. Commit/stash them, or use LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC=1 only for non-distributable diagnostics."
+      fi
+      RELEASE_BUILD_SCHEME="${SCHEME}-DIAGNOSTIC-DIRTY-NOT-FOR-DISTRIBUTION"
+      DIAGNOSTIC_RELEASE=1
+      NO_UPLOAD_REQUESTED=1
+      warn "DIRTY DIAGNOSTIC ONLY: forcing no-upload and stamping the artifact not-for-distribution."
+    fi
+  fi
+
+  info "Release source commit: $RELEASE_GIT_COMMIT"
+}
+
+assert_release_provenance_still_valid() {
+  local current_commit
+  local changes=""
+
+  current_commit="$(git -C "$REPO_ROOT" rev-parse --verify HEAD^{commit} 2>/dev/null)" \
+    || fail "Could not re-resolve Git HEAD after export."
+  [[ "$current_commit" == "$RELEASE_GIT_COMMIT" ]] \
+    || fail "Git HEAD changed during build/export: expected $RELEASE_GIT_COMMIT, found $current_commit."
+  if is_release_configuration "$CONFIGURATION" && [[ "$DIAGNOSTIC_RELEASE" != "1" ]]; then
+    changes="$(release_scope_changes)" \
+      || fail "Could not re-check release-scope Git state after export."
+    if [[ -n "$changes" ]]; then
+      printf '%s\n' "$changes" >&2
+      fail "Release-scope inputs changed during build/export; the IPA is not valid production evidence."
+    fi
   fi
 }
 
@@ -344,6 +463,58 @@ validate_upload_result() {
   printf '%s\n' "$delivery_uuid"
 }
 
+verify_artifact_provenance_metadata() {
+  local artifact_path="$1"
+  local expected_git_sha="$2"
+  local expected_build_scheme="$3"
+
+  python3 - "$artifact_path" "$expected_git_sha" "$expected_build_scheme" <<'PY'
+from __future__ import annotations
+
+import plistlib
+import sys
+import zipfile
+from pathlib import Path
+
+artifact = Path(sys.argv[1])
+expected_git_sha = sys.argv[2]
+expected_build_scheme = sys.argv[3]
+if artifact.suffix == ".ipa":
+    with zipfile.ZipFile(artifact) as ipa:
+        members = sorted(
+            name
+            for name in ipa.namelist()
+            if name.startswith("Payload/") and name.endswith(".app/Info.plist")
+        )
+        if len(members) != 1:
+            raise SystemExit(
+                f"error: expected exactly one app Info.plist in {artifact}; found {len(members)}"
+            )
+        info = plistlib.loads(ipa.read(members[0]))
+else:
+    plists = sorted((artifact / "Products" / "Applications").glob("*.app/Info.plist"))
+    if len(plists) != 1:
+        raise SystemExit(
+            f"error: expected exactly one archived app Info.plist; found {len(plists)}"
+        )
+    with plists[0].open("rb") as handle:
+        info = plistlib.load(handle)
+
+actual_git_sha = info.get("LumenGitSHA")
+actual_build_scheme = info.get("LumenBuildScheme")
+if actual_git_sha != expected_git_sha:
+    raise SystemExit(
+        f"error: artifact LumenGitSHA={actual_git_sha!r}; expected {expected_git_sha!r}"
+    )
+if actual_build_scheme != expected_build_scheme:
+    raise SystemExit(
+        f"error: artifact LumenBuildScheme={actual_build_scheme!r}; "
+        f"expected {expected_build_scheme!r}"
+    )
+print(f"Artifact provenance verified: {actual_git_sha} [{actual_build_scheme}]")
+PY
+}
+
 write_upload_result_fixture() {
   local fixture_path="$1"
   local fixture_text="$2"
@@ -408,8 +579,52 @@ run_upload_result_parser_self_check() {
   printf 'Upload-result parser self-check passed.\n'
 }
 
+run_config_precedence_self_check() {
+  local fixture_dir
+
+  fixture_dir="$(mktemp -d "${TMPDIR:-/tmp}/lumen-asc-config.XXXXXX")"
+  ASC_CONFIG_SELF_CHECK_DIR="$fixture_dir"
+  trap 'rm -rf -- "$ASC_CONFIG_SELF_CHECK_DIR"' EXIT
+  CONFIG_FILE="$fixture_dir/appstoreconnect-upload.env"
+  {
+    printf 'ASC_PROJECT_PATH=%q\n' 'local-project.xcodeproj'
+    printf 'ASC_SCHEME=%q\n' 'LocalScheme'
+    printf 'ASC_PROVIDER=%q\n' 'local-provider'
+    printf 'ASC_UPLOAD_AFTER_BUILD=%q\n' 'Y'
+    printf 'LUMEN_NO_UPLOAD=%q\n' '0'
+  } > "$CONFIG_FILE"
+
+  unset ASC_PROJECT_PATH LUMEN_RESET_ASC_CONFIG
+  export ASC_SCHEME='ProcessScheme'
+  export ASC_PROVIDER=''
+  export ASC_UPLOAD_AFTER_BUILD='N'
+  export LUMEN_NO_UPLOAD='1'
+  load_local_config
+
+  [[ "$ASC_PROJECT_PATH" == 'local-project.xcodeproj' ]] \
+    || fail "Config-precedence self-check did not load an unset local default."
+  [[ "$ASC_SCHEME" == 'ProcessScheme' ]] \
+    || fail "Config-precedence self-check overwrote an explicit process value."
+  [[ "$ASC_PROVIDER" == '' ]] \
+    || fail "Config-precedence self-check overwrote an explicit empty process value."
+  [[ "$ASC_UPLOAD_AFTER_BUILD" == 'N' ]] \
+    || fail "Config-precedence self-check overwrote explicit no-upload with local config."
+  [[ "$LUMEN_NO_UPLOAD" == '1' ]] \
+    || fail "Config-precedence self-check allowed local config to override LUMEN_NO_UPLOAD=1."
+
+  configure_no_upload_mode
+  [[ "$NO_UPLOAD_REQUESTED" == '1' ]] \
+    || fail "Config-precedence self-check did not activate the no-upload safety latch."
+  printf 'Local-config precedence and no-upload self-check passed.\n'
+}
+
 if [[ "${1:-}" == "--self-check-upload-result-parser" ]]; then
   run_upload_result_parser_self_check
+  exit 0
+fi
+
+if [[ "${1:-}" == "--self-check-config-precedence" ]]; then
+  run_config_precedence_self_check
   exit 0
 fi
 
@@ -428,6 +643,7 @@ fi
 [[ "$(uname -s)" == "Darwin" ]] || fail "This script must run on macOS."
 cd "$REPO_ROOT"
 load_local_config
+configure_no_upload_mode
 ensure_xcodebuild_and_xcrun
 ensure_find
 
@@ -457,6 +673,10 @@ EXPORT_METHOD="$(normalize_export_method "$EXPORT_METHOD_INPUT")" || fail "Unsup
 if is_distribution_export "$EXPORT_METHOD" && [[ "$CONFIGURATION" != "Release" ]]; then
   fail "Distribution export method '$EXPORT_METHOD' requires the Release configuration; received '$CONFIGURATION'."
 fi
+prepare_release_provenance "$CONFIGURATION"
+if [[ "$DIAGNOSTIC_RELEASE" == "1" ]] && is_distribution_export "$EXPORT_METHOD"; then
+  fail "Dirty diagnostic archives cannot use distribution export method '$EXPORT_METHOD'; choose 'debugging'."
+fi
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 SCHEME_SAFE="${SCHEME//[^A-Za-z0-9_.-]/_}"
@@ -482,6 +702,9 @@ APPLE_ID=""
 APP_SPECIFIC_PASSWORD=""
 ASC_PROVIDER="${ASC_PROVIDER:-}"
 UPLOAD_AFTER_BUILD="${ASC_UPLOAD_AFTER_BUILD:-}"
+if [[ "$NO_UPLOAD_REQUESTED" == "1" ]]; then
+  UPLOAD_AFTER_BUILD="N"
+fi
 
 case "$AUTH_MODE" in
   1)
@@ -530,7 +753,9 @@ ARCHIVE_ENV=(
   "LUMEN_IOS_SCHEME=$SCHEME"
   "LUMEN_IOS_CONFIGURATION=$CONFIGURATION"
   "LUMEN_IOS_CURRENT_PROJECT_VERSION=$BUILD_NUMBER"
-  "LUMEN_GIT_SHA=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+  "LUMEN_GIT_SHA=$RELEASE_GIT_SHA"
+  "LUMEN_BUILD_SCHEME=$RELEASE_BUILD_SCHEME"
+  "LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC=${LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC:-0}"
   "LUMEN_IOS_ALLOW_PROVISIONING_UPDATES=1"
   "LUMEN_IOS_CODE_SIGN_STYLE=Automatic"
   "LUMEN_IOS_DEVELOPMENT_TEAM=$TEAM_ID"
@@ -552,6 +777,12 @@ python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" \
   --expected-bundle-version "$BUILD_NUMBER" \
   --expected-build-configuration "$CONFIGURATION"
 
+info "Verify archived full-commit provenance"
+verify_artifact_provenance_metadata \
+  "$ARCHIVE_PATH" \
+  "$RELEASE_GIT_SHA" \
+  "$RELEASE_BUILD_SCHEME"
+
 info "Verify archived app signed entitlements"
 python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
   --signing-stage archive \
@@ -564,6 +795,7 @@ run_logged "$EXPORT_LOG" \
     -archivePath "$ARCHIVE_PATH" \
     -exportPath "$EXPORT_DIR" \
     -exportOptionsPlist "$EXPORT_OPTIONS_PLIST" \
+    -onlyUsePackageVersionsFromResolvedFile \
     -allowProvisioningUpdates \
     "${XCODE_AUTH_ARGS[@]}"
 
@@ -576,12 +808,24 @@ python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" \
   --expected-bundle-version "$BUILD_NUMBER" \
   --expected-build-configuration "$CONFIGURATION"
 
+info "Verify exported full-commit provenance"
+verify_artifact_provenance_metadata \
+  "$IPA_PATH" \
+  "$RELEASE_GIT_SHA" \
+  "$RELEASE_BUILD_SCHEME"
+
 info "Verify exported IPA signed entitlements"
 python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
   --signing-stage app-store \
   --signed-app-path "$IPA_PATH"
 
+assert_release_provenance_still_valid
+
 bold "Built IPA: $IPA_PATH"
+if [[ "$NO_UPLOAD_REQUESTED" == "1" ]]; then
+  warn "Upload prohibited by LUMEN_NO_UPLOAD=1 or diagnostic provenance. IPA is ready at: $IPA_PATH"
+  exit 0
+fi
 if [[ -z "$UPLOAD_AFTER_BUILD" ]]; then
   if read_yes_no_with_default "Upload this IPA to App Store Connect now?" "Y"; then
     UPLOAD_AFTER_BUILD="Y"
@@ -596,6 +840,8 @@ if [[ ! "$UPLOAD_AFTER_BUILD" =~ ^[Yy]$ ]]; then
   exit 0
 fi
 
+[[ "$NO_UPLOAD_REQUESTED" != "1" ]] \
+  || fail "Internal safety latch prevented upload after no-upload mode was requested."
 ensure_upload_tool
 info "Upload via altool"
 UPLOAD_CMD=(xcrun altool --upload-app --type ios --file "$IPA_PATH")

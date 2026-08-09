@@ -9,6 +9,7 @@ actor PersistentRuntimeDiagnosticsStore {
     let stateURL: URL
     let logURL: URL
     let rotatedLogURL: URL
+    private let privacyFormatMarkerURL: URL
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -33,6 +34,7 @@ actor PersistentRuntimeDiagnosticsStore {
         self.stateURL = base.appendingPathComponent("persistent-runtime-diagnostics-state.json")
         self.logURL = base.appendingPathComponent("persistent-runtime-diagnostics.jsonl")
         self.rotatedLogURL = base.appendingPathComponent("persistent-runtime-diagnostics.1.jsonl")
+        self.privacyFormatMarkerURL = base.appendingPathComponent("persistent-runtime-diagnostics-privacy-v2")
         self.encoder = JSONEncoder()
         self.encoder.outputFormatting = [.sortedKeys]
         self.encoder.dateEncodingStrategy = .iso8601
@@ -41,28 +43,32 @@ actor PersistentRuntimeDiagnosticsStore {
     }
 
     func loadCampaign() async -> PersistentDiagnosticCampaign? {
+        guard (try? ensureDirectory()) != nil else { return nil }
         guard let data = try? Data(contentsOf: campaignURL) else { return nil }
         return try? decoder.decode(PersistentDiagnosticCampaign.self, from: data)
     }
 
     func saveCampaign(_ campaign: PersistentDiagnosticCampaign) async throws {
         try ensureDirectory()
+        // Campaigns have no caller-provided strings: only UUID/date/bool/numeric
+        // fields and PersistentDiagnosticScenarioKind enum cases are encoded.
         let data = try encoder.encode(campaign)
         guard DiskWriteBudget.shared.canWrite(bytes: data.count, category: .diagnostics) else { return }
-        try data.write(to: campaignURL, options: [.atomic])
+        try writeProtected(data, to: campaignURL)
         DiskWriteBudget.shared.recordWrite(bytes: data.count, category: .diagnostics)
     }
 
     func loadState() async -> PersistentDiagnosticState? {
+        guard (try? ensureDirectory()) != nil else { return nil }
         guard let data = try? Data(contentsOf: stateURL) else { return nil }
         return try? decoder.decode(PersistentDiagnosticState.self, from: data)
     }
 
     func saveState(_ state: PersistentDiagnosticState) async throws {
         try ensureDirectory()
-        let data = try encoder.encode(trimmedState(state))
+        let data = try encoder.encode(trimmedState(state).redactedForPersistentStorage())
         guard DiskWriteBudget.shared.canWrite(bytes: data.count, category: .diagnostics) else { return }
-        try data.write(to: stateURL, options: [.atomic])
+        try writeProtected(data, to: stateURL)
         DiskWriteBudget.shared.recordWrite(bytes: data.count, category: .diagnostics)
     }
 
@@ -82,8 +88,10 @@ actor PersistentRuntimeDiagnosticsStore {
     }
 
     func clearLogs() async throws {
-        try? fileManager.removeItem(at: logURL)
-        try? fileManager.removeItem(at: rotatedLogURL)
+        for url in [logURL, rotatedLogURL]
+        where fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
         pendingEntries = []
         ringEntries = []
         scheduledFlushTask?.cancel()
@@ -92,9 +100,12 @@ actor PersistentRuntimeDiagnosticsStore {
     }
 
     func readLogDataForExport(full: Bool = false) async -> Data {
+        guard (try? ensureDirectory()) != nil else { return Data() }
         var lines: [String] = []
         let persistedEntries = persistedLogEntries(includeRotated: full)
-        let exportEntries = persistedEntries + pendingEntries
+        let exportEntries = (persistedEntries + pendingEntries).map {
+            $0.redactedForPersistentStorage()
+        }
         for entry in exportEntries {
             if let data = try? encoder.encode(entry), let line = String(data: data, encoding: .utf8) {
                 lines.append(line)
@@ -168,12 +179,14 @@ actor PersistentRuntimeDiagnosticsStore {
             try ensureDirectory()
             try rotateIfNeeded(incomingBytes: data.count)
             if fileManager.fileExists(atPath: logURL.path) {
+                try applyCompleteFileProtection(to: logURL)
                 let handle = try FileHandle(forWritingTo: logURL)
                 try handle.seekToEnd()
                 try handle.write(contentsOf: data)
                 try handle.close()
+                try applyCompleteFileProtection(to: logURL)
             } else {
-                try data.write(to: logURL, options: [.atomic])
+                try writeProtected(data, to: logURL)
             }
             DiskWriteBudget.shared.recordWrite(bytes: data.count, category: .diagnostics)
             pendingEntries = []
@@ -187,7 +200,8 @@ actor PersistentRuntimeDiagnosticsStore {
 
     private func encodeBatchJSON(_ entries: [PersistentDiagnosticLogEntry]) -> Data? {
         guard !entries.isEmpty else { return nil }
-        guard let data = try? encoder.encode(entries) else { return nil }
+        let safeEntries = entries.map { $0.redactedForPersistentStorage() }
+        guard let data = try? encoder.encode(safeEntries) else { return nil }
         var output = data
         output.append("\n".data(using: .utf8) ?? Data())
         return output
@@ -225,11 +239,48 @@ actor PersistentRuntimeDiagnosticsStore {
         try? fileManager.removeItem(at: rotatedLogURL)
         if fileManager.fileExists(atPath: logURL.path) {
             try fileManager.moveItem(at: logURL, to: rotatedLogURL)
+            try applyCompleteFileProtection(to: rotatedLogURL)
         }
     }
 
     private func ensureDirectory() throws {
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        try fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: directoryURL.path
+        )
+        if !fileManager.fileExists(atPath: privacyFormatMarkerURL.path) {
+            // Earlier formats could contain raw diagnostic prose and arbitrary labels.
+            // They cannot be safely distinguished in place, so discard them once.
+            // Do not write the migration marker unless every legacy artifact was
+            // actually removed; a later call must retry rather than accepting a
+            // partially purged store.
+            for url in [stateURL, logURL, rotatedLogURL]
+            where fileManager.fileExists(atPath: url.path) {
+                try fileManager.removeItem(at: url)
+            }
+            try writeProtected(Data("persistent-runtime-diagnostics-privacy-v2".utf8), to: privacyFormatMarkerURL)
+        }
+        for url in [campaignURL, stateURL, logURL, rotatedLogURL, privacyFormatMarkerURL]
+        where fileManager.fileExists(atPath: url.path) {
+            try applyCompleteFileProtection(to: url)
+        }
+    }
+
+    private func writeProtected(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+        try applyCompleteFileProtection(to: url)
+    }
+
+    private func applyCompleteFileProtection(to url: URL) throws {
+        try fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path
+        )
     }
 
     private func trimmedState(_ state: PersistentDiagnosticState) -> PersistentDiagnosticState {
@@ -268,12 +319,23 @@ nonisolated struct PersistentDiagnosticLogEntry: Codable, Sendable {
     let event: PersistentDiagnosticEvent?
     let record: PersistentDiagnosticRunRecord?
 
-    init(kind: String, recordID: UUID?, campaignID: UUID?, event: PersistentDiagnosticEvent?, record: PersistentDiagnosticRunRecord?) {
+    init(kind: String, at: Date = Date(), recordID: UUID?, campaignID: UUID?, event: PersistentDiagnosticEvent?, record: PersistentDiagnosticRunRecord?) {
         self.kind = kind
-        self.at = Date()
+        self.at = at
         self.recordID = recordID
         self.campaignID = campaignID
         self.event = event
         self.record = record
+    }
+
+    func redactedForPersistentStorage() -> PersistentDiagnosticLogEntry {
+        PersistentDiagnosticLogEntry(
+            kind: ["event", "run"].contains(kind) ? kind : "diagnostic",
+            at: at,
+            recordID: recordID,
+            campaignID: campaignID,
+            event: event?.redactedForPersistentStorage(),
+            record: record?.redactedForPersistentStorage()
+        )
     }
 }

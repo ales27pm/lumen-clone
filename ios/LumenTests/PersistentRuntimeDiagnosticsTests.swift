@@ -17,6 +17,18 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(unwrapped.scenarios, campaign.scenarios)
         XCTAssertLessThan(abs(unwrapped.createdAt.timeIntervalSince(campaign.createdAt)), 1)
         XCTAssertLessThan(abs(unwrapped.updatedAt.timeIntervalSince(campaign.updatedAt)), 1)
+
+        let campaignURL = await store.campaignURL
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: campaignURL)) as? [String: Any]
+        )
+        XCTAssertEqual(
+            Set(object.keys),
+            Set([
+                "id", "createdAt", "updatedAt", "enabled", "runContinuously",
+                "maxRunsPerScenario", "delayBetweenRunsSeconds", "scenarios",
+            ])
+        )
     }
 
     func testRunnerSkipsModelScenarioWhenNoModelLoadedInsteadOfFailing() async throws {
@@ -57,7 +69,13 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(proposal.severity, .info)
         XCTAssertTrue(record?.events.contains { $0.code == "diagnostic_remediation_proposal" } ?? false)
         let state = await store.loadState()
-        XCTAssertEqual(state?.status.lastRemediationSummary, proposal.title)
+        XCTAssertEqual(
+            state?.status.lastRemediationSummary,
+            PersistentRuntimeDiagnosticsRedactor.summary(
+                label: "lastRemediationSummary",
+                text: proposal.title
+            )
+        )
     }
 
     func testDiskWriteGateBuffersAndDefersDiagnosticsDuringGeneration() async throws {
@@ -72,6 +90,32 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         await store.flushBufferedIfPossible()
         let data = await store.readLogDataForExport()
         XCTAssertFalse(data.isEmpty)
+    }
+
+    func testPendingDiagnosticEntriesArePrivacyProjectedBeforeExport() async throws {
+        let store = try makeStore()
+        let pendingMessage = "Synthetic pending private message Person Canary"
+        let pendingKey = "SyntheticPendingPrivateKeyCanary"
+        let pendingValue = "Synthetic pending private calendar title"
+        let lease = DiskWriteBudget.shared.beginGeneration()
+        defer { lease.end() }
+
+        await store.appendEvent(PersistentDiagnosticEvent(
+            code: "sandboxed_tool_plan",
+            message: pendingMessage,
+            values: ["toolCount": "2", "maxSteps": "2", pendingKey: pendingValue]
+        ))
+        let logURL = await store.logURL
+        XCTAssertFalse(FileManager.default.fileExists(atPath: logURL.path))
+
+        let data = await store.readLogDataForExport(full: true)
+        let text = String(decoding: data, as: UTF8.self)
+        for canary in [pendingMessage, pendingKey, pendingKey.lowercased(), pendingValue] {
+            XCTAssertFalse(text.localizedCaseInsensitiveContains(canary), "Pending export leaked \(canary)")
+        }
+        XCTAssertTrue(text.contains("metadata_"))
+        XCTAssertTrue(text.contains("sha256="))
+        XCTAssertTrue(text.contains("\"toolcount\":\"2\""))
     }
 
     func testCrashResumeDetectionMarksUnfinishedActiveRunInterrupted() async throws {
@@ -107,6 +151,107 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertFalse(event.message.contains("user@example.com"))
         XCTAssertEqual(event.values["prompt"], "[redacted]")
         XCTAssertFalse(event.values.values.contains { $0.contains("My private question") })
+    }
+
+    func testPersistentStoreProtectsEveryDiagnosticArtifact() async throws {
+        let store = try makeStore()
+        try await store.saveCampaign(PersistentDiagnosticCampaign(enabled: true))
+        try await store.saveState(PersistentDiagnosticState())
+        await store.appendEvent(PersistentDiagnosticEvent(
+            code: "sandboxed_tool_plan",
+            message: "Synthetic protected diagnostic event",
+            values: ["toolCount": "1", "maxSteps": "1"]
+        ))
+        await store.flushBufferedIfPossible()
+
+        let urls = await [store.campaignURL, store.stateURL, store.logURL]
+        for url in urls {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            XCTAssertEqual(
+                attributes[.protectionKey] as? FileProtectionType,
+                FileProtectionType.complete,
+                "Expected complete file protection for \(url.lastPathComponent)"
+            )
+        }
+    }
+
+    func testPersistentStoreSummarizesFreeFormFieldsAndOpaqueUnknownLabels() async throws {
+        let store = try makeStore()
+        let privateText = "Synthetic private calendar title for Person Canary"
+        let privateMessage = "Synthetic private diagnostic message for Person Canary"
+        let unknownKey = "SyntheticPrivateTitleCanary"
+        let emailKey = "synthetic.person@example.test"
+        let normalizedEmailKey = PersistentRuntimeDiagnosticsRedactor.safeCode(emailKey)
+        let ssnKey = "987-65-4321"
+        let unknownCode = "SyntheticPrivateEventCodeCanary"
+        let event = PersistentDiagnosticEvent(
+            code: "sandboxed_tool_plan",
+            message: privateMessage,
+            values: [
+                "toolCount": "2",
+                "maxSteps": "2",
+                unknownKey: privateText,
+                emailKey: privateText,
+                ssnKey: privateText,
+            ]
+        )
+        let unknownEvent = PersistentDiagnosticEvent(
+            code: unknownCode,
+            message: privateMessage,
+            values: [unknownKey: privateText]
+        )
+        var record = PersistentDiagnosticRunRecord(
+            campaignID: UUID(),
+            scenario: .sandboxedToolPlanOnly,
+            status: .failed,
+            events: [event, unknownEvent],
+            failureSummary: privateText
+        )
+        record.remediationProposals = [
+            PersistentDiagnosticRemediationProposal(
+                id: unknownKey,
+                title: privateText,
+                rationale: privateText,
+                action: privateText,
+                severity: .warning
+            )
+        ]
+        var state = PersistentDiagnosticState()
+        state.records = [record]
+        state.status.lastCancellationReason = privateText
+        state.status.lastCrashResumeStatus = privateText
+        state.status.lastRemediationSummary = privateText
+
+        try await store.saveState(state)
+        await store.appendRunUpdate(record)
+        await store.flushBufferedIfPossible()
+
+        let stateURL = await store.stateURL
+        let logURL = await store.logURL
+        let persistedData = try Data(contentsOf: stateURL) + Data(contentsOf: logURL)
+        let persistedText = String(decoding: persistedData, as: UTF8.self)
+        for canary in [
+            privateText, privateMessage, unknownKey, unknownKey.lowercased(), emailKey,
+            normalizedEmailKey, ssnKey, unknownCode, unknownCode.lowercased(),
+        ] {
+            XCTAssertFalse(persistedText.localizedCaseInsensitiveContains(canary), "Persisted canary: \(canary)")
+        }
+        XCTAssertTrue(persistedText.contains("metadata_"))
+        XCTAssertTrue(persistedText.contains("sha256="))
+
+        let loadedState = await store.loadState()
+        let restored = try XCTUnwrap(loadedState)
+        let restoredRecord = try XCTUnwrap(restored.records.first)
+        XCTAssertEqual(restoredRecord.events.first?.code, "sandboxed_tool_plan")
+        XCTAssertEqual(restoredRecord.events.last?.code, "other")
+        XCTAssertEqual(restoredRecord.events.first?.values["toolcount"], "2")
+        XCTAssertTrue(
+            restoredRecord.events.first?.values.keys.contains { $0.hasPrefix("metadata_") } == true
+        )
+        XCTAssertTrue(restoredRecord.failureSummary?.contains("sha256=") == true)
+        XCTAssertTrue(restoredRecord.remediationProposals?.first?.title.contains("sha256=") == true)
+        XCTAssertTrue(restored.status.lastRemediationSummary?.contains("sha256=") == true)
     }
 
     @MainActor func testScenarioSelectionPausesWhenResourceBudgetDeniesHeavyWork() async throws {
@@ -161,20 +306,25 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(restored.completedRunIDs.last, ids[overflowCount - 1])
     }
 
-    func testDefaultExporterBoundsNormalExportSizeAndRecentLogLines() async throws {
+    func testDefaultExporterBoundsNormalExportSizeAndLogLines() async throws {
         let store = try makeStore()
         for index in 0..<700 {
-            await store.appendEvent(PersistentDiagnosticEvent(code: "bounded_export", message: "safe synthetic event \(index)"))
+            await store.appendEvent(PersistentDiagnosticEvent(
+                code: "bounded_export",
+                message: "safe synthetic event \(index)",
+                values: ["index": String(index)]
+            ))
         }
 
         let exporter = PersistentRuntimeDiagnosticsExporter(store: store)
         let url = try await exporter.export()
         let data = try Data(contentsOf: url)
-        let text = try String(contentsOf: url, encoding: .utf8)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let ndjson = try XCTUnwrap(object["ndjson"] as? String)
 
         XCTAssertLessThanOrEqual(data.count, 1_100_000)
-        XCTAssertFalse(text.contains("safe synthetic event 0"))
-        XCTAssertTrue(text.contains("safe synthetic event 699"))
+        XCTAssertFalse(ndjson.contains("safe synthetic event"))
+        XCTAssertLessThanOrEqual(ndjson.split(separator: "\n").count, 500)
     }
 
     func testAgentFastPromptScenarioUsesFastPathAndBoundedGroundingMetrics() {
@@ -194,6 +344,170 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertFalse(text.contains("Sensitive prompt"))
         XCTAssertFalse(text.contains("Private memory"))
         XCTAssertFalse(text.contains("/tmp/secret"))
+    }
+
+    func testExporterRotatesAllIdentifiersAndUnknownMetadataAcrossShareableExports() async throws {
+        let store = try makeStore()
+        let campaignID = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+        let runID = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+        let launchID = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
+        let eventID = UUID(uuidString: "44444444-4444-4444-8444-444444444444")!
+        let unknownEventID = UUID(uuidString: "55555555-5555-4555-8555-555555555555")!
+        let emailKey = "private.person@example.com"
+        let normalizedEmailKey = PersistentRuntimeDiagnosticsRedactor.safeCode(emailKey)
+        let ssnKey = "987-65-4321"
+        let privateKey = "privatePayload"
+        let privateValue = "Private calendar label for Alexis"
+        let privateMessage = "Private diagnostic message for Alexis"
+        let callerCorrelationToken = "caller-controlled-correlation-token"
+        let arbitraryEventCode = "caller-event-\(callerCorrelationToken)"
+        let oversizedCount = "15551234567"
+        let epochLikeIndex = "1800000000"
+        let promptDigest = String(repeating: "a", count: 64)
+        let metricFileName = "mxmetric-2026-08-09-\(runID.uuidString).summary.json"
+        let metricJSON = #"{"private":"metric payload for Alexis"}"#
+
+        let campaign = PersistentDiagnosticCampaign(
+            id: campaignID,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_100),
+            enabled: true,
+            runContinuously: false,
+            maxRunsPerScenario: 2,
+            delayBetweenRunsSeconds: 1,
+            scenarios: [.plainFastPrompt]
+        )
+        try await store.saveCampaign(campaign)
+
+        var metrics = PersistentDiagnosticMetrics()
+        metrics.scenePhase = "active"
+        metrics.thermalState = "nominal"
+        metrics.promptSHA256 = promptDigest
+        metrics.cancellationReason = callerCorrelationToken
+        metrics.firstTokenLatencyMs = 42
+
+        let event = PersistentDiagnosticEvent(
+            id: eventID,
+            at: Date(timeIntervalSince1970: 1_800_000_010),
+            code: "sandboxed_tool_plan",
+            message: privateMessage,
+            values: [
+                emailKey: "email-key-canary",
+                ssnKey: "ssn-key-canary",
+                privateKey: privateValue,
+                "correlationToken": callerCorrelationToken,
+                "toolCount": "2",
+                "maxSteps": "2",
+                "count": oversizedCount,
+                "index": epochLikeIndex
+            ]
+        )
+        let unknownEvent = PersistentDiagnosticEvent(
+            id: unknownEventID,
+            at: Date(timeIntervalSince1970: 1_800_000_011),
+            code: arbitraryEventCode,
+            message: privateMessage,
+            values: ["correlationToken": callerCorrelationToken]
+        )
+        var record = PersistentDiagnosticRunRecord(
+            id: runID,
+            campaignID: campaignID,
+            scenario: .plainFastPrompt,
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            status: .failed,
+            metrics: metrics,
+            events: [event, unknownEvent],
+            failureSummary: privateValue
+        )
+        record.finishedAt = Date(timeIntervalSince1970: 1_800_000_020)
+        record.remediationProposals = [
+            PersistentDiagnosticRemediationProposal(
+                id: "private-remediation-identifier",
+                title: privateValue,
+                rationale: privateValue,
+                action: privateValue,
+                severity: .warning
+            )
+        ]
+
+        var state = PersistentDiagnosticState()
+        state.activeRunID = runID
+        state.activeCampaignID = campaignID
+        state.activeScenario = .plainFastPrompt
+        state.activeStartedAt = record.startedAt
+        state.activeLaunchUUID = launchID
+        state.completedRunIDs = [runID]
+        state.records = [record]
+        state.status.lastCancellationReason = callerCorrelationToken
+        state.status.lastCrashResumeStatus = privateValue
+        state.status.lastRemediationSummary = privateValue
+        try await store.saveState(state)
+        await store.appendRunUpdate(record)
+
+        let metricPayloads = [PersistentMetricKitSourcePayload(fileName: metricFileName, json: metricJSON)]
+        let exporter = PersistentRuntimeDiagnosticsExporter(
+            store: store,
+            metricKitPayloadProvider: { metricPayloads }
+        )
+
+        let firstURL = try await exporter.export()
+        let firstData = try Data(contentsOf: firstURL)
+        let firstObject = try XCTUnwrap(JSONSerialization.jsonObject(with: firstData) as? [String: Any])
+        XCTAssertTrue(PersistentRuntimeDiagnosticsExporter.isPrivacySafeShareURL(firstURL))
+        XCTAssertFalse(PersistentRuntimeDiagnosticsExporter.isPrivacySafeShareURL(
+            firstURL.deletingLastPathComponent().appendingPathComponent("persistent-runtime-diagnostics-export.json")
+        ))
+
+        let secondURL = try await exporter.export()
+        let secondData = try Data(contentsOf: secondURL)
+        let secondObject = try XCTUnwrap(JSONSerialization.jsonObject(with: secondData) as? [String: Any])
+        XCTAssertTrue(PersistentRuntimeDiagnosticsExporter.isPrivacySafeShareURL(secondURL))
+        XCTAssertNotEqual(firstURL.lastPathComponent, secondURL.lastPathComponent)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstURL.path))
+
+        let canaries = [
+            campaignID.uuidString, runID.uuidString, launchID.uuidString, eventID.uuidString,
+            unknownEventID.uuidString,
+            emailKey, normalizedEmailKey, ssnKey, privateKey, privateKey.lowercased(), privateValue,
+            privateMessage, callerCorrelationToken, promptDigest, metricFileName, metricJSON,
+            arbitraryEventCode, PersistentRuntimeDiagnosticsRedactor.safeCode(arbitraryEventCode),
+            oversizedCount, epochLikeIndex, "private-remediation-identifier"
+        ]
+        for data in [firstData, secondData] {
+            let text = String(decoding: data, as: UTF8.self)
+            for canary in canaries {
+                XCTAssertFalse(text.localizedCaseInsensitiveContains(canary), "Export leaked canary: \(canary)")
+            }
+        }
+
+        let firstProjection = try exportProjection(from: firstObject)
+        let secondProjection = try exportProjection(from: secondObject)
+
+        XCTAssertEqual(firstProjection.campaignID, firstProjection.activeCampaignID)
+        XCTAssertEqual(firstProjection.campaignID, firstProjection.recordCampaignID)
+        XCTAssertEqual(firstProjection.runID, firstProjection.activeRunID)
+        XCTAssertEqual(firstProjection.runID, firstProjection.completedRunID)
+        XCTAssertEqual(firstProjection.runID, firstProjection.ndjsonRecordID)
+        XCTAssertEqual(firstProjection.runID, firstProjection.ndjsonNestedRecordID)
+        XCTAssertEqual(firstProjection.eventID, firstProjection.ndjsonEventID)
+        XCTAssertEqual(firstProjection.eventCode, "sandboxed_tool_plan")
+        XCTAssertEqual(firstProjection.unknownEventCode, "other")
+        XCTAssertEqual(firstProjection.ndjsonUnknownEventCode, "other")
+        XCTAssertEqual(firstProjection.toolCount, "2")
+        XCTAssertEqual(firstProjection.maxSteps, "2")
+        XCTAssertFalse(firstProjection.correlationTokenPresent)
+        XCTAssertTrue(firstProjection.unknownMetadataKeys.allSatisfy { key in
+            key.range(of: #"^metadata_[0-9a-f]{16}$"#, options: .regularExpression) != nil
+        })
+
+        XCTAssertNotEqual(firstProjection.exportScope, secondProjection.exportScope)
+        XCTAssertNotEqual(firstProjection.campaignID, secondProjection.campaignID)
+        XCTAssertNotEqual(firstProjection.runID, secondProjection.runID)
+        XCTAssertNotEqual(firstProjection.launchID, secondProjection.launchID)
+        XCTAssertNotEqual(firstProjection.eventID, secondProjection.eventID)
+        XCTAssertNotEqual(firstProjection.metricFileToken, secondProjection.metricFileToken)
+        XCTAssertNotEqual(Set(firstProjection.unknownMetadataKeys), Set(secondProjection.unknownMetadataKeys))
+        XCTAssertNotEqual(Set(firstProjection.unknownMetadataValues), Set(secondProjection.unknownMetadataValues))
     }
 
     @MainActor func testAgentToolPromptDiagnosticUsesDryRunWithoutLiveSlotStream() async throws {
@@ -355,7 +669,8 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         }
         let data = await store.readLogDataForExport(full: true)
         let text = String(data: data, encoding: .utf8) ?? ""
-        XCTAssertTrue(text.contains("safe synthetic event 59"))
+        XCTAssertFalse(text.contains("safe synthetic event"))
+        XCTAssertTrue(text.contains("sha256="))
 
         var state = PersistentDiagnosticState()
         state.records = (0..<520).map { _ in PersistentDiagnosticRunRecord(campaignID: UUID(), scenario: .plainFastPrompt, status: .passed) }
@@ -391,12 +706,16 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
             await store.appendEvent(PersistentDiagnosticEvent(code: "no_duplicate", message: "no duplicate event \(index)"))
         }
         let data = await store.readLogDataForExport(full: true)
-        let text = String(data: data, encoding: .utf8) ?? ""
-        XCTAssertEqual(text.components(separatedBy: "no_duplicate").count - 1, 50)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let entries = data.split(separator: 0x0A).flatMap { line in
+            (try? decoder.decode([PersistentDiagnosticLogEntry].self, from: Data(line))) ?? []
+        }
+        XCTAssertEqual(entries.count, 50)
     }
 
 
-    func testDiagnosticsExportReadsLegacySingleEntryJSONLLines() async throws {
+    func testDiagnosticsStorePurgesLegacyUnredactedJSONLLines() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let store = PersistentRuntimeDiagnosticsStore(directoryURL: directory)
@@ -408,9 +727,10 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         try (line + "\n").write(to: directory.appendingPathComponent("persistent-runtime-diagnostics.jsonl"), atomically: true, encoding: .utf8)
 
         let data = await store.readLogDataForExport(full: true)
-        let text = String(data: data, encoding: .utf8) ?? ""
-        XCTAssertTrue(text.contains("legacy_line"))
-        XCTAssertTrue(text.contains("legacy event"))
+        XCTAssertTrue(data.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("persistent-runtime-diagnostics.jsonl").path
+        ))
     }
 
     func testMetricKitExportUsesSummariesAndRetentionCountsOnlyRawPayloads() async throws {
@@ -429,6 +749,82 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(rawPayloads.count, 50)
         XCTAssertEqual(summaries.count, 50)
         XCTAssertTrue(summaries.allSatisfy { $0.lastPathComponent.hasSuffix(".summary.json") })
+    }
+
+    private struct ExportProjectionSnapshot {
+        let exportScope: String
+        let campaignID: String
+        let activeCampaignID: String
+        let recordCampaignID: String
+        let runID: String
+        let activeRunID: String
+        let completedRunID: String
+        let ndjsonRecordID: String
+        let ndjsonNestedRecordID: String
+        let launchID: String
+        let eventID: String
+        let ndjsonEventID: String
+        let eventCode: String
+        let unknownEventCode: String
+        let ndjsonUnknownEventCode: String
+        let toolCount: String
+        let maxSteps: String
+        let correlationTokenPresent: Bool
+        let unknownMetadataKeys: [String]
+        let unknownMetadataValues: [String]
+        let metricFileToken: String
+    }
+
+    private func exportProjection(from object: [String: Any]) throws -> ExportProjectionSnapshot {
+        let campaign = try XCTUnwrap(object["campaign"] as? [String: Any])
+        let state = try XCTUnwrap(object["state"] as? [String: Any])
+        let records = try XCTUnwrap(state["records"] as? [[String: Any]])
+        let record = try XCTUnwrap(records.first)
+        let events = try XCTUnwrap(record["events"] as? [[String: Any]])
+        let event = try XCTUnwrap(events.first)
+        let unknownEvent = try XCTUnwrap(events.dropFirst().first)
+        let values = try XCTUnwrap(event["values"] as? [String: String])
+        let completedRunIDs = try XCTUnwrap(state["completedRunIDs"] as? [String])
+
+        let ndjson = try XCTUnwrap(object["ndjson"] as? String)
+        let ndjsonLine = try XCTUnwrap(ndjson.split(separator: "\n").first)
+        let ndjsonObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(ndjsonLine.utf8)) as? [String: Any]
+        )
+        let ndjsonRecord = try XCTUnwrap(ndjsonObject["record"] as? [String: Any])
+        let ndjsonEvents = try XCTUnwrap(ndjsonRecord["events"] as? [[String: Any]])
+        let ndjsonEvent = try XCTUnwrap(ndjsonEvents.first)
+        let ndjsonUnknownEvent = try XCTUnwrap(ndjsonEvents.dropFirst().first)
+
+        let metricPayloads = try XCTUnwrap(object["metricKitPayloads"] as? [[String: Any]])
+        let metricPayload = try XCTUnwrap(metricPayloads.first)
+        let unknownMetadataKeys = values.keys.filter { $0.hasPrefix("metadata_") }.sorted()
+        let unknownMetadataValues = unknownMetadataKeys.compactMap { values[$0] }.sorted()
+        XCTAssertEqual(unknownMetadataKeys.count, 5)
+
+        return ExportProjectionSnapshot(
+            exportScope: try XCTUnwrap(object["exportScope"] as? String),
+            campaignID: try XCTUnwrap(campaign["id"] as? String),
+            activeCampaignID: try XCTUnwrap(state["activeCampaignID"] as? String),
+            recordCampaignID: try XCTUnwrap(record["campaignID"] as? String),
+            runID: try XCTUnwrap(record["id"] as? String),
+            activeRunID: try XCTUnwrap(state["activeRunID"] as? String),
+            completedRunID: try XCTUnwrap(completedRunIDs.first),
+            ndjsonRecordID: try XCTUnwrap(ndjsonObject["recordID"] as? String),
+            ndjsonNestedRecordID: try XCTUnwrap(ndjsonRecord["id"] as? String),
+            launchID: try XCTUnwrap(state["activeLaunchID"] as? String),
+            eventID: try XCTUnwrap(event["id"] as? String),
+            ndjsonEventID: try XCTUnwrap(ndjsonEvent["id"] as? String),
+            eventCode: try XCTUnwrap(event["code"] as? String),
+            unknownEventCode: try XCTUnwrap(unknownEvent["code"] as? String),
+            ndjsonUnknownEventCode: try XCTUnwrap(ndjsonUnknownEvent["code"] as? String),
+            toolCount: try XCTUnwrap(values["toolcount"]),
+            maxSteps: try XCTUnwrap(values["maxsteps"]),
+            correlationTokenPresent: values.keys.contains("correlationtoken"),
+            unknownMetadataKeys: unknownMetadataKeys,
+            unknownMetadataValues: unknownMetadataValues,
+            metricFileToken: try XCTUnwrap(metricPayload["fileToken"] as? String)
+        )
     }
 
 

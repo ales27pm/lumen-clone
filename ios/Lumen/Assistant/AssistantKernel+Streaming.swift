@@ -68,9 +68,7 @@ extension AssistantKernel: AgentKernelRunning {
                                     ], uniquingKeysWith: { current, _ in current })
                                 )))
                             }
-                            emitStep(.observation, backgroundAssessment.skipMessage)
-                            continuation.yield(.final(backgroundAssessment.skipMessage))
-                            continuation.yield(.done(finalText: backgroundAssessment.skipMessage, steps: emittedSteps))
+                            continuation.yield(.error(backgroundAssessment.skipMessage))
                             continuation.finish()
                             return
                         }
