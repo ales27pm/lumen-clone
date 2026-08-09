@@ -33,45 +33,43 @@ download the following immutable artifacts after the user explicitly starts
 model-family setup. The applicable license is shown before the common Apache
 License 2.0 text below.
 
-Qwen3 1.7B shared base and Lumen role adapters
-Upstream model: https://huggingface.co/Qwen/Qwen3-1.7B/tree/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
-Downloaded shared-base artifact: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-gguf/tree/8abae6d695408dbc75a134212dd616cd14549ae1
-Downloaded adapter artifacts: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/tree/f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2
+Qwen3 1.7B shared GGUF
+Downloaded artifact: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-gguf/blob/8abae6d695408dbc75a134212dd616cd14549ae1/lumen-qwen3-fast-shared-q4_k_m.gguf
+SHA-256: a7f6720f68f4a4567ebf7e3257041dd0b72077b518efe56890aec3516b59b9de
+Immediate source: https://huggingface.co/rippertnt/Qwen3-1.7B-Q4_K_M-GGUF/blob/b93c0c328252f68cda622847ba0218689a8b6ba4/qwen3-1.7b-q4_k_m.gguf
 License: Apache License 2.0
-Modification notice: the Lumen artifacts are modified forms of Qwen3. They
-were fine-tuned into role-specific adapters and/or converted and quantized to
-GGUF for on-device inference. Alibaba Cloud and the Qwen authors do not
-endorse Lumen.
+Modification notice: the downloaded file is byte-identical to its immediate
+source. That source identifies Qwen/Qwen3-1.7B as the base model and describes
+conversion with llama.cpp. Lumen renamed and re-hosted the GGUF file. The
+exact upstream Qwen commit used for the April 2025 quantization was not
+recorded. Alibaba Cloud, the Qwen authors, rippertnt, llama.cpp, and Hugging
+Face do not endorse Lumen.
 
-Training-source attribution for the Lumen role adapters
-The role adapters were trained on filtered and modified excerpts from the
-following sources. Lumen's selection policy was version 2026-07-12.3.
-
-MASSIVE 1.1 by Amazon.com, Inc. or its affiliates and the MASSIVE
-contributors, pinned revision ff6bd8e4b27c3543e4f8fe2108f32bb95a6f8740.
-License: Creative Commons Attribution 4.0 International
-https://creativecommons.org/licenses/by/4.0/
-Modification notice: Lumen filtered and modified the source material.
-
-OpenAssistant Conversations Release 2 by the OpenAssistant contributors,
-pinned revision 179dd21fc55192153d94adb0e0ce8f69e222bf75.
-License: Apache License 2.0
-
-CoEdIT by Vipul Raheja, Dhruv Kumar, Ryan Koo, and Dongyeop Kang, pinned
-revision e9a255c33ef910bc33a9d2b522653fa87521583e.
-License: Apache License 2.0
-
-JSON Schema Test Suite, Copyright 2012 Julian Berman and contributors,
-pinned revision 92acb61eb772a932c077d5ffa634ded719d2d738.
-License: MIT
-
-ToolACE by the ToolACE authors and contributors, pinned revision
-6bda777c88d21e5a204703c1ee45597a8fa4f734.
-License: Apache License 2.0
-
-FaithDial by the FaithDial authors and contributors, pinned revision
-7a414e80725eac766f2602676dc8b39f80b061e4.
-License: MIT
+Lumen Qwen3 role adapters (Cortex, Executor, Mouth, Mimicry, REM, and Fleet)
+Downloaded artifacts: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/tree/f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2/runs/20260706T011546Z/lora_gguf
+Training run: 20260706T011546Z
+Immutable training manifests: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/tree/f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2/runs/20260706T011546Z/adapters
+The manifests identify Qwen/Qwen3-1.7B as the base model but do not record an
+immutable base-model revision. Each role consumed the first 64 training and
+16 validation records from source JSONL files with these SHA-256 values:
+Cortex — train 883151da3764fbbfc929e8d58eb11129e66c4d54aa9f13dafb01e1505ad19c12;
+validation 55af4c8c2ada924ce60f216fa3e1657f340dbbab0bf2888fed9701aa0364172b.
+Executor — train 6d66405174108ade20b46e2f688be8767b446a8f4e2d88bdba912b18bb7602e8;
+validation c5a8166bca392197d1a35607c637cedcdbcec6d837dcf72d4801c4f1318ca934.
+Mouth — train 9f7cab00eed841bfe3e97f2acf00a59f07adb249dea2edc5f7bd915c275b737c;
+validation 0f0e9c9575b0ff600e947c7976cdf3ab3fc416e7a2c3fa543876483b87cd489f.
+Mimicry — train 2b63af7552bdbc4480884a02b3eafa3a7add815ab854204175a064991b5531d3;
+validation 595ca182524b4ad4ab0b285edf7f59cb90cf46ea7f31f9f17da6f13fb5c8d8d0.
+REM — train 26a6bcf172451333f331346053f13fb3176fe26ab9e71489f76fda275bb5a7ce;
+validation 33a2a15c3376db7172a8d64fcebaa8466bd235f018e1824e27f201fb1deb91c7.
+Fleet — train 96af2fcf29a3fd01d4c718718207db46c21fef5fe010d8bd8235fbcecedabc2d;
+validation 17330b63f6584362ae22ad0e708c390bc6af7114c847246622cb782d4a8f026d.
+The exact consumed rows contain no public-corpus provenance; the later
+public-corpus pipeline was not used to train these pinned adapters.
+Upstream Qwen model license: Apache License 2.0
+The pinned adapter repository does not currently declare separate license
+terms for the Lumen-specific adapter deltas. Alibaba Cloud and the Qwen
+authors do not endorse Lumen.
 
 Qwen3 Embedding 0.6B GGUF
 Source: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/tree/370f27d7550e0def9b39c1f16d3fbaa13aa67728
