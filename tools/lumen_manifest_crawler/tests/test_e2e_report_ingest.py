@@ -2,6 +2,7 @@
 
 # pylint: disable=missing-function-docstring,line-too-long
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
     _is_rag_empty_retrieval,
     _is_sidecar_evidence_candidate,
+    _scenario_identifier_matches,
     _trace_positive_int,
 )
 from lumen_manifest_crawler.dataset.runtime_ingest import (
@@ -68,6 +70,24 @@ def test_trace_positive_int_requires_an_integer_value(value, expected):
 def test_rag_empty_retrieval_does_not_treat_import_failures_as_empty_index():
     assert not _is_rag_empty_retrieval("Could not import local files because permission was denied.")
     assert _is_rag_empty_retrieval("No matching documents found. The local document index appears empty.")
+
+
+def test_scenario_identifier_match_accepts_only_the_exact_privacy_summary():
+    scenario_id = "interactive-model-tool-alarm-authorization"
+    digest = hashlib.sha256(scenario_id.encode("utf-8")).hexdigest()[:16]
+    summary = f"scenarioID_chars={len(scenario_id)};sha256={digest}"
+
+    assert _scenario_identifier_matches(scenario_id, scenario_id)
+    assert _scenario_identifier_matches(scenario_id, summary)
+    assert not _scenario_identifier_matches(
+        scenario_id,
+        f"scenarioID_chars={len(scenario_id)};sha256=0000000000000000",
+    )
+    assert not _scenario_identifier_matches(
+        scenario_id,
+        f"scenarioID_chars={len(scenario_id) + 1};sha256={digest}",
+    )
+    assert not _scenario_identifier_matches(scenario_id, "different-scenario")
 
 
 GENERIC_E2E_REPORT = """E2E Test Report
@@ -1090,12 +1110,14 @@ def test_sidecar_evidence_candidate_limits_plain_chat_to_chat_text_stage():
 def test_ingestion_matches_redacted_sidecar_by_opaque_correlation_token(tmp_path: Path):
     report_path = tmp_path / "e2e-token-sidecar.json"
     token = "corr_v1_0123456789abcdef0123456789abcdef"
+    scenario_id = "training-general-chat"
+    scenario_digest = hashlib.sha256(scenario_id.encode("utf-8")).hexdigest()[:16]
     report = {
         "kind": "lumen_e2e_test_report",
         "passed": 1,
         "failed": 0,
         "results": [{
-            "scenarioID": "training-general-chat",
+            "scenarioID": scenario_id,
             "kind": "training",
             "title": "Training eval: pure chat quality",
             "passed": True,
@@ -1126,7 +1148,7 @@ def test_ingestion_matches_redacted_sidecar_by_opaque_correlation_token(tmp_path
         "emittedFinalInActionTurn": True,
         "finalizerAccepted": True,
         "promptPrefix": "A redacted prompt that intentionally does not match.",
-        "scenarioID": "training-general-chat",
+        "scenarioID": f"scenarioID_chars={len(scenario_id)};sha256={scenario_digest}",
         "correlationToken": token,
     }) + "\n", encoding="utf-8")
 
@@ -2714,6 +2736,8 @@ def test_testflight_agent_grounding_package_preserves_export_metadata(tmp_path: 
 
 def test_v2_package_accepts_correlated_policy_first_evidence_with_redacted_runtime_path(tmp_path: Path):
     token = "corr_v1_policy_package"
+    scenario_id = "live-weather-current"
+    scenario_digest = hashlib.sha256(scenario_id.encode("utf-8")).hexdigest()[:16]
     package = {
         "schemaVersion": "2.0.0",
         "generatedAt": "2026-07-11T00:00:00Z",
@@ -2731,7 +2755,7 @@ def test_v2_package_accepts_correlated_policy_first_evidence_with_redacted_runti
             "event": "toolAction",
             "slot": "policy",
             "stage": "compatibility-tool-action",
-            "scenarioID": "live-weather-current",
+            "scenarioID": f"scenarioID_chars={len(scenario_id)};sha256={scenario_digest}",
             "correlationToken": token,
             "promptPrefix": "What is the weather?",
             "rawOutputPrefix": "",
@@ -2758,7 +2782,7 @@ def test_v2_package_accepts_correlated_policy_first_evidence_with_redacted_runti
                 "failed": 0,
                 "results": [{
                     "id": "77777777-7777-4777-8777-777777777777",
-                    "scenarioID": "live-weather-current",
+                    "scenarioID": scenario_id,
                     "kind": "toolGuard",
                     "title": "Live weather current",
                     "prompt": "What is the weather?",

@@ -44,6 +44,25 @@ def _normalized_runtime_path(value: Any) -> str:
     return runtime_path
 
 
+def _scenario_identifier_matches(expected: Any, actual: Any) -> bool:
+    """Match a canonical scenario ID or its exact persistent privacy summary."""
+
+    expected_id = str(expected or "").strip()
+    actual_id = str(actual or "").strip()
+    if not expected_id:
+        return not actual_id
+    if actual_id == expected_id:
+        return True
+    match = re.fullmatch(
+        r"scenarioID_chars=(\d+);sha256=([0-9a-f]{16})",
+        actual_id,
+    )
+    if match is None:
+        return False
+    expected_digest = hashlib.sha256(expected_id.encode("utf-8")).hexdigest()[:16]
+    return int(match.group(1)) == len(expected_id) and match.group(2) == expected_digest
+
+
 def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json", sidecars: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
     raw_scenarios = _coerce_e2e_scenarios(value)
     sidecars = sidecars or {}
@@ -816,7 +835,7 @@ def _matching_sidecar_trace_for_scenario(
 def _sidecar_trace_matches_correlation(trace: dict[str, Any], scenario: dict[str, Any]) -> bool:
     expected_scenario = str(scenario.get("scenarioID") or scenario.get("id") or "").strip()
     actual_scenario = str(trace.get("scenarioID") or "").strip()
-    if expected_scenario and actual_scenario != expected_scenario:
+    if expected_scenario and not _scenario_identifier_matches(expected_scenario, actual_scenario):
         return False
 
     expected_token = str(scenario.get("correlationToken") or "").strip()

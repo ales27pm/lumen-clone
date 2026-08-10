@@ -14,6 +14,7 @@ from lumen_manifest_crawler.dataset.e2e_report_normalizer import (
     _is_runtime_environment_failure,
     _normalized_runtime_path,
     _scenario_allows_plain_chat_model_turn,
+    _scenario_identifier_matches,
     flatten_e2e_json_report,
 )
 from lumen_manifest_crawler.dataset.e2e_text_parser import parse_e2e_text_report
@@ -796,7 +797,7 @@ def _result_has_strong_correlation(result: dict[str, Any]) -> bool:
 def _package_trace_matches_result(trace: dict[str, Any], result: dict[str, Any]) -> bool:
     expected_scenario = str(result.get("scenarioID") or "").strip()
     actual_scenario = str(trace.get("scenarioID") or "").strip()
-    if expected_scenario and actual_scenario != expected_scenario:
+    if expected_scenario and not _scenario_identifier_matches(expected_scenario, actual_scenario):
         return False
 
     expected_token = str(result.get("correlationToken") or "").strip()
