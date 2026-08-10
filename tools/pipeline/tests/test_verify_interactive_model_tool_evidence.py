@@ -208,12 +208,18 @@ def valid_package(*, now: datetime = NOW) -> dict:
         }
 
 
-def _verify(package: dict, *, now: datetime = NOW) -> list[str]:
+def _verify(
+    package: dict,
+    *,
+    now: datetime = NOW,
+    max_age_seconds: int = VERIFIER.DEFAULT_MAX_AGE_SECONDS,
+) -> list[str]:
     return VERIFIER.verify_evidence_package(
         package,
         expected_source_revision=SOURCE_REVISION,
         expected_build_number=BUILD_NUMBER,
         now=now,
+        max_age_seconds=max_age_seconds,
     )
 
 
@@ -256,6 +262,10 @@ FINAL = ("recentTraces", 1)
         (_set(("exportPolicy", "ownsLiveE2EScenarios"), True), "ownsLiveE2EScenarios"),
         (_set(("liveE2EReport", "exportPolicy", "ownsLiveE2EScenarios"), False), "ownsLiveE2EScenarios"),
         (_set(("liveE2EReport", "payload", "passed"), 0), "payload.passed"),
+        (
+            _set(("liveE2EReport", "payload", "finishedAt"), _iso(-20)),
+            "finished after the embedded report export",
+        ),
         (_set(RESULT + ("scenarioID",), "some-other-scenario"), "scenarioID"),
         (_set(RESULT + ("evidenceMode",), "policyFirstAllowed"), "evidenceMode"),
         (_set(RESULT + ("passed",), False), ".passed"),
@@ -331,6 +341,35 @@ def test_stale_package_fails_closed() -> None:
     failures = _verify(package)
 
     assert any("stale" in failure for failure in failures)
+
+
+def test_fresh_package_with_stale_embedded_report_fails_closed() -> None:
+    package = valid_package()
+    package["liveE2EReport"]["payload"]["startedAt"] = _iso(-180)
+    package["liveE2EReport"]["payload"]["finishedAt"] = _iso(-121)
+    package["liveE2EReport"]["payload"]["results"][0]["startedAt"] = _iso(-170)
+    package["liveE2EReport"]["payload"]["results"][0]["finishedAt"] = _iso(-130)
+    package["liveE2EReport"]["payload"]["results"][0]["events"][0]["createdAt"] = _iso(-140)
+    package["recentTraces"][0]["createdAt"] = _iso(-160)
+    package["recentTraces"][1]["createdAt"] = _iso(-135)
+
+    failures = _verify(package, max_age_seconds=120)
+
+    assert any("payload.finishedAt is stale" in failure for failure in failures), failures
+
+
+def test_excessive_embedded_report_export_assembly_gap_fails_closed() -> None:
+    package = valid_package()
+    gap = VERIFIER.MAX_EXPORT_ASSEMBLY_SECONDS + 1
+    package["liveE2EReport"]["generatedAt"] = _iso(-30 - gap)
+    package["liveE2EReport"]["payload"]["finishedAt"] = _iso(-30 - gap - 1)
+    package["liveE2EReport"]["payload"]["results"][0]["finishedAt"] = _iso(-30 - gap - 2)
+    package["recentTraces"][0]["createdAt"] = _iso(-100)
+    package["recentTraces"][1]["createdAt"] = _iso(-95)
+
+    failures = _verify(package)
+
+    assert any("export assembly gap" in failure for failure in failures), failures
 
 
 def test_cli_accepts_valid_fixture_and_rejects_mutation(tmp_path: Path) -> None:

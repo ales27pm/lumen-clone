@@ -540,14 +540,22 @@ def verify_evidence_package(
         "$.liveE2EReport.generatedAt",
         failures,
     )
-    if live_generated_at is not None and package_generated_at is not None:
-        if live_generated_at > package_generated_at + timedelta(seconds=MAX_EXPORT_ASSEMBLY_SECONDS):
-            failures.append("$.liveE2EReport.generatedAt is later than its parent package")
+    if live_generated_at is not None:
         live_age = (now - live_generated_at).total_seconds()
         if live_age > max_age_seconds:
             failures.append("$.liveE2EReport.generatedAt is stale")
         if live_age < -MAX_FUTURE_CLOCK_SKEW_SECONDS:
             failures.append("$.liveE2EReport.generatedAt is implausibly in the future")
+    if live_generated_at is not None and package_generated_at is not None:
+        assembly_seconds = (package_generated_at - live_generated_at).total_seconds()
+        if assembly_seconds < 0:
+            failures.append("$.liveE2EReport.generatedAt is later than its parent package")
+        elif assembly_seconds > MAX_EXPORT_ASSEMBLY_SECONDS:
+            failures.append(
+                "$.liveE2EReport export assembly gap is "
+                f"{int(assembly_seconds)} seconds; maximum is "
+                f"{MAX_EXPORT_ASSEMBLY_SECONDS} seconds"
+            )
 
     payload = _require_mapping(live.get("payload"), "$.liveE2EReport.payload", failures)
     _reject_unknown_keys(payload, REPORT_PAYLOAD_KEYS, "$.liveE2EReport.payload", failures)
@@ -564,6 +572,15 @@ def verify_evidence_package(
         failures.append("$.liveE2EReport.payload.startedAt is after finishedAt")
     if live_generated_at is not None and report_finished_at is not None and report_finished_at > live_generated_at:
         failures.append("$.liveE2EReport payload finished after the embedded report export")
+    if report_finished_at is not None:
+        report_age = (now - report_finished_at).total_seconds()
+        if report_age > max_age_seconds:
+            failures.append(
+                "$.liveE2EReport.payload.finishedAt is stale by "
+                f"{int(report_age)} seconds; maximum age is {max_age_seconds} seconds"
+            )
+        if report_age < -MAX_FUTURE_CLOCK_SKEW_SECONDS:
+            failures.append("$.liveE2EReport.payload.finishedAt is implausibly in the future")
 
     result_started_at: datetime | None = None
     result_finished_at: datetime | None = None

@@ -402,6 +402,9 @@ struct E2ETestRunnerView: View {
     @State private var correlatedEvidenceStatus: String?
     @State private var exportError: String?
     @State private var resourceSnapshot: ResourceBudgetGate.Snapshot?
+    #if DEBUG
+    @State private var completedInteractiveModelToolValidationReportID: UUID?
+    #endif
 
     init(initialRunMode: RunMode = .standard) {
         _runMode = State(initialValue: initialRunMode)
@@ -593,6 +596,9 @@ struct E2ETestRunnerView: View {
             lastCorrelatedEvidencePackageURL = nil
             correlatedEvidenceStatus = nil
             exportError = nil
+            #if DEBUG
+            completedInteractiveModelToolValidationReportID = nil
+            #endif
         }
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -640,13 +646,21 @@ struct E2ETestRunnerView: View {
     }
 
     private func reloadLatestReport() {
-        reportText = E2ETestLogStore.latestText()
-        latestReport = E2ETestLogStore.latestReport()
         liveResults = []
         liveEventBuffer = []
         runStartedAt = nil
         lastCorrelatedEvidencePackageURL = nil
         correlatedEvidenceStatus = nil
+        #if DEBUG
+        completedInteractiveModelToolValidationReportID = nil
+        if runMode == .interactiveModelToolValidation {
+            latestReport = nil
+            reportText = "No just-finished interactive model/tool validation report is available."
+            return
+        }
+        #endif
+        reportText = E2ETestLogStore.latestText()
+        latestReport = E2ETestLogStore.latestReport()
     }
 
     @MainActor
@@ -675,6 +689,9 @@ struct E2ETestRunnerView: View {
         runStartedAt = Date()
         lastCorrelatedEvidencePackageURL = nil
         correlatedEvidenceStatus = nil
+        #if DEBUG
+        completedInteractiveModelToolValidationReportID = nil
+        #endif
         reportText = "Preparing live runtime artifacts…"
 
         Task { @MainActor in
@@ -749,6 +766,11 @@ struct E2ETestRunnerView: View {
 
                 await MainActor.run {
                     latestReport = report
+                    #if DEBUG
+                    if mode == .interactiveModelToolValidation {
+                        completedInteractiveModelToolValidationReportID = report.id
+                    }
+                    #endif
                     reportText = report.summaryText
                     isRunning = false
                     runStartedAt = nil
@@ -775,13 +797,25 @@ struct E2ETestRunnerView: View {
 
     #if DEBUG
     private var isInteractiveModelToolValidationReport: Bool {
-        guard let latestReport,
-              latestReport.results.count == 1,
-              let result = latestReport.results.first,
-              let scenario = E2ETestScenario.interactiveModelToolValidation.first else {
+        Self.isJustFinishedInteractiveModelToolValidationReport(
+            reportID: latestReport?.id,
+            resultScenarioIDs: latestReport?.results.map(\.scenarioID) ?? [],
+            completedReportID: completedInteractiveModelToolValidationReportID
+        )
+    }
+
+    nonisolated static func isJustFinishedInteractiveModelToolValidationReport(
+        reportID: UUID?,
+        resultScenarioIDs: [String],
+        completedReportID: UUID?
+    ) -> Bool {
+        guard let reportID,
+              reportID == completedReportID,
+              E2ETestScenario.interactiveModelToolValidation.count == 1,
+              let scenarioID = E2ETestScenario.interactiveModelToolValidation.first?.id else {
             return false
         }
-        return result.scenarioID == scenario.id
+        return resultScenarioIDs == [scenarioID]
     }
 
     private func exportCorrelatedModelToolEvidencePackage() {

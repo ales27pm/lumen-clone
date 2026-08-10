@@ -706,6 +706,12 @@ struct StructuredAgentKernelExecutor {
 
         let payload = await kernel.takeCompletedStructuredLlamaTrace(requestID: genReq.id)
         let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outputTokenCount = Self.resolvedStructuredOutputTokenCount(
+            explicit: payload?.outputTokenCount,
+            completion: payload?.tokenUsage?.completionTokens,
+            visible: payload?.tokenUsage?.visibleTokens,
+            raw: trimmedRaw
+        )
         let emptyReason = payload?.emptyOutputReason
             ?? (trimmedRaw.isEmpty ? preGenerationDenialReason : nil)
             ?? (trimmedRaw.isEmpty ? Self.agentJSONEmptyStreamReason(streamStarted: streamStarted, textChunkCount: textChunkCount, finalChunkReceived: finalChunkReceived, taskCancelled: Task.isCancelled, maxTokensEffective: genReq.maxTokens) : nil)
@@ -715,7 +721,7 @@ struct StructuredAgentKernelExecutor {
             diagnostics: .init(
                 generationElapsedMs: payload?.elapsedMs ?? Int(Date().timeIntervalSince(startedAt) * 1000),
                 firstTokenLatencyMs: firstTokenLatencyMs,
-                outputTokenCount: payload?.outputTokenCount ?? (trimmedRaw.isEmpty ? 0 : nil),
+                outputTokenCount: outputTokenCount,
                 estimatedPromptTokenCount: payload?.estimatedPromptTokenCount ?? preflight.estimatedPromptTokens,
                 maxTokensRequested: payload?.maxTokensRequested ?? request.options.maxTokens,
                 maxTokensEffective: payload?.maxTokensEffective ?? genReq.maxTokens,
@@ -1084,10 +1090,46 @@ private extension StructuredAgentKernelExecutor {
         if shouldForceActionSchema(request: request, availableTools: availableTools, stepIndex: stepIndex, hasObservations: hasObservations) {
             return .constrainedJSON(schema: structuredAgentActionResponseSchema)
         }
-        if availableTools.isEmpty {
+        if availableTools.isEmpty || shouldForceFinalSchemaAfterObservation(
+            availableTools: availableTools,
+            stepIndex: stepIndex,
+            hasObservations: hasObservations
+        ) {
             return .constrainedJSON(schema: structuredAgentFinalResponseSchema)
         }
         return .constrainedJSON(schema: structuredAgentResponseSchema)
+    }
+
+    private static func resolvedStructuredOutputTokenCount(
+        explicit: Int?,
+        completion: Int?,
+        visible: Int?,
+        raw: String
+    ) -> Int {
+        if let measured = [explicit, completion, visible].compactMap({ $0 }).first(where: { $0 > 0 }) {
+            return measured
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 0 }
+        return max(1, trimmed.split(whereSeparator: \.isWhitespace).count)
+    }
+
+    private static func shouldForceFinalSchemaAfterObservation(
+        availableTools: [ToolDefinition],
+        stepIndex: Int,
+        hasObservations: Bool
+    ) -> Bool {
+        guard stepIndex > 0,
+              hasObservations,
+              availableTools.count == 1,
+              let onlyTool = availableTools.first else {
+            return false
+        }
+        // Once the only available no-argument tool has returned a trusted
+        // observation, another action can only repeat the same invocation.
+        // Keep the second turn model-backed while constraining it to the one
+        // remaining valid decision: synthesize a final response.
+        return !onlyTool.requiresApproval && onlyTool.capabilityContract.arguments.isEmpty
     }
 
     static func shouldForceActionSchema(
@@ -2096,6 +2138,20 @@ private extension StructuredAgentKernelExecutor {
 
 #if DEBUG
 extension StructuredAgentKernelExecutor {
+    static func resolvedStructuredOutputTokenCountForTests(
+        explicit: Int?,
+        completion: Int?,
+        visible: Int?,
+        raw: String
+    ) -> Int {
+        resolvedStructuredOutputTokenCount(
+            explicit: explicit,
+            completion: completion,
+            visible: visible,
+            raw: raw
+        )
+    }
+
     static func executorRuntimeSystemPromptForTests(
         request: AgentKernelRequest,
         availableTools: [ToolDefinition]

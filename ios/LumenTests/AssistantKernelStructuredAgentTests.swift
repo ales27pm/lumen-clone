@@ -252,6 +252,112 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testSingleNoArgumentToolUsesFinalOnlySchemaAfterObservation() throws {
+        #if DEBUG
+        let request = structuredRequest(
+            "Check alarm authorization status.",
+            allowedToolIDs: ["alarm.authorization_status"]
+        )
+        let schema = StructuredAgentKernelExecutor.structuredAgentResponseSchemaForTests(
+            request: request,
+            availableTools: [try tool("alarm.authorization_status")],
+            stepIndex: 1,
+            hasObservations: true
+        )
+
+        XCTAssertEqual(schema, StructuredAgentKernelExecutor.structuredAgentFinalResponseSchema)
+        XCTAssertTrue(schema.contains(#""required":["final"]"#))
+        XCTAssertFalse(schema.contains(#""required":["action"]"#))
+        #endif
+    }
+
+    func testArgumentBearingToolCanRequestAnotherActionAfterObservation() throws {
+        #if DEBUG
+        let request = structuredRequest(
+            "Search for another message.",
+            allowedToolIDs: ["outlook.messages.search"]
+        )
+        let schema = StructuredAgentKernelExecutor.structuredAgentResponseSchemaForTests(
+            request: request,
+            availableTools: [try tool("outlook.messages.search")],
+            stepIndex: 1,
+            hasObservations: true
+        )
+
+        XCTAssertEqual(schema, StructuredAgentKernelExecutor.structuredAgentResponseSchema)
+        XCTAssertTrue(schema.contains(#""oneOf""#))
+        #endif
+    }
+
+    func testApprovalToolDoesNotForceFinalSchemaAfterSyntheticObservation() throws {
+        #if DEBUG
+        let request = structuredRequest(
+            "Request alarm authorization.",
+            allowedToolIDs: ["alarm.request_authorization"]
+        )
+        let schema = StructuredAgentKernelExecutor.structuredAgentResponseSchemaForTests(
+            request: request,
+            availableTools: [try tool("alarm.request_authorization")],
+            stepIndex: 1,
+            hasObservations: true
+        )
+
+        XCTAssertEqual(schema, StructuredAgentKernelExecutor.structuredAgentResponseSchema)
+        #endif
+    }
+
+    func testMultipleNoArgumentToolsKeepActionOrFinalSchemaAfterObservation() throws {
+        #if DEBUG
+        let request = structuredRequest(
+            "Check alarm authorization and list alarms.",
+            allowedToolIDs: ["alarm.authorization_status", "alarm.list"]
+        )
+        let schema = StructuredAgentKernelExecutor.structuredAgentResponseSchemaForTests(
+            request: request,
+            availableTools: [
+                try tool("alarm.authorization_status"),
+                try tool("alarm.list")
+            ],
+            stepIndex: 1,
+            hasObservations: true
+        )
+
+        XCTAssertEqual(schema, StructuredAgentKernelExecutor.structuredAgentResponseSchema)
+        #endif
+    }
+
+    func testStructuredOutputTokenCountUsesVisibleEstimateAndNonemptyFallback() {
+        #if DEBUG
+        XCTAssertEqual(
+            StructuredAgentKernelExecutor.resolvedStructuredOutputTokenCountForTests(
+                explicit: nil,
+                completion: nil,
+                visible: 7,
+                raw: #"{"final":"authorized"}"#
+            ),
+            7
+        )
+        XCTAssertGreaterThan(
+            StructuredAgentKernelExecutor.resolvedStructuredOutputTokenCountForTests(
+                explicit: nil,
+                completion: nil,
+                visible: nil,
+                raw: #"{"final":"authorized"}"#
+            ),
+            0
+        )
+        XCTAssertEqual(
+            StructuredAgentKernelExecutor.resolvedStructuredOutputTokenCountForTests(
+                explicit: nil,
+                completion: nil,
+                visible: nil,
+                raw: ""
+            ),
+            0
+        )
+        #endif
+    }
+
     func testWebSearchSynthesizesSwiftSummaryAfterFirstObservation() throws {
         #if DEBUG
         let request = structuredRequest(

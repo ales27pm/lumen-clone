@@ -278,6 +278,30 @@ struct InteractiveModelToolValidationContractTests {
         #endif
     }
 
+    @Test func evidenceExportRequiresTheCurrentViewSessionsCompletedReport() {
+        #if DEBUG
+        let currentID = UUID()
+        let staleID = UUID()
+        #expect(E2ETestRunnerView.isJustFinishedInteractiveModelToolValidationReport(
+            reportID: currentID,
+            resultScenarioIDs: ["interactive-model-tool-alarm-authorization"],
+            completedReportID: currentID
+        ))
+        #expect(!E2ETestRunnerView.isJustFinishedInteractiveModelToolValidationReport(
+            reportID: staleID,
+            resultScenarioIDs: ["interactive-model-tool-alarm-authorization"],
+            completedReportID: currentID
+        ))
+        #expect(!E2ETestRunnerView.isJustFinishedInteractiveModelToolValidationReport(
+            reportID: currentID,
+            resultScenarioIDs: ["different-scenario"],
+            completedReportID: currentID
+        ))
+        #else
+        #expect(true)
+        #endif
+    }
+
     @Test func evidencePackageSourceActionIsClosedAndCanonical() {
         #if DEBUG
         let package = InAppDatasetPackageExporter.makePackage(

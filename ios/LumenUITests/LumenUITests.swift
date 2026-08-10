@@ -231,30 +231,42 @@ final class LumenUITests: XCTestCase {
             "The physical model/tool validation run button was not visible."
         )
         XCTAssertTrue(runButton.isEnabled, "The physical model/tool validation was blocked before launch.")
+        scrollToElement(runButton, attempts: 6)
+        XCTAssertTrue(runButton.isHittable, "The physical model/tool validation run button was not tappable.")
         print("LUMEN_INTERACTIVE_VALIDATION_MILESTONE test_bundle_ready")
-        tapElement(runButton)
+        runButton.tap()
 
-        let dashboardStatus = app.descendants(matching: .any)["e2e.dashboard.status"]
-        XCTAssertTrue(dashboardStatus.waitForExistence(timeout: 5), "The validation dashboard status was unavailable.")
-        let running = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", "Running"),
-            object: dashboardStatus
+        let runAccepted = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == false"),
+            object: runButton
         )
         XCTAssertEqual(
-            XCTWaiter.wait(for: [running], timeout: 20),
+            XCTWaiter.wait(for: [runAccepted], timeout: 20),
             .completed,
-            "The physical model/tool validation never entered its running state."
+            "The physical model/tool validation run request was not accepted."
         )
         print("LUMEN_INTERACTIVE_VALIDATION_MILESTONE model_tool_run_started")
 
+        let runFinished = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"),
+            object: runButton
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [runFinished], timeout: 900),
+            .completed,
+            "The physical model/tool validation did not finish within 15 minutes."
+        )
+
+        let dashboardStatus = app.descendants(matching: .any)["e2e.dashboard.status"]
+        XCTAssertTrue(dashboardStatus.waitForExistence(timeout: 5), "The validation dashboard status was unavailable.")
         let terminal = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value IN %@", ["Passing", "Failing", "Preflight"]),
             object: dashboardStatus
         )
         XCTAssertEqual(
-            XCTWaiter.wait(for: [terminal], timeout: 900),
+            XCTWaiter.wait(for: [terminal], timeout: 20),
             .completed,
-            "The physical model/tool validation did not reach a terminal state within 15 minutes."
+            "The physical model/tool validation did not publish its terminal status."
         )
         XCTAssertEqual(
             dashboardStatus.value as? String,
@@ -272,7 +284,8 @@ final class LumenUITests: XCTestCase {
         scrollToElement(exportButton, attempts: 8)
         XCTAssertTrue(exportButton.waitForExistence(timeout: 5), "The correlated evidence export button was not visible.")
         XCTAssertTrue(exportButton.isEnabled, "The correlated evidence export was not enabled after the passing scenario.")
-        tapElement(exportButton)
+        XCTAssertTrue(exportButton.isHittable, "The correlated evidence export button was not tappable.")
+        exportButton.tap()
 
         let evidenceStatus = app.staticTexts["e2e.export.interactiveModelToolEvidenceStatus"]
         scrollToElement(evidenceStatus, attempts: 8)
