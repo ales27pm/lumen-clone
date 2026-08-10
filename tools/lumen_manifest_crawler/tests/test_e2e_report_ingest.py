@@ -87,6 +87,10 @@ def test_scenario_identifier_match_accepts_only_the_exact_privacy_summary():
         scenario_id,
         f"scenarioID_chars={len(scenario_id) + 1};sha256={digest}",
     )
+    assert not _scenario_identifier_matches(
+        scenario_id,
+        f"scenarioID_chars={'9' * 5000};sha256={digest}",
+    )
     assert not _scenario_identifier_matches(scenario_id, "different-scenario")
 
 

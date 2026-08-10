@@ -60,7 +60,7 @@ def _scenario_identifier_matches(expected: Any, actual: Any) -> bool:
     if match is None:
         return False
     expected_digest = hashlib.sha256(expected_id.encode("utf-8")).hexdigest()[:16]
-    return int(match.group(1)) == len(expected_id) and match.group(2) == expected_digest
+    return match.group(1) == str(len(expected_id)) and match.group(2) == expected_digest
 
 
 def flatten_e2e_json_report(value: dict[str, Any], *, source: str, source_format: str = "lumen_e2e_test_report", source_layer: str = "e2eTestReport.json", sidecars: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
