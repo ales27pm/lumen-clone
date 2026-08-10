@@ -1843,7 +1843,7 @@ def test_every_cortex_eval_has_one_record_aware_route_contract(
     tools_by_id = {tool.id: tool for tool in manifest.tools}
     modes: Counter[str] = Counter()
 
-    assert len(cortex_evals) == 507
+    assert len(cortex_evals) == 509
     for record in cortex_evals:
         contracts = [
             metric
@@ -1900,8 +1900,8 @@ def test_every_cortex_eval_has_one_record_aware_route_contract(
 
     assert modes == Counter(
         {
-                "actionable": 285,
-                "clarification": 197,
+            "actionable": 287,
+            "clarification": 197,
             "selection": 22,
             "no_tool_route": 2,
             "invalid_tool": 1,
@@ -3139,7 +3139,7 @@ def test_cortex_replay_extensions_are_prompt_disjoint_and_below_frozen_containme
         hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         for prompt in frozen_eval_prompts
     }
-    assert len(cortex.eval) == 507
+    assert len(cortex.eval) == 509
     assert len(extension_prompts) == 93
     assert len(set(extension_prompts)) == len(extension_prompts)
     assert set(extension_prompts).isdisjoint(frozen_eval_prompts)
@@ -9479,7 +9479,37 @@ def test_mouth_closed_world_rows_preserve_prior_optimizer_exposure(
     assert policy["projectedEffectiveSteps"] >= 9
 
 
-def test_current_frozen_bank_has_603_executable_closed_metrics(
+def test_rag_reindex_approval_contract_accounts_for_two_cortex_frozen_evals(
+    compiled_fine_tuning: tuple,
+) -> None:
+    manifest, _, fine_tuning = compiled_fine_tuning
+    expected_tool_ids = {"rag.index_files", "rag.index_photos"}
+    tools_by_id = {tool.id: tool for tool in manifest.tools}
+    records = [
+        record
+        for record in fine_tuning["cortex"].eval
+        if record["metadata"].get("evalType")
+        == "tool_runtime_scenario_selection"
+        and record["metadata"].get("scenarioKind") == "approval_boundary"
+        and record["expected"].get("selectedToolID") in expected_tool_ids
+    ]
+
+    assert set(tools_by_id).issuperset(expected_tool_ids)
+    assert all(tools_by_id[tool_id].requiresApproval for tool_id in expected_tool_ids)
+    assert {
+        record["expected"]["selectedToolID"]: record["metadata"]["name"]
+        for record in records
+    } == {
+        "rag.index_files": "tool-scenario-rag.index_files-5",
+        "rag.index_photos": "tool-scenario-rag.index_photos-5",
+    }
+    assert len(records) == len(expected_tool_ids)
+    assert all(record["metadata"]["approvalCoverage"] is True for record in records)
+    assert all(record["expected"]["requiresApproval"] is True for record in records)
+    assert all(record["expected"]["mustPersistActionStep"] is True for record in records)
+
+
+def test_current_frozen_bank_has_605_executable_closed_metrics(
     compiled_fine_tuning: tuple,
 ) -> None:
     manifest, datasets, _ = compiled_fine_tuning
@@ -9489,7 +9519,7 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
         fleet_artifacts=generate_fleet_artifacts(manifest),
     )
     expected_counts = {
-        "cortex": 507,
+        "cortex": 509,
         "executor": 63,
         "fleet": 15,
         "mimicry": 5,
@@ -9500,7 +9530,7 @@ def test_current_frozen_bank_has_603_executable_closed_metrics(
     assert {
         agent: len(fine_tuning[agent].eval) for agent in expected_counts
     } == expected_counts
-    assert sum(expected_counts.values()) == 603
+    assert sum(expected_counts.values()) == 605
     fleet = fine_tuning["fleet"]
     optimized_fleet = fleet.experiment_variants[
         "internal_plus_public_optimized"
