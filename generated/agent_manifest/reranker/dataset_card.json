@@ -1,9 +1,9 @@
 {
   "counts": {
-    "evalReranking": 1107,
-    "hardNegativePairs": 6461,
-    "trainPairs": 5814,
-    "valPairs": 647
+    "evalReranking": 1114,
+    "hardNegativePairs": 6604,
+    "trainPairs": 5930,
+    "valPairs": 674
   },
   "evaluationIsolation": {
     "policy": "exclude_evaluation_only_documents_from_all_training_candidates"
@@ -22,6 +22,7 @@
     "peer_boundary_query",
     "permission_boundary_query",
     "routing_rule_query",
+    "runtime_audit_repairs_retrieval",
     "source_file_name_query",
     "tool_contract_query",
     "tool_id_to_tool_contract",

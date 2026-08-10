@@ -1,54 +1,62 @@
 {
+  "currentRuntimeProofPresent": false,
   "environment": {
     "checkoutKind": "git_checkout",
     "executionKind": "macos_with_xcode",
-    "gitTopLevel": "/Users/ales27pm/lumen-clone",
+    "gitTopLevel": ".",
     "hasXcodebuild": true,
     "insideGitWorktree": true,
     "platformMachine": "x86_64",
     "platformSystem": "Darwin",
-    "pythonExecutable": "/Users/ales27pm/lumen-clone/tools/lumen_manifest_crawler/.venv/bin/python3",
-    "xcodebuildPath": "/usr/bin/xcodebuild"
+    "pythonExecutable": "<local-path-redacted>",
+    "xcodebuildPath": "<local-path-redacted>"
   },
+  "historicalRuntimeInputPresent": true,
   "improvementLoopOutputContractPassed": true,
-  "improvementLoopPassed": false,
+  "improvementLoopPassed": true,
   "manifestValidationPassed": true,
-  "nextRecommendedCommand": "python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop",
+  "nextRecommendedCommand": "python3 -m lumen_manifest_crawler developer-cycle --root . --runtime-audit <exported-testflight-json>",
   "options": {
-    "dryRun": true,
+    "appRunMode": "device-debug",
+    "dryRun": false,
     "failOnGaps": false,
     "failOnStatic": false,
     "failOnValidation": false,
     "portable": true,
     "requireRuntimeAudit": false,
     "runTraining": false,
-    "runtimeAuditPaths": [],
-    "skipGeneration": false,
-    "skipImprovementLoop": false,
+    "runtimeAuditExpectedBuildNumber": null,
+    "runtimeAuditPaths": [
+      "runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f"
+    ],
+    "skipGeneration": true,
+    "skipImprovementLoop": true,
+    "verifyRuntimeAuditNow": false,
     "withTrainingPlan": false,
     "withXcode": false
   },
   "outputArtifacts": [
-    "/Users/ales27pm/lumen-clone/generated/developer_framework/developer_cycle_report.json",
-    "/Users/ales27pm/lumen-clone/generated/developer_framework/DEVELOPER_CYCLE_REPORT.md",
-    "/Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json",
-    "/Users/ales27pm/lumen-clone/generated/developer_framework/runtime_report_index.json",
-    "/Users/ales27pm/lumen-clone/generated/agent_manifest/AgentBehaviorManifest.json",
-    "/Users/ales27pm/lumen-clone/generated/agent_manifest/AgentBehaviorManifest.md",
-    "/Users/ales27pm/lumen-clone/generated/agent_manifest/manifest_validation_report.json",
-    "/Users/ales27pm/lumen-clone/generated/agent_manifest/dataset_manifest.json",
-    "/Users/ales27pm/lumen-clone/generated/agent_manifest/dataset_index.csv",
-    "/Users/ales27pm/lumen-clone/generated/agent_manifest/fleet_system_prompts.json",
-    "/Users/ales27pm/lumen-clone/generated/agent_manifest/fine_tuning",
-    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/LOOP_REPORT.md",
-    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_state.json",
-    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_gaps.json",
-    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/GAP_TRIAGE.md",
-    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/gap_triage.json",
-    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
-    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl"
+    "./generated/developer_framework/developer_cycle_report.json",
+    "./generated/developer_framework/DEVELOPER_CYCLE_REPORT.md",
+    "./generated/developer_framework/framework_report.json",
+    "./generated/developer_framework/runtime_report_index.json",
+    "./generated/agent_manifest/AgentBehaviorManifest.json",
+    "./generated/agent_manifest/AgentBehaviorManifest.md",
+    "./generated/agent_manifest/manifest_validation_report.json",
+    "./generated/agent_manifest/dataset_manifest.json",
+    "./generated/agent_manifest/dataset_index.csv",
+    "./generated/agent_manifest/fleet_system_prompts.json",
+    "./generated/agent_manifest/fine_tuning",
+    "./generated/agent_improvement_loop/LOOP_REPORT.md",
+    "./generated/agent_improvement_loop/loop_state.json",
+    "./generated/agent_improvement_loop/loop_gaps.json",
+    "./generated/agent_improvement_loop/GAP_TRIAGE.md",
+    "./generated/agent_improvement_loop/gap_triage.json",
+    "./generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
+    "./generated/agent_improvement_loop/testflight_scenarios.jsonl"
   ],
-  "overallPortablePassed": false,
+  "overallDeviceDebugDiagnosticPassed": false,
+  "overallPortablePassed": true,
   "overallReleaseCandidatePassed": false,
   "phases": [
     {
@@ -56,13 +64,13 @@
       "environment": {
         "checkoutKind": "git_checkout",
         "executionKind": "macos_with_xcode",
-        "gitTopLevel": "/Users/ales27pm/lumen-clone",
+        "gitTopLevel": ".",
         "hasXcodebuild": true,
         "insideGitWorktree": true,
         "platformMachine": "x86_64",
         "platformSystem": "Darwin",
-        "pythonExecutable": "/Users/ales27pm/lumen-clone/tools/lumen_manifest_crawler/.venv/bin/python3",
-        "xcodebuildPath": "/usr/bin/xcodebuild"
+        "pythonExecutable": "<local-path-redacted>",
+        "xcodebuildPath": "<local-path-redacted>"
       },
       "id": "phase0_environment_detection",
       "status": "passed",
@@ -76,14 +84,13 @@
             "tools/check_agent_kernel_boundary.py"
           ],
           "commandText": "python3 tools/check_agent_kernel_boundary.py",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 0.57,
           "name": "agent_kernel_boundary",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
-          "stdoutTail": ""
+          "stdoutTail": "Agent Kernel boundary guard passed.\nDocumented compatibility bridges: 3\n"
         },
         {
           "command": [
@@ -92,14 +99,13 @@
             "--strict"
           ],
           "commandText": "python3 tools/check_agent_kernel_boundary.py --strict",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 0.51,
           "name": "agent_kernel_boundary_strict",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
-          "stdoutTail": ""
+          "stdoutTail": "Agent Kernel boundary guard passed.\nDocumented compatibility bridges: 3\n  ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift:14: AgentService.shared.run: for await event in AgentService.shared.run(request, options: options) {\n  ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift:29: SlotAgentService.shared.run: for await event in SlotAgentService.shared.run(request, options: options) {\n  ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift:42: SlotAgentService.shared.run: SlotAgentService.shared.run(request, options: options)\n"
         },
         {
           "command": [
@@ -107,14 +113,13 @@
             "tools/check_adapter_runtime_invariants.py"
           ],
           "commandText": "python3 tools/check_adapter_runtime_invariants.py",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 0.09,
           "name": "adapter_runtime_invariants",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
-          "stdoutTail": ""
+          "stdoutTail": "PASS check_catalog\nPASS check_fleet_resolver\nPASS check_runtime\nPASS check_staged_system_adapters\nPASS check_persistence_search_diagnostics\nPASS check_swift_llama_pin\nPASS check_slot_coordinator\nPASS check_model_loader_ownership\nPASS check_models_view\nPASS check_export_policy\nPASS check_docs\nPASS check_hardening_doc\nPASS check_terminal_loop\nPASS check_qwen3_configs_alignment\nPASS check_train_sft_reproducibility\nAll Qwen3 adapter runtime invariants passed.\n"
         },
         {
           "command": [
@@ -122,14 +127,13 @@
             "tools/check_ios_lora_hardening_invariants.py"
           ],
           "commandText": "python3 tools/check_ios_lora_hardening_invariants.py",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 0.05,
           "name": "ios_lora_hardening_invariants",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
-          "stdoutTail": ""
+          "stdoutTail": "PASS check_swift_llama_pin\nPASS check_single_adapter_activation\nPASS check_hardening_doc\nAll iOS LoRA hardening invariants passed.\n"
         },
         {
           "command": [
@@ -137,14 +141,13 @@
             "scripts/validate-msal-ios-release-config.py"
           ],
           "commandText": "python3 scripts/validate-msal-ios-release-config.py",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 0.05,
           "name": "msal_release_config",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
-          "stdoutTail": ""
+          "stdoutTail": "✅ MSAL iOS release configuration validation passed\n   - MSALClientID: 51aa8fd9-16b2-4f8e-8b97-b8618ceb6c40\n   - MSALRedirectURI: msauth.com.27pm.lumenclone://auth\n   - App bundle identifier: com.27pm.lumenclone\n   - MSAL package version: 1.9.0 (exact)\n"
         },
         {
           "command": [
@@ -152,14 +155,13 @@
             "scripts/validate_ios_signing_capabilities.py"
           ],
           "commandText": "python3 scripts/validate_ios_signing_capabilities.py",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 0.1,
           "name": "ios_signing_capabilities",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
-          "stderrTail": "",
-          "stdoutTail": ""
+          "returncode": 0,
+          "status": "passed",
+          "stderrTail": "App Store entitlements match development entitlements after removing com.apple.developer.kernel.increased-debugging-memory-limit, com.apple.security.hardened-process.checked-allocations.soft-mode.\n",
+          "stdoutTail": "iOS signing capability validation passed.\n"
         },
         {
           "command": [
@@ -167,14 +169,13 @@
             "tools/security/check_no_shell_subprocess.py"
           ],
           "commandText": "python3 tools/security/check_no_shell_subprocess.py",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 0.14,
           "name": "no_shell_subprocess",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
-          "stdoutTail": ""
+          "stdoutTail": "PASS: no subprocess shell=True usage in checked files\n"
         },
         {
           "command": [
@@ -182,14 +183,13 @@
             "scripts/check-ios-build-readiness.sh"
           ],
           "commandText": "bash scripts/check-ios-build-readiness.sh",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 10.23,
           "name": "ios_build_readiness",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
-          "stderrTail": "",
-          "stdoutTail": ""
+          "returncode": 0,
+          "status": "passed",
+          "stderrTail": "App Store entitlements match development entitlements after removing com.apple.developer.kernel.increased-debugging-memory-limit, com.apple.security.hardened-process.checked-allocations.soft-mode.\nFound placeholder markers in tests/docs. Review above; some may be literal test/prompt text or historical notes.\nFound logging APIs in privacy-sensitive additions; review output above.\n",
+          "stdoutTail": "== Xcode availability ==\nXcode 26.3\nBuild version 17C529\n== Project schemes ==\nCommand line invocation:\n    <local-path-redacted>\n\nResolve Package Graph\n\n\nResolved source packages:\n  swift-llama-cpp: https://github.com/pgorzelany/swift-llama-cpp.git @ 1.2.0\n  MSAL: https://github.com/AzureAD/microsoft-authentication-library-for-objc.git @ 1.9.0\n\nInformation about project \"Lumen\":\n    Targets:\n        Lumen\n        LumenTests\n        LumenUITests\n\n    Build Configurations:\n        Debug\n        Release\n\n    If no build configuration is specified and -scheme is not passed then \"Release\" is used.\n\n    Schemes:\n        Lumen\n        swift-llama-cpp\n\n== Project membership format ==\nProject uses file-system synchronized root groups for Lumen and LumenTests.\n== Swift files present ==\n     348 <local-path-redacted>\n     173 <local-path-redacted>\n     521 total\n== iOS signing capability checks ==\niOS signing capability validation passed.\n== Generated JSONL artifact checks ==\ngenerated JSONL artifact validation passed.\n== Static privacy/build-hardening checks ==\ndocs/AGENT_KERNEL_MIGRATION_PR3.md:27:- Kept UI throttling, cancellation guards, schema-placeholder repair, final intent validation, memory extraction, and developer trace persistence.\ndocs/ARTIFACT_STATUS.md:53:`AgentBehaviorManifest.json` is generated from source by the manifest crawler. It is intentionally a deterministic source artifact, so `app.generatedAt` may be fixed to the Unix epoch (`1970-01-01T00:00:00+00:00`) when no real build metadata is being injected. That fixed timestamp is not a placeholder for TestFlight activity; it exists so repeated crawler runs with identical inputs produce stable JSON and hashes.\ndocs/TRIPLEBOOT_AIO_REPORT.md:110:Sur Mac, le chemin officiel repose sur `softwareupdate` puis `createinstallmedia`. L’exemple ci-dessous utilise des placeholders afin d’éviter d’ancrer le rapport à une version macOS précise :\ndocs/MicrosoftGraphOutlookSetup.md:51:Either replace the placeholder in:\nios/LumenTests/LumenTests.swift:322:    @Test func placeholderDetectorFlagsSentinelVariantsAndPartialCopies() async throws {\nios/LumenTests/LumenTests.swift:329:    @Test func placeholderDetectorPrefixMatchesStreamingSentinelCopy() async throws {\nios/LumenTests/LumenTests.swift:336:    @Test func placeholderRepairFallsBackForSentinelCopies() async throws {\nios/LumenTests/AgentGroundingRegressionTests.swift:3668:    @Test func placeholderWeatherFinalRequiresToolActionBeforeObservation() {\nios/Lumen/Diagnostics/RuntimeFallbackLogger.swift:37:nonisolated enum RuntimeFallbackLogger {\n== Built app artifact checks ==\nNo explicit built app artifact provided; skipping signed Info.plist metadata validation. Set LUMEN_BUILT_APP_PATH or LUMEN_REQUIRE_BUILT_APP=1 to make this mandatory.\nBuild readiness static checks completed. Run xcodebuild on macOS for compile validation.\n"
         },
         {
           "command": [
@@ -198,12 +198,11 @@
             "--check"
           ],
           "commandText": "git diff --check",
-          "cwd": "/Users/ales27pm/lumen-clone",
-          "durationSeconds": 0.0,
+          "cwd": ".",
+          "durationSeconds": 3.09,
           "name": "git_diff_check",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
           "stdoutTail": ""
         }
@@ -222,24 +221,30 @@
             "lumen_manifest_crawler",
             "improve-loop",
             "--root",
-            "/Users/ales27pm/lumen-clone",
+            ".",
             "--output",
-            "/Users/ales27pm/lumen-clone/generated/agent_manifest",
+            "./generated/agent_manifest",
             "--loop-output",
-            "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop",
+            "./generated/agent_improvement_loop",
             "--generate-system-prompts",
             "--generate-agent-fine-tuning",
+            "--app-run-mode",
+            "device-debug",
+            "--runtime-audit-max-age-seconds",
+            "3600",
             "--runtime-audit",
-            "/Users/ales27pm/lumen-clone/exports",
+            "<runtime-audit-input-redacted>",
             "--runtime-audit",
-            "/Users/ales27pm/lumen-clone/runtime-audits"
+            "<runtime-audit-input-redacted>",
+            "--runtime-audit",
+            "runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f"
           ],
-          "commandText": "python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits",
-          "cwd": "/Users/ales27pm/lumen-clone",
+          "commandText": "python3 -m lumen_manifest_crawler improve-loop --root . --output ./generated/agent_manifest --loop-output ./generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --app-run-mode device-debug --runtime-audit-max-age-seconds 3600 --runtime-audit <runtime-audit-input-redacted> --runtime-audit <runtime-audit-input-redacted> --runtime-audit runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f",
+          "cwd": ".",
           "durationSeconds": 0.0,
           "name": "improve_loop_generation",
           "returncode": null,
-          "skipReason": "dry-run",
+          "skipReason": "generation skipped by --skip-generation",
           "status": "skipped",
           "stderrTail": "",
           "stdoutTail": ""
@@ -247,7 +252,7 @@
       ],
       "id": "phase2_manifest_dataset_generation",
       "manifestValidationPassed": true,
-      "reason": "dry-run",
+      "reason": "generation skipped by --skip-generation",
       "status": "skipped",
       "title": "Phase 2 - Manifest and Dataset Generation"
     },
@@ -261,38 +266,44 @@
             "framework",
             "diagnose",
             "--root",
-            "/Users/ales27pm/lumen-clone",
+            ".",
             "--output",
-            "/Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json",
+            "./generated/developer_framework/framework_report.json",
             "--path",
-            "/Users/ales27pm/lumen-clone/exports",
+            "<runtime-audit-input-redacted>",
             "--path",
-            "/Users/ales27pm/lumen-clone/runtime-audits"
+            "<runtime-audit-input-redacted>",
+            "--path",
+            "runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f"
           ],
-          "commandText": "python3 -m lumen_manifest_crawler framework diagnose --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json --path /Users/ales27pm/lumen-clone/exports --path /Users/ales27pm/lumen-clone/runtime-audits",
-          "cwd": "/Users/ales27pm/lumen-clone",
+          "commandText": "python3 -m lumen_manifest_crawler framework diagnose --root . --output ./generated/developer_framework/framework_report.json --path <runtime-audit-input-redacted> --path <runtime-audit-input-redacted> --path runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f",
+          "cwd": ".",
           "durationSeconds": 0.0,
           "name": "framework_diagnose",
-          "returncode": null,
-          "skipReason": "dry-run",
-          "status": "skipped",
+          "returncode": 0,
+          "status": "passed",
           "stderrTail": "",
-          "stdoutTail": ""
+          "stdoutTail": "called analyze_reports()"
         }
       ],
+      "currentRuntimeProofPresent": false,
+      "historicalRuntimeInputPresent": true,
       "id": "phase3_runtime_audit_ingestion",
       "inputPaths": [
-        "/Users/ales27pm/lumen-clone/exports",
-        "/Users/ales27pm/lumen-clone/runtime-audits"
+        "<runtime-audit-input-redacted>",
+        "<runtime-audit-input-redacted>",
+        "runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f"
       ],
       "outputArtifacts": [
-        "/Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json",
-        "/Users/ales27pm/lumen-clone/generated/developer_framework/runtime_report_index.json"
+        "./generated/developer_framework/framework_report.json",
+        "./generated/developer_framework/runtime_report_index.json"
       ],
       "plainFindingCount": 0,
       "runtimeEvidencePresent": false,
+      "runtimeEvidencePresentSemantics": "verified-current-proof-only",
       "runtimeFailureCount": 0,
-      "status": "skipped",
+      "runtimeProofStatus": "not-assessed-by-ingestion-phase",
+      "status": "passed",
       "title": "Phase 3 - Runtime-Audit/Report Ingestion"
     },
     {
@@ -304,46 +315,55 @@
             "lumen_manifest_crawler",
             "improve-loop",
             "--root",
-            "/Users/ales27pm/lumen-clone",
+            ".",
             "--output",
-            "/Users/ales27pm/lumen-clone/generated/agent_manifest",
+            "./generated/agent_manifest",
             "--loop-output",
-            "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop",
+            "./generated/agent_improvement_loop",
             "--generate-system-prompts",
             "--generate-agent-fine-tuning",
+            "--app-run-mode",
+            "device-debug",
+            "--runtime-audit-max-age-seconds",
+            "3600",
             "--runtime-audit",
-            "/Users/ales27pm/lumen-clone/exports",
+            "<runtime-audit-input-redacted>",
             "--runtime-audit",
-            "/Users/ales27pm/lumen-clone/runtime-audits"
+            "<runtime-audit-input-redacted>",
+            "--runtime-audit",
+            "runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f"
           ],
-          "commandText": "python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits",
-          "cwd": "/Users/ales27pm/lumen-clone",
+          "commandText": "python3 -m lumen_manifest_crawler improve-loop --root . --output ./generated/agent_manifest --loop-output ./generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --app-run-mode device-debug --runtime-audit-max-age-seconds 3600 --runtime-audit <runtime-audit-input-redacted> --runtime-audit <runtime-audit-input-redacted> --runtime-audit runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f",
+          "cwd": ".",
           "durationSeconds": 0.0,
           "name": "improve_loop",
-          "returncode": 0,
-          "status": "passed",
+          "returncode": null,
+          "skipReason": "skipped by --skip-improvement-loop",
+          "status": "skipped",
           "stderrTail": "",
-          "stdoutTail": "called run_agent_improvement_loop()"
+          "stdoutTail": ""
         }
       ],
-      "criticalGapCount": 0,
-      "errorGapCount": 38,
-      "gapCount": 51,
+      "currentRuntimeProofPresent": false,
+      "declaredRuntimeProofSatisfiedAtAssessment": false,
+      "gapCount": 0,
+      "historicalRuntimeInputPresent": true,
       "id": "phase4_improvement_loop_preparation",
       "improvementLoopOutputContract": {
         "failures": [],
         "missingFiles": [],
         "missingLoopStateKeys": [],
-        "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
+        "missingTestFlightKeys": [],
+        "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
         "passed": true,
         "requiredFiles": [
-          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/LOOP_REPORT.md",
-          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_state.json",
-          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_gaps.json",
-          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/GAP_TRIAGE.md",
-          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/gap_triage.json",
-          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
-          "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl"
+          "./generated/agent_improvement_loop/LOOP_REPORT.md",
+          "./generated/agent_improvement_loop/loop_state.json",
+          "./generated/agent_improvement_loop/loop_gaps.json",
+          "./generated/agent_improvement_loop/GAP_TRIAGE.md",
+          "./generated/agent_improvement_loop/gap_triage.json",
+          "./generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
+          "./generated/agent_improvement_loop/testflight_scenarios.jsonl"
         ],
         "requiredLoopStateKeys": [
           "gapCount",
@@ -354,25 +374,74 @@
           "testFlight",
           "validation"
         ],
+        "requiredTestFlightKeys": [
+          "currentRuntimeAuditProvided",
+          "proofBasis",
+          "proofSatisfiedAtAssessment",
+          "proofStatus"
+        ],
         "scenarioQueuePath": "testflight_scenarios.jsonl",
-        "schemaVersion": "lumen.developer_cycle.improvement_loop_output_contract/1.0.0"
+        "schemaVersion": "lumen.developer_cycle.improvement_loop_output_contract/1.1.0"
       },
       "improvementLoopOutputContractPassed": true,
-      "improvementLoopPassed": false,
+      "improvementLoopPassed": true,
       "outputArtifacts": [
-        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/LOOP_REPORT.md",
-        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_state.json",
-        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_gaps.json",
-        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/GAP_TRIAGE.md",
-        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/gap_triage.json",
-        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
-        "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl"
+        "./generated/agent_improvement_loop/LOOP_REPORT.md",
+        "./generated/agent_improvement_loop/loop_state.json",
+        "./generated/agent_improvement_loop/loop_gaps.json",
+        "./generated/agent_improvement_loop/GAP_TRIAGE.md",
+        "./generated/agent_improvement_loop/gap_triage.json",
+        "./generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
+        "./generated/agent_improvement_loop/testflight_scenarios.jsonl"
       ],
-      "rawRuntimeFailureCount": 51,
-      "runtimeEvidencePresent": true,
-      "runtimeFailureCount": 38,
-      "skippedLiveModelGenerationCount": 13,
-      "status": "failed",
+      "rawRuntimeFailureCount": 0,
+      "reason": "skipped by --skip-improvement-loop",
+      "runtimeEvidencePresent": false,
+      "runtimeEvidencePresentSemantics": "receipt-backed-device-debug-assessment",
+      "runtimeProofBasis": {
+        "buildSelectionStatus": "valid",
+        "currentProofTrusted": false,
+        "expectedBuildNumber": null,
+        "expectedSourceRevision": "bb165dacf35c5fad4a8f294758530333861686f0",
+        "maxAgeSeconds": 3600,
+        "maxAgeStatus": "valid",
+        "proofSatisfiedAtAssessment": false,
+        "referenceClassificationConfigured": false,
+        "referenceTime": null,
+        "referenceTimeStatus": "not-provided",
+        "referenceTimeTrust": "absent",
+        "validUntil": "2026-08-10T04:20:26+00:00",
+        "verificationReceiptProvided": false
+      },
+      "runtimeProofBindingFailures": [
+        "improvement_loop_not_executed_this_invocation",
+        "verification_not_requested_this_invocation",
+        "assessment_not_declared",
+        "receipt_status_identity_mismatch",
+        "receipt_assessment_identity_missing",
+        "receipt_scope_mismatch",
+        "receipt_scenario_identity_mismatch",
+        "receipt_verifier_identity_invalid",
+        "expected_build_number_missing",
+        "receipt_build_binding_mismatch",
+        "receipt_source_expectation_mismatch",
+        "generated_manifest_source_binding_mismatch",
+        "receipt_build_attestation_binding_mismatch",
+        "invocation_verification_binding_mismatch",
+        "checkout_not_clean_at_invocation",
+        "invocation_source_digest_mismatch",
+        "live_head_source_binding_mismatch",
+        "app_behavior_manifest_source_binding_mismatch",
+        "receipt_expired_or_time_invalid",
+        "receipt_package_hash_invalid",
+        "receipt_package_size_invalid",
+        "runtime_inputs_not_bound_to_invocation",
+        "receipt_package_not_uniquely_present"
+      ],
+      "runtimeProofSatisfiedAtAssessment": false,
+      "runtimeProofStatus": "historical-source-revision-mismatch",
+      "skippedLiveModelGenerationCount": 0,
+      "status": "skipped",
       "title": "Phase 4 - Improvement-Loop Preparation"
     },
     {
@@ -383,7 +452,7 @@
             "scripts/validate_lumen_ios.sh"
           ],
           "commandText": "bash scripts/validate_lumen_ios.sh",
-          "cwd": "/Users/ales27pm/lumen-clone",
+          "cwd": ".",
           "durationSeconds": 0.0,
           "name": "xcode_validation",
           "returncode": null,
@@ -409,14 +478,57 @@
       "trainingStatus": "not_requested"
     }
   ],
-  "root": "/Users/ales27pm/lumen-clone",
+  "root": ".",
   "runtimeEvidencePresent": false,
+  "runtimeEvidencePresentSemantics": "receipt-backed-device-debug-assessment",
   "runtimeFailures": {
-    "rawRuntimeFailureCount": 51,
+    "rawRuntimeFailureCount": 0,
     "runtimeFailureCount": 0,
-    "skippedLiveModelGenerationCount": 13
+    "skippedLiveModelGenerationCount": 0
   },
-  "schemaVersion": "lumen.developer_cycle/1.0.0",
+  "runtimeProofBasis": {
+    "buildSelectionStatus": "valid",
+    "currentProofTrusted": false,
+    "expectedBuildNumber": null,
+    "expectedSourceRevision": "bb165dacf35c5fad4a8f294758530333861686f0",
+    "maxAgeSeconds": 3600,
+    "maxAgeStatus": "valid",
+    "proofSatisfiedAtAssessment": false,
+    "referenceClassificationConfigured": false,
+    "referenceTime": null,
+    "referenceTimeStatus": "not-provided",
+    "referenceTimeTrust": "absent",
+    "validUntil": "2026-08-10T04:20:26+00:00",
+    "verificationReceiptProvided": false
+  },
+  "runtimeProofBindingFailures": [
+    "improvement_loop_not_executed_this_invocation",
+    "verification_not_requested_this_invocation",
+    "assessment_not_declared",
+    "receipt_status_identity_mismatch",
+    "receipt_assessment_identity_missing",
+    "receipt_scope_mismatch",
+    "receipt_scenario_identity_mismatch",
+    "receipt_verifier_identity_invalid",
+    "expected_build_number_missing",
+    "receipt_build_binding_mismatch",
+    "receipt_source_expectation_mismatch",
+    "generated_manifest_source_binding_mismatch",
+    "receipt_build_attestation_binding_mismatch",
+    "invocation_verification_binding_mismatch",
+    "checkout_not_clean_at_invocation",
+    "invocation_source_digest_mismatch",
+    "live_head_source_binding_mismatch",
+    "app_behavior_manifest_source_binding_mismatch",
+    "receipt_expired_or_time_invalid",
+    "receipt_package_hash_invalid",
+    "receipt_package_size_invalid",
+    "runtime_inputs_not_bound_to_invocation",
+    "receipt_package_not_uniquely_present"
+  ],
+  "runtimeProofSatisfiedAtAssessment": false,
+  "runtimeProofStatus": "historical-source-revision-mismatch",
+  "schemaVersion": "lumen.developer_cycle/1.2.0",
   "staticValidationPassed": true,
   "trainingStatus": "not_requested",
   "xcodeValidationStatus": "skipped"

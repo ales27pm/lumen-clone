@@ -1,51 +1,52 @@
 {
   "agents": {
     "cortex": {
-      "adapter_dir": "models/lora_qwen3_bootstrap/cortex",
+      "adapter_ref": "models/lora_qwen3_bootstrap/cortex",
       "agent": "cortex",
       "base_model_name": "Qwen/Qwen3-1.7B",
       "merge_adapters_by_default": false,
       "release_bake_enabled_by_default": false
     },
     "executor": {
-      "adapter_dir": "models/lora_qwen3_bootstrap/executor",
+      "adapter_ref": "models/lora_qwen3_bootstrap/executor",
       "agent": "executor",
       "base_model_name": "Qwen/Qwen3-1.7B",
       "merge_adapters_by_default": false,
       "release_bake_enabled_by_default": false
     },
     "fleet": {
-      "adapter_dir": "models/lora_qwen3_bootstrap/fleet",
+      "adapter_ref": "models/lora_qwen3_bootstrap/fleet",
       "agent": "fleet",
       "base_model_name": "Qwen/Qwen3-1.7B",
       "merge_adapters_by_default": false,
       "release_bake_enabled_by_default": false
     },
     "mimicry": {
-      "adapter_dir": "models/lora_qwen3_bootstrap/mimicry",
+      "adapter_ref": "models/lora_qwen3_bootstrap/mimicry",
       "agent": "mimicry",
       "base_model_name": "Qwen/Qwen3-1.7B",
       "merge_adapters_by_default": false,
       "release_bake_enabled_by_default": false
     },
     "mouth": {
-      "adapter_dir": "models/lora_qwen3_bootstrap/mouth",
+      "adapter_ref": "models/lora_qwen3_bootstrap/mouth",
       "agent": "mouth",
       "base_model_name": "Qwen/Qwen3-1.7B",
       "merge_adapters_by_default": false,
       "release_bake_enabled_by_default": false
     },
     "rem": {
-      "adapter_dir": "models/lora_qwen3_bootstrap/rem",
+      "adapter_ref": "models/lora_qwen3_bootstrap/rem",
       "agent": "rem",
       "base_model_name": "Qwen/Qwen3-1.7B",
       "merge_adapters_by_default": false,
       "release_bake_enabled_by_default": false
     }
   },
-  "manifest_output": "generated/fine_tuning/release_bake_gguf_manifest.json",
+  "manifest_output_ref": "generated/fine_tuning/release_bake_gguf_manifest.json",
   "mode": "adapter_first",
   "reason": "Adapter-first training keeps LoRA adapters separate by default. Pass --release-bake to explicitly merge/export GGUF artifacts.",
   "release_bake_requested": false,
+  "schema": "lumen.gguf.release_bake_manifest/1.1.0",
   "skipped": true
 }

@@ -1,11 +1,11 @@
 {
   "inputPaths": [
-    "/Users/ales27pm/lumen-clone/exports",
-    "/Users/ales27pm/lumen-clone/runtime-audits",
-    "/Users/ales27pm/lumen-clone/generated/agent_improvement_loop"
+    "<runtime-audit-input-redacted>",
+    "<runtime-audit-input-redacted>",
+    "runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f"
   ],
-  "plainFindingCount": 3,
-  "reportCount": 20,
-  "runtimeFailureCount": 51,
+  "plainFindingCount": 0,
+  "reportCount": 2,
+  "runtimeFailureCount": 0,
   "schemaVersion": "lumen.developer_cycle.runtime_report_index/1.0.0"
 }

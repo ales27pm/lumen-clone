@@ -1,7 +1,7 @@
 {
   "agent": "rem",
-  "availableSFTRecords": 61,
-  "candidateSFTRecords": 561,
+  "availableSFTRecords": 65,
+  "candidateSFTRecords": 563,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": null,
@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "bbac52ec77a48e9a7e0061313344a3ad458cbaa37b1bc096f07ef5a8f5ddf942"
+      "reportSHA256": "ae05c177c1e5279a50699b26b6c154d815f81d9f1e34f0a72dee0828ec7881fc"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "4b538a9003645e307aa4ff977686e328e27ec6dbbc565699aa5cf8f20b4cd025",
-      "optimizedTrainingCorpusSHA256": "d4c77e0bd39a49c7347b0f9fab88923dc93617c404dffca441727edfc52f1dc6",
+      "baselineTrainingCorpusSHA256": "6290f28f7b3cb3f9b7ef0c74d7bcd85b7f49cc88b90fc3b105c73a6522362a57",
+      "optimizedTrainingCorpusSHA256": "6ff113aed195d93d15f86bd8bf57faf218826d4b12773d32864315e75be030a9",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 505,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "a9df6684a0e03ce9ad25dba08b4dae17ddeb30594f8809b5ac11ea7fa23c9605",
+    "experimentManifestSHA256": "54aa82ce7e2440a3048639c8694dd018069ad07db84916c9314e4171f18e1bca",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "95174d975da515cf8625212592721cd0baa7bfa5",
+  "manifestCommit": "bb165dacf35c5fad4a8f294758530333861686f0",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 39,
@@ -239,15 +239,15 @@
     "maxSFTTokenProxyShare": 0.3,
     "recordCounts": {
       "train_dpo": 0,
-      "train_sft": 9,
+      "train_sft": 10,
       "val_dpo": 0,
-      "val_sft": 1
+      "val_sft": 2
     },
     "rejectedByTokenCap": {
       "train_dpo": 0,
-      "train_sft": 418,
+      "train_sft": 417,
       "val_dpo": 0,
-      "val_sft": 77
+      "val_sft": 76
     },
     "rejectedByValidationSampling": {
       "train_dpo": 0,
@@ -288,9 +288,9 @@
         "minimum": 0.78375
       },
       "selected": {
-        "count": 10,
+        "count": 12,
         "maximum": 0.942625,
-        "mean": 0.844472,
+        "mean": 0.839561,
         "minimum": 0.78375
       }
     },
@@ -373,7 +373,7 @@
     },
     "sourceCounts": {
       "Team-ACE/ToolACE": 4,
-      "grammarly/coedit": 3,
+      "grammarly/coedit": 5,
       "json-schema-org/JSON-Schema-Test-Suite": 3
     },
     "sourceSplitCounts": {
@@ -385,9 +385,9 @@
       },
       "grammarly/coedit": {
         "train_dpo": 0,
-        "train_sft": 3,
+        "train_sft": 4,
         "val_dpo": 0,
-        "val_sft": 0
+        "val_sft": 1
       },
       "json-schema-org/JSON-Schema-Test-Suite": {
         "train_dpo": 0,
@@ -402,22 +402,22 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.289197,
-        "total": 0.233085
+        "target": 0.291272,
+        "total": 0.243832
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.212963,
-        "total": 0.121415
+        "target": 0.271868,
+        "total": 0.21196
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 7988,
-    "assistantTargetTokenProxyCount": 2021,
+    "assistantTargetCharCount": 9610,
+    "assistantTargetTokenProxyCount": 2428,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -455,9 +455,9 @@
   "recordCounts": {
     "eval": 6,
     "train_dpo": 32,
-    "train_sft": 51,
+    "train_sft": 53,
     "val_dpo": 7,
-    "val_sft": 10
+    "val_sft": 12
   },
   "sourceDirty": false,
   "sourceFamilies": [
@@ -465,19 +465,21 @@
     "public_adapter_corpus_coedit_train",
     "public_adapter_corpus_json_schema_test_suite_draft_2020_12",
     "public_adapter_corpus_toolace_train",
-    "rem_reflection"
+    "rem_reflection",
+    "runtime_audit_repairs"
   ],
   "sourceFamilyCounts": {
     "adapter_ultra_specific": 46,
-    "public_adapter_corpus_coedit_train": 3,
+    "public_adapter_corpus_coedit_train": 5,
     "public_adapter_corpus_json_schema_test_suite_draft_2020_12": 3,
     "public_adapter_corpus_toolace_train": 4,
-    "rem_reflection": 5
+    "rem_reflection": 5,
+    "runtime_audit_repairs": 2
   },
   "sourceIntegrity": {
-    "baseCommit": "95174d975da515cf8625212592721cd0baa7bfa5",
+    "baseCommit": "bb165dacf35c5fad4a8f294758530333861686f0",
     "dirtyState": false,
-    "workingTreeDigest": "57eff06d53cee04197ae79bf342297d7d84fde9ad28684620c1959b50b03c711"
+    "workingTreeDigest": "76bf928b63b7f0d7cdf14c249c774e8ec38120b4ae467bd747a094f2e17253f6"
   },
   "systemPrompt": "You are REM, Lumen's reflection and repair agent. Diagnose failures, repair datasets, enforce memory policy, and produce regression samples.",
   "taskTypeCounts": {
@@ -488,9 +490,10 @@
     "critical_contract_ultra_specific_no_thinking_root_cause": 6,
     "critical_contract_ultra_specific_training_evidence_root_cause": 6,
     "public_schema_failure_diagnosis": 3,
-    "public_text_repair": 3,
+    "public_text_repair": 5,
     "public_tool_boundary_repair": 4,
     "reflection_and_memory_policy": 5,
+    "runtime_manifest_drift_repair": 2,
     "ultra_specific_argument_extraction_repair": 1,
     "ultra_specific_manifest_tool_repair": 1,
     "ultra_specific_memory_ttl_policy": 4,
@@ -510,6 +513,7 @@
     "public_text_repair",
     "public_tool_boundary_repair",
     "reflection_and_memory_policy",
+    "runtime_manifest_drift_repair",
     "ultra_specific_argument_extraction_repair",
     "ultra_specific_manifest_tool_repair",
     "ultra_specific_memory_ttl_policy",
@@ -518,5 +522,5 @@
     "ultra_specific_runtime_repair",
     "ultra_specific_training_evidence_repair"
   ],
-  "worktreeFingerprint": "57eff06d53cee04197ae79bf342297d7d84fde9ad28684620c1959b50b03c711"
+  "worktreeFingerprint": "76bf928b63b7f0d7cdf14c249c774e8ec38120b4ae467bd747a094f2e17253f6"
 }

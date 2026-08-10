@@ -6,10 +6,10 @@
       "markdown": 100,
       "mixed": 1,
       "plist": 3,
-      "python": 177,
+      "python": 183,
       "resolved": 1,
       "shell": 17,
-      "swift": 522,
+      "swift": 523,
       "text": 5,
       "toml": 1,
       "xcode_project": 1,
@@ -67,11 +67,11 @@
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 173,
+      "ios/LumenTests": 174,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 10,
-      "scripts": 24,
+      "scripts": 25,
       "tools": 16,
       "tools/fine_tuning/unsloth": 54,
       "tools/hf_artifacts": 2,
@@ -79,14 +79,14 @@
       "tools/hf_zerogpu/space_template": 3,
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 4,
-      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 47,
+      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 48,
       "tools/lumen_manifest_crawler/scripts": 1,
-      "tools/lumen_manifest_crawler/tests": 39,
-      "tools/pipeline": 7,
-      "tools/pipeline/tests": 12,
+      "tools/lumen_manifest_crawler/tests": 40,
+      "tools/pipeline": 8,
+      "tools/pipeline/tests": 14,
       "tools/security": 1
     },
-    "recordCount": 857,
+    "recordCount": 864,
     "selectedFiles": [
       {
         "imports": [],
@@ -335,13 +335,14 @@
       {
         "imports": [
           "CryptoKit",
-          "Foundation"
+          "Foundation",
+          "UIKit"
         ],
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, TestFlightAgentGroundingExportInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageSourceAction, InAppDatasetPackageExporter.",
-        "sha256": "fcf828635dec04efc0c793545a3a3df3ce6e174fdfe7f6c4d38e4bd9cd3a2c1c",
+        "sha256": "c8966ca348a441255c62c001f54406aca3cae376bcde9e9cc8294726c78b88b2",
         "symbols": [
           "LumenInAppDatasetPackage",
           "InAppDatasetTraceExport",
@@ -357,8 +358,8 @@
           "current",
           "normalizedString",
           "sourceRevision",
-          "exportCorrelationContext",
-          "opaqueCorrelationToken"
+          "workingTreeDigest",
+          "normalizedBool"
         ]
       },
       {
@@ -1340,7 +1341,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer, StripResult, LeadingBlock.",
-        "sha256": "c62d784e6684c8b6c9eeeef1abcb7f34eaaf7f406ddbefcbcb7424b516a12c85",
+        "sha256": "a5ad282219f14e5122db53ddef11a2405417d02f50b3644429d1e0f16d14f6ec",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -2212,13 +2213,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "95174d975da515cf8625212592721cd0baa7bfa5",
+  "manifestCommit": "bb165dacf35c5fad4a8f294758530333861686f0",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "0e64c2f1a09d851d4a275655165dd6b724cb0736a0b9a91af3dc6039ecdf8376",
+    "promptSHA256": "e10c0c724de8a997b17f355ad4a8f8c1379abc1e1eabc3798acdb1fe2c3baa94",
     "promptUTF8ByteCount": 26041,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2230,8 +2231,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "95174d975da515cf8625212592721cd0baa7bfa5",
+    "baseCommit": "bb165dacf35c5fad4a8f294758530333861686f0",
     "dirtyState": false,
-    "workingTreeDigest": "57eff06d53cee04197ae79bf342297d7d84fde9ad28684620c1959b50b03c711"
+    "workingTreeDigest": "76bf928b63b7f0d7cdf14c249c774e8ec38120b4ae467bd747a094f2e17253f6"
   }
 }

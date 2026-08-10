@@ -4,8 +4,8 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 
 ## Build identity
 
-- Manifest fingerprint: `e7ae92044590a1515ed7a8641620e5be93525b2b6853e265ac4fc2957d3c00d1`
-- Manifest base commit: `633cd747db3339fc818372f85d790f14144aa845`
+- Manifest fingerprint: `e99fb5fc808438845fe3fd284b2516d3e6a1502ceb0324e34b72b1ab8e4847cf`
+- Manifest base commit: `bb165dacf35c5fad4a8f294758530333861686f0`
 - Build label: `None`
 - Expected export: `lumen-testflight-agent-grounding-*.json from Agent Grounding > Export TestFlight + Agent Grounding Package`
 
@@ -21,7 +21,7 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 8. Feed it into the next loop:
 
 ```bash
-python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'
+python -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'
 ```
 
 ## Scenario queue

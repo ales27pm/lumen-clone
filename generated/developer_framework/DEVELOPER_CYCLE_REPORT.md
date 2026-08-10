@@ -1,15 +1,20 @@
 # Lumen Developer Cycle Report
 
-- Root: `/Users/ales27pm/lumen-clone`
+- Root: `.`
 - Environment: `git_checkout` / `macos_with_xcode`
 - Static validation passed: `True`
 - Manifest validation passed: `True`
-- Runtime evidence present: `False`
-- Improvement loop passed: `False`
+- Historical runtime input present: `True`
+- Enduring current runtime proof present: `False`
+- Runtime proof satisfied at assessment: `False`
+- Runtime proof status: `historical-source-revision-mismatch`
+- Runtime evidence present (device-debug assessment alias): `False`
+- Improvement loop passed: `True`
 - Improvement-loop output contract passed: `True`
 - Xcode validation: `skipped`
 - Training status: `not_requested`
-- Portable pass: `False`
+- Portable pass: `True`
+- Device-debug diagnostic pass: `False`
 - Release-candidate pass: `False`
 
 ## Phase Summary
@@ -21,53 +26,45 @@
 ### Phase 1 - Static Source Validation
 
 - Status: `passed`
-- `python3 tools/check_agent_kernel_boundary.py` -> `skipped`
-  - skipped: dry-run
-- `python3 tools/check_agent_kernel_boundary.py --strict` -> `skipped`
-  - skipped: dry-run
-- `python3 tools/check_adapter_runtime_invariants.py` -> `skipped`
-  - skipped: dry-run
-- `python3 tools/check_ios_lora_hardening_invariants.py` -> `skipped`
-  - skipped: dry-run
-- `python3 scripts/validate-msal-ios-release-config.py` -> `skipped`
-  - skipped: dry-run
-- `python3 scripts/validate_ios_signing_capabilities.py` -> `skipped`
-  - skipped: dry-run
-- `python3 tools/security/check_no_shell_subprocess.py` -> `skipped`
-  - skipped: dry-run
-- `bash scripts/check-ios-build-readiness.sh` -> `skipped`
-  - skipped: dry-run
-- `git diff --check` -> `skipped`
-  - skipped: dry-run
+- `python3 tools/check_agent_kernel_boundary.py` -> `passed`
+- `python3 tools/check_agent_kernel_boundary.py --strict` -> `passed`
+- `python3 tools/check_adapter_runtime_invariants.py` -> `passed`
+- `python3 tools/check_ios_lora_hardening_invariants.py` -> `passed`
+- `python3 scripts/validate-msal-ios-release-config.py` -> `passed`
+- `python3 scripts/validate_ios_signing_capabilities.py` -> `passed`
+- `python3 tools/security/check_no_shell_subprocess.py` -> `passed`
+- `bash scripts/check-ios-build-readiness.sh` -> `passed`
+- `git diff --check` -> `passed`
 
 ### Phase 2 - Manifest and Dataset Generation
 
 - Status: `skipped`
-- Reason: dry-run
-- `python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits` -> `skipped`
-  - skipped: dry-run
+- Reason: generation skipped by --skip-generation
+- `python3 -m lumen_manifest_crawler improve-loop --root . --output ./generated/agent_manifest --loop-output ./generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --app-run-mode device-debug --runtime-audit-max-age-seconds 3600 --runtime-audit <runtime-audit-input-redacted> --runtime-audit <runtime-audit-input-redacted> --runtime-audit runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f` -> `skipped`
+  - skipped: generation skipped by --skip-generation
 
 ### Phase 3 - Runtime-Audit/Report Ingestion
 
-- Status: `skipped`
-- `python3 -m lumen_manifest_crawler framework diagnose --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json --path /Users/ales27pm/lumen-clone/exports --path /Users/ales27pm/lumen-clone/runtime-audits` -> `skipped`
-  - skipped: dry-run
+- Status: `passed`
+- `python3 -m lumen_manifest_crawler framework diagnose --root . --output ./generated/developer_framework/framework_report.json --path <runtime-audit-input-redacted> --path <runtime-audit-input-redacted> --path runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f` -> `passed`
 - Outputs:
-  - `/Users/ales27pm/lumen-clone/generated/developer_framework/framework_report.json`
-  - `/Users/ales27pm/lumen-clone/generated/developer_framework/runtime_report_index.json`
+  - `./generated/developer_framework/framework_report.json`
+  - `./generated/developer_framework/runtime_report_index.json`
 
 ### Phase 4 - Improvement-Loop Preparation
 
-- Status: `failed`
-- `python3 -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --runtime-audit /Users/ales27pm/lumen-clone/exports --runtime-audit /Users/ales27pm/lumen-clone/runtime-audits` -> `passed`
+- Status: `skipped`
+- Reason: skipped by --skip-improvement-loop
+- `python3 -m lumen_manifest_crawler improve-loop --root . --output ./generated/agent_manifest --loop-output ./generated/agent_improvement_loop --generate-system-prompts --generate-agent-fine-tuning --app-run-mode device-debug --runtime-audit-max-age-seconds 3600 --runtime-audit <runtime-audit-input-redacted> --runtime-audit <runtime-audit-input-redacted> --runtime-audit runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f` -> `skipped`
+  - skipped: skipped by --skip-improvement-loop
 - Outputs:
-  - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/LOOP_REPORT.md`
-  - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_state.json`
-  - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/loop_gaps.json`
-  - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/GAP_TRIAGE.md`
-  - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/gap_triage.json`
-  - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md`
-  - `/Users/ales27pm/lumen-clone/generated/agent_improvement_loop/testflight_scenarios.jsonl`
+  - `./generated/agent_improvement_loop/LOOP_REPORT.md`
+  - `./generated/agent_improvement_loop/loop_state.json`
+  - `./generated/agent_improvement_loop/loop_gaps.json`
+  - `./generated/agent_improvement_loop/GAP_TRIAGE.md`
+  - `./generated/agent_improvement_loop/gap_triage.json`
+  - `./generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md`
+  - `./generated/agent_improvement_loop/testflight_scenarios.jsonl`
 - Improvement-loop output contract: `True`
 
 ### Phase 5 - Optional macOS/Xcode Validation
@@ -85,11 +82,11 @@
 ## Runtime Evidence
 
 - Runtime failures: `0`
-- Raw runtime failures: `51`
-- Skipped live model generations: `13`
+- Raw runtime failures: `0`
+- Skipped live model generations: `0`
 
 ## Next Command
 
 ```bash
-python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop
+python3 -m lumen_manifest_crawler developer-cycle --root . --runtime-audit <exported-testflight-json>
 ```

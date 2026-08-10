@@ -5,50 +5,50 @@
   "dataset": {
     "agentFineTuning": {
       "cortex": {
-        "eval": 558,
-        "trainDPO": 14,
-        "trainSFT": 849,
-        "valDPO": 2,
-        "valSFT": 123
+        "eval": 509,
+        "trainDPO": 764,
+        "trainSFT": 1184,
+        "valDPO": 58,
+        "valSFT": 83
       },
       "executor": {
-        "eval": 8,
-        "trainDPO": 5,
-        "trainSFT": 478,
-        "valDPO": 1,
-        "valSFT": 83
+        "eval": 63,
+        "trainDPO": 33,
+        "trainSFT": 349,
+        "valDPO": 3,
+        "valSFT": 35
       },
       "fleet": {
         "eval": 15,
-        "trainDPO": 15,
-        "trainSFT": 640,
-        "valDPO": 3,
-        "valSFT": 114
+        "trainDPO": 385,
+        "trainSFT": 615,
+        "valDPO": 24,
+        "valSFT": 128
       },
       "mimicry": {
         "eval": 5,
-        "trainDPO": 1,
-        "trainSFT": 9,
-        "valDPO": 1,
-        "valSFT": 3
+        "trainDPO": 55,
+        "trainSFT": 69,
+        "valDPO": 6,
+        "valSFT": 9
       },
       "mouth": {
         "eval": 7,
-        "trainDPO": 17,
-        "trainSFT": 131,
-        "valDPO": 2,
-        "valSFT": 24
+        "trainDPO": 25,
+        "trainSFT": 136,
+        "valDPO": 3,
+        "valSFT": 23
       },
       "rem": {
         "eval": 6,
-        "trainDPO": 2,
-        "trainSFT": 17,
-        "valDPO": 1,
-        "valSFT": 4
+        "trainDPO": 32,
+        "trainSFT": 53,
+        "valDPO": 7,
+        "valSFT": 12
       }
     },
     "embedding": {
-      "corpusCount": 5112,
+      "corpusCount": 7553,
       "datasetCard": {
         "families": [
           "agent_role_question_to_fleet_slot",
@@ -65,6 +65,7 @@
           "peer_boundary_query",
           "permission_boundary_query",
           "routing_rule_query",
+          "runtime_audit_repairs_retrieval",
           "source_file_name_query",
           "tool_contract_query",
           "tool_id_to_tool_contract",
@@ -84,10 +85,10 @@
         "schemaVersion": "1.0.0",
         "task": "retrieval_similarity_ranking"
       },
-      "evalCount": 499,
+      "evalCount": 1114,
       "fallbackModel": "current-baseline-embedding-model",
       "generated": true,
-      "hardNegativeCount": 4780,
+      "hardNegativeCount": 6604,
       "metrics": {
         "hardNegativeAccuracy": 0.0,
         "mrr": 0.0,
@@ -99,33 +100,33 @@
         "toolRetrievalAccuracy": 0.0
       },
       "model": "Qwen/Qwen3-Embedding-0.6B",
-      "pairCount": 4780,
+      "pairCount": 6604,
       "teacherModel": "Qwen/Qwen3-Embedding-4B",
-      "trainPairCount": 4296,
-      "trainTripletCount": 4296,
-      "tripletCount": 4780,
+      "trainPairCount": 5930,
+      "trainTripletCount": 5930,
+      "tripletCount": 6604,
       "usedFallback": false,
-      "valPairCount": 484,
-      "valTripletCount": 484
+      "valPairCount": 674,
+      "valTripletCount": 674
     },
     "families": {
-      "approval_boundary_samples": 113,
-      "codebase_home_chunk_sft": 3811,
-      "codebase_home_chunks": 3811,
-      "codebase_home_corpus": 774,
-      "codebase_home_sft": 774,
-      "cortex_routing": 82,
+      "approval_boundary_samples": 121,
+      "codebase_home_chunk_sft": 6074,
+      "codebase_home_chunks": 6160,
+      "codebase_home_corpus": 864,
+      "codebase_home_sft": 860,
+      "cortex_routing": 162,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 5112,
+      "embedding_corpus": 7553,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 499,
-      "embedding_hard_negatives": 4780,
-      "embedding_train_pairs": 4296,
-      "embedding_train_triplets": 4296,
-      "embedding_val_pairs": 484,
-      "embedding_val_triplets": 484,
-      "eval_scenarios": 550,
-      "executor_tool_calls": 53,
+      "embedding_eval_retrieval": 1114,
+      "embedding_hard_negatives": 6604,
+      "embedding_train_pairs": 5930,
+      "embedding_train_triplets": 5930,
+      "embedding_val_pairs": 674,
+      "embedding_val_triplets": 674,
+      "eval_scenarios": 552,
+      "executor_tool_calls": 54,
       "manifest_grounding_cards": 4,
       "mimicry_style": 3,
       "mouth_responses": 53,
@@ -138,20 +139,20 @@
       "public_adapter_corpus_rem": 505,
       "rem_reflection": 5,
       "reranker_dataset_card": 1,
-      "reranker_eval_reranking": 499,
-      "reranker_hard_negative_pairs": 4780,
-      "reranker_train_pairs": 4296,
-      "reranker_val_pairs": 484,
-      "runtime_audit_repairs": 0,
+      "reranker_eval_reranking": 1114,
+      "reranker_hard_negative_pairs": 6604,
+      "reranker_train_pairs": 5930,
+      "reranker_val_pairs": 674,
+      "runtime_audit_repairs": 2,
       "self_model_cards": 8,
       "self_model_eval": 24,
       "self_model_sft": 4,
       "tool_schema_cards": 91,
-      "train_sft": 307,
-      "validation_sft": 55
+      "train_sft": 383,
+      "validation_sft": 68
     },
     "familyCount": 40,
-    "recordCount": 43920,
+    "recordCount": 61681,
     "reranker": {
       "datasetCard": {
         "families": [
@@ -159,7 +160,6 @@
           "code_domain_query_to_source_map",
           "codebase_home_chunks_retrieval",
           "codebase_home_corpus_retrieval",
-          "eval_scenarios_retrieval",
           "manifest_grounding_cards_retrieval",
           "memory_freshness_query",
           "memory_rag_query_to_scope",
@@ -169,6 +169,7 @@
           "peer_boundary_query",
           "permission_boundary_query",
           "routing_rule_query",
+          "runtime_audit_repairs_retrieval",
           "source_file_name_query",
           "tool_contract_query",
           "tool_id_to_tool_contract",
@@ -186,10 +187,10 @@
         "task": "candidate_reranking"
       },
       "enabledByDefault": false,
-      "evalCount": 499,
+      "evalCount": 1114,
       "fallbackMode": "embedding-only",
       "generated": true,
-      "hardNegativePairCount": 4780,
+      "hardNegativePairCount": 6604,
       "metrics": {
         "hardNegativePairAccuracy": 0.0,
         "p95RerankLatencyRegression": 0.0,
@@ -198,90 +199,111 @@
         "top5ReorderWinRate": 0.0
       },
       "model": "Qwen/Qwen3-Reranker-0.6B",
-      "pairCount": 4780,
+      "pairCount": 6604,
       "teacherModel": "Qwen/Qwen3-Reranker-4B",
-      "trainPairCount": 4296,
-      "valPairCount": 484
+      "trainPairCount": 5930,
+      "valPairCount": 674
     }
   },
   "errorGapCount": 0,
-  "gapCount": 1,
+  "gapCount": 0,
   "manifest": {
-    "baseCommit": "633cd747db3339fc818372f85d790f14144aa845",
-    "dirtyState": true,
-    "fingerprint": "e7ae92044590a1515ed7a8641620e5be93525b2b6853e265ac4fc2957d3c00d1",
+    "baseCommit": "bb165dacf35c5fad4a8f294758530333861686f0",
+    "dirtyState": false,
+    "fingerprint": "e99fb5fc808438845fe3fd284b2516d3e6a1502ceb0324e34b72b1ab8e4847cf",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
     "toolCount": 53,
-    "workingTreeDigest": "b9ade3e8e9529aa1a9fd5f056bf2f60ac0e872c92d9866813212430d592a0434"
+    "workingTreeDigest": "76bf928b63b7f0d7cdf14c249c774e8ec38120b4ae467bd747a094f2e17253f6"
   },
   "nextActionPromptCount": 1,
-  "output": "/Users/ales27pm/lumen-clone/generated/agent_manifest",
+  "output": "generated/agent_manifest",
   "passed": true,
-  "root": "/Users/ales27pm/lumen-clone",
+  "root": ".",
   "runtime": {
-    "allFailureTypes": {
-      "e2e_architecture_finalizer_failure": 5,
-      "e2e_runtime_environment_deferred": 2
-    },
-    "failureCount": 7,
-    "failureTypes": {
-      "e2e_architecture_finalizer_failure": 5,
-      "e2e_runtime_environment_deferred": 2
-    },
-    "rawFailureCount": 7,
-    "reportCount": 3,
+    "allFailureTypes": {},
+    "buildRejectedReportCount": 0,
+    "currentProofReportCount": 0,
+    "failureCount": 0,
+    "failureTypes": {},
+    "freshAtExplicitReferenceReportCount": 0,
+    "freshnessUnverifiedReportCount": 2,
+    "historicalReportCount": 2,
+    "rawFailureCount": 0,
+    "reportCount": 2,
     "skippedLiveModelGenerationCount": 0,
-    "sourceLayers": {
-      "e2eTestReport.evidenceLayer": 6,
-      "e2eTextReport": 1
-    },
+    "sourceLayers": {},
+    "sourceRevisionMismatchReportCount": 2,
     "staleReportCount": 0,
-    "totalReportCount": 3
+    "totalReportCount": 2,
+    "verifiedAtAssessmentReportCount": 0
   },
   "runtimeAuditInputs": [
-    "/tmp/codex-remote-attachments/019f60ac-d8e4-71e0-97c2-493c8edd5a82/0E40CA3B-26DD-4934-971A-DE731B7439AB"
+    "runtime-audit-sha256-d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f"
   ],
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "1.2.0",
   "startedAt": "1970-01-01T00:00:00+00:00",
   "testFlight": {
     "buildLabel": null,
-    "currentRuntimeAuditProvided": true,
-    "currentRuntimeAuditReportCount": 3,
+    "buildRejectedRuntimeAuditReportCount": 0,
+    "buildSelectedRuntimeAuditReportCount": 2,
+    "currentRuntimeAuditProvided": false,
+    "currentRuntimeAuditProvidedSemantics": "non-enduring-always-false",
+    "currentRuntimeAuditReportCount": 0,
+    "currentRuntimeAuditReportCountSemantics": "non-enduring-always-zero",
     "expectedExport": "lumen-testflight-agent-grounding-*.json from Agent Grounding > Export TestFlight + Agent Grounding Package",
-    "manifestFingerprint": "e7ae92044590a1515ed7a8641620e5be93525b2b6853e265ac4fc2957d3c00d1",
-    "mode": "testflight",
-    "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root /Users/ales27pm/lumen-clone --output /Users/ales27pm/lumen-clone/generated/agent_manifest --loop-output /Users/ales27pm/lumen-clone/generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
+    "freshAtExplicitReferenceRuntimeAuditReportCount": 0,
+    "freshnessUnverifiedRuntimeAuditReportCount": 2,
+    "historicalRuntimeAuditReportCount": 2,
+    "ingestedRuntimeAuditReportCount": 2,
+    "manifestFingerprint": "e99fb5fc808438845fe3fd284b2516d3e6a1502ceb0324e34b72b1ab8e4847cf",
+    "mode": "device-debug",
+    "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
+    "packageSha256": null,
+    "proofBasis": {
+      "buildSelectionStatus": "valid",
+      "currentProofTrusted": false,
+      "expectedBuildNumber": null,
+      "expectedSourceRevision": "bb165dacf35c5fad4a8f294758530333861686f0",
+      "maxAgeSeconds": 3600,
+      "maxAgeStatus": "valid",
+      "proofSatisfiedAtAssessment": false,
+      "referenceClassificationConfigured": false,
+      "referenceTime": null,
+      "referenceTimeStatus": "not-provided",
+      "referenceTimeTrust": "absent",
+      "validUntil": "2026-08-10T04:20:26+00:00",
+      "verificationReceiptProvided": false
+    },
+    "proofSatisfiedAtAssessment": false,
+    "proofStatus": "historical-source-revision-mismatch",
     "requireRuntimeAuditForPass": false,
-    "requiresTestFlightAppRun": true,
+    "requiresTestFlightAppRun": false,
     "runbookPath": "TESTFLIGHT_RUNBOOK.md",
     "runtimeAuditProvided": true,
-    "runtimeAuditReportCount": 3,
+    "runtimeAuditReportCount": 2,
     "scenarioCount": 120,
     "scenarioQueuePath": "testflight_scenarios.jsonl",
+    "scope": null,
+    "sourceRevisionMismatchRuntimeAuditReportCount": 2,
     "staleRuntimeAuditReportCount": 0,
-    "status": "runtime-audit-ingested"
+    "status": "historical-runtime-audit-ingested",
+    "validUntil": "2026-08-10T04:20:26+00:00",
+    "verifiedAt": null,
+    "verifiedAtAssessmentRuntimeAuditReportCount": 0
   },
   "triage": {
-    "categoryCounts": {
-      "dataset_coverage": 1
-    },
+    "categoryCounts": {},
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
-    "freshRuntimeFailureCount": 7,
-    "groupCounts": {
-      "Empty dataset family: runtime_audit_repairs": 1
-    },
-    "rawRuntimeFailureCount": 7,
-    "rootCauseCounts": {
-      "stale_or_unclassified_runtime_evidence": 1
-    },
-    "runtimeAuditReports": 3,
-    "severityCounts": {
-      "warning": 1
-    },
+    "freshRuntimeFailureCount": 0,
+    "groupCounts": {},
+    "rawRuntimeFailureCount": 0,
+    "rootCauseCounts": {},
+    "runtimeAuditReports": 2,
+    "severityCounts": {},
     "skippedLiveModelGenerationCount": 0,
-    "totalGaps": 1
+    "totalGaps": 0
   },
   "validation": {
     "failureCount": 0,

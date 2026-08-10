@@ -1,14 +1,3 @@
 {
-  "gaps": [
-    {
-      "category": "dataset_coverage",
-      "evidence": {
-        "family": "runtime_audit_repairs"
-      },
-      "id": "4f0100442bae63332fd99a1f",
-      "recommendedAction": "Add current-build runtime inputs that produce runtime_audit_repairs records.",
-      "severity": "warning",
-      "title": "Empty dataset family: runtime_audit_repairs"
-    }
-  ]
+  "gaps": []
 }
