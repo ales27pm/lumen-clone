@@ -34,7 +34,7 @@ model-family setup. The applicable license is shown before the common Apache
 License 2.0 text below.
 
 Qwen3 1.7B shared GGUF
-Downloaded artifact: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-gguf/blob/8abae6d695408dbc75a134212dd616cd14549ae1/lumen-qwen3-fast-shared-q4_k_m.gguf
+Downloaded artifact: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-gguf/blob/903587d86a2e8b3f05bb0fab9d42338c0add0167/lumen-qwen3-fast-shared-q4_k_m.gguf
 SHA-256: a7f6720f68f4a4567ebf7e3257041dd0b72077b518efe56890aec3516b59b9de
 Immediate source: https://huggingface.co/rippertnt/Qwen3-1.7B-Q4_K_M-GGUF/blob/b93c0c328252f68cda622847ba0218689a8b6ba4/qwen3-1.7b-q4_k_m.gguf
 License: Apache License 2.0
@@ -46,9 +46,9 @@ recorded. Alibaba Cloud, the Qwen authors, rippertnt, llama.cpp, and Hugging
 Face do not endorse Lumen.
 
 Lumen Qwen3 role adapters (Cortex, Executor, Mouth, Mimicry, REM, and Fleet)
-Downloaded artifacts: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/tree/f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2/runs/20260706T011546Z/lora_gguf
+Downloaded artifacts: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/tree/dda08641ab02d0a23f0cceff342846bb94d5fa02/runs/20260706T011546Z/lora_gguf
 Training run: 20260706T011546Z
-Immutable training manifests: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/tree/f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2/runs/20260706T011546Z/adapters
+Immutable training manifests: https://huggingface.co/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/tree/dda08641ab02d0a23f0cceff342846bb94d5fa02/runs/20260706T011546Z/adapters
 The manifests identify Qwen/Qwen3-1.7B as the base model but do not record an
 immutable base-model revision. Each role consumed the first 64 training and
 16 validation records from source JSONL files with these SHA-256 values:
@@ -67,8 +67,10 @@ validation 17330b63f6584362ae22ad0e708c390bc6af7114c847246622cb782d4a8f026d.
 The exact consumed rows contain no public-corpus provenance; the later
 public-corpus pipeline was not used to train these pinned adapters.
 Upstream Qwen model license: Apache License 2.0
-The pinned adapter repository does not currently declare separate license
-terms for the Lumen-specific adapter deltas. Alibaba Cloud and the Qwen
+Lumen-specific adapter deltas: Copyright 2026 Alexis Boulet, licensed under
+the Apache License 2.0. The pinned repository publishes the full license and
+provenance metadata while preserving the unrecorded immutable base-revision
+and unpublished source-row limitations above. Alibaba Cloud and the Qwen
 authors do not endorse Lumen.
 
 Qwen3 Embedding 0.6B GGUF

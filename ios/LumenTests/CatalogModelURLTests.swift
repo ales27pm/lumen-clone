@@ -41,7 +41,7 @@ struct CatalogModelURLTests {
             role: .roleAdapter,
             description: "",
             tags: [],
-            sourceRevision: "f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2",
+            sourceRevision: "dda08641ab02d0a23f0cceff342846bb94d5fa02",
             expectedSHA256: "d3ba05ff22018a7468efa82154bd599899de7107b706b0b853758f869e6c969b",
             sourcePath: "runs/20260706T011546Z/lora_gguf/lumen-executor-lora.gguf"
         )
@@ -53,7 +53,7 @@ struct CatalogModelURLTests {
 
         #expect(model.fileName == "lumen-executor-lora.gguf")
         #expect(model.sourcePath == "runs/20260706T011546Z/lora_gguf/lumen-executor-lora.gguf")
-        #expect(url.path == "/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/resolve/f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2/runs/20260706T011546Z/lora_gguf/lumen-executor-lora.gguf")
+        #expect(url.path == "/ales27pm/lumen-qwen3-bootstrap-adapters-gguf/resolve/dda08641ab02d0a23f0cceff342846bb94d5fa02/runs/20260706T011546Z/lora_gguf/lumen-executor-lora.gguf")
         #expect(url.query?.contains("download=true") == true)
     }
 
@@ -266,7 +266,7 @@ struct CatalogModelURLTests {
             "fleet-bootstrap-qwen3-fast-shared-q4": (
                 "lumen-qwen3-fast-shared-q4_k_m.gguf",
                 nil,
-                "8abae6d695408dbc75a134212dd616cd14549ae1",
+                "903587d86a2e8b3f05bb0fab9d42338c0add0167",
                 "a7f6720f68f4a4567ebf7e3257041dd0b72077b518efe56890aec3516b59b9de",
                 1_282_439_264
             ),
@@ -280,42 +280,42 @@ struct CatalogModelURLTests {
             "fleet-bootstrap-qwen3-cortex-lora": (
                 "lumen-cortex-lora.gguf",
                 "runs/20260706T011546Z/lora_gguf/lumen-cortex-lora.gguf",
-                "f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2",
+                "dda08641ab02d0a23f0cceff342846bb94d5fa02",
                 "fda964d662a4b0aee3bb73c0398fc780cef0e7dbd7294406b04bc4e3e25843ff",
                 104_622_848
             ),
             "fleet-bootstrap-qwen3-executor-lora": (
                 "lumen-executor-lora.gguf",
                 "runs/20260706T011546Z/lora_gguf/lumen-executor-lora.gguf",
-                "f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2",
+                "dda08641ab02d0a23f0cceff342846bb94d5fa02",
                 "d3ba05ff22018a7468efa82154bd599899de7107b706b0b853758f869e6c969b",
                 104_622_848
             ),
             "fleet-bootstrap-qwen3-mouth-lora": (
                 "lumen-mouth-lora.gguf",
                 "runs/20260706T011546Z/lora_gguf/lumen-mouth-lora.gguf",
-                "f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2",
+                "dda08641ab02d0a23f0cceff342846bb94d5fa02",
                 "552de3e894629f20ab26fafca2f883bb67c2934c1dc030b50658d3fbde209dd5",
                 69_757_696
             ),
             "fleet-bootstrap-qwen3-mimicry-lora": (
                 "lumen-mimicry-lora.gguf",
                 "runs/20260706T011546Z/lora_gguf/lumen-mimicry-lora.gguf",
-                "f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2",
+                "dda08641ab02d0a23f0cceff342846bb94d5fa02",
                 "1ec0799ec6767aa858fe7745623aea29854dcd31b97d1d2f9d5f76ab459061f5",
                 69_757_696
             ),
             "fleet-bootstrap-qwen3-rem-lora": (
                 "lumen-rem-lora.gguf",
                 "runs/20260706T011546Z/lora_gguf/lumen-rem-lora.gguf",
-                "f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2",
+                "dda08641ab02d0a23f0cceff342846bb94d5fa02",
                 "37431475814f072648b17bb668dec436279bb202c9ae40ab5946a3b4e648dc5d",
                 104_622_848
             ),
             "fleet-bootstrap-qwen3-fleet-lora": (
                 "lumen-fleet-lora.gguf",
                 "runs/20260706T011546Z/lora_gguf/lumen-fleet-lora.gguf",
-                "f8781f415a0ff87ea3f3a2119ab2ad96fae8fcf2",
+                "dda08641ab02d0a23f0cceff342846bb94d5fa02",
                 "0d759f87d33d1041b5487cdb7e754887d4eb5151acef1dcf08817502e67d7cb8",
                 69_757_696
             ),
