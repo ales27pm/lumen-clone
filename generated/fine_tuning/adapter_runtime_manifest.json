@@ -66,8 +66,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "f838a7c04ef06b1b4b2527c375962d6e3d793ab1a950067dab37763b92c2c201",
-          "optimizedTrainingCorpusSHA256": "0213582f7606d4906ebd3eaa1a8b0afa1f30cfcbe5f27a594352b568767360e4",
+          "baselineTrainingCorpusSHA256": "ba44ad33f457c70cf7ae6f967bffe8b6e597c0d2b2413c26299e0dd9096f8bf2",
+          "optimizedTrainingCorpusSHA256": "d124126cccb500e2c2dcd3bbb36a02fd62b068ca519deb2e8e6c57058185f0bc",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 92,
@@ -96,7 +96,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "63c066948a0bede3d6fb936f4a19f9a637b34b2c5f2ccaf8ce24fcf38d4408fe",
+        "experimentManifestSHA256": "a917864ee9f364b4558af5148b3765891e3deb9d2c71fe36e3e6bebdaaeff95b",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -152,7 +152,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "a02bdb159bc9f60596139d6a8dd2be4f090f7f2c0a3cb5ad4c1cec65841711c2"
+            "reportSHA256": "ec8fe71235f871404b6a6f46e4ddb01868ff604c12bfcdfbf2e7ef6ce217a3e9"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -290,8 +290,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "e38ffff5923f7e38a5a918587727e0807a83e13854f9975535eb3404104db186",
-          "optimizedTrainingCorpusSHA256": "fa587be4e79fc9429f93206fc827e819150e505e84dc58438f87ca3cfe960309",
+          "baselineTrainingCorpusSHA256": "09364735b089c33f40e2ad15a7879fadb9635296087d3465d23bfc8677931990",
+          "optimizedTrainingCorpusSHA256": "bd6e428e0ccca4883c59caf183e37ee547f33cd86985153cd43d0eabbdf49593",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 462,
@@ -320,7 +320,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "70566f73e9d149376ca349a5cb9ba0e4955716ca350245d2a3cb73e38119e493",
+        "experimentManifestSHA256": "9e4d3bad5d2b92b8a354e8d50296a3acda51719699a628d94ac3231537bc8837",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -376,7 +376,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "4637680f115f3cfeb7ca9fbe4c18b98d7a199f87ba009ad318183636217f62f1"
+            "reportSHA256": "88bd9012e2d1a72063b49540069718f51de8bef9c584f024584163cec8b77908"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -514,8 +514,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "c16264014954f439fe130c474bda8960b0a4f682bb8e5ce76a1be8032a14a50a",
-          "optimizedTrainingCorpusSHA256": "01a1ad5d133dd91d82634388677c4d904c9d50ebbcaf3079bd604440f1723391",
+          "baselineTrainingCorpusSHA256": "5be35c937d8ac186677bac5aab0a1807700bc32f98915e7e5430cb1e2d769451",
+          "optimizedTrainingCorpusSHA256": "745d869610dc861a11447635bcd93eb38ef48d03f52e4296c57c0d973f9a09b4",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 500,
@@ -544,7 +544,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "aedc5cc0e8b75a67780b2b0d0d8122185bb15487edd32652ebbb4f5bd7f5d9a5",
+        "experimentManifestSHA256": "4c417e4c7761598cb42e0ed18f4ae9264933db782ca6c32473a6c59745893a95",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -600,11 +600,11 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "54a0b75c513444dcc3b48376c1f3b3aae1e21e46872bda23c5bd94b0acb4e622"
+            "reportSHA256": "919bf55b563295bd3aeb976100cf90f8eaaabd5e56d6522999995798a7ed9e9c"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
-          "frozenEvaluationSHA256": "31c3dc5ee449f00913899e7473b23d474add38f6f952737d0f0a6b4e9e4c8b62",
+          "frozenEvaluationSHA256": "0eee818505f61e388b3311013572a46a87b6bd90fa30ca0bd7e0c589013a2275",
           "recordCount": 15,
           "schemaVersion": "lumen.adapter-eval/1.1.0"
         },
@@ -738,8 +738,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "db0310519644989216d3d3dae8fb61a37e41ddfa1770e1bc66d1a2fbac153058",
-          "optimizedTrainingCorpusSHA256": "10140cec295d0c009a20d794a66848c893599bb63cadc3a1a09f5318f44aa424",
+          "baselineTrainingCorpusSHA256": "341d5f84c1485876dc69c02070712ad86dfda2e0ce42439a2d3ba60b8466f890",
+          "optimizedTrainingCorpusSHA256": "14b22626a06bfa6d1d11e887b3d90d494b2e25a4d97653ffde5179e798375b47",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 600,
@@ -768,7 +768,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "fc7c0bfc8b878cad74d30b08e0d7aed3ca7bfa9fff32fca10f5ad935cdc7ea8a",
+        "experimentManifestSHA256": "6b8134612c831c31e580031087aa1c3d1c1fc13cf1f75a8524c37992c33fe0e2",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -824,7 +824,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "a8c35f1c8a07f1019ecbc3ad53dd1de965f68967c452ed55259f5b3becac4f0a"
+            "reportSHA256": "6c5ac2642f688808cbf73f7ec29d164b80524179b31fa48e93fcbc2eed544e0b"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -962,8 +962,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "d1cf57cba47cf6d760d71d1ef447ec63797217c7d1ec7ee20055ba01b6f337df",
-          "optimizedTrainingCorpusSHA256": "f19d41ddb13246c06e74acc099822f72f5506d235bbc9b9f7ee5c16d84889e2b",
+          "baselineTrainingCorpusSHA256": "b5a1ca1c33006412998b5e0d0814096d04937cf2e26f93fff93035d3194d19dd",
+          "optimizedTrainingCorpusSHA256": "4c595a5c5645be41ec42d1876abd600d348a9c3a17c7c8520c4f47380380ccb6",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 1047,
@@ -992,7 +992,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "e8e2f4f7dbcff16f837945f0e6ec79cbd4810432c1e51391d51d81ff4b891727",
+        "experimentManifestSHA256": "12809445a088b5db12244b891fdd98d441585db3672c3f422a205cd815bf117c",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -1048,7 +1048,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "e654ebb936c0e82258c19959cb409144399572f6a1b1a284d74c9e59184b60d0"
+            "reportSHA256": "1cbce3fc62eb44a0a3d91a9a5c650ac132c327005276382285b99220918434fc"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,
@@ -1186,8 +1186,8 @@
       "expectedRuntimeSourceRevision": null,
       "experimentPolicy": {
         "comparisonEligibility": {
-          "baselineTrainingCorpusSHA256": "437fbc3204692d7e61145772e66a427778f5629f1b21b883343922de69cbdd3a",
-          "optimizedTrainingCorpusSHA256": "8a4db480e9c0bfa1a720ba43f371ff52aecf44b60c2ae0f214520eb0074ea4ca",
+          "baselineTrainingCorpusSHA256": "ba116ab248e146ffe113443fd1630b1e1e2131cbc3ef2585fc3660e1df366329",
+          "optimizedTrainingCorpusSHA256": "836f8fce92235f666b7fb8fe671d7b7822b7794561e325409f0c090c37ce6c24",
           "promotionEligible": true,
           "promotionProhibited": false,
           "publicRecordCount": 505,
@@ -1216,7 +1216,7 @@
           "frozenEvaluationSHA256",
           "publicEvaluationBundleSHA256"
         ],
-        "experimentManifestSHA256": "1fa95ab2119b88baca0580ae5aafce9c6601a238b4a5e29f59e9e87aa0b200d7",
+        "experimentManifestSHA256": "3f2d0f0712244a41d27e097d0081f11bf63b99e599306fc9f9861323f5a98e2e",
         "promotionContract": {
           "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
           "maximumContaminationMatches": 0,
@@ -1272,7 +1272,7 @@
             "contaminated": false,
             "matchCount": 0,
             "promotionRequiresZeroMatches": true,
-            "reportSHA256": "495a278374a008a2159d3d7d3b102fca5e23dce485ccc75015205672f22ed3b8"
+            "reportSHA256": "4bf4120a3aefd0fbca2fd0e9a11ebb052e2399ba56350d0e39d74d47472b567d"
           },
           "executableDeclarativeMetrics": true,
           "failClosedOnUnknownMetric": true,

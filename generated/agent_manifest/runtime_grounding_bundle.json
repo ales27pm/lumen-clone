@@ -6,10 +6,10 @@
       "markdown": 100,
       "mixed": 1,
       "plist": 3,
-      "python": 175,
+      "python": 177,
       "resolved": 1,
       "shell": 17,
-      "swift": 521,
+      "swift": 522,
       "text": 5,
       "toml": 1,
       "xcode_project": 1,
@@ -67,12 +67,12 @@
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 172,
+      "ios/LumenTests": 173,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 10,
       "scripts": 24,
-      "tools": 15,
+      "tools": 16,
       "tools/fine_tuning/unsloth": 54,
       "tools/hf_artifacts": 2,
       "tools/hf_zerogpu": 2,
@@ -83,10 +83,10 @@
       "tools/lumen_manifest_crawler/scripts": 1,
       "tools/lumen_manifest_crawler/tests": 39,
       "tools/pipeline": 7,
-      "tools/pipeline/tests": 11,
+      "tools/pipeline/tests": 12,
       "tools/security": 1
     },
-    "recordCount": 854,
+    "recordCount": 857,
     "selectedFiles": [
       {
         "imports": [],
@@ -340,8 +340,8 @@
         "language": "swift",
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift",
-        "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, TestFlightAgentGroundingExportInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageExporter, ExportCorrelationContext.",
-        "sha256": "c434f0bd62ea3ce62d12fd86ceaa472e7ebd18e9204d3b751f637ffad86508f9",
+        "responsibility": "`ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift` owns InAppDatasetPackageExporter behavior and defines: LumenInAppDatasetPackage, InAppDatasetTraceExport, InAppDatasetLiveE2EReportExport, InAppDatasetExportQualityFailure, InAppDatasetAppInfo, TestFlightAgentGroundingExportInfo, InAppDatasetExportPolicy, InAppDatasetPackageExportResult, InAppDatasetPackageSourceAction, InAppDatasetPackageExporter.",
+        "sha256": "fcf828635dec04efc0c793545a3a3df3ce6e174fdfe7f6c4d38e4bd9cd3a2c1c",
         "symbols": [
           "LumenInAppDatasetPackage",
           "InAppDatasetTraceExport",
@@ -351,14 +351,14 @@
           "TestFlightAgentGroundingExportInfo",
           "InAppDatasetExportPolicy",
           "InAppDatasetPackageExportResult",
+          "InAppDatasetPackageSourceAction",
           "InAppDatasetPackageExporter",
           "ExportCorrelationContext",
           "current",
           "normalizedString",
           "sourceRevision",
           "exportCorrelationContext",
-          "opaqueCorrelationToken",
-          "redactedLiveE2EReport"
+          "opaqueCorrelationToken"
         ]
       },
       {
@@ -2212,13 +2212,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "71ab4b3582853ab314829e0c75d1d4181891b61d",
+  "manifestCommit": "84fa7de6264ed85fe0913cfe0ae72403361423ef",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "9ce1edc32a2f3765ad0441b1ae2c7a6abe1c070c23d42bd7c42d815399598256",
+    "promptSHA256": "aabccec3fd5462c743a5e3e20b6630945c2b104c7b2127bffa489056ac12560d",
     "promptUTF8ByteCount": 26041,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2230,8 +2230,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "71ab4b3582853ab314829e0c75d1d4181891b61d",
+    "baseCommit": "84fa7de6264ed85fe0913cfe0ae72403361423ef",
     "dirtyState": false,
-    "workingTreeDigest": "03cfa270db688535cc1a701bf9fc1e48717ad07815b212d98b5c28ee6d963297"
+    "workingTreeDigest": "800adc6c55352786da8baebc12e8c541cc0b28359f5fd357237b40d92c40c6b8"
   }
 }

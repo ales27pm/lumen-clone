@@ -2,14 +2,14 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `71ab4b3582853ab314829e0c75d1d4181891b61d`
-- Working-tree digest: `03cfa270db688535cc1a701bf9fc1e48717ad07815b212d98b5c28ee6d963297`
+- Base commit: `84fa7de6264ed85fe0913cfe0ae72403361423ef`
+- Working-tree digest: `800adc6c55352786da8baebc12e8c541cc0b28359f5fd357237b40d92c40c6b8`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `854`
+- Codebase-home records: `857`
 
 ## Top Modules
-- `ios/LumenTests`: 172 files
+- `ios/LumenTests`: 173 files
 - `Services`: 67 files
 - `docs`: 60 files
 - `tools/fine_tuning/unsloth`: 54 files
@@ -22,12 +22,12 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `Diagnostics`: 21 files
 - `System`: 17 files
 - `Models`: 16 files
+- `tools`: 16 files
 - `Tools`: 15 files
-- `tools`: 15 files
 - `Services/AgentGrounding`: 14 files
 - `Services/Tools`: 14 files
 - `Tools/Builtin`: 12 files
-- `tools/pipeline/tests`: 11 files
+- `tools/pipeline/tests`: 12 files
 - `RAG`: 10 files
 - `repo`: 10 files
 - `AppIntents`: 9 files
