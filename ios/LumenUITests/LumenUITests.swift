@@ -643,7 +643,6 @@ final class LumenUITests: XCTestCase {
         app.buttons["Telemetry"].waitForExistence(timeout: timeout)
             || app.navigationBars["Developer Console"].waitForExistence(timeout: 1)
             || app.descendants(matching: .any)["developerConsole.segmentedTabs"].waitForExistence(timeout: 1)
-            || app.descendants(matching: .any)["developerConsole.root"].waitForExistence(timeout: 1)
     }
 
     private func tapElement(_ element: XCUIElement) {
@@ -663,13 +662,16 @@ final class LumenUITests: XCTestCase {
             return
         }
         for _ in 0..<attempts {
-            let elementFrame = element.frame
-            let appFrame = app.frame
-            if element.exists,
-               !elementFrame.isEmpty,
-               !appFrame.isEmpty,
-               elementFrame.midY < appFrame.midY {
-                app.swipeDown()
+            if element.exists {
+                let elementFrame = element.frame
+                let appFrame = app.frame
+                if !elementFrame.isEmpty,
+                   !appFrame.isEmpty,
+                   elementFrame.midY < appFrame.midY {
+                    app.swipeDown()
+                } else {
+                    app.swipeUp()
+                }
             } else {
                 app.swipeUp()
             }

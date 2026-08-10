@@ -40,7 +40,6 @@ struct DeveloperConsoleView: View {
             .padding(.horizontal, 20)
             .padding(.top, 14)
             .padding(.bottom, 28)
-            .accessibilityIdentifier("developerConsole.root")
         }
         .scrollIndicators(.visible)
         .scrollContentBackground(.hidden)
@@ -270,7 +269,6 @@ private struct DeveloperRunDashboard: View {
                 )
             }
         }
-        .accessibilityIdentifier("developerConsole.runDashboard")
     }
 
     private func isComplete(_ action: DeveloperWorkflowAction) -> Bool {

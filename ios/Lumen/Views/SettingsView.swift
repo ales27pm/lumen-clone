@@ -417,7 +417,6 @@ struct E2ETestRunnerView: View {
                     isRunning: isRunning,
                     runStartedAt: runStartedAt
                 )
-                .accessibilityIdentifier("e2e.dashboard")
             }
 
             Section {
@@ -583,7 +582,6 @@ struct E2ETestRunnerView: View {
                     .textSelection(.enabled)
             }
         }
-        .accessibilityIdentifier("e2e.runner.\(runMode.accessibilityKey)")
         .navigationTitle("E2E Tests")
         .onChange(of: runMode) { _, _ in
             refreshResourceSnapshot()
