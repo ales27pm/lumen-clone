@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
@@ -397,6 +398,8 @@ struct E2ETestRunnerView: View {
     @State private var liveEventBuffer: [E2ETestEvent] = []
     @State private var runStartedAt: Date?
     @State private var lastExportURL: URL?
+    @State private var lastCorrelatedEvidencePackageURL: URL?
+    @State private var correlatedEvidenceStatus: String?
     @State private var exportError: String?
     @State private var resourceSnapshot: ResourceBudgetGate.Snapshot?
 
@@ -423,8 +426,9 @@ struct E2ETestRunnerView: View {
                         Text(mode.title).tag(mode)
                     }
                 }
+                .accessibilityIdentifier("e2e.runMode")
 
-                if runMode == .trainingValidation {
+                if runMode.requiresThermalReadiness {
                     LabeledContent("Thermal state", value: thermalStateForDisplay.rawValue)
                         .font(.caption)
 
@@ -445,6 +449,7 @@ struct E2ETestRunnerView: View {
                     }
                 }
                 .disabled(isRunning || blockedRunReason != nil)
+                .accessibilityIdentifier("e2e.run.\(runMode.accessibilityKey)")
 
                 Button {
                     reloadLatestReport()
@@ -458,6 +463,37 @@ struct E2ETestRunnerView: View {
                     Label("Export Live E2E Report JSON", systemImage: "square.and.arrow.up")
                 }
                 .disabled(latestReport == nil)
+                .accessibilityIdentifier("e2e.export.liveReport")
+
+                #if DEBUG
+                if runMode == .interactiveModelToolValidation {
+                    Button {
+                        exportCorrelatedModelToolEvidencePackage()
+                    } label: {
+                        Label("Export correlated model/tool evidence package", systemImage: "checkmark.shield")
+                    }
+                    .disabled(isRunning || !isInteractiveModelToolValidationReport)
+                    .accessibilityIdentifier("e2e.export.interactiveModelToolEvidence")
+
+                    if let correlatedEvidenceStatus {
+                        Text(correlatedEvidenceStatus)
+                            .font(.caption)
+                            .foregroundStyle(lastCorrelatedEvidencePackageURL == nil ? .red : .green)
+                            .accessibilityIdentifier("e2e.export.interactiveModelToolEvidenceStatus")
+                            .accessibilityLabel("Correlated model/tool evidence status")
+                            .accessibilityValue(lastCorrelatedEvidencePackageURL == nil ? "failed" : "ready")
+                    }
+
+                    if let lastCorrelatedEvidencePackageURL {
+                        LabeledContent("Correlated evidence package", value: lastCorrelatedEvidencePackageURL.lastPathComponent)
+                            .font(.caption)
+                        ShareLink(item: lastCorrelatedEvidencePackageURL) {
+                            Label("Share correlated model/tool evidence", systemImage: "square.and.arrow.up")
+                        }
+                        .accessibilityIdentifier("e2e.export.interactiveModelToolEvidenceShare")
+                    }
+                }
+                #endif
 
                 if let lastExportURL {
                     LabeledContent("Last E2E export", value: lastExportURL.lastPathComponent)
@@ -547,6 +583,7 @@ struct E2ETestRunnerView: View {
                     .textSelection(.enabled)
             }
         }
+        .accessibilityIdentifier("e2e.runner.\(runMode.accessibilityKey)")
         .navigationTitle("E2E Tests")
         .onChange(of: runMode) { _, _ in
             refreshResourceSnapshot()
@@ -555,6 +592,8 @@ struct E2ETestRunnerView: View {
             liveResults = []
             runStartedAt = nil
             lastExportURL = nil
+            lastCorrelatedEvidencePackageURL = nil
+            correlatedEvidenceStatus = nil
             exportError = nil
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -570,7 +609,19 @@ struct E2ETestRunnerView: View {
     }
 
     private var blockedRunReason: String? {
-        Self.blockedRunReason(runMode: runMode, thermalState: thermalStateForDisplay)
+        Self.blockedRunReason(
+            runMode: runMode,
+            thermalState: thermalStateForDisplay,
+            isPhysicalIPhone: isPhysicalIPhone
+        )
+    }
+
+    private var isPhysicalIPhone: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return UIDevice.current.userInterfaceIdiom == .phone
+        #endif
     }
 
     private var dashboardResults: [E2ETestResult] {
@@ -596,6 +647,8 @@ struct E2ETestRunnerView: View {
         liveResults = []
         liveEventBuffer = []
         runStartedAt = nil
+        lastCorrelatedEvidencePackageURL = nil
+        correlatedEvidenceStatus = nil
     }
 
     @MainActor
@@ -606,7 +659,7 @@ struct E2ETestRunnerView: View {
         if let blockedRunReason {
             exportError = blockedRunReason
             reportText = """
-            Training validation blocked
+            \(runMode.title) blocked
             \(blockedRunReason)
             """
             return
@@ -622,6 +675,8 @@ struct E2ETestRunnerView: View {
         liveResults = []
         liveEventBuffer = []
         runStartedAt = Date()
+        lastCorrelatedEvidencePackageURL = nil
+        correlatedEvidenceStatus = nil
         reportText = "Preparing live runtime artifacts…"
 
         Task { @MainActor in
@@ -688,6 +743,10 @@ struct E2ETestRunnerView: View {
                     report = await E2ETestRunner.runStandard(config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
                 case .trainingValidation:
                     report = await E2ETestRunner.runTrainingValidation(config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
+                #if DEBUG
+                case .interactiveModelToolValidation:
+                    report = await E2ETestRunner.runInteractiveModelToolValidation(config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
+                #endif
                 }
 
                 await MainActor.run {
@@ -715,6 +774,68 @@ struct E2ETestRunnerView: View {
             exportError = "Live E2E report export failed: \(error.localizedDescription)"
         }
     }
+
+    #if DEBUG
+    private var isInteractiveModelToolValidationReport: Bool {
+        guard let latestReport,
+              latestReport.results.count == 1,
+              let result = latestReport.results.first,
+              let scenario = E2ETestScenario.interactiveModelToolValidation.first else {
+            return false
+        }
+        return result.scenarioID == scenario.id
+    }
+
+    private func exportCorrelatedModelToolEvidencePackage() {
+        guard let latestReport, isInteractiveModelToolValidationReport else {
+            lastCorrelatedEvidencePackageURL = nil
+            correlatedEvidenceStatus = "No just-finished interactive model/tool validation report is available."
+            return
+        }
+        do {
+            let result = try InAppDatasetPackageExporter.writePackage(
+                manifestSource: "interactive-model-tool-validation-live-e2e",
+                usedRuntimeFallback: false,
+                runtimeManifestAudit: nil,
+                behaviorAudit: nil,
+                scenarioResults: [],
+                liveE2EReport: latestReport,
+                traceLimit: 64,
+                includeScenarioResults: false,
+                sourceAction: .interactiveModelToolValidation
+            )
+            let embedded = result.package.liveE2EReport
+            let resultMetadata = latestReport.results.first?.metadata ?? [:]
+            let reportPassed = latestReport.results.count == 1
+                && latestReport.passed == 1
+                && latestReport.failed == 0
+                && resultMetadata["attributableModelToolEvidence"] == "true"
+                && resultMetadata["modelFinalMatchesNativeObservation"] == "true"
+                && resultMetadata["primaryAgentJSONActionTraceCount"] == "1"
+                && resultMetadata["modelFinalTraceCount"] == "1"
+                && resultMetadata["nativeToolObservationStepCount"] == "1"
+                && resultMetadata["nativeToolResultEvidenceCount"] == "1"
+            let attributionComplete = embedded?.modelBackedCorrelatedScenarioCount == 1
+                && (embedded?.modelBackedCorrelatedTraceCount ?? 0) >= 2
+                && (embedded?.correlatedTraceCount ?? 0) >= 2
+                && embedded?.deterministicCompatibilityTraceCount == 0
+            let exportQualityFailuresEmpty = (result.package.exportQualityFailures ?? []).isEmpty
+            guard reportPassed, attributionComplete, exportQualityFailuresEmpty else {
+                lastCorrelatedEvidencePackageURL = nil
+                correlatedEvidenceStatus = "Package was written, but exact grounded model action/final, native-tool observation/result, or fail-closed trace evidence was incomplete."
+                exportError = correlatedEvidenceStatus
+                return
+            }
+            lastCorrelatedEvidencePackageURL = result.url
+            correlatedEvidenceStatus = "Correlated model/tool evidence package ready."
+            exportError = nil
+        } catch {
+            lastCorrelatedEvidencePackageURL = nil
+            correlatedEvidenceStatus = "Correlated model/tool evidence export failed: \(error.localizedDescription)"
+            exportError = correlatedEvidenceStatus
+        }
+    }
+    #endif
 
     private func inProgressReportText(results: [E2ETestResult], total: Int) -> String {
         let passed = results.filter(\.passed).count
@@ -801,8 +922,12 @@ private struct E2ETestDashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: 8)], spacing: 8) {
                 E2ETestMetricTile(title: "Status", value: statusText, systemImage: statusIcon, tint: statusTint)
+                    .accessibilityIdentifier("e2e.dashboard.status")
+                    .accessibilityValue(statusText)
                 E2ETestMetricTile(title: "Pass rate", value: percentText(passRate), systemImage: "gauge.with.dots.needle.bottom.50percent", tint: .blue)
                 E2ETestMetricTile(title: "Passed", value: "\(passedCount)", systemImage: "checkmark.circle", tint: .green)
+                    .accessibilityIdentifier("e2e.dashboard.passed")
+                    .accessibilityValue(String(passedCount))
                 E2ETestMetricTile(title: "Failed", value: "\(failedCount)", systemImage: "xmark.circle", tint: failedCount > 0 ? .red : .secondary)
                 E2ETestMetricTile(title: "Preflight", value: "\(runtimePreflightCount)", systemImage: "thermometer.medium", tint: runtimePreflightCount > 0 ? .orange : .secondary)
                 E2ETestMetricTile(title: "Elapsed", value: durationText(elapsedSeconds), systemImage: "timer", tint: .orange)
@@ -936,6 +1061,9 @@ private struct E2ETestResultRow: View {
             }
         }
         .padding(.vertical, 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("e2e.result.\(result.scenarioID)")
+        .accessibilityValue(result.passed ? "passed" : "failed")
     }
 }
 
@@ -1025,8 +1153,17 @@ private func durationText(_ seconds: Double) -> String {
 
 
 extension E2ETestRunnerView {
-    nonisolated static func blockedRunReason(runMode: RunMode, thermalState: DeviceThermalState?) -> String? {
-        guard runMode == .trainingValidation else { return nil }
+    nonisolated static func blockedRunReason(
+        runMode: RunMode,
+        thermalState: DeviceThermalState?,
+        isPhysicalIPhone: Bool = true
+    ) -> String? {
+        #if DEBUG
+        if runMode == .interactiveModelToolValidation, !isPhysicalIPhone {
+            return "interactive model/tool validation requires a physical iPhone; simulator evidence is not accepted"
+        }
+        #endif
+        guard runMode.requiresThermalReadiness else { return nil }
         guard let thermalState else {
             return "thermal state unavailable; wait for device status and retry"
         }
@@ -1046,11 +1183,17 @@ extension E2ETestRunnerView {
     enum RunMode: CaseIterable {
         case standard
         case trainingValidation
+        #if DEBUG
+        case interactiveModelToolValidation
+        #endif
 
         var title: String {
             switch self {
             case .standard: return "Standard"
             case .trainingValidation: return "Training validation"
+            #if DEBUG
+            case .interactiveModelToolValidation: return "Physical model/tool proof"
+            #endif
             }
         }
 
@@ -1058,6 +1201,9 @@ extension E2ETestRunnerView {
             switch self {
             case .standard: return "Run standard E2E suite"
             case .trainingValidation: return "Run training validation"
+            #if DEBUG
+            case .interactiveModelToolValidation: return "Run physical model/tool proof"
+            #endif
             }
         }
 
@@ -1065,6 +1211,9 @@ extension E2ETestRunnerView {
             switch self {
             case .standard: return "Running E2E suite…"
             case .trainingValidation: return "Running training validation…"
+            #if DEBUG
+            case .interactiveModelToolValidation: return "Running physical model/tool proof…"
+            #endif
             }
         }
 
@@ -1072,6 +1221,32 @@ extension E2ETestRunnerView {
             switch self {
             case .standard: return E2ETestScenario.standard
             case .trainingValidation: return E2ETestScenario.trainingValidation
+            #if DEBUG
+            case .interactiveModelToolValidation: return E2ETestScenario.interactiveModelToolValidation
+            #endif
+            }
+        }
+
+        var requiresThermalReadiness: Bool {
+            switch self {
+            case .standard:
+                return false
+            case .trainingValidation:
+                return true
+            #if DEBUG
+            case .interactiveModelToolValidation:
+                return true
+            #endif
+            }
+        }
+
+        var accessibilityKey: String {
+            switch self {
+            case .standard: return "standard"
+            case .trainingValidation: return "trainingValidation"
+            #if DEBUG
+            case .interactiveModelToolValidation: return "interactiveModelToolValidation"
+            #endif
             }
         }
 
@@ -1081,6 +1256,10 @@ extension E2ETestRunnerView {
                 return "Runs static routing/tool guard coverage plus live model-backed agent scenarios. Live scenarios must record fresh model runtime evidence before export is accepted as live E2E evidence."
             case .trainingValidation:
                 return "Runs multi-scenario in-app validation using trained models in real agent flows, then summarizes failures as training signals for the next fine-tuning cycle. Export creates a live E2E JSON layer with ownsLiveE2EScenarios=true."
+            #if DEBUG
+            case .interactiveModelToolValidation:
+                return "Physical iPhone only. Runs exactly one strict modelBackedRequired scenario, exposes only alarm.authorization_status to structured model planning, executes it through SecureToolRegistry, and passes only with correlated agent-json action, model final, and native observation evidence."
+            #endif
             }
         }
     }

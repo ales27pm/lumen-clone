@@ -156,6 +156,30 @@ nonisolated struct E2ETestScenario: Identifiable, Codable, Sendable, Hashable {
 
     static let standard: [E2ETestScenario] = regression + allToolCoverage + chatCoverage
 
+    #if DEBUG
+    /// One bounded, physical-device proof that requires a real structured model turn,
+    /// executes only a permission-safe read-only native tool, and records correlated evidence.
+    static let interactiveModelToolValidation: [E2ETestScenario] = [
+        E2ETestScenario(
+            id: "interactive-model-tool-alarm-authorization",
+            title: "Physical model/tool proof: alarm authorization",
+            kind: .toolGuard,
+            prompt: "Check alarm authorization status.",
+            expectedIntent: .alarm,
+            requiredAllowedToolIDs: ["alarm.authorization_status"],
+            forbiddenToolIDs: [
+                "calendar.create", "reminders.create", "mail.draft", "phone.call"
+            ],
+            requiredTextHints: [],
+            forbiddenTextHints: ["authorization requested", "alarm scheduled"],
+            requiresAgentRun: true,
+            evidenceMode: .modelBackedRequired,
+            expectedToolID: "alarm.authorization_status",
+            scenarioBankKind: ToolScenarioBankEntry.ScenarioKind.direct.rawValue
+        )
+    ]
+    #endif
+
     static let trainingValidation: [E2ETestScenario] = [
         E2ETestScenario(id: "training-weather-grounded", title: "Training eval: weather stays grounded", kind: .training, prompt: "What is the weather here and should I carry an umbrella?", expectedIntent: .weather, requiredAllowedToolIDs: ["weather", "location.current"], forbiddenToolIDs: ["calendar.create", "mail.draft"], requiredTextHints: ["weather"], forbiddenTextHints: ["created a new event"], requiresAgentRun: true),
         E2ETestScenario(id: "training-web-research", title: "Training eval: web research synthesis", kind: .training, prompt: "Search the web for two recent Swift concurrency best practices and summarize them.", expectedIntent: .webSearch, requiredAllowedToolIDs: ["web.search", "web.fetch"], forbiddenToolIDs: ["calendar.create", "weather"], requiredTextHints: ["swift"], forbiddenTextHints: ["created a new event"], requiresAgentRun: true),
@@ -634,6 +658,23 @@ nonisolated enum E2ETestRunner {
         return await run(scenarios: scenarios, config: config, ensureChatLoaded: ensureChatLoaded, onResult: onResult, onEvent: onEvent)
     }
 
+    #if DEBUG
+    static func runInteractiveModelToolValidation(
+        config: E2ERunConfig,
+        ensureChatLoaded: EnsureChatLoaded? = nil,
+        onResult: ResultCallback? = nil,
+        onEvent: EventCallback? = nil
+    ) async -> E2ETestReport {
+        await run(
+            scenarios: E2ETestScenario.interactiveModelToolValidation,
+            config: config,
+            ensureChatLoaded: ensureChatLoaded,
+            onResult: onResult,
+            onEvent: onEvent
+        )
+    }
+    #endif
+
     private static func appendResult(
         _ result: E2ETestResult,
         to results: inout [E2ETestResult],
@@ -950,6 +991,10 @@ nonisolated enum E2ETestRunner {
         var deterministicChatFallbackRemediationApplied = false
         var finalIntentValidationOutcome: FinalIntentValidationOutcome?
         var acceptedRuntimeEvidenceKind: String?
+        #if DEBUG
+        var interactiveAttributionMetadata: [String: String] = [:]
+        var interactiveNativeToolResultEvidenceCount = 0
+        #endif
         let totalMemoryMB = Double(ProcessInfo.processInfo.physicalMemory) / (1024 * 1024)
 
         func event(_ phase: String, _ message: String) async {
@@ -1033,10 +1078,11 @@ nonisolated enum E2ETestRunner {
             if modelLoaded {
                 let enabledCanonicalToolIDs = Set(config.enabledToolIDs.map(ToolRouteGuard.canonicalToolID))
                 let forbiddenCanonicalToolIDs = Set(scenario.forbiddenToolIDs.map(ToolRouteGuard.canonicalToolID))
-                let availableTools = ToolRegistry.all.filter { tool in
-                    let canonical = ToolRouteGuard.canonicalToolID(tool.id)
-                    return enabledCanonicalToolIDs.contains(canonical) && IntentRouter.isToolAllowed(canonical, for: routing)
-                }
+                let availableTools = executionToolDefinitions(
+                    for: scenario,
+                    routing: routing,
+                    enabledCanonicalToolIDs: enabledCanonicalToolIDs
+                )
                 await event("tools", "available=\(availableTools.map(\.id).sorted().joined(separator: ","))")
                 var steps: [AgentStep] = []
                 try Task.checkCancellation()
@@ -1150,6 +1196,23 @@ nonisolated enum E2ETestRunner {
                                 failures.append("Forbidden tool selected by agent: \(toolID)")
                             }
                         case .toolResult(let result):
+                            #if DEBUG
+                            if let evidence = interactiveModelToolResultEvidence(
+                                scenario: scenario,
+                                result: result
+                            ) {
+                                if evidence.isAttributableSuccess {
+                                    interactiveNativeToolResultEvidenceCount += 1
+                                }
+                                await event("tool-result", evidence.message)
+                            } else if let errorCode = result.errorCode {
+                                let availability = result.structuredPayload?["availability"] ?? "unknown"
+                                await event(
+                                    "tool-result",
+                                    "status=\(result.status.rawValue), errorCode=\(errorCode), availability=\(availability)"
+                                )
+                            }
+                            #else
                             if let errorCode = result.errorCode {
                                 let availability = result.structuredPayload?["availability"] ?? "unknown"
                                 await event(
@@ -1157,6 +1220,7 @@ nonisolated enum E2ETestRunner {
                                     "status=\(result.status.rawValue), errorCode=\(errorCode), availability=\(availability)"
                                 )
                             }
+                            #endif
                         case .diagnostic(let diagnostic):
                             if let diagnosticEvidence = structuredKernelDiagnosticEvidence(diagnostic) {
                                 await event("kernel-diagnostic", diagnosticEvidence)
@@ -1383,6 +1447,24 @@ nonisolated enum E2ETestRunner {
                     finalText: finalText
                 )
             )
+            #if DEBUG
+            let interactiveAttribution = interactiveModelToolAttribution(
+                scenario: scenario,
+                correlation: AgentTraceCorrelation(
+                    scenarioID: scenario.id,
+                    e2eRunID: e2eRunID,
+                    agentRunID: agentRunID,
+                    conversationID: conversationID,
+                    turnID: turnID
+                ),
+                agentSteps: agentSteps,
+                traces: AgentBehaviorTraceRecorder.recent(limit: 64),
+                nativeToolResultEvidenceCount: interactiveNativeToolResultEvidenceCount,
+                finalText: finalText
+            )
+            failures = mergedStrings(failures, interactiveAttribution.failures)
+            interactiveAttributionMetadata = interactiveAttribution.metadata
+            #endif
             cpuWatchdogDegraded = cpuWatchdogDegradedEvidence(
                 finalText: finalText,
                 failures: failures,
@@ -1456,6 +1538,11 @@ nonisolated enum E2ETestRunner {
         for (key, value) in nonActionableMetadata {
             metadata[key] = value
         }
+        #if DEBUG
+        for (key, value) in interactiveAttributionMetadata {
+            metadata[key] = value
+        }
+        #endif
         if deterministicChatFallbackRemediationApplied {
             metadata["failureKind"] = "genericFallbackFinal"
             metadata["trainingSignal"] = "true"
@@ -1507,6 +1594,194 @@ nonisolated enum E2ETestRunner {
             && !routing.requiresClarification
             && !shouldRunAsPlainTextTurn(scenario: scenario, routing: routing)
     }
+
+    private nonisolated static func executionToolDefinitions(
+        for scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        enabledCanonicalToolIDs: Set<String>
+    ) -> [ToolDefinition] {
+        let strictExpectedToolID: String? = {
+            guard scenario.kind == .toolGuard,
+                  scenario.evidenceMode == .modelBackedRequired,
+                  let expectedToolID = scenario.expectedToolID,
+                  !expectedToolID.isEmpty else {
+                return nil
+            }
+            return ToolRouteGuard.canonicalToolID(expectedToolID)
+        }()
+
+        return ToolRegistry.all.filter { tool in
+            let canonical = ToolRouteGuard.canonicalToolID(tool.id)
+            guard enabledCanonicalToolIDs.contains(canonical),
+                  IntentRouter.isToolAllowed(canonical, for: routing) else {
+                return false
+            }
+            return strictExpectedToolID == nil || canonical == strictExpectedToolID
+        }
+    }
+
+    #if DEBUG
+    nonisolated struct InteractiveModelToolAttribution: Sendable, Equatable {
+        let failures: [String]
+        let metadata: [String: String]
+    }
+
+    nonisolated struct InteractiveToolResultEvidence: Sendable, Equatable {
+        let message: String
+        let isAttributableSuccess: Bool
+    }
+
+    private nonisolated static func interactiveModelToolResultEvidence(
+        scenario: E2ETestScenario,
+        result: ToolResult
+    ) -> InteractiveToolResultEvidence? {
+        guard E2ETestScenario.interactiveModelToolValidation.contains(where: { $0.id == scenario.id }),
+              let expectedToolID = scenario.expectedToolID.map(ToolRouteGuard.canonicalToolID),
+              let payload = result.structuredPayload,
+              ToolRouteGuard.canonicalToolID(payload["toolID"] ?? "") == expectedToolID else {
+            return nil
+        }
+
+        let implementation = payload["implementation"] == "ProductivityLocalTool"
+            ? "ProductivityLocalTool"
+            : "unknown"
+        let availability = ["available", "unavailable", "unknown"].contains(payload["availability"] ?? "")
+            ? payload["availability"]!
+            : "unknown"
+        let runtimeEvidence = [
+            "alarmkit-runtime-observed",
+            "alarmkit-runtime-attempted",
+            "device-runtime-required"
+        ].contains(payload["runtimeEvidence"] ?? "")
+            ? payload["runtimeEvidence"]!
+            : "unknown"
+        let isAttributableSuccess = result.status == .success
+            && result.errorCode == nil
+            && implementation == "ProductivityLocalTool"
+            && availability == "available"
+            && runtimeEvidence == "alarmkit-runtime-observed"
+
+        return InteractiveToolResultEvidence(
+            message: [
+                "toolID=\(expectedToolID)",
+                "status=\(result.status.rawValue)",
+                "implementation=\(implementation)",
+                "availability=\(availability)",
+                "runtimeEvidence=\(runtimeEvidence)"
+            ].joined(separator: ", "),
+            isAttributableSuccess: isAttributableSuccess
+        )
+    }
+
+    private nonisolated static func interactiveModelToolAttribution(
+        scenario: E2ETestScenario,
+        correlation: AgentTraceCorrelation,
+        agentSteps: [AgentStep],
+        traces: [AgentBehaviorTrace],
+        nativeToolResultEvidenceCount: Int,
+        finalText: String
+    ) -> InteractiveModelToolAttribution {
+        guard E2ETestScenario.interactiveModelToolValidation.contains(where: { $0.id == scenario.id }) else {
+            return InteractiveModelToolAttribution(failures: [], metadata: [:])
+        }
+
+        let expectedToolID = "alarm.authorization_status"
+        let correlatedTraces = traces.filter {
+            traceMatchesCorrelation($0, correlation: correlation, startedAt: .distantPast)
+        }
+        let primaryActionTraces = correlatedTraces.filter { trace in
+            isValidModelBackedEvidenceTrace(trace, requiresPrimaryAgentJSON: true)
+                && trace.stage == "agent-json-step-0"
+                && ToolRouteGuard.canonicalToolID(trace.selectedToolID ?? "") == expectedToolID
+                && Set(trace.allowedToolIDs.map(ToolRouteGuard.canonicalToolID)) == [expectedToolID]
+                && trace.toolArguments.isEmpty
+                && trace.requiresApproval == false
+                && trace.approvalMode == nil
+                && trace.emittedFinalInActionTurn == false
+                && trace.parseError == nil
+        }
+        let modelFinalTraces = correlatedTraces.filter { trace in
+            isValidModelBackedEvidenceTrace(trace, requiresPrimaryAgentJSON: true)
+                && trace.stage == "agent-json-step-1"
+                && trace.selectedToolID == nil
+                && Set(trace.allowedToolIDs.map(ToolRouteGuard.canonicalToolID)) == [expectedToolID]
+                && trace.toolArguments.isEmpty
+                && trace.emittedFinalInActionTurn
+                && (trace.successfulObservationCount ?? 0) > 0
+                && trace.finalizerAccepted == true
+                && trace.parseError == nil
+        }
+        let observationSteps = agentSteps.filter { step in
+            step.kind == .observation
+                && ToolRouteGuard.canonicalToolID(step.toolID ?? "") == expectedToolID
+                && isSafeToolObservationFinal(step.content, expectedToolID: expectedToolID)
+        }
+        let observedAuthorizationStates = Set(observationSteps.compactMap {
+            alarmAuthorizationStateToken(in: $0.content)
+        })
+        let modelFinalAuthorizationState = alarmAuthorizationStateToken(in: finalText)
+        let modelFinalMatchesObservation = observedAuthorizationStates.count == 1
+            && modelFinalAuthorizationState == observedAuthorizationStates.first
+
+        var failures: [String] = []
+        if primaryActionTraces.count != 1 {
+            failures.append("Interactive model/tool validation requires exactly one correlated primary agent-json action evidence trace for alarm.authorization_status")
+        }
+        if modelFinalTraces.count != 1 {
+            failures.append("Interactive model/tool validation requires exactly one correlated model final with an accepted native-tool observation")
+        }
+        if observationSteps.count != 1 {
+            failures.append("Interactive model/tool validation requires exactly one native alarm.authorization_status observation step")
+        }
+        if nativeToolResultEvidenceCount != 1 {
+            failures.append("Interactive model/tool validation requires exactly one privacy-safe native alarm.authorization_status result evidence record")
+        }
+        if !modelFinalMatchesObservation {
+            failures.append("Interactive model/tool validation model final did not match the native alarm authorization observation")
+        }
+
+        return InteractiveModelToolAttribution(
+            failures: failures,
+            metadata: [
+                "attributableModelToolEvidence": failures.isEmpty ? "true" : "false",
+                "primaryAgentJSONActionTraceCount": String(primaryActionTraces.count),
+                "modelFinalTraceCount": String(modelFinalTraces.count),
+                "nativeToolObservationStepCount": String(observationSteps.count),
+                "nativeToolResultEvidenceCount": String(nativeToolResultEvidenceCount),
+                "modelFinalMatchesNativeObservation": modelFinalMatchesObservation ? "true" : "false"
+            ]
+        )
+    }
+
+    private nonisolated static func alarmAuthorizationStateToken(in text: String) -> String? {
+        let lower = text.lowercased()
+        var matches: Set<String> = []
+
+        if lower.contains("notdetermined")
+            || lower.contains("not determined")
+            || lower.contains("undetermined") {
+            matches.insert("notDetermined")
+        }
+
+        let explicitlyDenied = lower.contains("denied")
+            || lower.contains("unauthorized")
+            || lower.contains("not authorized")
+            || lower.contains("not granted")
+            || lower.contains("not allowed")
+        if explicitlyDenied {
+            matches.insert("denied")
+        }
+
+        if !explicitlyDenied,
+           lower.contains("authorized")
+            || lower.contains("granted")
+            || lower.contains("allowed") {
+            matches.insert("authorized")
+        }
+
+        return matches.count == 1 ? matches.first : nil
+    }
+    #endif
 
     private nonisolated static func liveRuntimeShouldStopAfter(_ result: E2ETestResult) -> Bool {
         guard result.requiresAgentRun, !result.passed else { return false }
@@ -2527,6 +2802,45 @@ nonisolated enum E2ETestRunner {
         routing: IntentRoutingDecision
     ) -> Bool {
         requiresStructuredModelBackedAgentRun(scenario: scenario, routing: routing)
+    }
+
+    nonisolated static func executionToolIDsForTests(
+        scenario: E2ETestScenario,
+        routing: IntentRoutingDecision,
+        enabledCanonicalToolIDs: Set<String>
+    ) -> [String] {
+        executionToolDefinitions(
+            for: scenario,
+            routing: routing,
+            enabledCanonicalToolIDs: enabledCanonicalToolIDs
+        )
+        .map { ToolRouteGuard.canonicalToolID($0.id) }
+        .sorted()
+    }
+
+    nonisolated static func interactiveModelToolAttributionForTests(
+        scenario: E2ETestScenario,
+        correlation: AgentTraceCorrelation,
+        agentSteps: [AgentStep],
+        traces: [AgentBehaviorTrace],
+        nativeToolResultEvidenceCount: Int,
+        finalText: String
+    ) -> InteractiveModelToolAttribution {
+        interactiveModelToolAttribution(
+            scenario: scenario,
+            correlation: correlation,
+            agentSteps: agentSteps,
+            traces: traces,
+            nativeToolResultEvidenceCount: nativeToolResultEvidenceCount,
+            finalText: finalText
+        )
+    }
+
+    nonisolated static func interactiveModelToolResultEvidenceForTests(
+        scenario: E2ETestScenario,
+        result: ToolResult
+    ) -> InteractiveToolResultEvidence? {
+        interactiveModelToolResultEvidence(scenario: scenario, result: result)
     }
 
     nonisolated static func modelRuntimeEvidenceForTests(

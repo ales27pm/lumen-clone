@@ -175,6 +175,11 @@ nonisolated struct InAppDatasetPackageExportResult: Sendable {
     let package: LumenInAppDatasetPackage
 }
 
+nonisolated enum InAppDatasetPackageSourceAction: String, Codable, Sendable {
+    case agentGrounding = "Agent Grounding > Export TestFlight + Agent Grounding Package"
+    case interactiveModelToolValidation = "E2E Tests > Export Correlated Model/Tool Evidence Package"
+}
+
 nonisolated enum InAppDatasetPackageExporter {
     private struct ExportCorrelationContext {
         let key: SymmetricKey
@@ -185,7 +190,7 @@ nonisolated enum InAppDatasetPackageExporter {
 
     static let schemaVersion = "2.0.0"
     static let exportKind = "testflight-agent-grounding-runtime-export"
-    static let sourceAction = "Agent Grounding > Export TestFlight + Agent Grounding Package"
+    static let sourceAction = InAppDatasetPackageSourceAction.agentGrounding.rawValue
     static let filePrefix = "lumen-testflight-agent-grounding-redacted-v1"
     static let defaultIncludesScenarioResults = false
     static let slowModelTurnThresholdMs = 30_000
@@ -327,7 +332,8 @@ nonisolated enum InAppDatasetPackageExporter {
         scenarioResults: [RuntimeScenarioResult],
         liveE2EReport: E2ETestReport? = nil,
         traceLimit: Int = 200,
-        includeScenarioResults: Bool = defaultIncludesScenarioResults
+        includeScenarioResults: Bool = defaultIncludesScenarioResults,
+        sourceAction: InAppDatasetPackageSourceAction = .agentGrounding
     ) -> LumenInAppDatasetPackage {
         let traces = AgentBehaviorTraceRecorder.recent(limit: traceLimit)
         return makePackage(
@@ -339,6 +345,7 @@ nonisolated enum InAppDatasetPackageExporter {
             liveE2EReport: liveE2EReport,
             traceLimit: traceLimit,
             includeScenarioResults: includeScenarioResults,
+            sourceAction: sourceAction,
             traces: traces
         )
     }
@@ -352,12 +359,23 @@ nonisolated enum InAppDatasetPackageExporter {
         liveE2EReport: E2ETestReport?,
         traceLimit: Int,
         includeScenarioResults: Bool,
+        sourceAction: InAppDatasetPackageSourceAction = .agentGrounding,
         traces: [AgentBehaviorTrace]
     ) -> LumenInAppDatasetPackage {
+        let includedTraces: [AgentBehaviorTrace]
+        if sourceAction == .interactiveModelToolValidation, let liveE2EReport {
+            includedTraces = traces.filter { trace in
+                liveE2EReport.results.contains { result in
+                    traceMatches(result: result, trace: trace)
+                }
+            }
+        } else {
+            includedTraces = traces
+        }
         // Correlate while the current in-memory trace still carries ephemeral
         // run identifiers. The persisted/shareable trace copy below drops them.
-        let correlationContext = exportCorrelationContext(report: liveE2EReport, traces: traces)
-        let privacySafeTraces = traces.map { $0.redactedForPersistentDiagnostics() }
+        let correlationContext = exportCorrelationContext(report: liveE2EReport, traces: includedTraces)
+        let privacySafeTraces = includedTraces.map { $0.redactedForPersistentDiagnostics() }
         let mergedBehaviorAudit = mergedBehaviorAuditWithRuntimeTraceViolations(behaviorAudit, traces: privacySafeTraces)
         let exportedBehaviorAudit = redactedBehaviorAudit(
             mergedBehaviorAudit,
@@ -367,7 +385,7 @@ nonisolated enum InAppDatasetPackageExporter {
         let exportedScenarioResults = includeScenarioResults
             ? scenarioResults.map(redactedScenarioResult)
             : []
-        let exportedTraces = zip(traces, privacySafeTraces).map { sourceTrace, privacySafeTrace in
+        let exportedTraces = zip(includedTraces, privacySafeTraces).map { sourceTrace, privacySafeTrace in
             exportTrace(
                 privacySafeTrace,
                 id: redactedUUID(sourceTrace.id, key: correlationContext.key, domain: "trace"),
@@ -379,7 +397,7 @@ nonisolated enum InAppDatasetPackageExporter {
             liveE2EReportExport(
                 from: report,
                 generatedAt: Date(),
-                traces: traces,
+                traces: includedTraces,
                 correlationContext: correlationContext
             )
         }
@@ -387,7 +405,7 @@ nonisolated enum InAppDatasetPackageExporter {
             from: exportedTraces,
             liveE2EReport: liveReportExport,
             rawLiveE2EReport: liveE2EReport,
-            rawTraces: traces,
+            rawTraces: includedTraces,
             correlationContext: correlationContext
         )
         // A shareable diagnostics package must never double as a training-data
@@ -399,7 +417,11 @@ nonisolated enum InAppDatasetPackageExporter {
             generatedAt: Date(),
             exportKind: exportKind,
             app: app,
-            testFlight: testFlightExportInfo(app: app, liveE2EReportIncluded: liveReportExport != nil),
+            testFlight: testFlightExportInfo(
+                app: app,
+                liveE2EReportIncluded: liveReportExport != nil,
+                sourceAction: sourceAction.rawValue
+            ),
             manifestSource: manifestSource,
             usedRuntimeFallback: usedRuntimeFallback,
             runtimeManifestAudit: exportedRuntimeManifestAudit,
@@ -440,7 +462,8 @@ nonisolated enum InAppDatasetPackageExporter {
 
     static func makePackageForTests(
         liveE2EReport: E2ETestReport,
-        traces: [AgentBehaviorTrace]
+        traces: [AgentBehaviorTrace],
+        sourceAction: InAppDatasetPackageSourceAction = .agentGrounding
     ) -> LumenInAppDatasetPackage {
         makePackage(
             manifestSource: "test-manifest",
@@ -451,6 +474,7 @@ nonisolated enum InAppDatasetPackageExporter {
             liveE2EReport: liveE2EReport,
             traceLimit: traces.count,
             includeScenarioResults: false,
+            sourceAction: sourceAction,
             traces: traces
         )
     }
@@ -504,7 +528,8 @@ nonisolated enum InAppDatasetPackageExporter {
 
     private static func testFlightExportInfo(
         app: InAppDatasetAppInfo,
-        liveE2EReportIncluded: Bool
+        liveE2EReportIncluded: Bool,
+        sourceAction: String
     ) -> TestFlightAgentGroundingExportInfo {
         return TestFlightAgentGroundingExportInfo(
             sourceAction: sourceAction,
@@ -1075,7 +1100,8 @@ nonisolated enum InAppDatasetPackageExporter {
         scenarioResults: [RuntimeScenarioResult],
         liveE2EReport: E2ETestReport? = E2ETestLogStore.latestReport(),
         traceLimit: Int = 200,
-        includeScenarioResults: Bool = defaultIncludesScenarioResults
+        includeScenarioResults: Bool = defaultIncludesScenarioResults,
+        sourceAction: InAppDatasetPackageSourceAction = .agentGrounding
     ) throws -> InAppDatasetPackageExportResult {
         let package = makePackage(
             manifestSource: manifestSource,
@@ -1085,7 +1111,8 @@ nonisolated enum InAppDatasetPackageExporter {
             scenarioResults: scenarioResults,
             liveE2EReport: liveE2EReport,
             traceLimit: traceLimit,
-            includeScenarioResults: includeScenarioResults
+            includeScenarioResults: includeScenarioResults,
+            sourceAction: sourceAction
         )
         let directory = try exportDirectory()
         try purgeLegacyUnsafeArtifacts(in: directory)

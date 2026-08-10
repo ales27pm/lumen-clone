@@ -204,6 +204,93 @@ final class LumenUITests: XCTestCase {
     }
 
     @MainActor
+    func testPhysicalInteractiveModelToolValidation() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Interactive model/tool validation requires a physical iPhone with the verified local model fleet.")
+        #else
+        app.terminate()
+        let normalApp = XCUIApplication()
+        app = normalApp
+        defer { normalApp.terminate() }
+
+        normalApp.launch()
+        dismissOnboardingIfNeeded()
+        openDeveloperConsole()
+
+        let validationEntry = app.descendants(matching: .any)["developerConsole.e2e.interactiveModelToolValidation"]
+        scrollToElement(validationEntry, attempts: 6)
+        XCTAssertTrue(
+            validationEntry.waitForExistence(timeout: 5),
+            "The bounded physical model/tool validation entry was not visible."
+        )
+        tapElement(validationEntry)
+
+        let runButton = app.buttons["e2e.run.interactiveModelToolValidation"]
+        XCTAssertTrue(
+            runButton.waitForExistence(timeout: 5),
+            "The physical model/tool validation run button was not visible."
+        )
+        XCTAssertTrue(runButton.isEnabled, "The physical model/tool validation was blocked before launch.")
+        print("LUMEN_INTERACTIVE_VALIDATION_MILESTONE test_bundle_ready")
+        tapElement(runButton)
+
+        let dashboardStatus = app.descendants(matching: .any)["e2e.dashboard.status"]
+        XCTAssertTrue(dashboardStatus.waitForExistence(timeout: 5), "The validation dashboard status was unavailable.")
+        let running = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Running"),
+            object: dashboardStatus
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [running], timeout: 20),
+            .completed,
+            "The physical model/tool validation never entered its running state."
+        )
+        print("LUMEN_INTERACTIVE_VALIDATION_MILESTONE model_tool_run_started")
+
+        let terminal = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value IN %@", ["Passing", "Failing", "Preflight"]),
+            object: dashboardStatus
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [terminal], timeout: 900),
+            .completed,
+            "The physical model/tool validation did not reach a terminal state within 15 minutes."
+        )
+        XCTAssertEqual(
+            dashboardStatus.value as? String,
+            "Passing",
+            "The physical model/tool validation did not pass."
+        )
+
+        let scenarioResult = app.descendants(matching: .any)["e2e.result.interactive-model-tool-alarm-authorization"]
+        scrollToElement(scenarioResult, attempts: 8)
+        XCTAssertTrue(scenarioResult.waitForExistence(timeout: 5), "The dedicated scenario result was not rendered.")
+        XCTAssertEqual(scenarioResult.value as? String, "passed", "The dedicated scenario did not pass.")
+        print("LUMEN_INTERACTIVE_VALIDATION_MILESTONE correlated_scenario_passed")
+
+        let exportButton = app.buttons["e2e.export.interactiveModelToolEvidence"]
+        scrollToElement(exportButton, attempts: 8)
+        XCTAssertTrue(exportButton.waitForExistence(timeout: 5), "The correlated evidence export button was not visible.")
+        XCTAssertTrue(exportButton.isEnabled, "The correlated evidence export was not enabled after the passing scenario.")
+        tapElement(exportButton)
+
+        let evidenceStatus = app.staticTexts["e2e.export.interactiveModelToolEvidenceStatus"]
+        scrollToElement(evidenceStatus, attempts: 8)
+        XCTAssertTrue(evidenceStatus.waitForExistence(timeout: 10), "The correlated evidence package status was not rendered.")
+        XCTAssertEqual(
+            evidenceStatus.value as? String,
+            "ready",
+            "The in-app correlated evidence package did not validate."
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["e2e.export.interactiveModelToolEvidenceShare"].waitForExistence(timeout: 5),
+            "The validated correlated evidence package was not available for transfer."
+        )
+        print("LUMEN_INTERACTIVE_VALIDATION_MILESTONE attributable_evidence_ready")
+        #endif
+    }
+
+    @MainActor
     func testDeveloperFeaturesRealTimeDashboard() throws {
         let formatter = ISO8601DateFormatter()
         let runStart = Date()
@@ -572,12 +659,21 @@ final class LumenUITests: XCTestCase {
     }
 
     private func scrollToElement(_ element: XCUIElement, attempts: Int = 3) {
-        if element.waitForExistence(timeout: 1) {
+        if element.waitForExistence(timeout: 1), element.isHittable {
             return
         }
         for _ in 0..<attempts {
-            app.swipeUp()
-            if element.waitForExistence(timeout: 1) {
+            let elementFrame = element.frame
+            let appFrame = app.frame
+            if element.exists,
+               !elementFrame.isEmpty,
+               !appFrame.isEmpty,
+               elementFrame.midY < appFrame.midY {
+                app.swipeDown()
+            } else {
+                app.swipeUp()
+            }
+            if element.waitForExistence(timeout: 1), element.isHittable {
                 return
             }
         }

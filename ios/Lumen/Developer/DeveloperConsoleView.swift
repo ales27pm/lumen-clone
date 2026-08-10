@@ -345,6 +345,20 @@ private struct DeveloperE2ECommandCenter: View {
             }
 
             VStack(spacing: 10) {
+                #if DEBUG
+                NavigationLink {
+                    E2ETestRunnerView(initialRunMode: .interactiveModelToolValidation)
+                } label: {
+                    DeveloperNavigationRow(
+                        title: "Run physical model/tool proof",
+                        detail: "One strict on-device model turn plus read-only alarm authorization status with correlated evidence.",
+                        systemImage: "iphone.gen3.radiowaves.left.and.right",
+                        tint: .green
+                    )
+                }
+                .accessibilityIdentifier("developerConsole.e2e.interactiveModelToolValidation")
+                #endif
+
                 NavigationLink {
                     E2ETestRunnerView(initialRunMode: .standard)
                 } label: {

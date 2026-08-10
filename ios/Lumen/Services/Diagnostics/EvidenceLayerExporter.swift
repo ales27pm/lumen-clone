@@ -319,9 +319,15 @@ nonisolated enum EvidenceLayerExporter {
     ) -> [String: String] {
         let safeCategoryKeys: Set<String> = [
             "actionable",
+            "attributableModelToolEvidence",
             "expectedToolID",
             "failureKind",
             "missingAdapterSlots",
+            "modelFinalMatchesNativeObservation",
+            "modelFinalTraceCount",
+            "nativeToolObservationStepCount",
+            "nativeToolResultEvidenceCount",
+            "primaryAgentJSONActionTraceCount",
             "readyArtifactCount",
             "remediationApplied",
             "requiredArtifactCount",
