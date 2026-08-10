@@ -163,6 +163,7 @@ final class AppStartupCoordinator {
         runLegacyPrivacyCleanups([
             ("e2e-test-log", { try E2ETestLogStore.purgeLegacyUnsafeArtifacts() }),
             ("agent-behavior-trace", { try AgentBehaviorTraceRecorder.purgeLegacyUnsafeArtifacts() }),
+            ("agent-parse-diagnostics", { try AgentParseFailureRecorder.purgeLegacyUnsafeArtifacts() }),
             ("dataset-package", { try InAppDatasetPackageExporter.purgeLegacyUnsafeArtifacts() }),
         ])
 

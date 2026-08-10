@@ -418,10 +418,15 @@ struct AgentGroundingRegressionTests {
         #expect(!redactedFailure.userTurnPrefix.contains("1234"))
         #expect(!redactedFailure.rawOutputPrefix.contains("Raw model output"))
         #expect(!(redactedFailure.selectedJSONPrefix ?? "").contains("secret account"))
-        #expect(redactedFailure.parseError == "malformed_json")
+        #expect(redactedFailure.id != failure.id)
+        #expect(redactedNoise.id != noise.id)
+        #expect(redactedFailure.parseError == AgentDiagnosticFileRedactor.summary(label: "parseError", text: "malformed_json"))
+        #expect(redactedFailure.modelName == AgentDiagnosticFileRedactor.summary(label: "modelName", text: "agent-json"))
         #expect(redactedFailure.rawOutputPrefix.contains("sha256="))
         #expect(!redactedNoise.userTurnPrefix.contains("1234"))
         #expect((redactedNoise.selectedJSONPrefix ?? "").contains("sha256="))
+        #expect(redactedFailure.isPrivacySafePersistentDiagnostic)
+        #expect(redactedNoise.isPrivacySafePersistentDiagnostic)
     }
 
     @Test func developerTraceCodecRedactsPromptsMemoryToolArgumentsAndAttachmentPathsBeforePersistence() throws {

@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 
 
 def load_checker():
@@ -10,6 +11,74 @@ def load_checker():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def run_git(repository: Path, *arguments: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(repository), *arguments],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def initialize_repository(repository: Path) -> None:
+    repository.mkdir()
+    run_git(repository, "init", "--initial-branch=main")
+    run_git(repository, "config", "user.name", "Privacy Guard Test")
+    run_git(repository, "config", "user.email", "privacy-guard@example.invalid")
+
+
+def commit_all(repository: Path, message: str) -> None:
+    run_git(repository, "add", "--all")
+    run_git(repository, "commit", "-m", message)
+
+
+def test_rejects_private_export_reachable_only_from_history(tmp_path):
+    checker = load_checker()
+    repository = tmp_path / "repository"
+    initialize_repository(repository)
+    export = repository / "exports" / "lumen-live-e2e-report-private.json"
+    export.parent.mkdir()
+    export.write_text('{"prompt":"synthetic private value"}', encoding="utf-8")
+    commit_all(repository, "add private export")
+    export.unlink()
+    commit_all(repository, "delete private export")
+
+    failures = checker.check_git_history_privacy(repository)
+
+    assert failures == [
+        "Git history revision 'HEAD' exposes forbidden private export path: "
+        "exports/lumen-live-e2e-report-private.json"
+    ]
+
+
+def test_accepts_history_without_private_export_paths(tmp_path):
+    checker = load_checker()
+    repository = tmp_path / "repository"
+    initialize_repository(repository)
+    readme = repository / "README.md"
+    readme.write_text("safe\n", encoding="utf-8")
+    commit_all(repository, "add safe source")
+
+    assert checker.check_git_history_privacy(repository) == []
+
+
+def test_history_scan_fails_closed_for_unknown_revision(tmp_path):
+    checker = load_checker()
+    repository = tmp_path / "repository"
+    initialize_repository(repository)
+    readme = repository / "README.md"
+    readme.write_text("safe\n", encoding="utf-8")
+    commit_all(repository, "add safe source")
+
+    failures = checker.check_git_history_privacy(
+        repository,
+        revision="refs/heads/missing",
+    )
+
+    assert len(failures) == 1
+    assert "could not inspect Git history revision" in failures[0]
 
 
 def test_rejects_legacy_live_e2e_filename(tmp_path):
@@ -58,6 +127,125 @@ def test_accepts_redacted_live_e2e_report(tmp_path):
     )
 
     assert checker.check_runtime_audits(tmp_path) == []
+
+
+def test_accepts_interactive_model_tool_metadata_and_event_phase(tmp_path):
+    checker = load_checker()
+    report = tmp_path / "e2e-results-redacted-v1.jsonl"
+    placeholder = "[redacted sha256=" + ("a" * 64) + " chars=12]"
+    report.write_text(
+        json.dumps(
+            {
+                "events": [{"phase": "tool-result", "message": placeholder}],
+                "metadata": {
+                    "attributableModelToolEvidence": "true",
+                    "modelFinalMatchesNativeObservation": "true",
+                    "modelFinalTraceCount": "1",
+                    "nativeToolObservationStepCount": "1",
+                    "nativeToolResultEvidenceCount": "1",
+                    "primaryAgentJSONActionTraceCount": "1",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert checker.check_runtime_audits(tmp_path) == []
+
+
+def test_interactive_metadata_allowlist_is_exact_and_preserves_canary_detection(tmp_path):
+    checker = load_checker()
+    safe_keys = (
+        "attributableModelToolEvidence",
+        "modelFinalMatchesNativeObservation",
+        "modelFinalTraceCount",
+        "nativeToolObservationStepCount",
+        "nativeToolResultEvidenceCount",
+        "primaryAgentJSONActionTraceCount",
+    )
+
+    for index, safe_key in enumerate(safe_keys):
+        case = tmp_path / str(index)
+        case.mkdir()
+        report = case / "e2e-results-redacted-v1.jsonl"
+        report.write_text(
+            json.dumps(
+                {
+                    "events": [{"phase": "tool-result"}],
+                    "metadata": {f"{safe_key}Canary": "privacy-canary@example.invalid"},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        failures = checker.check_runtime_audits(case)
+
+        assert any("non-allowlisted metadata key" in failure for failure in failures)
+        assert any("raw sensitive identifier" in failure for failure in failures)
+
+
+def test_phase_allowlist_preserves_sensitive_value_canary_detection(tmp_path):
+    checker = load_checker()
+    report = tmp_path / "e2e-results-redacted-v1.jsonl"
+    report.write_text(
+        json.dumps({"events": [{"phase": "privacy-canary@example.invalid"}]}) + "\n",
+        encoding="utf-8",
+    )
+
+    failures = checker.check_runtime_audits(tmp_path)
+
+    assert not any("non-allowlisted JSON key" in failure for failure in failures)
+    assert any("raw sensitive identifier" in failure for failure in failures)
+
+
+def test_accepts_only_versioned_redacted_json_companion_names(tmp_path):
+    checker = load_checker()
+    companion_prefixes = (
+        "accepted_training-redacted-v1",
+        "agent-parse-failures-redacted-v1",
+        "agent-parse-noise-redacted-v1",
+        "quarantined_samples-redacted-v1",
+        "regression_tests-redacted-v1",
+    )
+    for prefix in companion_prefixes:
+        (tmp_path / f"{prefix}.json").write_text("{}", encoding="utf-8")
+        (tmp_path / f"{prefix}-2026-08-10T03-20-38Z.jsonl").write_text(
+            "{}\n",
+            encoding="utf-8",
+        )
+
+    assert checker.check_runtime_audits(tmp_path) == []
+
+
+def test_rejects_mutated_companion_name_canaries(tmp_path):
+    checker = load_checker()
+    mutated_names = (
+        "accepted_training.jsonl",
+        "accepted_training-redacted-v2.jsonl",
+        "quarantined_samples-redacted-v1.txt",
+        "regression_tests-redacted-v1private.jsonl",
+    )
+    for name in mutated_names:
+        (tmp_path / name).write_text("{}\n", encoding="utf-8")
+
+    failures = checker.check_runtime_audits(tmp_path)
+
+    assert len([failure for failure in failures if "unrecognized or unversioned" in failure]) == 4
+
+
+def test_rejects_text_summary_and_legacy_agent_parse_names(tmp_path):
+    checker = load_checker()
+    (tmp_path / "latest-e2e-report-redacted-v1.txt").write_text(
+        "synthetic private summary",
+        encoding="utf-8",
+    )
+    (tmp_path / "agent-parse-failures.jsonl").write_text("{}\n", encoding="utf-8")
+
+    failures = checker.check_runtime_audits(tmp_path)
+
+    assert len([failure for failure in failures if "unrecognized or unversioned" in failure]) == 2
 
 
 def test_accepts_hash_summaries_in_redacted_grounding_package(tmp_path):

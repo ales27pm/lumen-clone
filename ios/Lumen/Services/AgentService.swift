@@ -820,10 +820,12 @@ nonisolated struct AgentParseNoiseTrace: Codable, Sendable {
 nonisolated extension AgentParseFailureTrace {
     func redactedForPersistentDiagnostics() -> AgentParseFailureTrace {
         AgentParseFailureTrace(
-            id: id,
+            // Persistent/shareable diagnostics must not retain the live trace
+            // identifier because it can join otherwise independent artifacts.
+            id: UUID(),
             createdAt: createdAt,
-            parseError: parseError,
-            modelName: modelName,
+            parseError: AgentDiagnosticFileRedactor.summary(label: "parseError", text: parseError),
+            modelName: AgentDiagnosticFileRedactor.summary(label: "modelName", text: modelName),
             temperature: temperature,
             topP: topP,
             maxTokens: maxTokens,
@@ -838,14 +840,27 @@ nonisolated extension AgentParseFailureTrace {
             suffixNoise: suffixNoise.map { AgentDiagnosticFileRedactor.summary(label: "suffixNoise", text: $0) }
         )
     }
+
+    var isPrivacySafePersistentDiagnostic: Bool {
+        AgentParseDiagnosticPrivacy.isSummary(parseError, label: "parseError")
+            && AgentParseDiagnosticPrivacy.isSummary(modelName, label: "modelName")
+            && AgentParseDiagnosticPrivacy.isSummary(systemPromptPrefix, label: "systemPrompt")
+            && AgentParseDiagnosticPrivacy.isSummary(userTurnPrefix, label: "userTurn")
+            && AgentParseDiagnosticPrivacy.isSummary(rawOutputPrefix, label: "rawOutput")
+            && AgentParseDiagnosticPrivacy.isSummary(streamedThoughtPrefix, label: "streamedThought")
+            && AgentParseDiagnosticPrivacy.isSummary(streamedFinalPrefix, label: "streamedFinal")
+            && AgentParseDiagnosticPrivacy.isOptionalSummary(selectedJSONPrefix, label: "selectedJSON")
+            && AgentParseDiagnosticPrivacy.isOptionalSummary(prefixNoise, label: "prefixNoise")
+            && AgentParseDiagnosticPrivacy.isOptionalSummary(suffixNoise, label: "suffixNoise")
+    }
 }
 
 nonisolated extension AgentParseNoiseTrace {
     func redactedForPersistentDiagnostics() -> AgentParseNoiseTrace {
         AgentParseNoiseTrace(
-            id: id,
+            id: UUID(),
             createdAt: createdAt,
-            modelName: modelName,
+            modelName: AgentDiagnosticFileRedactor.summary(label: "modelName", text: modelName),
             temperature: temperature,
             topP: topP,
             maxTokens: maxTokens,
@@ -857,6 +872,27 @@ nonisolated extension AgentParseNoiseTrace {
             prefixNoise: prefixNoise.map { AgentDiagnosticFileRedactor.summary(label: "prefixNoise", text: $0) },
             suffixNoise: suffixNoise.map { AgentDiagnosticFileRedactor.summary(label: "suffixNoise", text: $0) }
         )
+    }
+
+    var isPrivacySafePersistentDiagnostic: Bool {
+        AgentParseDiagnosticPrivacy.isSummary(modelName, label: "modelName")
+            && AgentParseDiagnosticPrivacy.isSummary(systemPromptPrefix, label: "systemPrompt")
+            && AgentParseDiagnosticPrivacy.isSummary(userTurnPrefix, label: "userTurn")
+            && AgentParseDiagnosticPrivacy.isSummary(rawOutputPrefix, label: "rawOutput")
+            && AgentParseDiagnosticPrivacy.isOptionalSummary(selectedJSONPrefix, label: "selectedJSON")
+            && AgentParseDiagnosticPrivacy.isOptionalSummary(prefixNoise, label: "prefixNoise")
+            && AgentParseDiagnosticPrivacy.isOptionalSummary(suffixNoise, label: "suffixNoise")
+    }
+}
+
+nonisolated enum AgentParseDiagnosticPrivacy {
+    static func isSummary(_ value: String, label: String) -> Bool {
+        AgentDiagnosticFileRedactor.summary(label: label, text: value) == value
+    }
+
+    static func isOptionalSummary(_ value: String?, label: String) -> Bool {
+        guard let value else { return true }
+        return isSummary(value, label: label)
     }
 }
 
@@ -899,63 +935,184 @@ nonisolated enum AgentNoiseInspector {
     }
 }
 
-nonisolated enum AgentParseFailureRecorder {
-    static func record(_ trace: AgentParseFailureTrace) {
-        do {
-            let directory = try diagnosticsDirectory()
-            let url = directory.appendingPathComponent("agent-parse-failures.jsonl", isDirectory: false)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(trace.redactedForPersistentDiagnostics())
-            var line = data
-            line.append(0x0A)
+nonisolated enum AgentParseDiagnosticsFile {
+    static let failure = "agent-parse-failures-redacted-v1.jsonl"
+    static let noise = "agent-parse-noise-redacted-v1.jsonl"
+    static let legacyUnsafe = [
+        "agent-parse-failures.jsonl",
+        "agent-parse-noise.jsonl"
+    ]
+}
 
-            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+nonisolated enum AgentParseDiagnosticsStorageError: Error, Equatable {
+    case unexpectedArtifactType(String)
+    case legacyArtifactStillPresent(String)
+}
+
+private nonisolated final class AgentParseDiagnosticsStorage: @unchecked Sendable {
+    static let shared = AgentParseDiagnosticsStorage()
+
+    private let lock = NSLock()
+    private let fileManager = FileManager.default
+
+    func prepare(_ directory: URL) throws {
+        try locked {
+            try prepareUnlocked(directory)
+        }
+    }
+
+    func append(_ data: Data, fileName: String, in directory: URL) throws {
+        try locked {
+            try prepareUnlocked(directory)
+            let url = directory.appendingPathComponent(fileName, isDirectory: false)
+
+            if artifactExists(at: url) {
+                try requireRegularFile(at: url)
+                try applyCompleteProtection(to: url)
                 let handle = try FileHandle(forWritingTo: url)
                 defer { try? handle.close() }
                 try handle.seekToEnd()
-                try handle.write(contentsOf: line)
+                try handle.write(contentsOf: data)
+                try handle.synchronize()
+                try applyCompleteProtection(to: url)
             } else {
-                try line.write(to: url, options: [.atomic])
+                try data.write(to: url, options: [.atomic, .completeFileProtection])
+                try requireRegularFile(at: url)
+                try applyCompleteProtection(to: url)
             }
+        }
+    }
+
+    func read(fileName: String, in directory: URL) throws -> Data? {
+        try locked {
+            try prepareUnlocked(directory)
+            let url = directory.appendingPathComponent(fileName, isDirectory: false)
+            guard artifactExists(at: url) else { return nil }
+            try requireRegularFile(at: url)
+            try applyCompleteProtection(to: url)
+            return try Data(contentsOf: url)
+        }
+    }
+
+    private func prepareUnlocked(_ directory: URL) throws {
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        try fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: directory.path(percentEncoded: false)
+        )
+
+        // Legacy files used an unversioned schema that retained correlatable
+        // identifiers and free-form categories. Purge rather than migrate them;
+        // an unexpected artifact type aborts all new reads/writes fail-closed.
+        for fileName in AgentParseDiagnosticsFile.legacyUnsafe {
+            let url = directory.appendingPathComponent(fileName, isDirectory: false)
+            guard artifactExists(at: url) else { continue }
+            try requireRegularFile(at: url)
+            try fileManager.removeItem(at: url)
+            guard !artifactExists(at: url) else {
+                throw AgentParseDiagnosticsStorageError.legacyArtifactStillPresent(fileName)
+            }
+        }
+    }
+
+    private func artifactExists(at url: URL) -> Bool {
+        let path = url.path(percentEncoded: false)
+        if fileManager.fileExists(atPath: path) { return true }
+        // fileExists follows symlinks; this second check detects dangling links
+        // so they cannot bypass type validation or legacy cleanup.
+        return (try? fileManager.destinationOfSymbolicLink(atPath: path)) != nil
+    }
+
+    private func requireRegularFile(at url: URL) throws {
+        let attributes = try fileManager.attributesOfItem(atPath: url.path(percentEncoded: false))
+        guard attributes[.type] as? FileAttributeType == .typeRegular else {
+            throw AgentParseDiagnosticsStorageError.unexpectedArtifactType(url.lastPathComponent)
+        }
+    }
+
+    private func applyCompleteProtection(to url: URL) throws {
+        try fileManager.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path(percentEncoded: false)
+        )
+    }
+
+    private func locked<T>(_ operation: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try operation()
+    }
+}
+
+nonisolated enum AgentParseFailureRecorder {
+    static func record(_ trace: AgentParseFailureTrace) {
+        do {
+            try persist(trace, in: defaultDiagnosticsDirectory())
         } catch {
             // Diagnostics must never break chat generation.
         }
     }
 
+    static func persist(_ trace: AgentParseFailureTrace, in directory: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(trace.redactedForPersistentDiagnostics())
+        var line = data
+        line.append(0x0A)
+        try AgentParseDiagnosticsStorage.shared.append(
+            line,
+            fileName: AgentParseDiagnosticsFile.failure,
+            in: directory
+        )
+    }
+
     static func diagnosticsDirectory() throws -> URL {
+        let directory = defaultDiagnosticsDirectory()
+        try AgentParseDiagnosticsStorage.shared.prepare(directory)
+        return directory
+    }
+
+    static func purgeLegacyUnsafeArtifacts(in directory: URL) throws {
+        try AgentParseDiagnosticsStorage.shared.prepare(directory)
+    }
+
+    static func purgeLegacyUnsafeArtifacts() throws {
+        try AgentParseDiagnosticsStorage.shared.prepare(defaultDiagnosticsDirectory())
+    }
+
+    private static func defaultDiagnosticsDirectory() -> URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        let directory = base
+        return base
             .appendingPathComponent("Diagnostics", isDirectory: true)
             .appendingPathComponent("Agent", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
     }
 }
 
 nonisolated enum AgentParseNoiseRecorder {
     static func record(_ trace: AgentParseNoiseTrace) {
         do {
-            let directory = try AgentParseFailureRecorder.diagnosticsDirectory()
-            let url = directory.appendingPathComponent("agent-parse-noise.jsonl", isDirectory: false)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(trace.redactedForPersistentDiagnostics())
-            var line = data
-            line.append(0x0A)
-
-            if FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
-                let handle = try FileHandle(forWritingTo: url)
-                defer { try? handle.close() }
-                try handle.seekToEnd()
-                try handle.write(contentsOf: line)
-            } else {
-                try line.write(to: url, options: [.atomic])
-            }
+            try persist(trace, in: AgentParseFailureRecorder.diagnosticsDirectory())
         } catch {
             // Diagnostics must never break chat generation.
         }
+    }
+
+    static func persist(_ trace: AgentParseNoiseTrace, in directory: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(trace.redactedForPersistentDiagnostics())
+        var line = data
+        line.append(0x0A)
+        try AgentParseDiagnosticsStorage.shared.append(
+            line,
+            fileName: AgentParseDiagnosticsFile.noise,
+            in: directory
+        )
     }
 }
 
@@ -1027,49 +1184,42 @@ nonisolated enum AgentParseFailureSummaryLoader {
 
     static func load(topN: Int = 5) -> AgentParseFailureSummary {
         do {
-            let directory = try AgentParseFailureRecorder.diagnosticsDirectory()
-            let url = directory.appendingPathComponent("agent-parse-failures.jsonl", isDirectory: false)
-            guard let data = try? Data(contentsOf: url), !data.isEmpty else {
-                return AgentParseFailureSummary(
-                    totalLines: 0,
-                    decodedLines: 0,
-                    skippedLines: 0,
-                    topEntries: [],
-                    recentLineWindowSize: 0,
-                    recent24hCount: 0,
-                    recentLineTopEntries: [],
-                    recent24hTopEntries: []
-                )
-            }
-            let text = String(decoding: data, as: UTF8.self)
-            return load(fromJSONLText: text, topN: topN)
-        } catch {
-            return AgentParseFailureSummary(
-                totalLines: 0,
-                decodedLines: 0,
-                skippedLines: 0,
-                topEntries: [],
-                recentLineWindowSize: 0,
-                recent24hCount: 0,
-                recentLineTopEntries: [],
-                recent24hTopEntries: []
+            return try load(
+                fromPersistentDirectory: AgentParseFailureRecorder.diagnosticsDirectory(),
+                topN: topN
             )
+        } catch {
+            return emptySummary()
         }
     }
 
+    static func load(
+        fromPersistentDirectory directory: URL,
+        topN: Int = 5
+    ) throws -> AgentParseFailureSummary {
+        guard let data = try AgentParseDiagnosticsStorage.shared.read(
+            fileName: AgentParseDiagnosticsFile.failure,
+            in: directory
+        ), !data.isEmpty else { return emptySummary() }
+        let text = String(decoding: data, as: UTF8.self)
+        return load(fromJSONLText: text, topN: topN, requiringPrivacySafeRecords: true)
+    }
+
     static func load(fromJSONLText text: String, topN: Int = 5) -> AgentParseFailureSummary {
+        // This pure decoder intentionally remains compatible with synthetic and
+        // historical in-memory fixtures. Disk reads always use the stricter
+        // privacy-validated path above and never read the legacy file name.
+        load(fromJSONLText: text, topN: topN, requiringPrivacySafeRecords: false)
+    }
+
+    private static func load(
+        fromJSONLText text: String,
+        topN: Int,
+        requiringPrivacySafeRecords: Bool
+    ) -> AgentParseFailureSummary {
         let lines = text.split(whereSeparator: \.isNewline)
         if lines.isEmpty {
-            return AgentParseFailureSummary(
-                totalLines: 0,
-                decodedLines: 0,
-                skippedLines: 0,
-                topEntries: [],
-                recentLineWindowSize: 0,
-                recent24hCount: 0,
-                recentLineTopEntries: [],
-                recent24hTopEntries: []
-            )
+            return emptySummary()
         }
 
         var counts: [Key: Int] = [:]
@@ -1080,7 +1230,8 @@ nonisolated enum AgentParseFailureSummaryLoader {
 
         for line in lines {
             guard let data = String(line).data(using: .utf8),
-                  let trace = try? decoder.decode(AgentParseFailureTrace.self, from: data) else {
+                  let trace = try? decoder.decode(AgentParseFailureTrace.self, from: data),
+                  !requiringPrivacySafeRecords || trace.isPrivacySafePersistentDiagnostic else {
                 continue
             }
             decodedLines += 1
@@ -1138,6 +1289,19 @@ nonisolated enum AgentParseFailureSummaryLoader {
             recent24hCount: recent24hWindow.count,
             recentLineTopEntries: recentLineTopEntries,
             recent24hTopEntries: recent24hTopEntries
+        )
+    }
+
+    private static func emptySummary() -> AgentParseFailureSummary {
+        AgentParseFailureSummary(
+            totalLines: 0,
+            decodedLines: 0,
+            skippedLines: 0,
+            topEntries: [],
+            recentLineWindowSize: 0,
+            recent24hCount: 0,
+            recentLineTopEntries: [],
+            recent24hTopEntries: []
         )
     }
 
@@ -1260,49 +1424,41 @@ nonisolated enum AgentParseNoiseSummaryLoader {
 
     static func load(topN: Int = 5) -> AgentParseNoiseSummary {
         do {
-            let directory = try AgentParseFailureRecorder.diagnosticsDirectory()
-            let url = directory.appendingPathComponent("agent-parse-noise.jsonl", isDirectory: false)
-            guard let data = try? Data(contentsOf: url), !data.isEmpty else {
-                return AgentParseNoiseSummary(
-                    totalLines: 0,
-                    decodedLines: 0,
-                    skippedLines: 0,
-                    topEntries: [],
-                    recentLineWindowSize: 0,
-                    recent24hCount: 0,
-                    recentLineTopEntries: [],
-                    recent24hTopEntries: []
-                )
-            }
-            let text = String(decoding: data, as: UTF8.self)
-            return load(fromJSONLText: text, topN: topN)
-        } catch {
-            return AgentParseNoiseSummary(
-                totalLines: 0,
-                decodedLines: 0,
-                skippedLines: 0,
-                topEntries: [],
-                recentLineWindowSize: 0,
-                recent24hCount: 0,
-                recentLineTopEntries: [],
-                recent24hTopEntries: []
+            return try load(
+                fromPersistentDirectory: AgentParseFailureRecorder.diagnosticsDirectory(),
+                topN: topN
             )
+        } catch {
+            return emptySummary()
         }
     }
 
+    static func load(
+        fromPersistentDirectory directory: URL,
+        topN: Int = 5
+    ) throws -> AgentParseNoiseSummary {
+        guard let data = try AgentParseDiagnosticsStorage.shared.read(
+            fileName: AgentParseDiagnosticsFile.noise,
+            in: directory
+        ), !data.isEmpty else { return emptySummary() }
+        let text = String(decoding: data, as: UTF8.self)
+        return load(fromJSONLText: text, topN: topN, requiringPrivacySafeRecords: true)
+    }
+
     static func load(fromJSONLText text: String, topN: Int = 5) -> AgentParseNoiseSummary {
+        // Keep the pure decoder useful for in-memory fixtures. Persisted input
+        // is accepted only through the privacy-validated versioned-file path.
+        load(fromJSONLText: text, topN: topN, requiringPrivacySafeRecords: false)
+    }
+
+    private static func load(
+        fromJSONLText text: String,
+        topN: Int,
+        requiringPrivacySafeRecords: Bool
+    ) -> AgentParseNoiseSummary {
         let lines = text.split(whereSeparator: \.isNewline)
         if lines.isEmpty {
-            return AgentParseNoiseSummary(
-                totalLines: 0,
-                decodedLines: 0,
-                skippedLines: 0,
-                topEntries: [],
-                recentLineWindowSize: 0,
-                recent24hCount: 0,
-                recentLineTopEntries: [],
-                recent24hTopEntries: []
-            )
+            return emptySummary()
         }
 
         var counts: [Key: Int] = [:]
@@ -1313,7 +1469,8 @@ nonisolated enum AgentParseNoiseSummaryLoader {
 
         for line in lines {
             guard let data = String(line).data(using: .utf8),
-                  let trace = try? decoder.decode(AgentParseNoiseTrace.self, from: data) else {
+                  let trace = try? decoder.decode(AgentParseNoiseTrace.self, from: data),
+                  !requiringPrivacySafeRecords || trace.isPrivacySafePersistentDiagnostic else {
                 continue
             }
             decodedLines += 1
@@ -1374,6 +1531,19 @@ nonisolated enum AgentParseNoiseSummaryLoader {
             recent24hCount: recent24hWindow.count,
             recentLineTopEntries: recentLineTopEntries,
             recent24hTopEntries: recent24hTopEntries
+        )
+    }
+
+    private static func emptySummary() -> AgentParseNoiseSummary {
+        AgentParseNoiseSummary(
+            totalLines: 0,
+            decodedLines: 0,
+            skippedLines: 0,
+            topEntries: [],
+            recentLineWindowSize: 0,
+            recent24hCount: 0,
+            recentLineTopEntries: [],
+            recent24hTopEntries: []
         )
     }
 

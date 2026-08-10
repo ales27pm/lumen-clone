@@ -155,4 +155,16 @@ struct AppStartupCoordinatorTests {
         #expect(failures == ["first"])
     }
 
+    @Test func startupRegistersAgentParseDiagnosticsLegacyPrivacyCleanup() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Lumen/LumenApp.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains(
+            "(\"agent-parse-diagnostics\", { try AgentParseFailureRecorder.purgeLegacyUnsafeArtifacts() })"
+        ))
+    }
+
 }

@@ -7,12 +7,15 @@ import argparse
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_AUDIT_ROOT = ROOT / "runtime-audits"
+DEFAULT_HISTORY_REVISION = "HEAD"
+FORBIDDEN_HISTORY_PREFIXES = ("exports/",)
 
 REDACTED_TEXT = re.compile(r"^\[redacted sha256=[0-9a-f]{64} chars=[0-9]+\]$")
 HASH_SUMMARY = re.compile(r"^[A-Za-z][A-Za-z0-9]*_chars=[0-9]+;sha256=[0-9a-f]{16}$")
@@ -27,7 +30,10 @@ ALLOWED_NON_EVIDENCE_FILES = {
     "PRIVACY_QUARANTINE.md",
 }
 PRIVACY_SAFE_FILE_PREFIXES = (
+    "accepted_training-redacted-v1",
     "agent-behavior-traces-redacted-v1",
+    "agent-parse-failures-redacted-v1",
+    "agent-parse-noise-redacted-v1",
     "e2e-results-redacted-v1",
     "latest-e2e-report-redacted-v1",
     "lumen-agent-runtime-traces-redacted-v1",
@@ -37,6 +43,8 @@ PRIVACY_SAFE_FILE_PREFIXES = (
     "lumen-static-scenario-checks-redacted-v1",
     "lumen-testflight-agent-grounding-redacted-v1",
     "persistent-runtime-diagnostics-redacted-v2",
+    "quarantined_samples-redacted-v1",
+    "regression_tests-redacted-v1",
 )
 RAW_CORRELATION_KEYS = {
     "e2eRunID",
@@ -81,10 +89,16 @@ SENSITIVE_FREE_FORM_KEYS = {
 }
 SAFE_METADATA_KEYS = {
     "actionable",
+    "attributableModelToolEvidence",
     "expectedToolID",
     "failureKind",
     "missingAdapterSlots",
+    "modelFinalMatchesNativeObservation",
+    "modelFinalTraceCount",
+    "nativeToolObservationStepCount",
+    "nativeToolResultEvidenceCount",
     "privacyRedacted",
+    "primaryAgentJSONActionTraceCount",
     "readyArtifactCount",
     "remediationApplied",
     "requiredArtifactCount",
@@ -139,7 +153,7 @@ ALLOWED_DOCUMENT_KEYS = frozenset(
     maxTokensRequested memoryCount memoryWarningCount message messageBuildMs messageCharacters
     messageToken metadata metricKitPayloads metrics missingHints mode
     modelBackedCorrelatedScenarioCount modelBackedCorrelatedTraceCount modelFamily
-    modelIdentifier modelLoaded name ndjson notes outputHygieneFailures outputTokenCount
+    modelIdentifier modelLoaded name ndjson notes outputHygieneFailures outputTokenCount phase
     ownsLiveE2EScenarios parseError passed passedCount payload payloadBytes peakRAMMB
     performanceMatrix privacy problem prompt promptBodyBytes promptCharCount promptFinalChars
     promptInitialChars promptLatencyClass promptPolicy promptPrefix promptRedactionModeToken
@@ -210,7 +224,15 @@ def is_legacy_sensitive_name(name: str) -> bool:
 
 
 def is_privacy_safe_candidate(name: str) -> bool:
-    return name.endswith((".json", ".jsonl")) and name.startswith(PRIVACY_SAFE_FILE_PREFIXES)
+    for suffix in (".json", ".jsonl"):
+        if not name.endswith(suffix):
+            continue
+        stem = name[: -len(suffix)]
+        return any(
+            stem == prefix or stem.startswith(f"{prefix}-")
+            for prefix in PRIVACY_SAFE_FILE_PREFIXES
+        )
+    return False
 
 
 def is_redacted_text(value: str) -> bool:
@@ -344,12 +366,72 @@ def check_runtime_audits(audit_root: Path) -> list[str]:
     return failures
 
 
+def check_git_history_privacy(
+    repository_root: Path,
+    *,
+    revision: str = DEFAULT_HISTORY_REVISION,
+) -> list[str]:
+    """Reject private export paths reachable from the release history.
+
+    ``exports/`` is intentionally ignored and machine-local. Checking only the
+    current tree is insufficient because a deleted export remains downloadable
+    from every reachable commit until history is purged.
+    """
+
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository_root),
+                "rev-list",
+                "--objects",
+                revision,
+                "--",
+                *FORBIDDEN_HISTORY_PREFIXES,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        return [f"could not inspect Git history for private exports: {error}"]
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"git exited with status {result.returncode}"
+        return [f"could not inspect Git history revision {revision!r}: {detail}"]
+
+    forbidden_paths: set[str] = set()
+    for line in result.stdout.splitlines():
+        _object_id, separator, path = line.partition(" ")
+        path = path.strip()
+        if not separator or not path:
+            continue
+        # ``rev-list --objects`` also emits the directory tree object as the
+        # bare path ``exports``. Only descendants are private export files.
+        if any(path.startswith(prefix) for prefix in FORBIDDEN_HISTORY_PREFIXES):
+            forbidden_paths.add(path)
+
+    return [
+        f"Git history revision {revision!r} exposes forbidden private export path: {path}"
+        for path in sorted(forbidden_paths)
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--audit-root", type=Path, default=DEFAULT_AUDIT_ROOT)
+    parser.add_argument("--repository-root", type=Path, default=ROOT)
+    parser.add_argument("--history-revision", default=DEFAULT_HISTORY_REVISION)
     args = parser.parse_args()
 
     failures = check_runtime_audits(args.audit_root)
+    failures.extend(
+        check_git_history_privacy(
+            args.repository_root,
+            revision=args.history_revision,
+        )
+    )
     if failures:
         print("Runtime audit privacy validation failed:", file=sys.stderr)
         for failure in failures:

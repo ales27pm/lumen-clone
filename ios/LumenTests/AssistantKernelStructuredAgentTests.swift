@@ -573,7 +573,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
     func testMalformedMemoryTurnsRepairedIntoRequiredActionsRecordParseFailures() async throws {
         #if DEBUG
         let diagnosticsDirectory = try AgentParseFailureRecorder.diagnosticsDirectory()
-        let diagnosticsURL = diagnosticsDirectory.appendingPathComponent("agent-parse-failures.jsonl")
+        let diagnosticsURL = diagnosticsDirectory.appendingPathComponent(AgentParseDiagnosticsFile.failure)
         let originalByteCount = (try? Data(contentsOf: diagnosticsURL).count) ?? 0
         let service = ScriptedLlamaService(
             isChatLoaded: true,
@@ -609,7 +609,12 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         let appendedFailures = appendedData
             .split(separator: 0x0A)
             .compactMap { try? decoder.decode(AgentParseFailureTrace.self, from: Data($0)) }
-        XCTAssertEqual(appendedFailures.filter { $0.parseError == AgentTurnParseError.missingActionOrFinal.rawValue }.count, 3)
+        let expectedParseError = AgentDiagnosticFileRedactor.summary(
+            label: "parseError",
+            text: AgentTurnParseError.missingActionOrFinal.rawValue
+        )
+        XCTAssertEqual(appendedFailures.filter { $0.parseError == expectedParseError }.count, 3)
+        XCTAssertTrue(appendedFailures.allSatisfy(\.isPrivacySafePersistentDiagnostic))
         let streamCallCount = await service.streamCallCount
         XCTAssertEqual(streamCallCount, 4)
         #endif

@@ -30,7 +30,7 @@ python3 -m lumen_manifest_crawler improve-loop --root . --output generated/agent
 - **Optimized simulator reruns** should reuse compiled products. Run `build-for-testing` once, locate the produced `.xctestrun`, then use `xcodebuild test-without-building -xctestrun ... -only-testing:LumenTests/<Suite>` for focused reruns. Do not recompile just to rerun a narrow simulator suite.
 - **CoreSimulator runtime health** matters. On this host the recurring focused-runner blocker was CoreSimulator runtime/device readiness, visible as simulator-runtime `Info.plist missing` lines, slow MobileInstallation `Preflight/Patch` timings, and fresh simulators spending more than 7 minutes in `bootstatus` migration before XCTest could start. `simctl runtime list -v`, `simctl runtime verify`, and direct `codesign --verify` can disagree on cryptex-mounted simulator runtimes, so the focused runner pins an installed runtime and treats a Booted device with SpringBoard and backboardd running as usable even when `bootstatus` does not reach terminal readiness. Runtime cleanup, `xcodebuild -downloadPlatform iOS`, dyld-cache rebuilds, prewarming a reusable simulator, and attaching Simulator.app before `bootstatus` are host repair tools before treating simulator XCTest timeout as an app regression.
 - **Runtime validation** comes from exported runtime audit/TestFlight/E2E evidence. Missing runtime evidence is not a runtime pass, and simulator XCTest success is not a substitute for live runtime evidence.
-- **Persistent evidence privacy validation** requires `redacted-v1` E2E results/exports, behavior traces, and in-app grounding packages. Run `python3 tools/check_runtime_audit_privacy.py` before accepting a checked-in runtime artifact. The version label and privacy check do not establish runtime freshness, model attribution, or a behavioral pass.
+- **Persistent evidence privacy validation** requires `redacted-v1` E2E results/exports, behavior traces, agent parse diagnostics, and in-app grounding packages. Parse-diagnostic persistence rotates record IDs, one-way summarizes model/error labels and free-form fields, applies complete file protection, and purges the unversioned legacy filenames at startup. Run `python3 tools/check_runtime_audit_privacy.py` before accepting a checked-in runtime artifact. In addition to validating the current tree, the checker scans private `exports/` paths reachable from `HEAD`; it currently fails on four deleted legacy exports that remain reachable pending a coordinated history purge and downstream resynchronization. Detection is not remediation, and the version label/privacy check do not establish containment, runtime freshness, model attribution, or a behavioral pass.
 - **Live E2E scoring** treats incomplete user-visible finals as failures. Dangling endings such as `an`, `a`, `the`, `with`, `because`, or `you do not need an` must be repaired from trusted tool observations when possible or fail hygiene. Tool-backed missing-argument scenarios should clarify rather than pass through generic safe failure text.
 - **Model-backed training pacing** checks runtime budget and CPU watchdog state before generation. If degraded before a valid generation begins, emit one non-actionable runtime-preflight result with `trainingSignal=false` instead of entering agent-json and accumulating trainable failures.
 - **Training/HF validation** is opt-in and never runs by default.
@@ -96,29 +96,31 @@ The simulator commands above are fallback/coverage tools. Do not combine their o
 - A separate DEBUG-only physical interactive model/tool validation ran from source `95174d975da515cf8625212592721cd0baa7bfa5`, build `20260810031810`, on the iPhone 16 Pro running iOS 26.6. Its dedicated physical-device XCUITest passed 1/1. The actual local model emitted the correlated `alarm.authorization_status` action, `SecureToolRegistry` executed that permission-safe status read and returned the trusted observation, and the model-authored final matched the observation.
 - The fail-closed host verifier accepted the corresponding redacted package. Its selected byte identity had SHA-256 `d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f`; this digest records the verified package and does not imply that the exported package is tracked in Git.
 - No simulator was used as evidence for this hardening checkpoint.
-- A fresh no-upload Release archive/export completed from exact source `635c7b0c2f7f2ee6a697b2622d025153924a7c35` with build number `20260810044413`. `xcodebuild` reported `** ARCHIVE SUCCEEDED **` for `build/Lumen-20260810-004452.xcarchive` and `** EXPORT SUCCEEDED **` for `build/export-Lumen-20260810-004452/Lumen.ipa`; the IPA had SHA-256 `0f775f81a8c730ba2848bd9a697ac59b2ac9d1e7493be4b4a132bb77ab956bc1`.
+- A fresh Release archive/export first completed under a no-upload guard from exact source `635c7b0c2f7f2ee6a697b2622d025153924a7c35` with build number `20260810044413`. `xcodebuild` reported `** ARCHIVE SUCCEEDED **` for `build/Lumen-20260810-004452.xcarchive` and `** EXPORT SUCCEEDED **` for `build/export-Lumen-20260810-004452/Lumen.ipa`; the IPA had SHA-256 `0f775f81a8c730ba2848bd9a697ac59b2ac9d1e7493be4b4a132bb77ab956bc1`.
 - The release wrapper verified archive and IPA Info.plist/provenance, the app privacy manifest, bundled `AgentBehaviorManifest.json` SHA-256 `f050e3b696cc73a82a2c1a9c613efa19ecd16027f0419b81c81ffcafd45817c8`, MSAL `1.9.0`, and signed entitlements. The exported signature used Apple Distribution identity `CF9FD3FF6D932AD1EB2822261611570904AE5641`, team `52T7P32J34`, with `get-task-allow=false`.
 - Xcode selected an automatically managed App Store profile with UUID `f16a0f00-406d-476a-9210-ce27e7df387c`, no provisioned devices, and expiration `2027-08-09`. It is distinct from the separately installed profile UUID `64b7a123-7fe8-48f4-a4a3-8d1aa8bfb91a`.
 - The release lane installed the official Microsoft MSAL `1.9.0` dSYM after its release ZIP matched pinned SHA-256 `ecbb4f3c1e8f7e943cd7bf304b2cbe053bfc9998d41848480d6438218cfb6e12`. Fail-closed UUID coverage passed 3/3 for Lumen, MSAL, and llama in both the archive and exported IPA. Export `Packaging.log` contains no `Upload Symbols Failed`.
-- `LUMEN_NO_UPLOAD=1` prohibited upload. No uploader was invoked, no TestFlight submission, processing, or App Store acceptance occurred, and the archive remains bound to source `635c7b0c2f7f2ee6a697b2622d025153924a7c35` rather than any later documentation commit.
+- The exact IPA was subsequently uploaded under explicit authorization. `altool` completed without errors and returned Delivery UUID/build ID `d75bbaf0-c722-46be-a1df-d29f0bbe47a7`; App Store Connect records upload time `2026-08-09T22:08:12-07:00`, terminal API state `VALID`, internal state `IN_BETA_TESTING`, external state `READY_FOR_BETA_SUBMISSION`, and not expired. The archive and upload remain bound to source `635c7b0c2f7f2ee6a697b2622d025153924a7c35`, not a later documentation commit.
+- The exact TestFlight build has not been installed or run on a physical iPhone. No external beta submission, App Store review submission, metadata change, or acceptance occurred. The `1.0.1` App Store version record is `PREPARE_FOR_SUBMISSION` with no selected build, while this binary's marketing version is `1.0.0`; it therefore cannot be selected for that version record.
 - The checked-in configuration pins MSAL exactly to `1.9.0`; the link and release validators enforce the exact requirement.
 - Release/minimal AgentGrounding packaging fails closed on missing, drifted, invalid, warning-bearing, failed, or hash-mismatched runtime resources and on missing, unsafe, or hash-mismatched source files declared by `sourceIntegrity`. Only an explicit Debug diagnostic build may produce an empty fallback bundle.
 - Background trigger/headless execution now distinguishes completed, deferred, failed, and cancelled outcomes. A background task succeeds only for a completed trigger scan; `beforeNextEvent` creation reports typed unavailability.
 - Persisted E2E results/exports, behavior traces, and in-app grounding packages are versioned `redacted-v1`; raw-content legacy filenames are purged and the current-tree privacy checker rejects legacy checked-in E2E artifacts.
 
-These checkpoints now include one exact DEBUG local-model/action/native-observation/model-final flow, but they are not a final Release qualification. The proof applies only to its source, build, device, and `alarm.authorization_status` scenario; the product and release checks below remain unproven unless separately recorded for the exact submitted Release build.
+These checkpoints now include one exact DEBUG local-model/action/native-observation/model-final flow, but they are not a final Release qualification. The proof applies only to its source, build, device, and `alarm.authorization_status` scenario; the product and release checks below remain unproven unless separately recorded for the exact uploaded Release build.
 
 Release submission validation also requires credentialed or physical-device checks:
 
-- TestFlight or real-device smoke test of the exact submitted Release build
-- real-device local-model load and interactive generation through a production user surface in that submitted Release build
-- live tool-call validation for submitted Release surfaces beyond the one DEBUG `alarm.authorization_status` proof
+- TestFlight or real-device smoke test of the exact uploaded Release build
+- real-device local-model load and interactive generation through a production user surface in that uploaded Release build
+- live tool-call validation for uploaded Release surfaces beyond the one DEBUG `alarm.authorization_status` proof
 - live RAG indexing and search
 - live memory extraction and storage
 - live voice and AppIntent flows that are enabled in the submitted build
 - real background scheduling and execution
 - Microsoft OAuth and mailbox behavior
-- App Store upload, processing, and acceptance
+- physical TestFlight execution of the exact uploaded build
+- resolution of the `1.0.1` version-record versus `1.0.0` binary mismatch, build selection, external beta submission if intended, and App Store review/acceptance
 
 ## App Store Connect Submission Evidence
 
@@ -136,6 +138,8 @@ Before archiving, confirm `CURRENT_PROJECT_VERSION` in `ios/Lumen.xcodeproj/proj
 - entitlement checks passed for the archive and exported IPA
 - upload output contains `UPLOAD SUCCEEDED with no errors`
 - upload output includes a `Delivery UUID`
+
+For the current candidate, those upload requirements passed for source `635c7b0c2f7f2ee6a697b2622d025153924a7c35`, build `20260810044413`, IPA SHA-256 `0f775f81a8c730ba2848bd9a697ac59b2ac9d1e7493be4b4a132bb77ab956bc1`, and Delivery UUID/build ID `d75bbaf0-c722-46be-a1df-d29f0bbe47a7`. Terminal `VALID` processing and internal `IN_BETA_TESTING` availability do not prove physical execution, external beta submission or approval, build selection for an App Store version, review submission, metadata completion, or acceptance.
 
 If the upload log contains `ERROR:`, `Failed to upload`, `ENTITY_ERROR`, or a duplicate-build/version rejection, document the submission as failed and fix the root cause before retrying.
 
