@@ -69,7 +69,7 @@ def test_improvement_loop_writes_state_gaps_prompts_and_testflight_artifacts(tmp
     assert cortex_config["adapterExport"]["mergeAdaptersByDefault"] is False
     assert cortex_config["mergeExport"]["enabledByDefault"] is False
 
-    assert result.state["schemaVersion"] == "1.1.0"
+    assert result.state["schemaVersion"] == "1.2.0"
     assert result.state["manifest"]["toolCount"] >= 0
     assert result.state["dataset"]["recordCount"] > 0
     assert result.state["dataset"]["embedding"]["pairCount"] > 0
@@ -77,7 +77,7 @@ def test_improvement_loop_writes_state_gaps_prompts_and_testflight_artifacts(tmp
     assert result.state["dataset"]["reranker"]["hardNegativePairCount"] > 0
     assert result.state["dataset"]["reranker"]["enabledByDefault"] is False
     assert result.state["dataset"]["agentFineTuning"]["cortex"]["trainSFT"] > 0
-    assert result.state["testFlight"]["status"] == "awaiting-testflight-runtime-audit"
+    assert result.state["testFlight"]["status"] == "awaiting-runtime-audit"
     assert result.state["testFlight"]["buildLabel"] == "1.0.0-build-99"
     assert len(result.testflight_scenarios) <= 12
     assert any(scenario.get("sourceFamily") == "trace_export_coverage" for scenario in result.testflight_scenarios)
@@ -223,13 +223,15 @@ def test_improvement_loop_flags_stale_testflight_runtime_audit_build(tmp_path: P
     assert not any(gap["title"] == "Empty dataset family: runtime_audit_repairs" for gap in result.gaps)
     assert result.state["runtime"]["reportCount"] == 0
     assert result.state["runtime"]["totalReportCount"] == 1
-    assert result.state["runtime"]["staleReportCount"] == 1
+    assert result.state["runtime"]["buildRejectedReportCount"] == 1
+    assert result.state["runtime"]["staleReportCount"] == 0
     assert result.state["runtime"]["failureCount"] == 0
     assert result.state["runtime"]["rawFailureCount"] == 0
-    assert result.state["testFlight"]["status"] == "runtime-audit-stale"
+    assert result.state["testFlight"]["status"] == "runtime-audit-build-rejected"
     assert result.state["testFlight"]["runtimeAuditProvided"] is True
     assert result.state["testFlight"]["currentRuntimeAuditProvided"] is False
-    assert result.state["testFlight"]["staleRuntimeAuditReportCount"] == 1
+    assert result.state["testFlight"]["buildRejectedRuntimeAuditReportCount"] == 1
+    assert result.state["testFlight"]["staleRuntimeAuditReportCount"] == 0
     assert result.state["triage"]["rawRuntimeFailureCount"] == 0
     assert result.state["triage"]["freshRuntimeFailureCount"] == 0
     assert result.state["triage"]["rootCauseCounts"]["stale_audit_evidence"] == 1
@@ -288,8 +290,18 @@ def test_improvement_loop_ignores_stale_testflight_reports_when_current_build_is
     assert not any(gap["category"] == "testflight_runtime_build_mismatch" for gap in result.gaps)
     assert result.state["runtime"]["reportCount"] == 1
     assert result.state["runtime"]["totalReportCount"] == 2
-    assert result.state["runtime"]["staleReportCount"] == 1
-    assert result.state["testFlight"]["status"] == "runtime-audit-ingested"
+    assert result.state["runtime"]["buildRejectedReportCount"] == 1
+    assert result.state["runtime"]["staleReportCount"] == 0
+    assert result.state["testFlight"]["status"] == "historical-runtime-audit-ingested"
+    assert result.state["testFlight"]["currentRuntimeAuditProvided"] is False
+    assert result.state["testFlight"]["historicalRuntimeAuditReportCount"] == 1
+    assert not any(
+        gap["category"] == "testflight_runtime_proof_unverified"
+        for gap in result.gaps
+    )
+    repairs = tmp_path / "agent_manifest" / "dataset" / "runtime_audit_repairs.jsonl"
+    assert repairs.exists()
+    assert "runtime_audit_clean" in repairs.read_text(encoding="utf-8")
 
 
 def test_improvement_loop_records_failed_command_as_critical_gap(tmp_path: Path):

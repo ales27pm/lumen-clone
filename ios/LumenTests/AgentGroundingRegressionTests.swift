@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 @testable import Lumen
 
 @Suite(.serialized)
@@ -366,14 +367,29 @@ struct AgentGroundingRegressionTests {
                 "CFBundleName": "Lumen",
                 "CFBundleShortVersionString": "1.0.0",
                 "CFBundleVersion": "20260711214250",
-                "LumenGitSHA": "d00e9fc818059ce15eabec8e453d52374511a8e1"
+                "LumenGitSHA": "d00e9fc818059ce15eabec8e453d52374511a8e1",
+                "LumenWorkingTreeDigest": String(repeating: "a", count: 64),
+                "LumenSourceDirtyState": false
             ],
             bundleIdentifier: "com.27pm.lumenclone"
         )
 
         #expect(info.sourceRevision == "d00e9fc818059ce15eabec8e453d52374511a8e1")
+        #expect(info.workingTreeDigest == String(repeating: "a", count: 64))
+        #expect(info.sourceDirtyState == false)
+        #if targetEnvironment(simulator)
+        #expect(info.executionEnvironment == "iOS-simulator")
+        #elseif os(iOS)
+        #expect(info.executionEnvironment == InAppDatasetAppInfo.physicalExecutionEnvironment(
+            for: UIDevice.current.userInterfaceIdiom
+        ))
+        #endif
+        #expect(InAppDatasetAppInfo.physicalExecutionEnvironment(for: .phone) == "physical-iPhone")
+        #expect(InAppDatasetAppInfo.physicalExecutionEnvironment(for: .pad) == "physical-iPad")
         #expect(InAppDatasetAppInfo.current(infoDictionary: ["LumenGitSHA": "unknown"]).sourceRevision == nil)
         #expect(InAppDatasetAppInfo.current(infoDictionary: ["LumenGitSHA": "$(LUMEN_GIT_SHA)"]).sourceRevision == nil)
+        #expect(InAppDatasetAppInfo.current(infoDictionary: ["LumenWorkingTreeDigest": "not-a-digest"]).workingTreeDigest == nil)
+        #expect(InAppDatasetAppInfo.current(infoDictionary: ["LumenSourceDirtyState": "unknown"]).sourceDirtyState == nil)
     }
 
     @Test func persistentAgentParseTracesRedactRawPromptAndModelOutput() {

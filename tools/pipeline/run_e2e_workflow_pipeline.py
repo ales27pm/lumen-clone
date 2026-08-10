@@ -21,6 +21,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+from portable_artifact_paths import (
+    audit_spec_replacements,
+    path_replacements,
+    portable_command,
+    portable_path_reference,
+)
+
 
 @dataclass(frozen=True)
 class StagePlan:
@@ -94,8 +101,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--train-python", default=None, help="Python interpreter for train/convert stages. Defaults to LUMEN_TRAIN_PYTHON or repo .venv.")
     parser.add_argument("--agents", default=None, help="Comma-separated adapter roles to train/convert; forwarded to the base runner.")
     parser.add_argument("--runtime-audit", action="append", default=[], help="Runtime audit file or glob. May be repeated. Latest-only filtering is handled by the shared contract.")
-    parser.add_argument("--state-file", type=Path, default=Path("generated/agent_improvement_loop/e2e_workflow_state.json"))
-    parser.add_argument("--logs-dir", type=Path, default=Path("generated/agent_improvement_loop/e2e_logs"))
+    parser.add_argument("--state-file", type=Path, default=Path(".local/lumen/e2e_workflow/state.json"))
+    parser.add_argument("--logs-dir", type=Path, default=Path(".local/lumen/e2e_workflow/logs"))
     parser.add_argument("--inspection-output", type=Path, default=Path("generated/agent_improvement_loop/e2e_audit_input_inspection.json"))
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--require-runtime-audit", action=argparse.BooleanOptionalAction, default=True)
@@ -268,15 +275,48 @@ def write_state(root: Path, args: argparse.Namespace, results: list[StageResult]
         return
     state_path = resolve_under_root(root, args.state_file, label="--state-file")
     state_path.parent.mkdir(parents=True, exist_ok=True)
+    replacements = path_replacements(
+        root,
+        [args.python, args.train_python],
+        external_prefix="external-executable",
+    )
+    audit_replacements = audit_spec_replacements(root, args.runtime_audit)
+    replacements.update(audit_replacements)
+    public_results = [
+        {
+            **asdict(result),
+            "command": portable_command(
+                root,
+                result.command,
+                replacements=replacements,
+            ),
+        }
+        for result in results
+    ]
     payload = {
-        "schema": "lumen.e2e_workflow_pipeline.state/1.0.0",
+        "schema": "lumen.e2e_workflow_pipeline.state/1.1.0",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "ok": ok,
-        "root": str(root),
-        "python": str(args.python),
-        "train_python": str(args.train_python),
+        "root": ".",
+        "python": portable_path_reference(
+            root,
+            args.python,
+            external_prefix="external-executable",
+        ),
+        "train_python": portable_path_reference(
+            root,
+            args.train_python,
+            external_prefix="external-executable",
+        ),
         "runtime_audit_count_requested": len(args.runtime_audit),
-        "stages": [asdict(result) for result in results],
+        "runtime_audit_refs": sorted(
+            {
+                reference
+                for reference in audit_replacements.values()
+                if reference != "."
+            }
+        ),
+        "stages": public_results,
     }
     state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -300,6 +340,25 @@ async def async_main(argv: Sequence[str] | None = None) -> int:
     env = build_env(args.root, args)
     results: list[StageResult] = []
 
+    def public_results() -> list[dict[str, object]]:
+        replacements = path_replacements(
+            args.root,
+            [args.python, args.train_python],
+            external_prefix="external-executable",
+        )
+        replacements.update(audit_spec_replacements(args.root, args.runtime_audit))
+        return [
+            {
+                **asdict(item),
+                "command": portable_command(
+                    args.root,
+                    item.command,
+                    replacements=replacements,
+                ),
+            }
+            for item in results
+        ]
+
     for plan in plans:
         result = await run_stage(args.root, plan, args, env)
         results.append(result)
@@ -307,14 +366,14 @@ async def async_main(argv: Sequence[str] | None = None) -> int:
         write_state(args.root, args, results, ok=ok_so_far)
         if result.returncode != 0 and args.stop_on_error:
             if args.json:
-                print(json.dumps({"ok": False, "failed_stage": result.id, "stages": [asdict(item) for item in results]}, ensure_ascii=False, indent=2, sort_keys=True))
+                print(json.dumps({"ok": False, "failed_stage": result.id, "stages": public_results()}, ensure_ascii=False, indent=2, sort_keys=True))
             return result.returncode
 
     ok = all(result.returncode == 0 for result in results)
     write_state(args.root, args, results, ok=ok)
 
     if args.json:
-        print(json.dumps({"ok": ok, "stages": [asdict(item) for item in results]}, ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps({"ok": ok, "stages": public_results()}, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print("\nCompleted E2E workflow stages:")
         for result in results:

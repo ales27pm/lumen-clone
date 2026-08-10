@@ -28,7 +28,6 @@ from audit_to_adapter_contract import (
     FINE_TUNING_OUTPUT_DIR,
     LOOP_OUTPUT_DIR,
     MANIFEST_OUTPUT_DIR,
-    PIPELINE_STATE_FILE,
     SHARED_BASE_FILE_NAME,
     SHARED_BASE_GGUF_DIR,
     SHARED_BASE_MODEL_ID,
@@ -38,6 +37,11 @@ from audit_to_adapter_contract import (
     expand_runtime_audit_paths,
     trained_adapter_path,
     validate_repository_alignment,
+)
+from portable_artifact_paths import (
+    audit_spec_replacements,
+    path_replacements,
+    portable_command,
 )
 
 
@@ -87,7 +91,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runtime-audit", action="append", default=[], help="Runtime audit file or glob. May be repeated.")
     parser.add_argument("--require-runtime-audit", action="store_true")
     parser.add_argument("--require-generated-artifacts", action="store_true")
-    parser.add_argument("--state-file", type=Path, default=PIPELINE_STATE_FILE)
+    parser.add_argument(
+        "--state-file",
+        type=Path,
+        default=Path(".local/lumen/audit_to_adapter_pipeline/state.json"),
+    )
     parser.add_argument("--python", default=None, help="Python interpreter for crawler/helper scripts. Defaults to repo .venv when present.")
     parser.add_argument("--train-python", default=None, help="Python interpreter for Unsloth training/conversion. Defaults to LUMEN_TRAIN_PYTHON or repo .venv.")
     parser.add_argument("--converter", type=Path, default=Path.home() / ".unsloth/llama.cpp/convert_lora_to_gguf.py")
@@ -213,13 +221,29 @@ def write_state(root: Path, args: argparse.Namespace, results: Sequence[StageRes
         return
     path = resolve_under_root(root, args.state_file, label="--state-file")
     path.parent.mkdir(parents=True, exist_ok=True)
+    replacements = path_replacements(
+        root,
+        [args.python, args.train_python],
+        external_prefix="external-executable",
+    )
+    replacements.update(audit_spec_replacements(root, args.runtime_audit))
     payload = {
-        "schema": "lumen.audit_to_adapter_pipeline.run_state/1.0.0",
+        "schema": "lumen.audit_to_adapter_pipeline.run_state/1.1.0",
         "contract_schema": CONTRACT.schema_version,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "mode": args.mode,
         "agents": parse_agents(args.agents),
-        "stages": [asdict(result) for result in results],
+        "stages": [
+            {
+                **asdict(result),
+                "command": portable_command(
+                    root,
+                    result.command,
+                    replacements=replacements,
+                ),
+            }
+            for result in results
+        ],
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

@@ -1,6 +1,7 @@
 import os
 import plistlib
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,24 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "ios" / "Lumen" / "Scripts" / "apply_generated_infoplist_capabilities.sh"
+SOURCE_ATTESTATION = (
+    ROOT
+    / "tools"
+    / "lumen_manifest_crawler"
+    / "lumen_manifest_crawler"
+    / "source_integrity.py"
+)
+
+
+def _source_attestation() -> tuple[str, bool]:
+    completed = subprocess.run(
+        [sys.executable, str(SOURCE_ATTESTATION), "--root", str(ROOT)],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    digest, dirty = completed.stdout.strip().split()
+    return digest, dirty == "true"
 
 
 def _environment(build_dir: Path, *, configuration: str) -> dict[str, str]:
@@ -62,6 +81,9 @@ def test_apply_generated_infoplist_capabilities_gates_debug_file_sharing(tmp_pat
     )
     assert info["LumenBuildScheme"] == "Lumen"
     assert info["LumenGitSHA"] == "abc123"
+    expected_digest, expected_dirty = _source_attestation()
+    assert info["LumenWorkingTreeDigest"] == expected_digest
+    assert info["LumenSourceDirtyState"] is expected_dirty
     assert info["UIFileSharingEnabled"] is True
     assert info["CFBundleURLTypes"][0]["CFBundleURLSchemes"] == ["msauth.com.27pm.lumenclone"]
     assert info["LSApplicationQueriesSchemes"] == ["msauth", "msauthv2", "msauthv3"]
@@ -101,6 +123,9 @@ def test_apply_generated_infoplist_capabilities_disables_release_file_sharing_an
     assert info["UIFileSharingEnabled"] is False
     assert info["LumenGitSHA"] == expected_revision
     assert len(info["LumenGitSHA"]) in {40, 64}
+    expected_digest, expected_dirty = _source_attestation()
+    assert info["LumenWorkingTreeDigest"] == expected_digest
+    assert info["LumenSourceDirtyState"] is expected_dirty
 
 
 def test_apply_generated_infoplist_capabilities_fails_missing_release_plist(tmp_path: Path):

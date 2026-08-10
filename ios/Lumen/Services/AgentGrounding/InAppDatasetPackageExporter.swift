@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import UIKit
 
 nonisolated struct LumenInAppDatasetPackage: Codable, Sendable {
     let schemaVersion: String
@@ -117,6 +118,9 @@ nonisolated struct InAppDatasetAppInfo: Codable, Sendable, Hashable {
     let shortVersion: String?
     let buildNumber: String?
     let sourceRevision: String?
+    let workingTreeDigest: String?
+    let sourceDirtyState: Bool?
+    let executionEnvironment: String
 
     static func current(
         infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:],
@@ -127,7 +131,10 @@ nonisolated struct InAppDatasetAppInfo: Codable, Sendable, Hashable {
             bundleIdentifier: bundleIdentifier,
             shortVersion: normalizedString(infoDictionary["CFBundleShortVersionString"]),
             buildNumber: normalizedString(infoDictionary["CFBundleVersion"]),
-            sourceRevision: sourceRevision(infoDictionary["LumenGitSHA"])
+            sourceRevision: sourceRevision(infoDictionary["LumenGitSHA"]),
+            workingTreeDigest: workingTreeDigest(infoDictionary["LumenWorkingTreeDigest"]),
+            sourceDirtyState: normalizedBool(infoDictionary["LumenSourceDirtyState"]),
+            executionEnvironment: compiledExecutionEnvironment
         )
     }
 
@@ -144,6 +151,59 @@ nonisolated struct InAppDatasetAppInfo: Codable, Sendable, Hashable {
             return nil
         }
         return revision
+    }
+
+    private static func workingTreeDigest(_ value: Any?) -> String? {
+        guard let digest = normalizedString(value)?.lowercased(),
+              digest.count == 64,
+              digest.unicodeScalars.allSatisfy({
+                  CharacterSet(charactersIn: "0123456789abcdef").contains($0)
+              }) else {
+            return nil
+        }
+        return digest
+    }
+
+    private static func normalizedBool(_ value: Any?) -> Bool? {
+        if let value = value as? Bool {
+            return value
+        }
+        guard let value = normalizedString(value)?.lowercased() else {
+            return nil
+        }
+        switch value {
+        case "true", "1", "yes":
+            return true
+        case "false", "0", "no":
+            return false
+        default:
+            return nil
+        }
+    }
+
+    static func physicalExecutionEnvironment(
+        for userInterfaceIdiom: UIUserInterfaceIdiom
+    ) -> String {
+        switch userInterfaceIdiom {
+        case .phone:
+            return "physical-iPhone"
+        case .pad:
+            return "physical-iPad"
+        default:
+            return "unsupported-physical-iOS-device"
+        }
+    }
+
+    private static var compiledExecutionEnvironment: String {
+        #if targetEnvironment(simulator)
+        return "iOS-simulator"
+        #elseif os(iOS)
+        return physicalExecutionEnvironment(
+            for: UIDevice.current.userInterfaceIdiom
+        )
+        #else
+        return "unsupported-compile-target"
+        #endif
     }
 }
 

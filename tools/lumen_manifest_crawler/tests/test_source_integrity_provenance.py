@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 from lumen_manifest_crawler.crawler import _repository_working_tree_provenance
@@ -98,3 +99,24 @@ def test_hidden_source_directory_is_not_mistaken_for_generated_output(tmp_path: 
 
     assert changed_digest != clean_digest
     assert dirty is True
+
+
+def test_xcode_attestation_cli_matches_crawler_contract(tmp_path: Path):
+    root = _repository(tmp_path)
+    expected_digest, expected_dirty = _repository_working_tree_provenance(root)
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "lumen_manifest_crawler"
+        / "source_integrity.py"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(script), "--root", str(root)],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    digest, dirty = completed.stdout.strip().split()
+    assert digest == expected_digest
+    assert dirty == ("true" if expected_dirty else "false")

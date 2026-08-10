@@ -7,23 +7,42 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shlex
 import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
 from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
-from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
+from lumen_manifest_crawler.dataset.runtime_ingest import (
+    load_runtime_audit_reports,
+    without_internal_artifact_bindings,
+)
 from lumen_manifest_crawler.fleet_artifacts import generate_fleet_artifacts
 from lumen_manifest_crawler.output.writer import write_outputs
 from lumen_manifest_crawler.validators import validate_agent_fine_tuning_datasets, validate_manifest
 
 DETERMINISTIC_LOOP_TIMESTAMP = "1970-01-01T00:00:00+00:00"
-LOOP_SCHEMA_VERSION = "1.1.0"
+LOOP_SCHEMA_VERSION = "1.2.0"
+DEFAULT_RUNTIME_AUDIT_MAX_AGE_SECONDS = 60 * 60
+RUNTIME_AUDIT_MAX_FUTURE_SKEW_SECONDS = 5 * 60
+STRICT_RUNTIME_RECEIPT_SCHEMA = "lumen.interactive_model_tool_verifier_receipt/1.1.0"
+STRICT_RUNTIME_RECEIPT_STATUS = "verified-at-assessment"
+STRICT_RUNTIME_RECEIPT_SCOPE = "physical-device-debug-interactive-model-tool"
+STRICT_RUNTIME_VERIFIER_NAME = "verify_interactive_model_tool_evidence"
+STRICT_RUNTIME_VERIFIER_CONTRACT_VERSION = "1.1.0"
+SUPPORTED_APP_RUN_MODES = frozenset({"testflight", "device-debug"})
+APP_BEHAVIOR_MANIFEST_PATH = Path("ios/Lumen/AgentBehaviorManifest.json")
+LOCAL_FILE_URL_PATTERN = re.compile(r"file:[^\r\n]*", re.IGNORECASE)
+LOCAL_ABSOLUTE_PATH_PATTERN = re.compile(
+    r"(?m)(?<![:/.\w])/(?!/)(?![A-Za-z][A-Za-z0-9:_-]*\s*>)[^\r\n]*"
+)
 DEFAULT_LOOP_DIR = Path("generated/agent_improvement_loop")
 TESTFLIGHT_SCENARIOS_FILE = "testflight_scenarios.jsonl"
 TESTFLIGHT_RUNBOOK_FILE = "TESTFLIGHT_RUNBOOK.md"
@@ -90,6 +109,10 @@ class AgentImprovementLoopConfig:
     testflight_build_label: str | None = None
     require_testflight_runtime_audit: bool = False
     testflight_scenario_limit: int = 120
+    runtime_audit_reference_time: str | None = None
+    runtime_audit_max_age_seconds: int = DEFAULT_RUNTIME_AUDIT_MAX_AGE_SECONDS
+    verify_runtime_audit_now: bool = False
+    runtime_audit_expected_build_number: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +143,10 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
     the TestFlight build, exports the TestFlight + Agent Grounding package JSON, and the next
     loop iteration ingests that JSON with --runtime-audit.
     """
+    if config.app_run_mode.casefold() not in SUPPORTED_APP_RUN_MODES:
+        raise ValueError(
+            "app_run_mode must be exactly 'testflight' or 'device-debug'"
+        )
     root = config.root.resolve()
     output = config.output.resolve()
     loop_output = config.loop_output.resolve()
@@ -132,11 +159,33 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
 
     manifest = generate_manifest(root)
     runtime_reports = load_runtime_audit_reports(list(config.runtime_audit_paths))
-    current_runtime_reports = _current_runtime_reports(runtime_reports, config)
+    ingestion_runtime_reports = _ingestion_runtime_reports(runtime_reports, config)
+    source_integrity = getattr(manifest, "sourceIntegrity", None)
+    verification_assessment = _verify_runtime_audit_at_host_now(
+        ingestion_runtime_reports,
+        config,
+        expected_source_revision=getattr(source_integrity, "baseCommit", None),
+        expected_working_tree_digest=getattr(
+            source_integrity,
+            "workingTreeDigest",
+            None,
+        ),
+        source_dirty_state=getattr(source_integrity, "dirtyState", None),
+    )
+    _current_proof_reports, runtime_proof = _assess_runtime_audit_proof(
+        ingestion_runtime_reports,
+        config,
+        expected_source_revision=getattr(source_integrity, "baseCommit", None),
+        verification_assessment=verification_assessment,
+    )
+    training_runtime_reports = _annotate_runtime_reports_for_training(
+        ingestion_runtime_reports,
+        runtime_proof,
+    )
     datasets = generate_all_datasets(
         manifest,
         root=root,
-        runtime_audit_reports=current_runtime_reports,
+        runtime_audit_reports=training_runtime_reports,
         deterministic=config.deterministic,
     )
     validation_report = validate_manifest(manifest, datasets, strict=config.strict)
@@ -158,12 +207,12 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
             manifest,
             datasets,
             fleet_artifacts=fleet_artifacts,
-            runtime_audit_reports=current_runtime_reports,
+            runtime_audit_reports=training_runtime_reports,
         )
         ft_failures = validate_agent_fine_tuning_datasets(
             manifest,
             fine_tuning_datasets,
-            runtime_audit_reports=current_runtime_reports,
+            runtime_audit_reports=training_runtime_reports,
         )
         existing_failures = list(getattr(validation_report, "failures", []))
         existing_failures.extend(ft_failures)
@@ -198,33 +247,50 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         manifest,
         runtime_reports,
         testflight_scenarios,
-        current_runtime_reports=current_runtime_reports,
+        ingestion_runtime_reports=ingestion_runtime_reports,
+        runtime_proof=runtime_proof,
     )
 
     dataset_summary = _dataset_summary(datasets, fine_tuning_datasets)
-    runtime_summary = _runtime_summary(current_runtime_reports, all_runtime_reports=runtime_reports)
-    command_summary = [result.output_dict() for result in command_results if result.command]
+    runtime_summary = _runtime_summary(
+        ingestion_runtime_reports,
+        all_runtime_reports=runtime_reports,
+        runtime_proof=runtime_proof,
+    )
+    public_replacements = _runtime_audit_public_replacements(
+        config.runtime_audit_paths,
+        runtime_reports,
+    )
+    command_summary = [
+        _sanitize_public_artifact(
+            result.output_dict(),
+            root=root,
+            replacements=public_replacements,
+        )
+        for result in command_results
+        if result.command
+    ]
     gaps = _build_gap_report(
         manifest=manifest,
         validation_report=validation_report,
         datasets=datasets,
         fine_tuning_datasets=fine_tuning_datasets,
-        runtime_reports=current_runtime_reports,
+        runtime_reports=ingestion_runtime_reports,
         all_runtime_reports=runtime_reports,
+        runtime_proof=runtime_proof,
         command_results=command_results,
         config=config,
     )
-    next_prompts = _build_next_action_prompts(gaps, current_runtime_reports, command_results, testflight_plan)
+    next_prompts = _build_next_action_prompts(gaps, ingestion_runtime_reports, command_results, testflight_plan)
 
-    source_integrity = getattr(manifest, "sourceIntegrity", None)
     fleet_manifest = getattr(manifest, "fleet", None)
     state = {
         "schemaVersion": LOOP_SCHEMA_VERSION,
         "startedAt": started_at,
         "completedAt": DETERMINISTIC_LOOP_TIMESTAMP if config.deterministic else datetime.now(timezone.utc).isoformat(),
-        "root": str(root),
-        "output": str(output),
-        "runtimeAuditInputs": [str(path) for path in config.runtime_audit_paths],
+        "root": _public_repo_path(root, root),
+        "output": _public_repo_path(output, root),
+        "runtimeAuditInputs": sorted(set(public_replacements.values())),
         "manifest": {
             "baseCommit": getattr(source_integrity, "baseCommit", None),
             "workingTreeDigest": getattr(source_integrity, "workingTreeDigest", None),
@@ -252,8 +318,34 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         "nextActionPromptCount": len(next_prompts),
     }
 
-    triage = _build_gap_triage(gaps, current_runtime_reports, config)
+    triage = _build_gap_triage(gaps, ingestion_runtime_reports, config)
     state["triage"] = triage["summary"]
+
+    state = _sanitize_public_artifact(
+        state,
+        root=root,
+        replacements=public_replacements,
+    )
+    gaps = _sanitize_public_artifact(
+        gaps,
+        root=root,
+        replacements=public_replacements,
+    )
+    triage = _sanitize_public_artifact(
+        triage,
+        root=root,
+        replacements=public_replacements,
+    )
+    next_prompts = _sanitize_public_artifact(
+        next_prompts,
+        root=root,
+        replacements=public_replacements,
+    )
+    testflight_scenarios = _sanitize_public_artifact(
+        testflight_scenarios,
+        root=root,
+        replacements=public_replacements,
+    )
 
     _write_json(loop_output / "loop_state.json", state)
     _write_json(loop_output / "loop_gaps.json", {"gaps": gaps})
@@ -331,6 +423,117 @@ def _canonicalize(value: Any) -> Any:
     if isinstance(value, list):
         return [_canonicalize(item) for item in value]
     return value
+
+
+def _public_repo_path(path: Path, root: Path) -> str:
+    """Return a stable repository-relative path for tracked artifacts."""
+
+    try:
+        relative = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return "<external-path-redacted>"
+    return "." if relative == Path(".") else relative.as_posix()
+
+
+def _runtime_audit_public_replacements(
+    configured_paths: Iterable[Path],
+    runtime_reports: Iterable[dict[str, Any]],
+) -> dict[str, str]:
+    """Map private runtime-audit locations to content-derived public refs."""
+
+    replacements: dict[str, str] = {}
+    refs_by_source: dict[str, set[str]] = {}
+    for report in runtime_reports:
+        sha256 = report.get("_artifactSha256")
+        if not isinstance(sha256, str) or re.fullmatch(r"[0-9a-f]{64}", sha256) is None:
+            continue
+        reference = f"runtime-audit-sha256-{sha256}"
+        source = str(report.get("_source") or "").split("#", 1)[0]
+        if source:
+            refs_by_source.setdefault(source, set()).add(reference)
+            replacements[source] = reference
+
+    for configured in configured_paths:
+        resolved = str(configured.resolve())
+        matched = {
+            reference
+            for source, references in refs_by_source.items()
+            if source == resolved or source.startswith(resolved.rstrip("/") + "/")
+            for reference in references
+        }
+        if len(matched) == 1:
+            replacements[resolved] = next(iter(matched))
+        elif matched:
+            digest = hashlib.sha256("\n".join(sorted(matched)).encode("utf-8")).hexdigest()
+            replacements[resolved] = f"runtime-audit-set-sha256-{digest}"
+        elif configured.is_file():
+            try:
+                digest = hashlib.sha256(configured.read_bytes()).hexdigest()
+            except OSError:
+                replacements[resolved] = "<runtime-audit-input-redacted>"
+            else:
+                replacements[resolved] = f"runtime-audit-sha256-{digest}"
+        else:
+            replacements[resolved] = "<runtime-audit-input-redacted>"
+
+    return replacements
+
+
+def _sanitize_public_artifact(
+    value: Any,
+    *,
+    root: Path,
+    replacements: dict[str, str],
+) -> Any:
+    """Remove machine-local paths from values written to tracked artifacts."""
+
+    if isinstance(value, dict):
+        sanitized_dict: dict[Any, Any] = {}
+        for key, child in value.items():
+            if key in {"_artifactSha256", "_artifactByteCount"}:
+                continue
+            sanitized_key = (
+                _sanitize_public_artifact(
+                    key,
+                    root=root,
+                    replacements=replacements,
+                )
+                if isinstance(key, str)
+                else key
+            )
+            if sanitized_key in sanitized_dict:
+                raise ValueError("public artifact key collision after sanitization")
+            sanitized_dict[sanitized_key] = _sanitize_public_artifact(
+                child,
+                root=root,
+                replacements=replacements,
+            )
+        return sanitized_dict
+    if isinstance(value, list):
+        return [
+            _sanitize_public_artifact(child, root=root, replacements=replacements)
+            for child in value
+        ]
+    if isinstance(value, tuple):
+        return [
+            _sanitize_public_artifact(child, root=root, replacements=replacements)
+            for child in value
+        ]
+    if not isinstance(value, str):
+        return value
+
+    sanitized = value
+    executable = str(Path(sys.executable).resolve())
+    sanitized = sanitized.replace(executable, "python")
+    for private_path, public_ref in sorted(
+        replacements.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        sanitized = sanitized.replace(private_path, public_ref)
+    sanitized = sanitized.replace(str(root.resolve()), ".")
+    sanitized = LOCAL_FILE_URL_PATTERN.sub("<local-file-url-redacted>", sanitized)
+    return LOCAL_ABSOLUTE_PATH_PATTERN.sub("<local-path-redacted>", sanitized)
 
 
 def _dataset_summary(datasets: dict[str, list[dict[str, Any]]], fine_tuning_datasets: Any) -> dict[str, Any]:
@@ -449,11 +652,13 @@ def _runtime_summary(
     runtime_reports: list[dict[str, Any]],
     *,
     all_runtime_reports: list[dict[str, Any]] | None = None,
+    runtime_proof: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     failures = [failure for report in runtime_reports for failure in report.get("failures", []) if isinstance(failure, dict)]
     executable_failures = [failure for failure in failures if not _is_skipped_live_model_generation(failure)]
     skipped_failures = [failure for failure in failures if _is_skipped_live_model_generation(failure)]
     total_report_count = len(all_runtime_reports) if all_runtime_reports is not None else len(runtime_reports)
+    proof = runtime_proof if isinstance(runtime_proof, dict) else {}
     by_type: dict[str, int] = {}
     by_all_type: dict[str, int] = {}
     by_layer: dict[str, int] = {}
@@ -465,7 +670,22 @@ def _runtime_summary(
     return {
         "reportCount": len(runtime_reports),
         "totalReportCount": total_report_count,
-        "staleReportCount": max(0, total_report_count - len(runtime_reports)),
+        "buildRejectedReportCount": max(0, total_report_count - len(runtime_reports)),
+        "currentProofReportCount": 0,
+        "verifiedAtAssessmentReportCount": int(
+            proof.get("verifiedReportCount") or 0
+        ),
+        "freshAtExplicitReferenceReportCount": int(
+            proof.get("freshAtExplicitReferenceReportCount") or 0
+        ),
+        "historicalReportCount": int(proof.get("historicalReportCount") or 0),
+        "staleReportCount": int(proof.get("staleReportCount") or 0),
+        "sourceRevisionMismatchReportCount": int(
+            proof.get("sourceRevisionMismatchReportCount") or 0
+        ),
+        "freshnessUnverifiedReportCount": int(
+            proof.get("freshnessUnverifiedReportCount") or 0
+        ),
         "failureCount": len(executable_failures),
         "rawFailureCount": len(failures),
         "skippedLiveModelGenerationCount": len(skipped_failures),
@@ -754,29 +974,68 @@ def _build_testflight_plan(
     runtime_reports: list[dict[str, Any]],
     scenarios: list[dict[str, Any]],
     *,
-    current_runtime_reports: list[dict[str, Any]] | None = None,
+    ingestion_runtime_reports: list[dict[str, Any]] | None = None,
+    runtime_proof: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     has_runtime = bool(runtime_reports)
-    current_reports = current_runtime_reports if current_runtime_reports is not None else runtime_reports
-    has_current_runtime = bool(current_reports)
-    stale_report_count = max(0, len(runtime_reports) - len(current_reports))
-    if has_current_runtime:
-        status = "runtime-audit-ingested"
+    ingested_reports = (
+        ingestion_runtime_reports
+        if ingestion_runtime_reports is not None
+        else runtime_reports
+    )
+    proof = runtime_proof if isinstance(runtime_proof, dict) else {}
+    verified_report_count = int(proof.get("verifiedReportCount") or 0)
+    proof_satisfied_at_assessment = (
+        proof.get("proofSatisfiedAtAssessment") is True
+    )
+    proof_basis = (
+        proof.get("basis") if isinstance(proof.get("basis"), dict) else {}
+    )
+    build_rejected_count = max(0, len(runtime_reports) - len(ingested_reports))
+    if proof_satisfied_at_assessment:
+        status = STRICT_RUNTIME_RECEIPT_STATUS
+    elif ingested_reports:
+        status = "historical-runtime-audit-ingested"
     elif has_runtime:
-        status = "runtime-audit-stale"
+        status = "runtime-audit-build-rejected"
     else:
-        status = "awaiting-testflight-runtime-audit"
+        status = "awaiting-runtime-audit"
     return {
         "mode": config.app_run_mode,
         "buildLabel": config.testflight_build_label,
         "status": status,
+        "proofStatus": proof.get("status") or "not-assessed",
+        "proofBasis": proof_basis,
+        "proofSatisfiedAtAssessment": proof_satisfied_at_assessment,
+        "verifiedAt": proof_basis.get("verifiedAt"),
+        "validUntil": proof_basis.get("validUntil"),
+        "packageSha256": proof_basis.get("packageSha256"),
+        "scope": proof_basis.get("scope"),
         "requiresTestFlightAppRun": config.app_run_mode.casefold() == "testflight",
         "requireRuntimeAuditForPass": config.require_testflight_runtime_audit,
         "runtimeAuditProvided": has_runtime,
-        "currentRuntimeAuditProvided": has_current_runtime,
+        "currentRuntimeAuditProvided": False,
+        "currentRuntimeAuditProvidedSemantics": "non-enduring-always-false",
         "runtimeAuditReportCount": len(runtime_reports),
-        "currentRuntimeAuditReportCount": len(current_reports),
-        "staleRuntimeAuditReportCount": stale_report_count,
+        "ingestedRuntimeAuditReportCount": len(ingested_reports),
+        "buildSelectedRuntimeAuditReportCount": len(ingested_reports),
+        "buildRejectedRuntimeAuditReportCount": build_rejected_count,
+        "currentRuntimeAuditReportCount": 0,
+        "currentRuntimeAuditReportCountSemantics": "non-enduring-always-zero",
+        "verifiedAtAssessmentRuntimeAuditReportCount": verified_report_count,
+        "freshAtExplicitReferenceRuntimeAuditReportCount": int(
+            proof.get("freshAtExplicitReferenceReportCount") or 0
+        ),
+        "historicalRuntimeAuditReportCount": int(
+            proof.get("historicalReportCount") or 0
+        ),
+        "staleRuntimeAuditReportCount": int(proof.get("staleReportCount") or 0),
+        "sourceRevisionMismatchRuntimeAuditReportCount": int(
+            proof.get("sourceRevisionMismatchReportCount") or 0
+        ),
+        "freshnessUnverifiedRuntimeAuditReportCount": int(
+            proof.get("freshnessUnverifiedReportCount") or 0
+        ),
         "scenarioQueuePath": TESTFLIGHT_SCENARIOS_FILE,
         "runbookPath": TESTFLIGHT_RUNBOOK_FILE,
         "scenarioCount": len(scenarios),
@@ -787,11 +1046,11 @@ def _build_testflight_plan(
             "lumen_manifest_crawler",
             "improve-loop",
             "--root",
-            str(config.root.resolve()),
+            _public_repo_path(config.root, config.root),
             "--output",
-            str(config.output.resolve()),
+            _public_repo_path(config.output, config.root),
             "--loop-output",
-            str(config.loop_output.resolve()),
+            _public_repo_path(config.loop_output, config.root),
             "--runtime-audit",
             "<exported-testflight-json>",
         ]),
@@ -807,6 +1066,7 @@ def _build_gap_report(  # NOSONAR
     fine_tuning_datasets: Any,
     runtime_reports: list[dict[str, Any]],
     all_runtime_reports: list[dict[str, Any]] | None = None,
+    runtime_proof: dict[str, Any] | None = None,
     command_results: list[LoopCommandResult],
     config: AgentImprovementLoopConfig,
 ) -> list[dict[str, Any]]:
@@ -832,6 +1092,65 @@ def _build_gap_report(  # NOSONAR
     build_mismatch_gap = _testflight_runtime_build_mismatch_gap(mismatch_runtime_reports, config)
     if build_mismatch_gap is not None:
         gaps.append(build_mismatch_gap)
+
+    proof = runtime_proof if isinstance(runtime_proof, dict) else {}
+    if (
+        config.verify_runtime_audit_now
+        and proof.get("proofSatisfiedAtAssessment") is not True
+    ):
+        gaps.append({
+            "id": _stable_id("runtime_audit_strict_verification_failed", proof),
+            "severity": "error",
+            "category": "runtime_audit_strict_verification_failed",
+            "title": "Requested strict runtime-audit verification did not pass",
+            "evidence": {
+                "proofStatus": proof.get("status"),
+                "verificationFailureCode": (
+                    proof.get("basis", {}).get("verificationFailureCode")
+                    if isinstance(proof.get("basis"), dict)
+                    else None
+                ),
+                "proofSatisfiedAtAssessment": False,
+            },
+            "recommendedAction": (
+                "Run non-deterministically with exactly one unchanged physical-device "
+                "DEBUG package, the exact expected build number, and a passing strict verifier."
+            ),
+        })
+    if (
+        config.app_run_mode.casefold() == "testflight"
+        and config.require_testflight_runtime_audit
+        and mismatch_runtime_reports
+        and build_mismatch_gap is None
+        and proof.get("currentProofComplete") is not True
+    ):
+        gaps.append({
+            "id": _stable_id("testflight_runtime_proof_unverified", proof),
+            "severity": "error",
+            "category": "testflight_runtime_proof_unverified",
+            "title": "TestFlight runtime audit lacks TestFlight-capable verification",
+            "evidence": {
+                "proofStatus": proof.get("status"),
+                "proofBasis": proof.get("basis"),
+                "historicalReportCount": proof.get("historicalReportCount"),
+                "staleReportCount": proof.get("staleReportCount"),
+                "sourceRevisionMismatchReportCount": proof.get(
+                    "sourceRevisionMismatchReportCount"
+                ),
+                "freshnessUnverifiedReportCount": proof.get(
+                    "freshnessUnverifiedReportCount"
+                ),
+                "debugReceiptUnsupportedForTestFlight": (
+                    proof.get("status")
+                    == "unsupported-debug-receipt-for-testflight"
+                ),
+            },
+            "recommendedAction": (
+                "Use a distinct TestFlight-capable verification path bound to the exact "
+                "manifest source revision, TestFlight build, package hash, and host time. "
+                "The physical-device DEBUG receipt is explicitly insufficient for this gate."
+            ),
+        })
 
     for failure in validation_report.failures:
         dumped = _model_dump(failure)
@@ -960,7 +1279,11 @@ def _testflight_runtime_build_mismatch_gap(
     runtime_reports: list[dict[str, Any]],
     config: AgentImprovementLoopConfig,
 ) -> dict[str, Any] | None:
-    expected_build = str(config.testflight_build_label or "").strip()
+    expected_build = str(
+        config.runtime_audit_expected_build_number
+        or config.testflight_build_label
+        or ""
+    ).strip()
     if config.app_run_mode.casefold() != "testflight" or not expected_build or not runtime_reports:
         return None
 
@@ -1011,15 +1334,725 @@ def _testflight_runtime_build_mismatch_gap(
     }
 
 
-def _current_runtime_reports(
+def _ingestion_runtime_reports(
     runtime_reports: list[dict[str, Any]],
     config: AgentImprovementLoopConfig,
 ) -> list[dict[str, Any]]:
+    """Select reports for historical repair/training ingestion by build only.
+
+    This is intentionally not a proof-freshness decision. Device-debug and
+    unlabeled inputs remain useful historical repair inputs, while TestFlight
+    runs with an explicit build label continue to reject other builds.
+    """
     return [
         report
         for report in runtime_reports
         if _runtime_report_matches_testflight_build(report, config)
     ]
+
+
+def _annotate_runtime_reports_for_training(
+    runtime_reports: list[dict[str, Any]],
+    runtime_proof: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Bind repair inputs to their non-current evidence classification.
+
+    Runtime reports remain useful for historical repairs even when they cannot
+    prove the current build. Keep that ingestion lane, but make the boundary an
+    explicit compiler input so neither clean nor failing reports can be turned
+    into an unqualified current-runtime claim.
+    """
+
+    proof_status = str(runtime_proof.get("status") or "historical-unverified")
+    return [
+        {
+            **without_internal_artifact_bindings(report),
+            "_runtimeProofStatus": proof_status,
+            "_runtimeCurrentProof": False,
+            "_runtimeHistoricalObservation": True,
+        }
+        for report in runtime_reports
+    ]
+
+
+def _verify_runtime_audit_at_host_now(
+    runtime_reports: list[dict[str, Any]],
+    config: AgentImprovementLoopConfig,
+    *,
+    expected_source_revision: str | None,
+    expected_working_tree_digest: str | None = None,
+    source_dirty_state: bool | None = False,
+) -> dict[str, Any] | None:
+    """Run the strict DEBUG verifier over one raw package and capture its receipt."""
+
+    if not config.verify_runtime_audit_now:
+        return None
+    if config.deterministic:
+        return {
+            "status": "strict-verifier-requires-non-deterministic-mode",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "host_clock_verification_forbidden_in_deterministic_mode",
+        }
+    if config.app_run_mode.casefold() != "device-debug":
+        return {
+            "status": "unsupported-debug-receipt-for-testflight",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "debug_receipt_scope_mismatch",
+        }
+    if source_dirty_state is not False:
+        return {
+            "status": "strict-verifier-source-not-clean",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "source_worktree_not_clean_at_manifest_assessment",
+        }
+    expected_revision = str(expected_source_revision or "").strip()
+    expected_digest = str(expected_working_tree_digest or "").strip().lower()
+    expected_build = str(config.runtime_audit_expected_build_number or "").strip()
+    if not expected_revision:
+        return {
+            "status": "strict-verifier-source-revision-missing",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "expected_source_revision_missing",
+        }
+    if not expected_build:
+        return {
+            "status": "strict-verifier-build-number-missing",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "expected_build_number_missing",
+        }
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_digest):
+        return {
+            "status": "strict-verifier-working-tree-digest-missing",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "expected_working_tree_digest_missing_or_invalid",
+        }
+
+    package_paths = sorted({
+        path
+        for report in runtime_reports
+        if _is_strict_interactive_package_report(report)
+        if (path := _runtime_report_raw_package_path(report, config.root)) is not None
+    })
+    if len(package_paths) != 1:
+        return {
+            "status": "strict-verifier-package-not-unique",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "expected_exactly_one_raw_package",
+            "candidatePackageCount": len(package_paths),
+        }
+
+    package_path = package_paths[0]
+    try:
+        raw_bytes = package_path.read_bytes()
+    except OSError:
+        return {
+            "status": "strict-verifier-package-unreadable",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "raw_package_unreadable",
+        }
+    package_reports = [
+        report
+        for report in runtime_reports
+        if _runtime_report_belongs_to_package(report, package_path, config.root)
+    ]
+    loaded_binding_values = [
+        (report.get("_artifactSha256"), report.get("_artifactByteCount"))
+        for report in package_reports
+    ]
+    loaded_bindings_valid = all(
+        isinstance(sha256, str)
+        and isinstance(byte_count, int)
+        and not isinstance(byte_count, bool)
+        for sha256, byte_count in loaded_binding_values
+    )
+    loaded_bindings = (
+        set(loaded_binding_values) if loaded_bindings_valid else set()
+    )
+    expected_loaded_binding = (hashlib.sha256(raw_bytes).hexdigest(), len(raw_bytes))
+    if (
+        not package_reports
+        or not loaded_bindings_valid
+        or len(loaded_bindings) != 1
+        or next(iter(loaded_bindings), None) != expected_loaded_binding
+    ):
+        return {
+            "status": "strict-verifier-loaded-artifact-mismatch",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "loaded_report_bytes_do_not_match_verifier_input",
+            "packageOwnedReportCount": len(package_reports),
+        }
+    verifier_path = config.root.resolve() / "tools" / "verify_interactive_model_tool_evidence.py"
+    try:
+        verifier_bytes = verifier_path.read_bytes()
+    except OSError:
+        return {
+            "status": "strict-verifier-implementation-unreadable",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "verifier_implementation_unreadable",
+        }
+    tracked_verifier_bytes = _tracked_verifier_bytes(
+        config.root,
+        expected_revision,
+    )
+    if tracked_verifier_bytes is None or tracked_verifier_bytes != verifier_bytes:
+        return {
+            "status": "strict-verifier-implementation-untrusted",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "verifier_bytes_do_not_match_source_revision",
+        }
+    if not _working_file_matches_revision(
+        config.root,
+        expected_revision,
+        APP_BEHAVIOR_MANIFEST_PATH,
+    ):
+        return {
+            "status": "strict-verifier-app-manifest-untrusted",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "app_behavior_manifest_does_not_match_source_revision",
+        }
+    verifier_sha256 = hashlib.sha256(verifier_bytes).hexdigest()
+    with tempfile.TemporaryDirectory(prefix="lumen-runtime-proof-") as temporary:
+        temporary_root = Path(temporary)
+        receipt_path = temporary_root / "receipt.json"
+        verifier_snapshot_path = temporary_root / "verified-runtime-evidence.py"
+        verifier_snapshot_path.write_bytes(verifier_bytes)
+        command = [
+            sys.executable,
+            str(verifier_snapshot_path),
+            str(package_path),
+            "--expected-source-revision",
+            expected_revision,
+            "--expected-build-number",
+            expected_build,
+            "--expected-working-tree-digest",
+            expected_digest,
+            "--max-age-seconds",
+            str(config.runtime_audit_max_age_seconds),
+            "--receipt-output",
+            str(receipt_path),
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=config.root.resolve(),
+                check=False,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return {
+                "status": "strict-verifier-execution-failed",
+                "proofSatisfiedAtAssessment": False,
+                "failureCode": "verifier_process_failed",
+            }
+        if completed.returncode != 0 or not receipt_path.is_file():
+            return {
+                "status": "strict-verifier-rejected",
+                "proofSatisfiedAtAssessment": False,
+                "failureCode": "strict_verifier_rejected_package",
+                "verifierReturnCode": completed.returncode,
+            }
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {
+                "status": "strict-verifier-receipt-invalid",
+                "proofSatisfiedAtAssessment": False,
+                "failureCode": "receipt_parse_failed",
+            }
+
+        try:
+            if verifier_snapshot_path.read_bytes() != verifier_bytes:
+                return {
+                    "status": "strict-verifier-snapshot-mutated",
+                    "proofSatisfiedAtAssessment": False,
+                    "failureCode": "executed_verifier_snapshot_changed",
+                }
+        except OSError:
+            return {
+                "status": "strict-verifier-snapshot-unreadable",
+                "proofSatisfiedAtAssessment": False,
+                "failureCode": "executed_verifier_snapshot_unreadable",
+            }
+
+    try:
+        if verifier_path.read_bytes() != verifier_bytes:
+            return {
+                "status": "strict-verifier-implementation-mutated",
+                "proofSatisfiedAtAssessment": False,
+                "failureCode": "verifier_changed_during_verification",
+            }
+    except OSError:
+        return {
+            "status": "strict-verifier-implementation-unreadable",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "verifier_implementation_unreadable_after_verification",
+        }
+
+    if not _working_file_matches_revision(
+        config.root,
+        expected_revision,
+        APP_BEHAVIOR_MANIFEST_PATH,
+    ):
+        return {
+            "status": "strict-verifier-app-manifest-mutated",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "app_behavior_manifest_changed_during_verification",
+        }
+
+    try:
+        if package_path.read_bytes() != raw_bytes:
+            return {
+                "status": "strict-verifier-package-mutated",
+                "proofSatisfiedAtAssessment": False,
+                "failureCode": "raw_package_changed_during_verification",
+            }
+    except OSError:
+        return {
+            "status": "strict-verifier-package-unreadable",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": "raw_package_unreadable_after_verification",
+        }
+
+    receipt_failure = _strict_receipt_failure(
+        receipt,
+        raw_bytes=raw_bytes,
+        expected_source_revision=expected_revision,
+        expected_build_number=expected_build,
+        expected_working_tree_digest=expected_digest,
+        expected_verifier_sha256=verifier_sha256,
+    )
+    if receipt_failure is not None:
+        return {
+            "status": "strict-verifier-receipt-invalid",
+            "proofSatisfiedAtAssessment": False,
+            "failureCode": receipt_failure,
+        }
+    binding = receipt["binding"]
+    package = receipt["package"]
+    verifier = receipt["verifier"]
+    return {
+        "status": STRICT_RUNTIME_RECEIPT_STATUS,
+        "proofSatisfiedAtAssessment": True,
+        "verifiedAt": receipt["verifiedAt"],
+        "validUntil": receipt["validUntil"],
+        "scope": receipt["scope"],
+        "packageSha256": package["sha256"],
+        "packageByteCount": package["byteCount"],
+        "sourceRevision": binding["sourceRevision"],
+        "buildNumber": binding["buildNumber"],
+        "workingTreeDigest": binding["workingTreeDigest"],
+        "sourceDirtyState": binding["sourceDirtyState"],
+        "executionEnvironment": binding["executionEnvironment"],
+        "scenarioID": binding["scenarioID"],
+        "toolID": binding["toolID"],
+        "verifierName": verifier["name"],
+        "verifierContractVersion": verifier["contractVersion"],
+        "verifierSourceSha256": verifier["sourceSha256"],
+        "verifiedReportCount": sum(
+            1
+            for report in runtime_reports
+            if _runtime_report_belongs_to_package(report, package_path, config.root)
+        ),
+    }
+
+
+def _is_strict_interactive_package_report(report: dict[str, Any]) -> bool:
+    return bool(
+        report.get("_sourceFormat") == "testflight_agent_grounding_package"
+        and report.get("_sourceLayer") == "agentGroundingRuntimeAudit"
+        and report.get("manifestSource")
+        == "interactive-model-tool-validation-live-e2e"
+    )
+
+
+def _runtime_report_raw_package_path(
+    report: dict[str, Any],
+    root: Path,
+) -> Path | None:
+    source = str(report.get("_source") or "").strip()
+    if not source:
+        return None
+    path = Path(source)
+    if not path.is_absolute():
+        path = root.resolve() / path
+    return path.resolve()
+
+
+def _runtime_report_belongs_to_package(
+    report: dict[str, Any],
+    package_path: Path,
+    root: Path,
+) -> bool:
+    source = str(report.get("_source") or "")
+    if source.endswith("#liveE2EReport"):
+        source = source.removesuffix("#liveE2EReport")
+    if not source:
+        return False
+    path = Path(source)
+    if not path.is_absolute():
+        path = root.resolve() / path
+    return path.resolve() == package_path
+
+
+def _tracked_verifier_bytes(root: Path, revision: str) -> bytes | None:
+    """Read the verifier implementation committed at the asserted revision."""
+
+    return _tracked_file_bytes(
+        root,
+        revision,
+        Path("tools/verify_interactive_model_tool_evidence.py"),
+    )
+
+
+def _tracked_file_bytes(
+    root: Path,
+    revision: str,
+    relative_path: Path,
+) -> bytes | None:
+    """Read one repository file exactly as committed at ``revision``."""
+
+    try:
+        completed = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{revision}:{relative_path.as_posix()}",
+            ],
+            cwd=root.resolve(),
+            check=False,
+            capture_output=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    return bytes(completed.stdout)
+
+
+def _working_file_matches_revision(
+    root: Path,
+    revision: str,
+    relative_path: Path,
+) -> bool:
+    """Return whether a working-tree file matches its asserted commit bytes."""
+
+    try:
+        working_bytes = (root.resolve() / relative_path).read_bytes()
+    except OSError:
+        return False
+    tracked_bytes = _tracked_file_bytes(root, revision, relative_path)
+    return tracked_bytes is not None and working_bytes == tracked_bytes
+
+
+def _strict_receipt_failure(
+    receipt: Any,
+    *,
+    raw_bytes: bytes,
+    expected_source_revision: str,
+    expected_build_number: str,
+    expected_working_tree_digest: str,
+    expected_verifier_sha256: str,
+) -> str | None:
+    if not isinstance(receipt, dict):
+        return "receipt_not_object"
+    package = receipt.get("package")
+    binding = receipt.get("binding")
+    verifier = receipt.get("verifier")
+    if not isinstance(package, dict) or not isinstance(binding, dict) or not isinstance(verifier, dict):
+        return "receipt_sections_missing"
+    expected = {
+        "schemaVersion": STRICT_RUNTIME_RECEIPT_SCHEMA,
+        "status": STRICT_RUNTIME_RECEIPT_STATUS,
+        "scope": STRICT_RUNTIME_RECEIPT_SCOPE,
+    }
+    if any(receipt.get(key) != value for key, value in expected.items()):
+        return "receipt_identity_mismatch"
+    expected_binding = {
+        "bundleIdentifier": "com.27pm.lumenclone",
+        "sourceRevision": expected_source_revision,
+        "buildNumber": expected_build_number,
+        "workingTreeDigest": expected_working_tree_digest,
+        "sourceDirtyState": False,
+        "executionEnvironment": "physical-iPhone",
+        "scenarioID": "interactive-model-tool-alarm-authorization",
+        "toolID": "alarm.authorization_status",
+    }
+    if any(binding.get(key) != value for key, value in expected_binding.items()):
+        return "receipt_binding_mismatch"
+    if package.get("sha256") != hashlib.sha256(raw_bytes).hexdigest():
+        return "receipt_package_hash_mismatch"
+    if package.get("byteCount") != len(raw_bytes):
+        return "receipt_package_size_mismatch"
+    verified_at, verified_status = _parse_runtime_audit_reference_time(receipt.get("verifiedAt"))
+    valid_until, valid_status = _parse_runtime_audit_reference_time(receipt.get("validUntil"))
+    if verified_status != "valid" or valid_status != "valid" or verified_at is None or valid_until is None:
+        return "receipt_time_invalid"
+    if verified_at > valid_until or datetime.now(timezone.utc) >= valid_until:
+        return "receipt_expired"
+    expected_verifier = {
+        "name": STRICT_RUNTIME_VERIFIER_NAME,
+        "contractVersion": STRICT_RUNTIME_VERIFIER_CONTRACT_VERSION,
+        "sourceSha256": expected_verifier_sha256,
+    }
+    if any(verifier.get(key) != value for key, value in expected_verifier.items()):
+        return "receipt_verifier_identity_mismatch"
+    return None
+
+
+def _assess_runtime_audit_proof(
+    runtime_reports: list[dict[str, Any]],
+    config: AgentImprovementLoopConfig,
+    *,
+    expected_source_revision: str | None,
+    verification_assessment: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Classify current proof without changing the historical ingestion set."""
+
+    expected_revision = str(expected_source_revision or "").strip()
+    reference_time, reference_error = _parse_runtime_audit_reference_time(
+        config.runtime_audit_reference_time
+    )
+    max_age_valid = (
+        isinstance(config.runtime_audit_max_age_seconds, int)
+        and not isinstance(config.runtime_audit_max_age_seconds, bool)
+        and config.runtime_audit_max_age_seconds > 0
+    )
+    expected_build = str(
+        config.runtime_audit_expected_build_number
+        or config.testflight_build_label
+        or ""
+    ).strip()
+    build_basis_valid = (
+        config.app_run_mode.casefold() != "testflight" or bool(expected_build)
+    )
+    reference_classification_configured = bool(
+        expected_revision
+        and reference_time is not None
+        and max_age_valid
+        and build_basis_valid
+    )
+
+    reference_fresh_reports: list[dict[str, Any]] = []
+    stale_report_count = 0
+    source_revision_mismatch_count = 0
+    freshness_unverified_count = 0
+    future_timestamp_count = 0
+    valid_until_candidates: list[datetime] = []
+
+    for report in runtime_reports:
+        source_revision_matches = (
+            bool(expected_revision)
+            and _runtime_report_source_revision(report) == expected_revision
+        )
+        if not source_revision_matches:
+            source_revision_mismatch_count += 1
+
+        timestamps, timestamps_valid = _runtime_report_proof_timestamps(report)
+        timestamp_unverified = (
+            reference_time is None
+            or not max_age_valid
+            or not timestamps
+            or not timestamps_valid
+            or not build_basis_valid
+        )
+        stale = False
+        future = False
+        if timestamps_valid and timestamps and max_age_valid:
+            valid_until_candidates.extend(
+                timestamp + timedelta(seconds=config.runtime_audit_max_age_seconds)
+                for timestamp in timestamps
+            )
+        if not timestamp_unverified and reference_time is not None:
+            ages = [
+                (reference_time - timestamp).total_seconds()
+                for timestamp in timestamps
+            ]
+            stale = any(
+                age > config.runtime_audit_max_age_seconds
+                for age in ages
+            )
+            future = any(
+                age < -RUNTIME_AUDIT_MAX_FUTURE_SKEW_SECONDS
+                for age in ages
+            )
+        if stale:
+            stale_report_count += 1
+        if future:
+            future_timestamp_count += 1
+        if timestamp_unverified or future:
+            freshness_unverified_count += 1
+
+        build_matches = (
+            not expected_build
+            or _runtime_report_app_build_number(report) == expected_build
+        )
+        if (
+            reference_classification_configured
+            and source_revision_matches
+            and build_matches
+            and not stale
+            and not future
+            and not timestamp_unverified
+        ):
+            reference_fresh_reports.append(report)
+
+    # A caller-supplied reference time remains classification-only. The only
+    # positive lane is the receipt created by the strict verifier in this run.
+    current_proof_complete = False
+    proof_satisfied_at_assessment = bool(
+        isinstance(verification_assessment, dict)
+        and verification_assessment.get("proofSatisfiedAtAssessment") is True
+        and verification_assessment.get("status") == STRICT_RUNTIME_RECEIPT_STATUS
+        and verification_assessment.get("scope") == STRICT_RUNTIME_RECEIPT_SCOPE
+        and config.app_run_mode.casefold() == "device-debug"
+    )
+    historical_report_count = len(runtime_reports)
+    if proof_satisfied_at_assessment:
+        status = STRICT_RUNTIME_RECEIPT_STATUS
+    elif isinstance(verification_assessment, dict):
+        status = str(verification_assessment.get("status") or "strict-verifier-rejected")
+    elif not runtime_reports:
+        status = "not-provided"
+    elif source_revision_mismatch_count:
+        status = "historical-source-revision-mismatch"
+    elif stale_report_count:
+        status = "historical-stale"
+    elif len(reference_fresh_reports) == len(runtime_reports):
+        status = "fresh-at-explicit-reference-unverified"
+    elif reference_fresh_reports:
+        status = "mixed-reference-fresh-and-historical"
+    else:
+        status = "historical-unverified"
+
+    basis = {
+        "expectedSourceRevision": expected_revision or None,
+        "referenceTime": (
+            reference_time.isoformat() if reference_time is not None else None
+        ),
+        "referenceTimeStatus": (
+            "valid"
+            if reference_time is not None
+            else reference_error
+        ),
+        "referenceTimeTrust": (
+            "caller-supplied-unverified"
+            if reference_time is not None
+            else "absent"
+        ),
+        "maxAgeSeconds": config.runtime_audit_max_age_seconds,
+        "maxAgeStatus": "valid" if max_age_valid else "invalid",
+        "validUntil": (
+            min(valid_until_candidates).isoformat()
+            if valid_until_candidates
+            else None
+        ),
+        "expectedBuildNumber": expected_build or None,
+        "buildSelectionStatus": (
+            "valid"
+            if build_basis_valid and (expected_build or config.app_run_mode.casefold() != "testflight")
+            else "unverified"
+        ),
+        "referenceClassificationConfigured": reference_classification_configured,
+        "currentProofTrusted": False,
+        "verificationReceiptProvided": proof_satisfied_at_assessment,
+        "proofSatisfiedAtAssessment": proof_satisfied_at_assessment,
+    }
+    if proof_satisfied_at_assessment and verification_assessment is not None:
+        basis.update({
+            "verifiedAt": verification_assessment.get("verifiedAt"),
+            "validUntil": verification_assessment.get("validUntil"),
+            "scope": verification_assessment.get("scope"),
+            "packageSha256": verification_assessment.get("packageSha256"),
+            "packageByteCount": verification_assessment.get("packageByteCount"),
+            "sourceRevision": verification_assessment.get("sourceRevision"),
+            "buildNumber": verification_assessment.get("buildNumber"),
+            "workingTreeDigest": verification_assessment.get(
+                "workingTreeDigest"
+            ),
+            "sourceDirtyState": verification_assessment.get(
+                "sourceDirtyState"
+            ),
+            "executionEnvironment": verification_assessment.get(
+                "executionEnvironment"
+            ),
+            "scenarioID": verification_assessment.get("scenarioID"),
+            "toolID": verification_assessment.get("toolID"),
+            "verifierName": verification_assessment.get("verifierName"),
+            "verifierContractVersion": verification_assessment.get(
+                "verifierContractVersion"
+            ),
+            "verifierSourceSha256": verification_assessment.get(
+                "verifierSourceSha256"
+            ),
+            "currentProofTrusted": False,
+        })
+    elif isinstance(verification_assessment, dict):
+        basis["verificationFailureCode"] = verification_assessment.get(
+            "failureCode"
+        )
+    return [], {
+        "status": status,
+        "basis": basis,
+        "currentProofComplete": current_proof_complete,
+        "proofSatisfiedAtAssessment": proof_satisfied_at_assessment,
+        "verifiedReportCount": int(
+            verification_assessment.get("verifiedReportCount") or 0
+        ) if proof_satisfied_at_assessment and verification_assessment else 0,
+        "freshAtExplicitReferenceReportCount": len(reference_fresh_reports),
+        "historicalReportCount": historical_report_count,
+        "staleReportCount": stale_report_count,
+        "sourceRevisionMismatchReportCount": source_revision_mismatch_count,
+        "freshnessUnverifiedReportCount": freshness_unverified_count,
+        "futureTimestampReportCount": future_timestamp_count,
+    }
+
+
+def _parse_runtime_audit_reference_time(
+    value: str | None,
+) -> tuple[datetime | None, str]:
+    if not isinstance(value, str) or not value.strip():
+        return None, "not-provided"
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None, "invalid"
+    if parsed.tzinfo is None:
+        return None, "invalid"
+    return parsed.astimezone(timezone.utc), "valid"
+
+
+def _runtime_report_proof_timestamps(
+    report: dict[str, Any],
+) -> tuple[list[datetime], bool]:
+    raw_values = [report.get("generatedAt")]
+    if report.get("reportFinishedAt") not in (None, ""):
+        raw_values.append(report.get("reportFinishedAt"))
+    timestamps: list[datetime] = []
+    for value in raw_values:
+        parsed, status = _parse_runtime_audit_reference_time(
+            value if isinstance(value, str) else None
+        )
+        if parsed is None or status != "valid":
+            return [], False
+        timestamps.append(parsed)
+    return timestamps, bool(timestamps)
+
+
+def _runtime_report_source_revision(report: dict[str, Any]) -> str | None:
+    source_revision = report.get("appSourceRevision")
+    if source_revision:
+        return str(source_revision)
+    app = report.get("app")
+    if isinstance(app, dict) and app.get("sourceRevision"):
+        return str(app.get("sourceRevision"))
+    return None
 
 
 def _runtime_report_matches_testflight_build(
@@ -1337,7 +2370,13 @@ def _write_markdown_report(path: Path, state: dict[str, Any], gaps: list[dict[st
         f"- Runtime failures: `{state['runtime']['failureCount']}`",
         f"- Raw runtime failures: `{state['runtime'].get('rawFailureCount', state['runtime']['failureCount'])}`",
         f"- Skipped live model generation: `{state['runtime'].get('skippedLiveModelGenerationCount', 0)}`",
-        f"- TestFlight status: `{state['testFlight']['status']}`",
+        f"- Runtime evidence status: `{state['testFlight']['status']}`",
+        f"- Assessment proof status: `{state['testFlight'].get('proofStatus', 'not-assessed')}`",
+        f"- Proof satisfied at assessment: `{state['testFlight'].get('proofSatisfiedAtAssessment', False)}`",
+        f"- Verified-at-assessment reports: `{state['testFlight'].get('verifiedAtAssessmentRuntimeAuditReportCount', 0)}`",
+        f"- Assessment proof valid until: `{state['testFlight'].get('validUntil')}`",
+        f"- Historical runtime audit reports: `{state['testFlight'].get('historicalRuntimeAuditReportCount', 0)}`",
+        f"- Build-rejected runtime audit reports: `{state['testFlight'].get('buildRejectedRuntimeAuditReportCount', 0)}`",
         f"- TestFlight scenarios: `{state['testFlight']['scenarioCount']}`",
         f"- Gaps: `{len(gaps)}`",
         f"- Next action prompts: `{len(prompts)}`",

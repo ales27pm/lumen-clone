@@ -41,6 +41,18 @@ Only the E2E export should be treated as the live model scenario result layer. T
 
 The correlated model/tool package is not a second owner of scenario truth. Its parent envelope remains `agentGroundingRuntimeAudit`; only the embedded `e2eTestReport` owns the one scenario result. Before the package can support an exact physical-device claim, `tools/verify_interactive_model_tool_evidence.py` must fail-closed over the expected source revision and build, freshness, the single expected scenario, correlated model action and final traces, the matching native tool result and observation, absence of deterministic-compatibility evidence, and privacy redaction.
 
+Crawler ingestion does not replace that verifier. The improve loop may ingest a
+historical DEBUG package into repair/training inputs while labeling it
+`historical-runtime-audit-ingested`. Its persisted dashboard cannot claim
+`currentRuntimeAuditProvided=true` from a caller-selected comparison time. The
+comparison time only yields a deterministic freshness window (`validUntil`);
+`currentRuntimeAuditProvided` remains false as a non-enduring field. An explicit
+`--verify-runtime-audit-now` run in `device-debug` mode may instead persist a
+`verified-at-assessment` result bound to exact source revision, build, package
+hash, freshness bound, and host UTC verification time. Its scope is
+`physical-device-debug-interactive-model-tool`; it is never TestFlight proof,
+and TestFlight-required mode remains fail-closed pending a distinct verifier.
+
 ## 1. TestFlight + Agent Grounding runtime audit
 
 Owned by:

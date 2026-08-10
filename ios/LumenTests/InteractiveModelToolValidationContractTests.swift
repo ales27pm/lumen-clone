@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 @testable import Lumen
 
 @Suite(.serialized)
@@ -315,6 +316,13 @@ struct InteractiveModelToolValidationContractTests {
         )
         #expect(package.testFlight.sourceAction == InAppDatasetPackageSourceAction.interactiveModelToolValidation.rawValue)
         #expect(InAppDatasetPackageSourceAction(rawValue: "caller supplied private text") == nil)
+        #if targetEnvironment(simulator)
+        #expect(package.app.executionEnvironment == "iOS-simulator")
+        #elseif os(iOS)
+        #expect(package.app.executionEnvironment == InAppDatasetAppInfo.physicalExecutionEnvironment(
+            for: UIDevice.current.userInterfaceIdiom
+        ))
+        #endif
         #else
         #expect(true)
         #endif
@@ -424,6 +432,7 @@ struct InteractiveModelToolValidationContractTests {
         )
         #expect(package.recentTraces.count == 2)
         #expect(package.liveE2EReport?.correlatedTraceCount == 2)
+        #expect(package.liveE2EReport?.app == package.app)
         #expect(package.exportQualityFailures?.isEmpty == true)
         #else
         #expect(true)

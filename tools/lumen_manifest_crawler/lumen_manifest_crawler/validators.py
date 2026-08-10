@@ -464,8 +464,14 @@ def _validate_compiled_record_shape(name: str, index: int, record: dict, failure
         if record.get("sourceFamily") != "runtime_audit_repairs":
             failures.append(ValidationFailure(code="runtime_repair_missing_source_family", message="runtime_audit_repairs record missing sourceFamily marker", path=f"dataset.{name}.{index}.sourceFamily"))
         metadata = record.get("metadata")
-        if not isinstance(metadata, dict) or not str(metadata.get("source") or "").strip() or not str(metadata.get("sourceFile") or "").strip():
-            failures.append(ValidationFailure(code="runtime_repair_missing_provenance", message="runtime_audit_repairs record missing metadata.source or metadata.sourceFile", path=f"dataset.{name}.{index}.metadata"))
+        if not isinstance(metadata, dict) or not str(metadata.get("source") or "").strip() or not str(metadata.get("sourceRef") or "").strip():
+            failures.append(ValidationFailure(code="runtime_repair_missing_provenance", message="runtime_audit_repairs record missing metadata.source or opaque metadata.sourceRef", path=f"dataset.{name}.{index}.metadata"))
+        elif (
+            metadata.get("currentProof") is not False
+            or metadata.get("historicalObservation") is not True
+            or not str(metadata.get("proofStatus") or "").strip()
+        ):
+            failures.append(ValidationFailure(code="runtime_repair_missing_evidence_boundary", message="runtime_audit_repairs record must be marked historical with currentProof=false and a proofStatus", path=f"dataset.{name}.{index}.metadata"))
         if not _runtime_repair_has_action(record):
             failures.append(ValidationFailure(code="runtime_repair_missing_action", message="runtime_audit_repairs assistant payload must contain repair.action", path=f"dataset.{name}.{index}.messages"))
         if not _runtime_repair_has_failure_type(record):

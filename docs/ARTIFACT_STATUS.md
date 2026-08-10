@@ -13,6 +13,23 @@ This document classifies generated or exported artifact paths used by the Lumen 
 | `generated/agent_improvement_loop/` | Expected improvement-loop outputs. | Documentation and runbooks may mention these files before they exist in a fresh clone. Absence means the loop has not been run in that workspace, not that the paths are invalid. | Run `python -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop --runtime-audit <fresh-audit-or-report> --generate-system-prompts --generate-agent-fine-tuning`. |
 | Other `generated/...` paths mentioned in docs | Expected generated outputs. | Treat them as products of the manifest crawler, dataset compiler, adapter export, or improvement loop. They are not guaranteed to be present until the corresponding command has run. | Use the command attached to the owning pipeline: `generate` for manifest/datasets/fleet prompts, `improve-loop` for loop state/runbooks, and adapter export/training commands for model artifacts. |
 
+Improvement-loop runtime ingestion and current proof are separate lanes. A
+privacy-safe historical export may remain useful for bounded repair/training
+inputs, but that does not make it current proof. `currentRuntimeAuditProvided`
+is a non-enduring field and remains `false` even after a strict verification;
+an
+explicit `--runtime-audit-reference-time` can only produce a deterministic
+`fresh-at-explicit-reference-unverified` classification plus `validUntil`.
+For one physical-device DEBUG correlated package, use
+`--app-run-mode device-debug --verify-runtime-audit-now
+--runtime-audit-expected-build-number <build>`. The loop invokes the verifier
+itself using host UTC and persists `verified-at-assessment`, `verifiedAt`,
+`validUntil`, package SHA-256, and the DEBUG-only scope. It never promotes that
+receipt to TestFlight proof. Generated dashboards must display that assessment
+status separately from pipeline
+PASS/FAIL. Source-revision mismatches, stale timestamps, missing freshness
+bases, and build-rejected reports have separate counters.
+
 ## Generated dataset alias policy
 
 Embedding and reranker datasets have canonical homes under:

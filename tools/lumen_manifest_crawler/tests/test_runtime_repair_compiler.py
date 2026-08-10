@@ -134,6 +134,11 @@ def test_final_validator_replacement_repair_reaches_rem_sft(
     ]
     assert matching
     assert all((record.get("metadata") or {}).get("taskType") == "runtime_manifest_drift_repair" for record in matching)
+    assert all((record.get("metadata") or {}).get("historicalObservation") is True for record in matching)
+    assert all((record.get("metadata") or {}).get("currentProof") is False for record in matching)
+    assert all((record.get("metadata") or {}).get("proofStatus") == "historical-unverified" for record in matching)
+    assert all(str((record.get("metadata") or {}).get("sourceRef") or "").startswith("runtime-audit-sha256-") for record in matching)
+    assert all("agent-grounding-export-v14.json" not in json.dumps(record, sort_keys=True) for record in matching)
 
 
 def test_duplicate_runtime_failures_are_deduped_for_training_repairs() -> None:
@@ -188,3 +193,74 @@ def test_clean_runtime_reports_are_deduped_by_source_layer() -> None:
         "e2eTestReport",
         "persistentRuntimeDiagnostics",
     }
+    assert all(record["metadata"]["historicalObservation"] is True for record in repairs)
+    assert all(record["metadata"]["currentProof"] is False for record in repairs)
+    assert all(record["metadata"]["proofStatus"] == "historical-unverified" for record in repairs)
+    assert all("sourceRef" in record["metadata"] for record in repairs)
+    assert all("sourceFile" not in record["metadata"] for record in repairs)
+    for record in repairs:
+        user_payload = json.loads(record["messages"][1]["content"])
+        assistant_payload = json.loads(record["messages"][2]["content"])
+        assert user_payload["historicalObservation"] is True
+        assert user_payload["currentProof"] is False
+        assert "not a current pass" in user_payload["problem"]
+        assert assistant_payload["historicalObservation"] is True
+        assert assistant_payload["currentProof"] is False
+        assert assistant_payload["repair"]["action"] == (
+            "document_historical_runtime_observation_and_expand_coverage"
+        )
+
+
+def test_runtime_repair_source_ref_is_path_private_and_host_stable() -> None:
+    manifest = AgentBehaviorManifest(tools=[ToolManifest(id="calendar.list")])
+    canary_basename = "private-runtime-canary.json"
+
+    def compile_from(source: str):
+        return compile_state_of_art_datasets(
+            manifest,
+            {},
+            runtime_audit_reports=[
+                {
+                    "_source": source,
+                    "_sourceFormat": "lumen_in_app_dataset_package",
+                    "_sourceLayer": "agentGroundingRuntimeAudit",
+                    "generatedAt": "2026-08-10T03:20:38Z",
+                    "appBuildNumber": "20260810031810",
+                    "appSourceRevision": "95174d975da515cf8625212592721cd0baa7bfa5",
+                    "_runtimeProofStatus": "historical-source-revision-mismatch",
+                    "_runtimeCurrentProof": False,
+                    "_runtimeHistoricalObservation": True,
+                    "failures": [
+                        {
+                            "type": "missing_required_tool_action",
+                            "agent": "cortex",
+                            "sourceLayer": "agentModelBehaviorAuditor.repairSamples",
+                            "scenario": "Search my calendar for next event",
+                            "problem": f"Historical failure loaded from {source}.",
+                            "actual": f"See {canary_basename} for the captured failure.",
+                            "sourceFile": source,
+                        }
+                    ],
+                }
+            ],
+        ).records["runtime_audit_repairs"][0]
+
+    first_source = f"/Users/private/canary/{canary_basename}"
+    second_source = f"/opt/other-host/evidence/{canary_basename}"
+    first = compile_from(first_source)
+    second = compile_from(second_source)
+
+    assert first["id"] == second["id"]
+    assert first["metadata"]["sourceRef"] == second["metadata"]["sourceRef"]
+    assert first["metadata"]["sourceRef"].startswith("runtime-audit-sha256-")
+    assert first["metadata"]["proofStatus"] == "historical-source-revision-mismatch"
+    assert first["metadata"]["historicalObservation"] is True
+    assert first["metadata"]["currentProof"] is False
+
+    for record, source in ((first, first_source), (second, second_source)):
+        serialized = json.dumps(record, ensure_ascii=False, sort_keys=True)
+        assert source not in serialized
+        assert canary_basename not in serialized
+        assert "sourceFile" not in serialized
+        assert "_source" not in serialized
+        assert "Historical runtime observation only" in serialized

@@ -3681,6 +3681,13 @@ def _normalize_candidate_record(record: dict[str, Any], source_family: str) -> d
         normalized["requiredSplit"] = required_split
     if normalized["sourceFamily"] == "fleet_orchestration_native":
         normalized.update(_fleet_native_matrix_metadata(metadata))
+    if normalized["sourceFamily"] == "runtime_audit_repairs":
+        normalized["runtimeEvidenceBoundary"] = {
+            "sourceRef": metadata.get("sourceRef"),
+            "proofStatus": metadata.get("proofStatus"),
+            "currentProof": False,
+            "historicalObservation": True,
+        }
     public_corpus = _public_corpus_metadata(record)
     if public_corpus is not None:
         normalized["publicCorpus"] = public_corpus
@@ -3801,6 +3808,10 @@ def _to_sft_record(
         metadata["requiredSplit"] = required_split
     if normalized["sourceFamily"] == "fleet_orchestration_native":
         metadata.update(_fleet_native_matrix_metadata(normalized))
+    if normalized["sourceFamily"] == "runtime_audit_repairs":
+        boundary = normalized.get("runtimeEvidenceBoundary")
+        if isinstance(boundary, dict):
+            metadata.update(boundary)
     public_corpus = normalized.get("publicCorpus")
     if isinstance(public_corpus, dict):
         metadata["publicCorpus"] = dict(public_corpus)

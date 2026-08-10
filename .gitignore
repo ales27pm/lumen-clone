@@ -47,3 +47,9 @@ ios/Lumen/Resources/AlgorithmicPhilosophies/**/screenshots/
 exports/
 exports/testflight-20260609-0426/
 .venv
+
+# Machine-local orchestration transcripts/state. Portable inspection summaries
+# remain generated artifacts, but raw subprocess logs and resumable state do not.
+generated/agent_improvement_loop/e2e_logs/
+generated/agent_improvement_loop/e2e_workflow_state.json
+generated/agent_improvement_loop/pipeline_state.json

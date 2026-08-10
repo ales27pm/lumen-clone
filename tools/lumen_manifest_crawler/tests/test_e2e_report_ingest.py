@@ -2674,6 +2674,9 @@ def test_agent_grounding_package_embeds_live_e2e_report_with_trace_sidecars(tmp_
     assert package_report["liveE2EDeterministicCompatibilityTraceCount"] == 1
     assert live_report["_sourceLayer"] == "e2eTestReport.evidenceLayer"
     assert live_report["appBuildNumber"] == "20260629054657"
+    assert live_report["generatedAt"] == "2026-06-29T00:00:10Z"
+    assert live_report["reportStartedAt"] == "2026-06-29T00:00:00Z"
+    assert live_report["reportFinishedAt"] == "2026-06-29T00:00:20Z"
     assert live_report["failures"] == []
     assert live_report["scenarios"][0]["modelEvidenceStatus"] == "valid_model_backed_evidence"
     assert live_report["scenarios"][0]["modelEvidenceTrace"]["matchedBy"] == "correlation"

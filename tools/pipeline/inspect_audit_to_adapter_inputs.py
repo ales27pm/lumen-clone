@@ -10,6 +10,7 @@ from pathlib import Path
 
 from audit_package_inspector import assert_audit_requirements, inspect_audit_files
 from audit_to_adapter_contract import CONTRACT, expand_runtime_audit_paths
+from portable_artifact_paths import path_replacements, sanitize_payload
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -34,7 +35,15 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     paths = expand_runtime_audit_paths(root, args.runtime_audit)
     summary = inspect_audit_files(paths)
-    payload = summary.as_dict()
+    payload = sanitize_payload(
+        summary.as_dict(),
+        replacements=path_replacements(
+            root,
+            paths,
+            external_prefix="runtime-audit",
+        ),
+    )
+    payload["schema"] = "lumen.audit_to_adapter_pipeline.audit_inspection/1.1.0"
     payload["contractSchema"] = CONTRACT.schema_version
     payload["contractFamily"] = CONTRACT.family
     payload["contractMode"] = CONTRACT.mode

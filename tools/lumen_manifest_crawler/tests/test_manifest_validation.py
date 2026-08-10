@@ -194,7 +194,13 @@ def test_runtime_repair_record_requires_provenance_and_repair_action():
                     {"role": "user", "content": "{}"},
                     {"role": "assistant", "content": "{\"failureType\":\"runtime_audit_clean\",\"repair\":{\"action\":\"document_runtime_pass_and_expand_coverage\"}}"},
                 ],
-                "metadata": {"source": "lumen_in_app_dataset_package", "sourceFile": "runtime-audits/latest-testflight-export.json"},
+                "metadata": {
+                    "source": "lumen_in_app_dataset_package",
+                    "sourceRef": "runtime-audit-sha256-opaque",
+                    "proofStatus": "historical-unverified",
+                    "currentProof": False,
+                    "historicalObservation": True,
+                },
             }
         ]
     }
@@ -220,7 +226,13 @@ def test_runtime_repair_record_fails_without_repair_action():
                     {"role": "user", "content": "{}"},
                     {"role": "assistant", "content": "{\"repair\":{}}"},
                 ],
-                "metadata": {"source": "lumen_in_app_dataset_package", "sourceFile": "runtime-audits/latest-testflight-export.json"},
+                "metadata": {
+                    "source": "lumen_in_app_dataset_package",
+                    "sourceRef": "runtime-audit-sha256-opaque",
+                    "proofStatus": "historical-unverified",
+                    "currentProof": False,
+                    "historicalObservation": True,
+                },
             }
         ]
     }

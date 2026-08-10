@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 from typing import Any, Iterable
+from uuid import UUID
 
 
 EXPECTED_BUNDLE_IDENTIFIER = "com.27pm.lumenclone"
@@ -33,12 +37,20 @@ EXPECTED_INTENT = "alarm"
 EXPECTED_EVIDENCE_MODE = "modelBackedRequired"
 EXPECTED_TOOL_ID = "alarm.authorization_status"
 
+VERIFIER_RECEIPT_SCHEMA = "lumen.interactive_model_tool_verifier_receipt/1.1.0"
+VERIFIER_CONTRACT_VERSION = "1.1.0"
+VERIFIER_RECEIPT_STATUS = "verified-at-assessment"
+VERIFIER_RECEIPT_SCOPE = "physical-device-debug-interactive-model-tool"
+VERIFIER_CLOCK_SOURCE = "host-system-utc"
+VERIFIER_SOURCE_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
 DEFAULT_MAX_AGE_SECONDS = 60 * 60
 MAX_FUTURE_CLOCK_SKEW_SECONDS = 5 * 60
 MAX_EXPORT_ASSEMBLY_SECONDS = 60
 TRACE_TIME_SLOP_SECONDS = 5
 
 OPAQUE_CORRELATION_TOKEN = re.compile(r"^corr_v1_[0-9a-f]{32}$")
+SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 REDACTED_TEXT = re.compile(r"^\[redacted sha256=[0-9a-f]{64} chars=[0-9]+\]$")
 HASH_SUMMARY = re.compile(r"^[A-Za-z][A-Za-z0-9]*_chars=[0-9]+;sha256=[0-9a-f]{16}$")
 OPAQUE_METADATA_KEY = re.compile(r"^metadata_[0-9a-f]{16}$")
@@ -105,7 +117,16 @@ ROOT_KEYS = {
     "scenarioResults", "recentTraces", "liveE2EReport", "traceSelectedToolAllowedCount",
     "traceParseErrorCount", "exportQualityFailures", "improveLoop", "exportPolicy",
 }
-APP_KEYS = {"name", "bundleIdentifier", "shortVersion", "buildNumber", "sourceRevision"}
+APP_KEYS = {
+    "name",
+    "bundleIdentifier",
+    "shortVersion",
+    "buildNumber",
+    "sourceRevision",
+    "workingTreeDigest",
+    "sourceDirtyState",
+    "executionEnvironment",
+}
 TEST_FLIGHT_KEYS = {
     "sourceAction", "filePrefix", "distributionChannel", "sandboxReceipt",
     "appShortVersion", "appBuildNumber", "liveE2EReportIncluded", "expectedIngestArgument",
@@ -288,12 +309,28 @@ def _require_positive_int(value: Any, location: str, failures: list[str]) -> Non
         failures.append(f"{location}={value!r}; expected a positive integer")
 
 
+def _require_uuid4(value: Any, location: str, failures: list[str]) -> str | None:
+    if not isinstance(value, str):
+        failures.append(f"{location} must be a canonical UUIDv4 string")
+        return None
+    try:
+        parsed = UUID(value)
+    except (ValueError, AttributeError):
+        failures.append(f"{location} must be a canonical UUIDv4 string")
+        return None
+    if parsed.version != 4 or str(parsed) != value:
+        failures.append(f"{location} must be a canonical UUIDv4 string")
+        return None
+    return str(parsed)
+
+
 def _validate_app_identity(
     app: dict[str, Any],
     *,
     location: str,
     expected_source_revision: str,
     expected_build_number: str,
+    expected_working_tree_digest: str,
     failures: list[str],
 ) -> None:
     _reject_unknown_keys(app, APP_KEYS, location, failures)
@@ -313,6 +350,24 @@ def _validate_app_identity(
         app.get("buildNumber"),
         expected_build_number,
         f"{location}.buildNumber",
+        failures,
+    )
+    _require_exact(
+        app.get("workingTreeDigest"),
+        expected_working_tree_digest,
+        f"{location}.workingTreeDigest",
+        failures,
+    )
+    _require_exact(
+        app.get("sourceDirtyState"),
+        False,
+        f"{location}.sourceDirtyState",
+        failures,
+    )
+    _require_exact(
+        app.get("executionEnvironment"),
+        "physical-iPhone",
+        f"{location}.executionEnvironment",
         failures,
     )
 
@@ -399,6 +454,7 @@ def verify_evidence_package(
     *,
     expected_source_revision: str,
     expected_build_number: str,
+    expected_working_tree_digest: str,
     now: datetime | None = None,
     max_age_seconds: int = DEFAULT_MAX_AGE_SECONDS,
 ) -> list[str]:
@@ -409,6 +465,11 @@ def verify_evidence_package(
         failures.append("expected source revision must be non-empty")
     if not isinstance(expected_build_number, str) or not expected_build_number.strip():
         failures.append("expected build number must be non-empty")
+    if (
+        not isinstance(expected_working_tree_digest, str)
+        or SHA256_HEX.fullmatch(expected_working_tree_digest) is None
+    ):
+        failures.append("expected working-tree digest must be 64 lowercase hexadecimal characters")
     if not _is_int(max_age_seconds) or max_age_seconds <= 0:
         failures.append("max_age_seconds must be a positive integer")
         return failures
@@ -436,6 +497,7 @@ def verify_evidence_package(
         location="$.app",
         expected_source_revision=expected_source_revision,
         expected_build_number=expected_build_number,
+        expected_working_tree_digest=expected_working_tree_digest,
         failures=failures,
     )
 
@@ -506,6 +568,7 @@ def verify_evidence_package(
         location="$.liveE2EReport.app",
         expected_source_revision=expected_source_revision,
         expected_build_number=expected_build_number,
+        expected_working_tree_digest=expected_working_tree_digest,
         failures=failures,
     )
     live_policy = _require_mapping(live.get("exportPolicy"), "$.liveE2EReport.exportPolicy", failures)
@@ -559,6 +622,11 @@ def verify_evidence_package(
 
     payload = _require_mapping(live.get("payload"), "$.liveE2EReport.payload", failures)
     _reject_unknown_keys(payload, REPORT_PAYLOAD_KEYS, "$.liveE2EReport.payload", failures)
+    report_id = _require_uuid4(
+        payload.get("id"),
+        "$.liveE2EReport.payload.id",
+        failures,
+    )
     _require_exact(payload.get("passed"), 1, "$.liveE2EReport.payload.passed", failures)
     _require_exact(payload.get("failed"), 0, "$.liveE2EReport.payload.failed", failures)
     results = _require_list(payload.get("results"), "$.liveE2EReport.payload.results", failures)
@@ -584,10 +652,15 @@ def verify_evidence_package(
 
     result_started_at: datetime | None = None
     result_finished_at: datetime | None = None
+    result_id: str | None = None
+    tool_result_created_at: datetime | None = None
     correlation_token: str | None = None
     if result:
         result_location = "$.liveE2EReport.payload.results[0]"
         _reject_unknown_keys(result, RESULT_KEYS, result_location, failures)
+        result_id = _require_uuid4(result.get("id"), f"{result_location}.id", failures)
+        if report_id is not None and result_id == report_id:
+            failures.append(f"{result_location}.id must differ from the owning report id")
         _require_exact(result.get("scenarioID"), EXPECTED_SCENARIO_ID, f"{result_location}.scenarioID", failures)
         _require_exact(result.get("kind"), EXPECTED_SCENARIO_KIND, f"{result_location}.kind", failures)
         _require_exact(result.get("expectedIntent"), EXPECTED_INTENT, f"{result_location}.expectedIntent", failures)
@@ -625,19 +698,71 @@ def verify_evidence_package(
         for key, expected in expected_metadata.items():
             _require_exact(metadata.get(key), expected, f"{result_location}.metadata.{key}", failures)
 
+        result_started_at = _parse_timestamp(result.get("startedAt"), f"{result_location}.startedAt", failures)
+        result_finished_at = _parse_timestamp(result.get("finishedAt"), f"{result_location}.finishedAt", failures)
+        if result_started_at is not None and result_finished_at is not None and result_started_at > result_finished_at:
+            failures.append(f"{result_location}.startedAt is after finishedAt")
+        if report_started_at is not None and result_started_at is not None and result_started_at < report_started_at:
+            failures.append(f"{result_location}.startedAt predates the owning report")
+        if report_finished_at is not None and result_finished_at is not None and result_finished_at > report_finished_at:
+            failures.append(f"{result_location}.finishedAt exceeds the owning report")
+
         events = _require_list(result.get("events"), f"{result_location}.events", failures)
+        event_ids: set[str] = set()
         for index, event in enumerate(events):
             if isinstance(event, dict):
-                _reject_unknown_keys(event, EVENT_KEYS, f"{result_location}.events[{index}]", failures)
+                event_location = f"{result_location}.events[{index}]"
+                _reject_unknown_keys(event, EVENT_KEYS, event_location, failures)
+                event_id = _require_uuid4(event.get("id"), f"{event_location}.id", failures)
+                if event_id is not None:
+                    if event_id in event_ids or event_id in {report_id, result_id}:
+                        failures.append(f"{event_location}.id is not uniquely linked to this result")
+                    event_ids.add(event_id)
+                _require_exact(
+                    event.get("scenarioID"),
+                    EXPECTED_SCENARIO_ID,
+                    f"{event_location}.scenarioID",
+                    failures,
+                )
         tool_result_events = [
-            event
-            for event in events
+            (index, event)
+            for index, event in enumerate(events)
             if isinstance(event, dict) and event.get("phase") == "tool-result"
         ]
         if len(tool_result_events) != 1:
             failures.append(
                 f"{result_location}.events contains {len(tool_result_events)} tool-result phases; expected exactly 1"
             )
+        else:
+            event_index, tool_result_event = tool_result_events[0]
+            event_location = f"{result_location}.events[{event_index}]"
+            _require_exact(
+                tool_result_event.get("phase"),
+                "tool-result",
+                f"{event_location}.phase",
+                failures,
+            )
+            message = tool_result_event.get("message")
+            if not isinstance(message, str) or REDACTED_TEXT.fullmatch(message) is None:
+                failures.append(
+                    f"{event_location}.message must be one non-empty redacted native observation"
+                )
+            tool_result_created_at = _parse_timestamp(
+                tool_result_event.get("createdAt"),
+                f"{event_location}.createdAt",
+                failures,
+            )
+            if tool_result_created_at is not None:
+                if tool_result_created_at > now + timedelta(seconds=MAX_FUTURE_CLOCK_SKEW_SECONDS):
+                    failures.append(f"{event_location}.createdAt is implausibly in the future")
+                if report_started_at is not None and tool_result_created_at < report_started_at:
+                    failures.append(f"{event_location}.createdAt predates the owning report")
+                if report_finished_at is not None and tool_result_created_at > report_finished_at:
+                    failures.append(f"{event_location}.createdAt exceeds the owning report")
+                if result_started_at is not None and tool_result_created_at < result_started_at:
+                    failures.append(f"{event_location}.createdAt predates the owning result")
+                if result_finished_at is not None and tool_result_created_at > result_finished_at:
+                    failures.append(f"{event_location}.createdAt exceeds the owning result")
 
         performance_matrix = result.get("performanceMatrix")
         if performance_matrix is not None:
@@ -668,15 +793,6 @@ def verify_evidence_package(
                     failures.append(
                         f"{result_location}.performanceMatrix.notes[{index}] is not privacy-redacted"
                     )
-
-        result_started_at = _parse_timestamp(result.get("startedAt"), f"{result_location}.startedAt", failures)
-        result_finished_at = _parse_timestamp(result.get("finishedAt"), f"{result_location}.finishedAt", failures)
-        if result_started_at is not None and result_finished_at is not None and result_started_at > result_finished_at:
-            failures.append(f"{result_location}.startedAt is after finishedAt")
-        if report_started_at is not None and result_started_at is not None and result_started_at < report_started_at:
-            failures.append(f"{result_location}.startedAt predates the owning report")
-        if report_finished_at is not None and result_finished_at is not None and result_finished_at > report_finished_at:
-            failures.append(f"{result_location}.finishedAt exceeds the owning report")
 
     _require_exact(
         live.get("modelBackedCorrelatedScenarioCount"),
@@ -764,27 +880,48 @@ def verify_evidence_package(
         for index, trace in correlated
         if trace.get("stage") == "agent-json-step-1" or trace.get("emittedFinalInActionTurn") is True
     ]
+    action_trace_index: int | None = None
+    final_trace_index: int | None = None
     if len(action_candidates) != 1:
         failures.append(f"$.recentTraces has {len(action_candidates)} correlated action candidates; expected exactly 1")
     else:
         index, action_trace = action_candidates[0]
+        action_trace_index = index
         _validate_action_trace(action_trace, location=f"$.recentTraces[{index}]", failures=failures)
     if len(final_candidates) != 1:
         failures.append(f"$.recentTraces has {len(final_candidates)} correlated final candidates; expected exactly 1")
     else:
         index, final_trace = final_candidates[0]
+        final_trace_index = index
         _validate_final_trace(final_trace, location=f"$.recentTraces[{index}]", failures=failures)
 
+    correlated_trace_times: dict[int, datetime] = {}
     for index, trace in correlated:
         if trace.get("runtimePath") == "deterministic-compatibility":
             failures.append(f"$.recentTraces[{index}] is correlated deterministic-compatibility evidence")
         trace_created_at = _parse_timestamp(trace.get("createdAt"), f"$.recentTraces[{index}].createdAt", failures)
         if trace_created_at is None:
             continue
+        correlated_trace_times[index] = trace_created_at
         if result_started_at is not None and trace_created_at < result_started_at - timedelta(seconds=TRACE_TIME_SLOP_SECONDS):
             failures.append(f"$.recentTraces[{index}].createdAt predates the scenario run")
         if result_finished_at is not None and trace_created_at > result_finished_at + timedelta(seconds=TRACE_TIME_SLOP_SECONDS):
             failures.append(f"$.recentTraces[{index}].createdAt is after the scenario run")
+
+    action_created_at = correlated_trace_times.get(action_trace_index) if action_trace_index is not None else None
+    final_created_at = correlated_trace_times.get(final_trace_index) if final_trace_index is not None else None
+    if (
+        action_created_at is not None
+        and tool_result_created_at is not None
+        and action_created_at > tool_result_created_at
+    ):
+        failures.append("the native tool-result event predates its correlated model action trace")
+    if (
+        final_created_at is not None
+        and tool_result_created_at is not None
+        and tool_result_created_at > final_created_at
+    ):
+        failures.append("the correlated model final trace predates its native tool-result event")
 
     quality_failures = root.get("exportQualityFailures")
     if quality_failures is not None:
@@ -819,6 +956,7 @@ def verify_evidence_file(
     *,
     expected_source_revision: str,
     expected_build_number: str,
+    expected_working_tree_digest: str,
     now: datetime | None = None,
     max_age_seconds: int = DEFAULT_MAX_AGE_SECONDS,
 ) -> list[str]:
@@ -834,9 +972,173 @@ def verify_evidence_file(
         package,
         expected_source_revision=expected_source_revision,
         expected_build_number=expected_build_number,
+        expected_working_tree_digest=expected_working_tree_digest,
         now=now,
         max_age_seconds=max_age_seconds,
     )
+
+
+def _load_evidence_artifact(path: Path) -> tuple[dict[str, Any] | None, bytes | None, list[str]]:
+    """Read one immutable byte snapshot for strict verification and receipt hashing."""
+
+    try:
+        raw_bytes = path.read_bytes()
+        package = json.loads(raw_bytes.decode("utf-8"))
+    except FileNotFoundError:
+        return None, None, [f"package does not exist: {path}"]
+    except (OSError, UnicodeError) as error:
+        return None, None, [f"could not read package {path}: {error}"]
+    except json.JSONDecodeError as error:
+        return None, None, [
+            f"invalid package JSON at line {error.lineno}, column {error.colno}: {error.msg}"
+        ]
+    if not isinstance(package, dict):
+        return None, raw_bytes, ["$ must be a JSON object"]
+    return package, raw_bytes, []
+
+
+def _iso8601_utc(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _receipt_freshness_timestamps(
+    package: dict[str, Any],
+) -> list[datetime]:
+    live = package["liveE2EReport"]
+    payload = live["payload"]
+    results = payload["results"]
+    result = results[0]
+    correlation_token = result["correlationToken"]
+    raw_timestamps: list[tuple[str, Any]] = [
+        ("$.generatedAt", package["generatedAt"]),
+        ("$.liveE2EReport.generatedAt", live["generatedAt"]),
+        ("$.liveE2EReport.payload.startedAt", payload["startedAt"]),
+        ("$.liveE2EReport.payload.finishedAt", payload["finishedAt"]),
+        ("$.liveE2EReport.payload.results[0].startedAt", result["startedAt"]),
+        ("$.liveE2EReport.payload.results[0].finishedAt", result["finishedAt"]),
+    ]
+    raw_timestamps.extend(
+        (
+            f"$.liveE2EReport.payload.results[0].events[{index}].createdAt",
+            event.get("createdAt"),
+        )
+        for index, event in enumerate(result["events"])
+        if isinstance(event, dict)
+    )
+    raw_timestamps.extend(
+        (f"$.recentTraces[{index}].createdAt", trace.get("createdAt"))
+        for index, trace in enumerate(package["recentTraces"])
+        if isinstance(trace, dict) and trace.get("correlationToken") == correlation_token
+    )
+    parsed: list[datetime] = []
+    failures: list[str] = []
+    for location, timestamp in raw_timestamps:
+        value = _parse_timestamp(timestamp, location, failures)
+        if value is not None:
+            parsed.append(value)
+    if failures or len(parsed) != len(raw_timestamps):
+        raise ValueError("verified package is missing a receipt freshness timestamp")
+    return parsed
+
+
+def _receipt_valid_until(
+    package: dict[str, Any],
+    *,
+    max_age_seconds: int,
+) -> datetime:
+    timestamps = _receipt_freshness_timestamps(package)
+    return min(timestamps) + timedelta(seconds=max_age_seconds)
+
+
+def _build_verification_receipt(
+    package: dict[str, Any],
+    raw_bytes: bytes,
+    *,
+    expected_source_revision: str,
+    expected_build_number: str,
+    expected_working_tree_digest: str,
+    verified_at: datetime,
+    max_age_seconds: int,
+) -> dict[str, Any]:
+    """Build a privacy-safe assessment receipt for already-verified exact bytes."""
+
+    valid_until = _receipt_valid_until(
+        package,
+        max_age_seconds=max_age_seconds,
+    )
+    if verified_at.astimezone(timezone.utc) > valid_until:
+        raise ValueError("verified package freshness window expired before receipt creation")
+    return {
+        "schemaVersion": VERIFIER_RECEIPT_SCHEMA,
+        "status": VERIFIER_RECEIPT_STATUS,
+        "scope": VERIFIER_RECEIPT_SCOPE,
+        "verifiedAt": _iso8601_utc(verified_at),
+        "validUntil": _iso8601_utc(valid_until),
+        "maxAgeSeconds": max_age_seconds,
+        "clockSource": VERIFIER_CLOCK_SOURCE,
+        "package": {
+            "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+            "byteCount": len(raw_bytes),
+            "schemaVersion": package["schemaVersion"],
+            "exportKind": package["exportKind"],
+        },
+        "binding": {
+            "bundleIdentifier": EXPECTED_BUNDLE_IDENTIFIER,
+            "sourceRevision": expected_source_revision,
+            "buildNumber": expected_build_number,
+            "workingTreeDigest": expected_working_tree_digest,
+            "sourceDirtyState": False,
+            "executionEnvironment": "physical-iPhone",
+            "scenarioID": EXPECTED_SCENARIO_ID,
+            "toolID": EXPECTED_TOOL_ID,
+        },
+        "verifier": {
+            "name": "verify_interactive_model_tool_evidence",
+            "contractVersion": VERIFIER_CONTRACT_VERSION,
+            "sourceSha256": VERIFIER_SOURCE_SHA256,
+        },
+    }
+
+
+def _write_receipt_atomic(
+    path: Path,
+    receipt: dict[str, Any],
+    *,
+    not_after: datetime | None = None,
+) -> None:
+    """Atomically replace a receipt only after its complete JSON is durable."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            json.dump(receipt, temporary, ensure_ascii=False, indent=2, sort_keys=True)
+            temporary.write("\n")
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        if not_after is not None and datetime.now(timezone.utc) > not_after:
+            raise ValueError("verified package freshness window expired before receipt replacement")
+        os.replace(temporary_path, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -847,10 +1149,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expected-source-revision", required=True, help="Exact LumenGitSHA expected in the app and embedded report.")
     parser.add_argument("--expected-build-number", required=True, help="Exact CFBundleVersion expected in the app and embedded report.")
     parser.add_argument(
+        "--expected-working-tree-digest",
+        required=True,
+        help="Exact clean build-time source working-tree SHA-256 expected in both app sections.",
+    )
+    parser.add_argument(
         "--max-age-seconds",
         type=int,
         default=DEFAULT_MAX_AGE_SECONDS,
         help=f"Maximum package/report age (default: {DEFAULT_MAX_AGE_SECONDS}).",
+    )
+    parser.add_argument(
+        "--receipt-output",
+        type=Path,
+        default=None,
+        help=(
+            "Optional path for an atomic, privacy-safe verifier receipt. "
+            "The receipt is written only after strict verification passes."
+        ),
     )
     return parser.parse_args(argv)
 
@@ -858,22 +1174,95 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     package_path = args.package.expanduser().resolve()
-    failures = verify_evidence_file(
-        package_path,
-        expected_source_revision=args.expected_source_revision,
-        expected_build_number=args.expected_build_number,
-        max_age_seconds=args.max_age_seconds,
+    receipt_output = (
+        args.receipt_output.expanduser().resolve()
+        if args.receipt_output is not None
+        else None
     )
+    package: dict[str, Any] | None = None
+    raw_bytes: bytes | None = None
+    verified_at: datetime | None = None
+    if receipt_output is None:
+        failures = verify_evidence_file(
+            package_path,
+            expected_source_revision=args.expected_source_revision,
+            expected_build_number=args.expected_build_number,
+            expected_working_tree_digest=args.expected_working_tree_digest,
+            max_age_seconds=args.max_age_seconds,
+        )
+    else:
+        package, raw_bytes, failures = _load_evidence_artifact(package_path)
+        if not failures and package is not None:
+            assessment_started_at = datetime.now(timezone.utc)
+            failures = verify_evidence_package(
+                package,
+                expected_source_revision=args.expected_source_revision,
+                expected_build_number=args.expected_build_number,
+                expected_working_tree_digest=args.expected_working_tree_digest,
+                now=assessment_started_at,
+                max_age_seconds=args.max_age_seconds,
+            )
+            if not failures:
+                verified_at = datetime.now(timezone.utc)
+                failures = verify_evidence_package(
+                    package,
+                    expected_source_revision=args.expected_source_revision,
+                    expected_build_number=args.expected_build_number,
+                    expected_working_tree_digest=args.expected_working_tree_digest,
+                    now=verified_at,
+                    max_age_seconds=args.max_age_seconds,
+                )
     if failures:
         print("Interactive model/tool evidence verification failed:", file=sys.stderr)
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         return 1
+    if receipt_output is not None:
+        if receipt_output == package_path:
+            print(
+                "Interactive model/tool evidence receipt write failed: "
+                "receipt output must not replace the evidence package",
+                file=sys.stderr,
+            )
+            return 1
+        if package is None or raw_bytes is None or verified_at is None:
+            print(
+                "Interactive model/tool evidence receipt write failed: "
+                "verified artifact snapshot is unavailable",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            receipt = _build_verification_receipt(
+                package,
+                raw_bytes,
+                expected_source_revision=args.expected_source_revision,
+                expected_build_number=args.expected_build_number,
+                expected_working_tree_digest=args.expected_working_tree_digest,
+                verified_at=verified_at,
+                max_age_seconds=args.max_age_seconds,
+            )
+            valid_until = _receipt_valid_until(
+                package,
+                max_age_seconds=args.max_age_seconds,
+            )
+            _write_receipt_atomic(
+                receipt_output,
+                receipt,
+                not_after=valid_until,
+            )
+        except (OSError, ValueError) as error:
+            print(
+                f"Interactive model/tool evidence receipt write failed: {error}",
+                file=sys.stderr,
+            )
+            return 1
     print("Interactive model/tool evidence verification passed")
     print(f"package={package_path}")
     print(f"bundleIdentifier={EXPECTED_BUNDLE_IDENTIFIER}")
     print(f"sourceRevision={args.expected_source_revision}")
     print(f"buildNumber={args.expected_build_number}")
+    print(f"workingTreeDigest={args.expected_working_tree_digest}")
     print(f"scenario={EXPECTED_SCENARIO_ID}")
     print(f"tool={EXPECTED_TOOL_ID}")
     return 0

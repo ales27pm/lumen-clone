@@ -23,6 +23,7 @@ try:
         _verify_runtime_model_binding,
         _verify_runtime_tokenizer_binding,
         _verified_private_runtime_model_snapshot,
+        _verified_private_runtime_tokenizer_snapshot,
     )
 except ImportError:
     module_dir = str(Path(__file__).resolve().parent)
@@ -40,6 +41,7 @@ except ImportError:
         _verify_runtime_model_binding,
         _verify_runtime_tokenizer_binding,
         _verified_private_runtime_model_snapshot,
+        _verified_private_runtime_tokenizer_snapshot,
     )
 
 
@@ -85,6 +87,11 @@ PREPARED_RELEASE_BAKE_REQUIRED_KEYS = {
     "variantManifestSHA256",
 }
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+
+_FILE_URI_RE = re.compile(r"file:///")
+_ABSOLUTE_LOCAL_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9+.:/\-])/(?!/)[^\s\"'<>`]+"
+)
 
 
 def _emit(message: str) -> None:
@@ -190,12 +197,132 @@ def _adapter_dir(cfg: dict[str, Any]) -> Path:
     return Path(str(cfg.get("adapter_output_dir") or cfg["output_dir"])).resolve()
 
 
-def _portable_manifest_path(value: str | Path) -> str:
-    path = Path(value)
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _content_ref(prefix: str, digest: Any) -> str:
+    value = str(digest or "")
+    if re.fullmatch(r"[0-9a-f]{64}", value) is None:
+        raise ValueError(f"{prefix} requires a full lowercase SHA-256 digest")
+    return f"{prefix}-sha256-{value}"
+
+
+def _digest_from_content_ref(prefix: str, value: Any) -> str:
+    match = re.fullmatch(rf"{re.escape(prefix)}-sha256-([0-9a-f]{{64}})", str(value or ""))
+    if match is None:
+        raise ValueError(f"{prefix} reference is malformed")
+    return match.group(1)
+
+
+def _portable_manifest_path(
+    value: str | Path,
+    *,
+    external_ref: str | None = None,
+) -> str:
+    path = Path(value).expanduser()
+    candidate = path if path.is_absolute() else _repository_root() / path
     try:
-        return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
+        return candidate.resolve().relative_to(_repository_root()).as_posix()
     except ValueError:
-        return path.as_posix()
+        if external_ref is None:
+            raise ValueError(
+                "external manifest path requires a content-derived reference"
+            )
+        return external_ref
+
+
+def _config_content_ref(cfg: dict[str, Any]) -> str:
+    source = cfg.get(CONFIG_SOURCE_PATH_KEY)
+    if not isinstance(source, str) or not source:
+        raise ValueError("config lacks its verified source path")
+    public_config = dict(cfg)
+    public_config.pop(CONFIG_SOURCE_PATH_KEY, None)
+    return _content_ref("config", _canonical_sha256(public_config))
+
+
+def _replace_local_paths(value: Any, replacements: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        sanitized = value
+        for source, reference in sorted(
+            replacements.items(), key=lambda item: (-len(item[0]), item[0])
+        ):
+            if source:
+                sanitized = sanitized.replace(source, reference)
+        if _FILE_URI_RE.search(sanitized) or _ABSOLUTE_LOCAL_PATH_RE.search(sanitized):
+            raise ValueError(
+                "GGUF manifest contains an unclassified absolute local path"
+            )
+        return sanitized
+    if isinstance(value, list):
+        return [_replace_local_paths(item, replacements) for item in value]
+    if isinstance(value, tuple):
+        return [_replace_local_paths(item, replacements) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _replace_local_paths(item, replacements)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _portable_runtime_evidence(
+    evidence: dict[str, Any],
+    *,
+    runtime_artifact_digest: str,
+) -> dict[str, Any]:
+    tokenizer_path = str(evidence.get("baseModelTokenizerSnapshotPath") or "")
+    runtime_path = str(evidence.get("baseModelRuntimeSnapshotPath") or "")
+    if not tokenizer_path or not runtime_path:
+        raise ValueError("runtime evidence lacks snapshot paths")
+    tokenizer_verification = evidence.get("baseModelTokenizerSnapshotVerification")
+    runtime_verification = evidence.get("baseModelRuntimeSnapshotVerification")
+    model_binding = evidence.get("runtimeModelBinding")
+    tokenizer_binding = evidence.get("runtimeTokenizerBinding")
+    if not all(
+        isinstance(item, dict)
+        for item in (
+            tokenizer_verification,
+            runtime_verification,
+            model_binding,
+            tokenizer_binding,
+        )
+    ):
+        raise ValueError("runtime evidence lacks verified binding objects")
+    return {
+        "baseModelTokenizerDigest": evidence.get("baseModelTokenizerDigest"),
+        "baseModelTokenizerFiles": evidence.get("baseModelTokenizerFiles"),
+        "baseModelTokenizerClosureSHA256": evidence.get(
+            "baseModelTokenizerClosureSHA256"
+        ),
+        "baseModelGenerationConfigFile": evidence.get(
+            "baseModelGenerationConfigFile"
+        ),
+        "baseModelTokenizerSnapshotRef": _content_ref(
+            "tokenizer-snapshot",
+            evidence.get("baseModelTokenizerClosureSHA256"),
+        ),
+        "baseModelTokenizerSnapshotVerificationSHA256": _content_ref(
+            "tokenizer-snapshot-verification",
+            tokenizer_verification.get("snapshotVerificationSHA256"),
+        ),
+        "baseModelRuntimeSnapshotRef": _content_ref(
+            "runtime-snapshot",
+            runtime_artifact_digest,
+        ),
+        "baseModelRuntimeSnapshotVerificationSHA256": _content_ref(
+            "runtime-snapshot-verification",
+            runtime_verification.get("snapshotVerificationSHA256"),
+        ),
+        "runtimeModelBindingRef": _content_ref(
+            "runtime-model-binding",
+            model_binding.get("runtimeModelBindingSHA256"),
+        ),
+        "runtimeTokenizerBindingRef": _content_ref(
+            "runtime-tokenizer-binding",
+            tokenizer_binding.get("runtimeTokenizerBindingSHA256"),
+        ),
+    }
 
 
 def _validate_config(
@@ -703,7 +830,7 @@ def _verified_release_bake_qualification(
                 f"Completed run qualification is not bound to the selected {agent} adapter"
             )
     return {
-        "sourceRunRoot": str(run_root),
+        "sourceRunRef": _content_ref("run-summary", summary["summarySHA256"]),
         "sourceRunSummarySHA256": summary["summarySHA256"],
         "sourceRunStatus": summary["status"],
         "sourceRunEvaluationStatus": summary["evaluationStatus"],
@@ -718,16 +845,31 @@ def _agent_output_dir(output_root: Path, agent: str) -> Path:
 
 
 def _release_bake_skipped_manifest(configs: list[dict[str, Any]], args: argparse.Namespace) -> dict[str, Any]:
+    config_refs = {
+        str(cfg["agent"]).strip().lower(): _config_content_ref(cfg)
+        for cfg in configs
+    }
+    request_ref = _content_ref(
+        "manifest-request",
+        _canonical_sha256(config_refs),
+    )
     return {
+        "schema": "lumen.gguf.release_bake_manifest/1.1.0",
         "mode": "adapter_first",
         "release_bake_requested": False,
         "skipped": True,
         "reason": "Adapter-first training keeps LoRA adapters separate by default. Pass --release-bake to explicitly merge/export GGUF artifacts.",
-        "manifest_output": _portable_manifest_path(args.manifest_output),
+        "manifest_output_ref": _portable_manifest_path(
+            args.manifest_output,
+            external_ref=request_ref,
+        ),
         "agents": {
             str(cfg["agent"]).strip().lower(): {
                 "agent": str(cfg["agent"]).strip().lower(),
-                "adapter_dir": _portable_manifest_path(str(cfg.get("adapter_output_dir") or cfg["output_dir"])),
+                "adapter_ref": _portable_manifest_path(
+                    str(cfg.get("adapter_output_dir") or cfg["output_dir"]),
+                    external_ref=config_refs[str(cfg["agent"]).strip().lower()],
+                ),
                 "base_model_name": cfg["base_model_name"],
                 "merge_adapters_by_default": False,
                 "release_bake_enabled_by_default": False,
@@ -852,19 +994,36 @@ def export_agent_gguf(
     target_path = agent_output_dir / target_name
     shutil.copy2(selected, target_path)
 
+    target_sha256 = sha256sum(target_path)
+    portable_runtime_evidence = _portable_runtime_evidence(
+        runtime_tokenizer_evidence,
+        runtime_artifact_digest=str(lineage["baseModelArtifactDigest"]),
+    )
+    adapter_ref = _portable_manifest_path(
+        adapter_dir,
+        external_ref=_content_ref("adapter", lineage["adapterSHA256"]),
+    )
+    gguf_ref = _portable_manifest_path(
+        target_path,
+        external_ref=_content_ref("gguf", target_sha256),
+    )
     summary = {
+        "schema": "lumen.gguf.release_bake_agent/1.1.0",
         "agent": agent,
         "mode": "optional_release_bake",
         "quantization": quantization,
-        "adapter_dir": str(adapter_dir),
-        "gguf_output_dir": str(agent_output_dir),
+        "adapter_ref": adapter_ref,
+        "gguf_output_ref": _portable_manifest_path(
+            agent_output_dir,
+            external_ref=_content_ref("gguf", target_sha256),
+        ),
         "gguf_file": target_name,
-        "gguf_path": str(target_path),
+        "gguf_ref": gguf_ref,
         "size_bytes": target_path.stat().st_size,
-        "sha256": sha256sum(target_path),
+        "sha256": target_sha256,
         "base_model_name": cfg["base_model_name"],
         **(qualification_evidence or {}),
-        **runtime_tokenizer_evidence,
+        **portable_runtime_evidence,
         **lineage,
     }
     (agent_output_dir / "gguf_release_bake_report.json").write_text(
@@ -910,23 +1069,59 @@ def existing_summary_for_agent(
     runtime_snapshot_path, runtime_snapshot_verification = (
         _verified_private_runtime_model_snapshot(cfg)
     )
-    runtime_evidence = _runtime_tokenizer_evidence(
-        cfg,
-        snapshot_path=runtime_snapshot_path,
-        snapshot_verification=runtime_snapshot_verification,
-        runtime_model_binding=report.get("runtimeModelBinding") or {},
-        runtime_binding=report.get("runtimeTokenizerBinding") or {},
+    tokenizer_snapshot_path, tokenizer_snapshot_verification = (
+        _verified_private_runtime_tokenizer_snapshot(cfg)
     )
+    runtime_evidence = _portable_runtime_evidence(
+        {
+            "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
+            "baseModelTokenizerFiles": cfg["baseModelTokenizerFiles"],
+            "baseModelTokenizerClosureSHA256": cfg[
+                "baseModelTokenizerClosureSHA256"
+            ],
+            "baseModelGenerationConfigFile": cfg[
+                "baseModelGenerationConfigFile"
+            ],
+            "baseModelTokenizerSnapshotPath": str(tokenizer_snapshot_path),
+            "baseModelTokenizerSnapshotVerification": tokenizer_snapshot_verification,
+            "baseModelRuntimeSnapshotPath": str(runtime_snapshot_path),
+            "baseModelRuntimeSnapshotVerification": runtime_snapshot_verification,
+            "runtimeModelBinding": {
+                "runtimeModelBindingSHA256": _digest_from_content_ref(
+                    "runtime-model-binding",
+                    report.get("runtimeModelBindingRef"),
+                )
+            },
+            "runtimeTokenizerBinding": {
+                "runtimeTokenizerBindingSHA256": _digest_from_content_ref(
+                    "runtime-tokenizer-binding",
+                    report.get("runtimeTokenizerBindingRef"),
+                )
+            },
+        },
+        runtime_artifact_digest=str(cfg["baseModelArtifactDigest"]),
+    )
+    target_sha256 = sha256sum(target_path)
     expected = {
+        "schema": "lumen.gguf.release_bake_agent/1.1.0",
         "agent": agent,
         "mode": "optional_release_bake",
         "quantization": quantization,
-        "adapter_dir": str(_adapter_dir(cfg)),
-        "gguf_output_dir": str(agent_output_dir),
+        "adapter_ref": _portable_manifest_path(
+            _adapter_dir(cfg),
+            external_ref=_content_ref("adapter", lineage["adapterSHA256"]),
+        ),
+        "gguf_output_ref": _portable_manifest_path(
+            agent_output_dir,
+            external_ref=_content_ref("gguf", target_sha256),
+        ),
         "gguf_file": target_name,
-        "gguf_path": str(target_path),
+        "gguf_ref": _portable_manifest_path(
+            target_path,
+            external_ref=_content_ref("gguf", target_sha256),
+        ),
         "size_bytes": target_path.stat().st_size,
-        "sha256": sha256sum(target_path),
+        "sha256": target_sha256,
         "base_model_name": cfg["base_model_name"],
         **(qualification_evidence or {}),
         **runtime_evidence,
@@ -946,10 +1141,13 @@ def existing_summary_for_agent(
 
 
 def _write_manifest(path: str, manifest: dict[str, Any]) -> Path:
+    portable_manifest = _replace_local_paths(manifest, {})
+    if not isinstance(portable_manifest, dict):
+        raise ValueError("GGUF manifest must be a JSON object")
     manifest_path = Path(path).resolve()
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(portable_manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return manifest_path
@@ -1001,6 +1199,7 @@ def main() -> None:
     output_root.mkdir(parents=True, exist_ok=True)
 
     manifest: dict[str, Any] = {
+        "schema": "lumen.gguf.release_bake_manifest/1.1.0",
         "mode": "optional_release_bake",
         "release_bake_requested": True,
         "repo_id": args.hf_repo_id,

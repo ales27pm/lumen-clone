@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -51,6 +53,17 @@ def test_relative_outputs_are_resolved_against_invocation_root(tmp_path: Path) -
     assert runner.rooted_path(root, args.release_bake_manifest_output) == root / "generated" / "fine_tuning" / "release_bake_gguf_manifest.json"
 
 
+def test_verify_now_requires_explicit_non_deterministic_device_debug_mode() -> None:
+    runner = _load_runner()
+
+    with pytest.raises(SystemExit):
+        runner.parse_args([
+            "--verify-runtime-audit-now",
+            "--runtime-audit-expected-build-number",
+            "204",
+        ])
+
+
 def test_command_queue_uses_repo_rooted_outputs(tmp_path: Path) -> None:
     runner = _load_runner()
     root = tmp_path / "repo"
@@ -61,6 +74,16 @@ def test_command_queue_uses_repo_rooted_outputs(tmp_path: Path) -> None:
         str(root),
         "--skip-tests",
         "--no-auto-discover-runtime-audit",
+        "--runtime-audit-reference-time",
+        "2026-08-10T09:35:43Z",
+        "--runtime-audit-max-age-seconds",
+        "7200",
+        "--verify-runtime-audit-now",
+        "--no-deterministic",
+        "--app-run-mode",
+        "device-debug",
+        "--runtime-audit-expected-build-number",
+        "20260810044413",
     ])
     output = runner.rooted_path(root, args.output)
     loop_output = runner.rooted_path(root, args.loop_output)
@@ -75,9 +98,29 @@ def test_command_queue_uses_repo_rooted_outputs(tmp_path: Path) -> None:
     assert str(fine_tuning_output) in improve
     cross_model_index = improve.index("--cross-model-train-dir") + 1
     assert improve[cross_model_index] == str(root / "generated" / "cross_model_training")
+    reference_index = improve.index("--runtime-audit-reference-time") + 1
+    assert improve[reference_index] == "2026-08-10T09:35:43Z"
+    max_age_index = improve.index("--runtime-audit-max-age-seconds") + 1
+    assert improve[max_age_index] == "7200"
+    assert "--verify-runtime-audit-now" in improve
+    build_index = improve.index("--runtime-audit-expected-build-number") + 1
+    assert improve[build_index] == "20260810044413"
+    assert "--non-deterministic" in improve
+    assert improve[improve.index("--app-run-mode") + 1] == "device-debug"
     assert str(root / "generated" / "fine_tuning" / "release_bake_gguf_manifest.json") in release_manifest
     config_dir_index = release_manifest.index("--config-dir") + 1
     assert release_manifest[config_dir_index] == str(fine_tuning_output)
+
+
+def test_app_run_mode_typo_fails_closed() -> None:
+    runner = _load_runner()
+
+    with pytest.raises(SystemExit):
+        runner.parse_args([
+            "--app-run-mode",
+            "testfilght",
+            "--require-testflight-runtime-audit",
+        ])
 
 
 def test_release_bake_command_requires_explicit_flag(tmp_path: Path) -> None:
@@ -192,8 +235,23 @@ def test_dashboard_outputs_escape_dynamic_content(tmp_path: Path) -> None:
     runner = _load_runner()
     root = tmp_path / "repo"
     dashboard = tmp_path / "dashboard"
+    audit = tmp_path / "private" / "diagnostic-name.json"
+    audit.parent.mkdir(parents=True)
+    audit_bytes = b'{"privacy":"redacted"}\n'
+    audit.write_bytes(audit_bytes)
     artifacts = runner.LoopArtifacts(
-        state={"manifest": {"toolCount": 1}, "dataset": {"families": {"x<script>": 2}}, "runtime": {}},
+        state={
+            "manifest": {"toolCount": 1},
+            "dataset": {"families": {"x<script>": 2}},
+            "runtime": {
+                "/Users/alex/Client Secret/report.json": "private key canary",
+            },
+            "testFlight": {
+                "status": "historical-runtime-audit-ingested",
+                "proofStatus": "historical-unverified",
+                "currentRuntimeAuditProvided": False,
+            },
+        },
         gaps=[{"severity": "error", "category": "x", "title": "<script>alert(1)</script>   \nnext line", "recommendedAction": "escape it"}],
         next_prompts=[{"taskType": "x", "priority": "high", "id": "prompt<script>"}],
         testflight_scenarios=[],
@@ -204,13 +262,25 @@ def test_dashboard_outputs_escape_dynamic_content(tmp_path: Path) -> None:
 
     step = runner.StepResult(
         name="test output",
-        command=["pytest"],
+        command=[
+            runner.sys.executable,
+            "pytest",
+            str(root),
+            str(root / "generated" / "agent_manifest"),
+            str(audit),
+        ],
         cwd=str(root),
         started_at="2026-05-03T00:00:00+00:00",
         ended_at="2026-05-03T00:00:01+00:00",
         duration_seconds=1.0,
         returncode=1,
-        stdout_tail="source line    \n    \nnext line\t \n",
+        stdout_tail=(
+            f"source line {root}    \n    \ninput {audit}\t \n"
+            "/Volumes/AlexisSecret/model.gguf /usr/local/private-tool\n"
+            "/Users/alex/Client Secret/model.gguf\n"
+            "[report](</Users/alex/Client Secret/report.json>)\n"
+            "file://localhost/Users/alex/private.json\n"
+        ),
     )
     outputs = runner.write_visual_outputs(
         root=root,
@@ -223,9 +293,30 @@ def test_dashboard_outputs_escape_dynamic_content(tmp_path: Path) -> None:
         ended_at="2026-05-03T00:00:01+00:00",
         steps=[step],
         artifacts=artifacts,
+        runtime_audits=[audit],
     )
 
     html = outputs["html"].read_text(encoding="utf-8")
+    summary = json.loads(outputs["summary"].read_text(encoding="utf-8"))
+    assert summary["schemaVersion"] == "2.1.0"
+    assert summary["testFlight"]["proofStatus"] == "historical-unverified"
+    assert "Pipeline PASS does not imply current device or TestFlight proof." in html
+    assert "historical-unverified" in html
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
     assert all(line == line.rstrip() for line in html.splitlines())
+    expected_ref = f"runtime-audit-sha256-{runner.hashlib.sha256(audit_bytes).hexdigest()}"
+    for path in outputs.values():
+        contents = path.read_text(encoding="utf-8")
+        assert str(root) not in contents
+        assert str(audit) not in contents
+        assert "diagnostic-name.json" not in contents
+        assert "AlexisSecret" not in contents
+        assert "/usr/local/" not in contents
+        assert "Client Secret" not in contents
+        assert "file:" not in contents.casefold()
+        assert str(Path(runner.sys.executable).resolve()) not in contents
+    assert summary["root"] == "."
+    assert summary["output"] == "generated/agent_manifest"
+    assert "./generated/agent_manifest" in json.dumps(summary, sort_keys=True)
+    assert expected_ref in json.dumps(summary, sort_keys=True)

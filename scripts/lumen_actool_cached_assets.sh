@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REAL_ACTOOL="${LUMEN_REAL_ACTOOL:-/Users/ales27pm/Downloads/Xcode.app/Contents/Developer/usr/bin/actool}"
+if [[ -n "${LUMEN_REAL_ACTOOL:-}" ]]; then
+  REAL_ACTOOL="$LUMEN_REAL_ACTOOL"
+else
+  REAL_ACTOOL="$(xcrun --find actool)"
+fi
+[[ -x "$REAL_ACTOOL" ]] || {
+  printf 'error: actool executable not found: %s\n' "$REAL_ACTOOL" >&2
+  exit 1
+}
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 if [[ -L "$SCRIPT_PATH" ]]; then
   resolved_path="$(readlink "$SCRIPT_PATH")"

@@ -335,9 +335,27 @@ def test_release_bake_skipped_manifest_is_adapter_first(tmp_path: Path) -> None:
     assert manifest["mode"] == "adapter_first"
     assert manifest["release_bake_requested"] is False
     assert manifest["skipped"] is True
+    assert manifest["schema"].endswith("/1.1.0")
     assert "--release-bake" in manifest["reason"]
+    assert manifest["manifest_output_ref"].startswith("manifest-request-sha256-")
+    assert manifest["agents"]["cortex"]["adapter_ref"].startswith(
+        "config-sha256-"
+    )
     assert manifest["agents"]["cortex"]["merge_adapters_by_default"] is False
     assert manifest["agents"]["cortex"]["release_bake_enabled_by_default"] is False
+    assert str(tmp_path) not in json.dumps(manifest, sort_keys=True)
+
+
+def test_manifest_writer_rejects_unclassified_local_path(tmp_path: Path) -> None:
+    export_gguf = _load_export_module()
+
+    with pytest.raises(ValueError, match="unclassified absolute local path"):
+        export_gguf._write_manifest(
+            str(tmp_path / "manifest.json"),
+            {"source": "/Users/example/Private Model/model.gguf"},
+        )
+
+    assert not (tmp_path / "manifest.json").exists()
 
 
 def test_static_agent_configs_disable_default_release_bake() -> None:
@@ -392,7 +410,15 @@ def test_skip_existing_requires_matching_current_lineage(
     monkeypatch.setattr(export_gguf, "_verified_release_bake_lineage", verify_lineage)
     runtime_path = Path(cfg["baseModelRuntimeSnapshotPath"])
     runtime_path.mkdir()
-    runtime_verification = cfg["baseModelRuntimeSnapshotVerification"]
+    runtime_verification = {
+        **cfg["baseModelRuntimeSnapshotVerification"],
+        "snapshotVerificationSHA256": "8" * 64,
+    }
+    tokenizer_path = Path(cfg["baseModelTokenizerSnapshotPath"])
+    tokenizer_verification = {
+        **cfg["baseModelTokenizerSnapshotVerification"],
+        "snapshotVerificationSHA256": "9" * 64,
+    }
     runtime_evidence = {
         "baseModelTokenizerDigest": cfg["baseModelTokenizerDigest"],
         "baseModelTokenizerFiles": cfg["baseModelTokenizerFiles"],
@@ -401,13 +427,11 @@ def test_skip_existing_requires_matching_current_lineage(
         ],
         "baseModelGenerationConfigFile": cfg["baseModelGenerationConfigFile"],
         "baseModelTokenizerSnapshotPath": cfg["baseModelTokenizerSnapshotPath"],
-        "baseModelTokenizerSnapshotVerification": cfg[
-            "baseModelTokenizerSnapshotVerification"
-        ],
+        "baseModelTokenizerSnapshotVerification": tokenizer_verification,
         "baseModelRuntimeSnapshotPath": str(runtime_path),
         "baseModelRuntimeSnapshotVerification": runtime_verification,
-        "runtimeModelBinding": {"binding": "model"},
-        "runtimeTokenizerBinding": {"binding": "tokenizer"},
+        "runtimeModelBinding": {"runtimeModelBindingSHA256": "a" * 64},
+        "runtimeTokenizerBinding": {"runtimeTokenizerBindingSHA256": "b" * 64},
     }
     monkeypatch.setattr(
         export_gguf,
@@ -416,21 +440,29 @@ def test_skip_existing_requires_matching_current_lineage(
     )
     monkeypatch.setattr(
         export_gguf,
-        "_runtime_tokenizer_evidence",
-        lambda _cfg, **_kwargs: runtime_evidence,
+        "_verified_private_runtime_tokenizer_snapshot",
+        lambda _cfg: (tokenizer_path, tokenizer_verification),
+    )
+    target_sha = export_gguf.sha256sum(target)
+    portable_runtime_evidence = export_gguf._portable_runtime_evidence(
+        runtime_evidence,
+        runtime_artifact_digest=cfg["baseModelArtifactDigest"],
     )
     report = {
+        "schema": "lumen.gguf.release_bake_agent/1.1.0",
         "agent": "cortex",
         "mode": "optional_release_bake",
         "quantization": "q4_k_m",
-        "adapter_dir": str(Path(cfg["output_dir"]).resolve()),
-        "gguf_output_dir": str(output_dir.resolve()),
+        "adapter_ref": export_gguf._content_ref(
+            "adapter", lineage["adapterSHA256"]
+        ),
+        "gguf_output_ref": export_gguf._content_ref("gguf", target_sha),
         "gguf_file": target.name,
-        "gguf_path": str(target.resolve()),
+        "gguf_ref": export_gguf._content_ref("gguf", target_sha),
         "size_bytes": target.stat().st_size,
-        "sha256": export_gguf.sha256sum(target),
+        "sha256": target_sha,
         "base_model_name": cfg["base_model_name"],
-        **runtime_evidence,
+        **portable_runtime_evidence,
         **lineage,
     }
     (output_dir / "gguf_release_bake_report.json").write_text(
@@ -448,7 +480,7 @@ def test_skip_existing_requires_matching_current_lineage(
     assert summary is not None and summary["reused_existing"] is True
 
     target.write_bytes(b"GGUF-stale")
-    with pytest.raises(ValueError, match="does not match current (size_bytes|sha256)"):
+    with pytest.raises(ValueError, match="does not match current .*sha256"):
         export_gguf.existing_summary_for_agent(
             cfg,
             output_root=output_root,
@@ -505,6 +537,8 @@ def test_release_bake_requires_verified_full_run_qualification(
     )
 
     assert evidence["sourceRunSummarySHA256"] == "3" * 64
+    assert evidence["sourceRunRef"] == "run-summary-sha256-" + "3" * 64
+    assert str(run_root) not in json.dumps(evidence, sort_keys=True)
     assert evidence["sourceRunEvaluationStatus"] == "quality_gate_passed"
     summary["evaluationScope"] = "smoke"
     with pytest.raises(ValueError, match="verified full evaluation"):

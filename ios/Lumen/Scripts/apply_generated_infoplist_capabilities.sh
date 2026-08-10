@@ -129,7 +129,60 @@ resolve_source_revision() {
   exit 1
 }
 
+resolve_repository_root() {
+  source_root="${SRCROOT:-}"
+  project_root="${PROJECT_DIR:-}"
+  for candidate in "${source_root:+${source_root}/..}" "${project_root:+${project_root}/..}" "$(pwd)"; do
+    [ -n "$candidate" ] || continue
+    if repository_root="$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null)"; then
+      printf '%s' "$repository_root"
+      return 0
+    fi
+  done
+  echo "error: could not resolve the repository root for source attestation" >&2
+  return 1
+}
+
+resolve_source_attestation() {
+  if ! repository_root="$(resolve_repository_root)"; then
+    return 1
+  fi
+  attestation_tool="${repository_root}/tools/lumen_manifest_crawler/lumen_manifest_crawler/source_integrity.py"
+  if [ ! -f "$attestation_tool" ]; then
+    echo "error: source attestation tool is missing: $attestation_tool" >&2
+    return 1
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "error: python3 is required to stamp source working-tree attestation" >&2
+    return 1
+  fi
+  if ! source_attestation="$(python3 "$attestation_tool" --root "$repository_root")"; then
+    echo "error: could not compute source working-tree attestation" >&2
+    return 1
+  fi
+
+  set -f
+  set -- $source_attestation
+  set +f
+  if [ "$#" -ne 2 ] || ! printf '%s' "$1" | grep -Eq '^[0-9a-f]{64}$'; then
+    echo "error: source attestation returned an invalid working-tree digest" >&2
+    return 1
+  fi
+  case "$2" in
+    true|false) ;;
+    *)
+      echo "error: source attestation returned an invalid dirty state" >&2
+      return 1
+      ;;
+  esac
+  source_working_tree_digest="$1"
+  source_dirty_state="$2"
+}
+
 if ! source_revision="$(resolve_source_revision)"; then
+  exit 1
+fi
+if ! resolve_source_attestation; then
   exit 1
 fi
 
@@ -145,6 +198,8 @@ set_string LumenBuildSourceIdentifier "${CURRENT_PROJECT_VERSION:-}"
 set_string LumenBuildConfiguration "${CONFIGURATION:-}"
 set_string LumenBuildScheme "${LUMEN_BUILD_SCHEME:-${TARGET_NAME:-}}"
 set_string LumenGitSHA "$source_revision"
+set_string LumenWorkingTreeDigest "$source_working_tree_digest"
+set_bool LumenSourceDirtyState "$source_dirty_state"
 set_msal_url_registration
 set_background_modes
 set_background_task_identifiers_from_build_setting

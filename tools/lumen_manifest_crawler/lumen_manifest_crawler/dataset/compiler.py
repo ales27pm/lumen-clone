@@ -1551,10 +1551,21 @@ def _build_runtime_audit_repair_records(  # NOSONAR
     known_tools = sorted(tool.id for tool in manifest.tools)
     seen_failure_signatures: set[str] = set()
     seen_clean_signatures: set[str] = set()
-    for report_index, report in enumerate(runtime_audit_reports):
+    for report in runtime_audit_reports:
         failures = report.get("failures") if isinstance(report, dict) else None
         if not isinstance(failures, list):
             continue
+        source_ref = _runtime_audit_source_ref(report)
+        proof_status = str(
+            report.get("_runtimeProofStatus") or "historical-unverified"
+        )
+        evidence_boundary = {
+            "sourceRef": source_ref,
+            "proofStatus": proof_status,
+            "currentProof": False,
+            "historicalObservation": True,
+        }
+        source_tokens = _runtime_private_source_tokens(report)
         if not failures:
             clean_signature = _stable_id({
                 "type": "runtime_audit_clean",
@@ -1567,15 +1578,20 @@ def _build_runtime_audit_repair_records(  # NOSONAR
             payload = {
                 "failureType": "runtime_audit_clean",
                 "scenario": "runtime_audit_report",
-                "problem": "No runtime failures were reported in this audit input.",
+                **evidence_boundary,
+                "problem": (
+                    "This historical runtime audit observation reported no failures; "
+                    "it is not current runtime proof."
+                ),
                 "repair": {
-                    "action": "document_runtime_pass_and_expand_coverage",
+                    "action": "document_historical_runtime_observation_and_expand_coverage",
                     "nextStep": "add_one_new_testflight_scenario_family_or_trace_field",
                     "knownToolCount": len(known_tools),
                 },
             }
-            record_id = _stable_id({"report": report_index, "payload": payload, "source": report.get("_source")})
-            records.append({
+            payload = _redact_runtime_private_source_values(payload, source_tokens)
+            record_id = _stable_id({"sourceRef": source_ref, "payload": payload})
+            record = {
                 "id": f"runtime-repair-{record_id[:16]}",
                 "schemaVersion": DATASET_SCHEMA_VERSION,
                 "split": TRAIN_SPLIT,
@@ -1583,14 +1599,14 @@ def _build_runtime_audit_repair_records(  # NOSONAR
                 "agentRole": "rem",
                 "taskType": "runtime_manifest_drift_repair",
                 "messages": [
-                    {"role": "system", "content": "You are REM. Convert runtime manifest and in-app behavior audit outcomes into precise next-step dataset maintenance actions."},
+                    {"role": "system", "content": "You are REM. Convert historical runtime audit observations into precise next-step dataset maintenance actions. Never present them as current runtime proof."},
                     {
                         "role": "user",
                         "content": _content_to_string({
                             "type": "runtime_audit_clean",
-                            "problem": "No runtime failures were reported.",
+                            "problem": "A historical runtime audit observation reported no failures; this is not a current pass.",
                             "sourceLayer": report.get("_sourceLayer"),
-                            "sourceFile": report.get("_source"),
+                            **evidence_boundary,
                         }),
                     },
                     {"role": "assistant", "content": _content_to_string(payload)},
@@ -1599,9 +1615,15 @@ def _build_runtime_audit_repair_records(  # NOSONAR
                     "generatedAt": config.generated_at,
                     "source": report.get("_sourceFormat") or "RuntimeManifestAuditor",
                     "sourceLayer": report.get("_sourceLayer"),
-                    "sourceFile": report.get("_source"),
+                    **evidence_boundary,
                 },
-            })
+            }
+            redacted_record = _redact_runtime_private_source_values(
+                record,
+                source_tokens,
+            )
+            if isinstance(redacted_record, dict):
+                records.append(redacted_record)
             continue
         for failure_index, failure in enumerate(failures):
             if not isinstance(failure, dict):
@@ -1617,10 +1639,29 @@ def _build_runtime_audit_repair_records(  # NOSONAR
                 "failureType": failure.get("type"),
                 "scenario": failure.get("scenario"),
                 "problem": failure.get("problem"),
+                **evidence_boundary,
                 "repair": repair,
             }
-            record_id = _stable_id({"report": report_index, "failure": failure_index, "payload": payload})
-            records.append({
+            payload = _redact_runtime_private_source_values(payload, source_tokens)
+            training_failure = _redact_runtime_private_source_values(
+                failure,
+                source_tokens,
+            )
+            if not isinstance(training_failure, dict):
+                continue
+            training_failure = {
+                **training_failure,
+                **evidence_boundary,
+                "evidenceBoundary": (
+                    "Historical runtime observation only; not current runtime proof."
+                ),
+            }
+            record_id = _stable_id({
+                "sourceRef": source_ref,
+                "failure": failure_index,
+                "payload": payload,
+            })
+            record = {
                 "id": f"runtime-repair-{record_id[:16]}",
                 "schemaVersion": DATASET_SCHEMA_VERSION,
                 "split": TRAIN_SPLIT,
@@ -1628,18 +1669,94 @@ def _build_runtime_audit_repair_records(  # NOSONAR
                 "agentRole": str(failure.get("agent") or "rem"),
                 "taskType": "runtime_manifest_drift_repair",
                 "messages": [
-                    {"role": "system", "content": "You are REM. Convert runtime manifest and in-app behavior audit failures into precise dataset repair instructions."},
-                    {"role": "user", "content": _content_to_string(failure)},
+                    {"role": "system", "content": "You are REM. Convert historical runtime audit failures into precise dataset repair instructions. Never present them as current runtime proof."},
+                    {"role": "user", "content": _content_to_string(training_failure)},
                     {"role": "assistant", "content": _content_to_string(payload)},
                 ],
                 "metadata": {
                     "generatedAt": config.generated_at,
                     "source": report.get("_sourceFormat") or "RuntimeManifestAuditor",
                     "sourceLayer": failure.get("sourceLayer"),
-                    "sourceFile": report.get("_source"),
+                    **evidence_boundary,
                 },
-            })
+            }
+            redacted_record = _redact_runtime_private_source_values(
+                record,
+                source_tokens,
+            )
+            if isinstance(redacted_record, dict):
+                records.append(redacted_record)
     return records
+
+
+def _runtime_audit_source_ref(report: dict[str, Any]) -> str:
+    """Return a host/path-independent opaque reference for a runtime report."""
+
+    app = report.get("app") if isinstance(report.get("app"), dict) else {}
+    payload = report.get("payload") if isinstance(report.get("payload"), dict) else {}
+    failures = report.get("failures") if isinstance(report.get("failures"), list) else []
+    identity = {
+        "sourceFormat": report.get("_sourceFormat"),
+        "sourceLayer": report.get("_sourceLayer"),
+        "generatedAt": report.get("generatedAt"),
+        "reportStartedAt": report.get("reportStartedAt"),
+        "reportFinishedAt": report.get("reportFinishedAt"),
+        "appBuildNumber": report.get("appBuildNumber") or app.get("buildNumber"),
+        "appSourceRevision": report.get("appSourceRevision") or app.get("sourceRevision"),
+        "reportID": report.get("id") or payload.get("id"),
+        "failureSignatures": [
+            _runtime_failure_source_ref_signature(failure)
+            for failure in failures
+            if isinstance(failure, dict)
+        ],
+    }
+    return f"runtime-audit-sha256-{_stable_id(identity)}"
+
+
+def _runtime_failure_source_ref_signature(failure: dict[str, Any]) -> dict[str, Any]:
+    repair_sample = failure.get("repairSample")
+    repair_sample = repair_sample if isinstance(repair_sample, dict) else {}
+    return {
+        "type": failure.get("type"),
+        "agent": failure.get("agent"),
+        "scenario": failure.get("scenario"),
+        "sourceLayer": failure.get("sourceLayer"),
+        "rootCauseCategory": failure.get("rootCauseCategory"),
+        "violationCode": repair_sample.get("violationCode"),
+    }
+
+
+def _runtime_private_source_tokens(report: dict[str, Any]) -> set[str]:
+    source = str(report.get("_source") or "").strip()
+    if not source:
+        return set()
+    normalized = source.replace("\\", "/")
+    path_only = normalized.split("#", 1)[0]
+    basename = path_only.rsplit("/", 1)[-1]
+    return {token for token in {source, normalized, path_only, basename} if token}
+
+
+def _redact_runtime_private_source_values(value: Any, source_tokens: set[str]) -> Any:
+    """Remove source-location keys and exact path/basename canaries recursively."""
+
+    source_keys = {"_source", "sourceFile", "sourcePath", "filePath", "localPath"}
+    if isinstance(value, dict):
+        return {
+            key: _redact_runtime_private_source_values(child, source_tokens)
+            for key, child in value.items()
+            if key not in source_keys
+        }
+    if isinstance(value, list):
+        return [
+            _redact_runtime_private_source_values(child, source_tokens)
+            for child in value
+        ]
+    if isinstance(value, str):
+        redacted = value
+        for token in sorted(source_tokens, key=len, reverse=True):
+            redacted = redacted.replace(token, "[opaque-runtime-source]")
+        return redacted
+    return value
 
 
 def _runtime_failure_is_training_repairable(failure: dict[str, Any]) -> bool:

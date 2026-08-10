@@ -31,7 +31,10 @@ from lumen_manifest_crawler.dataset.public_adapter_corpus import (
 )
 from lumen_manifest_crawler.dataset.rem import generate_rem_records
 from lumen_manifest_crawler.dataset.reranker import compile_reranker_datasets
-from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
+from lumen_manifest_crawler.dataset.runtime_ingest import (
+    load_runtime_audit_reports,
+    without_internal_artifact_bindings,
+)
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest
 
 
@@ -66,6 +69,10 @@ def generate_all_datasets(
         if runtime_audit_reports is not None
         else load_runtime_audit_reports(runtime_audit_paths)
     )
+    runtime_audit_reports = [
+        without_internal_artifact_bindings(report)
+        for report in runtime_audit_reports
+    ]
     compiled = compile_state_of_art_datasets(
         manifest,
         role_records,

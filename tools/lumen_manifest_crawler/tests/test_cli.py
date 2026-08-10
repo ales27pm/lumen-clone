@@ -2,12 +2,71 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+import typer
+
 from lumen_manifest_crawler import cli
 from lumen_manifest_crawler.cli import (
     _incremental_outputs_are_current,
     _should_generate_full_fleet_artifacts,
+    _validate_runtime_verification_cli_options,
 )
 from lumen_manifest_crawler.output.writer import CROSS_MODEL_ARTIFACT_FILENAMES
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {
+            "verify_now": True,
+            "deterministic": True,
+            "app_run_mode": "device-debug",
+            "expected_build_number": "204",
+            "require_testflight_runtime_audit": False,
+        },
+        {
+            "verify_now": True,
+            "deterministic": False,
+            "app_run_mode": "testflight",
+            "expected_build_number": "204",
+            "require_testflight_runtime_audit": False,
+        },
+        {
+            "verify_now": True,
+            "deterministic": False,
+            "app_run_mode": "device-debug",
+            "expected_build_number": None,
+            "require_testflight_runtime_audit": False,
+        },
+        {
+            "verify_now": False,
+            "deterministic": True,
+            "app_run_mode": "device-debug",
+            "expected_build_number": "204",
+            "require_testflight_runtime_audit": False,
+        },
+        {
+            "verify_now": False,
+            "deterministic": True,
+            "app_run_mode": "testfilght",
+            "expected_build_number": None,
+            "require_testflight_runtime_audit": True,
+        },
+    ],
+)
+def test_runtime_verification_cli_rejects_invalid_combinations(kwargs) -> None:
+    with pytest.raises(typer.BadParameter):
+        _validate_runtime_verification_cli_options(**kwargs)
+
+
+def test_runtime_verification_cli_accepts_explicit_host_clock_mode() -> None:
+    _validate_runtime_verification_cli_options(
+        verify_now=True,
+        deterministic=False,
+        app_run_mode="device-debug",
+        expected_build_number="204",
+        require_testflight_runtime_audit=False,
+    )
 
 
 def _run_stubbed_generation(

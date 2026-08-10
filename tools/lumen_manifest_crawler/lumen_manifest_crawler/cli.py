@@ -257,11 +257,22 @@ def improve_loop(
     dry_run_commands: bool = typer.Option(False, "--dry-run-commands", help="Record build/test/train commands without executing them."),
     app_run_mode: str = typer.Option("testflight", "--app-run-mode", help="Live app runtime mode. Default: testflight."),
     testflight_build_label: Optional[str] = typer.Option(None, "--testflight-build-label", help="Human-readable TestFlight build/version label for the runbook."),
-    require_testflight_runtime_audit: bool = typer.Option(False, "--require-testflight-runtime-audit", help="Treat missing TestFlight in-app audit JSON as an error gap."),
+    require_testflight_runtime_audit: bool = typer.Option(False, "--require-testflight-runtime-audit", help="Require current TestFlight proof; missing, historical, or receipt-unverified evidence is an error gap."),
     testflight_scenario_limit: int = typer.Option(120, "--testflight-scenario-limit", min=1, help="Maximum scenarios to write for TestFlight replay."),
+    runtime_audit_reference_time: Optional[str] = typer.Option(None, "--runtime-audit-reference-time", help="Explicit ISO-8601 comparison time for a deterministic freshness classification. This does not establish current proof without a strict verifier receipt."),
+    runtime_audit_max_age_seconds: int = typer.Option(3600, "--runtime-audit-max-age-seconds", min=1, help="Maximum runtime-audit age relative to the explicit reference time."),
+    verify_runtime_audit_now: bool = typer.Option(False, "--verify-runtime-audit-now", help="Run the strict verifier now over exactly one physical-device DEBUG package using the host UTC clock."),
+    runtime_audit_expected_build_number: Optional[str] = typer.Option(None, "--runtime-audit-expected-build-number", help="Exact app build number required by --verify-runtime-audit-now."),
     fail_on_validation: bool = typer.Option(False, "--fail-on-validation/--no-fail-on-validation", help="Exit non-zero if the loop finds critical/error gaps."),
 ) -> None:
     """Run one closed improvement-loop cycle and emit TestFlight runtime handoff artifacts."""
+    _validate_runtime_verification_cli_options(
+        verify_now=verify_runtime_audit_now,
+        deterministic=deterministic,
+        app_run_mode=app_run_mode,
+        expected_build_number=runtime_audit_expected_build_number,
+        require_testflight_runtime_audit=require_testflight_runtime_audit,
+    )
     result = run_agent_improvement_loop(
         AgentImprovementLoopConfig(
             root=root,
@@ -284,6 +295,10 @@ def improve_loop(
             testflight_build_label=testflight_build_label,
             require_testflight_runtime_audit=require_testflight_runtime_audit,
             testflight_scenario_limit=testflight_scenario_limit,
+            runtime_audit_reference_time=runtime_audit_reference_time,
+            runtime_audit_max_age_seconds=runtime_audit_max_age_seconds,
+            verify_runtime_audit_now=verify_runtime_audit_now,
+            runtime_audit_expected_build_number=runtime_audit_expected_build_number,
         )
     )
     console.print(f"[bold]Loop passed:[/bold] {result.passed}")
@@ -329,8 +344,19 @@ def developer_cycle(
     dry_run: bool = typer.Option(False, "--dry-run", help="Plan phases and write reports without executing validation/generation commands."),
     skip_generation: bool = typer.Option(False, "--skip-generation", help="Skip manifest/dataset generation and report current artifacts."),
     skip_improvement_loop: bool = typer.Option(False, "--skip-improvement-loop", help="Skip improvement-loop preparation and report current artifacts."),
+    app_run_mode: str = typer.Option("testflight", "--app-run-mode", help="Runtime evidence mode: testflight or device-debug."),
+    verify_runtime_audit_now: bool = typer.Option(False, "--verify-runtime-audit-now", help="Run strict host-clock verification for one physical-device DEBUG package."),
+    runtime_audit_expected_build_number: Optional[str] = typer.Option(None, "--runtime-audit-expected-build-number", help="Exact app build number required for strict runtime verification."),
+    runtime_audit_max_age_seconds: int = typer.Option(3600, "--runtime-audit-max-age-seconds", min=1, help="Maximum strict runtime-evidence age in seconds."),
 ) -> None:
     """Run the unified Lumen developer workflow."""
+    _validate_runtime_verification_cli_options(
+        verify_now=verify_runtime_audit_now,
+        deterministic=False,
+        app_run_mode=app_run_mode,
+        expected_build_number=runtime_audit_expected_build_number,
+        require_testflight_runtime_audit=False,
+    )
     report, exit_code = run_developer_cycle(
         DeveloperCycleConfig(
             root=root,
@@ -347,6 +373,10 @@ def developer_cycle(
             dry_run=dry_run,
             skip_generation=skip_generation,
             skip_improvement_loop=skip_improvement_loop,
+            app_run_mode=app_run_mode,
+            verify_runtime_audit_now=verify_runtime_audit_now,
+            runtime_audit_expected_build_number=runtime_audit_expected_build_number,
+            runtime_audit_max_age_seconds=runtime_audit_max_age_seconds,
         )
     )
     if json_output:
@@ -365,6 +395,51 @@ def developer_cycle(
         console.print(f"[bold]Next:[/bold] {report['nextRecommendedCommand']}")
     if exit_code:
         raise typer.Exit(code=exit_code)
+
+
+def _validate_runtime_verification_cli_options(
+    *,
+    verify_now: bool,
+    deterministic: bool,
+    app_run_mode: str,
+    expected_build_number: str | None,
+    require_testflight_runtime_audit: bool,
+) -> None:
+    """Reject ambiguous host-clock verification combinations before work starts."""
+
+    if app_run_mode.casefold() not in {"testflight", "device-debug"}:
+        raise typer.BadParameter(
+            "--app-run-mode must be exactly testflight or device-debug",
+            param_hint="--app-run-mode",
+        )
+
+    if not verify_now:
+        if expected_build_number:
+            raise typer.BadParameter(
+                "--runtime-audit-expected-build-number requires --verify-runtime-audit-now",
+                param_hint="--runtime-audit-expected-build-number",
+            )
+        return
+    if deterministic:
+        raise typer.BadParameter(
+            "--verify-runtime-audit-now requires explicit --non-deterministic host-clock assessment",
+            param_hint="--verify-runtime-audit-now",
+        )
+    if app_run_mode.casefold() != "device-debug":
+        raise typer.BadParameter(
+            "--verify-runtime-audit-now supports only --app-run-mode device-debug; it cannot prove TestFlight",
+            param_hint="--app-run-mode",
+        )
+    if not str(expected_build_number or "").strip():
+        raise typer.BadParameter(
+            "--verify-runtime-audit-now requires --runtime-audit-expected-build-number",
+            param_hint="--runtime-audit-expected-build-number",
+        )
+    if require_testflight_runtime_audit:
+        raise typer.BadParameter(
+            "DEBUG verification cannot be combined with --require-testflight-runtime-audit",
+            param_hint="--require-testflight-runtime-audit",
+        )
 
 
 def _framework_environment(value: str) -> FrameworkEnvironment:
@@ -469,7 +544,7 @@ def framework_ingest(
     workflow: str = typer.Argument("improve-loop", help="Ingestion workflow to run; currently only improve-loop is supported."),
     runtime_audit: Annotated[Optional[list[Path]], typer.Option("--runtime-audit", help="Runtime audit export file or directory. Can be passed multiple times.")] = None,
     root: Path = typer.Option(Path("."), "--root", help="Repository root."),
-    require_testflight_runtime_audit: bool = typer.Option(False, "--require-testflight-runtime-audit", help="Treat missing TestFlight audit as a hard gap."),
+    require_testflight_runtime_audit: bool = typer.Option(False, "--require-testflight-runtime-audit", help="Require current TestFlight proof; historical or receipt-unverified evidence is a hard gap."),
     fail_on_validation: bool = typer.Option(False, "--fail-on-validation", help="Exit non-zero on critical/error gaps."),
 ) -> None:
     """Run improve-loop ingestion through the framework entrypoint."""

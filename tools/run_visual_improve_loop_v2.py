@@ -12,6 +12,7 @@ report, emits a pipeline SVG, and makes GGUF release bake explicit.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import json
 import os
@@ -49,6 +50,10 @@ RUNTIME_AUDIT_EXCLUDE_HINTS = (
     "release_bake_gguf_manifest",
     "adapter_runtime_manifest",
     "dataset_manifest",
+)
+LOCAL_FILE_URL_PATTERN = re.compile(r"file:[^\r\n]*", re.IGNORECASE)
+LOCAL_ABSOLUTE_PATH_PATTERN = re.compile(
+    r"(?m)(?<![:/.\w])/(?!/)(?![A-Za-z][A-Za-z0-9:_-]*\s*>)[^\r\n]*"
 )
 
 
@@ -211,16 +216,59 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pretty", action=argparse.BooleanOptionalAction, default=True, help="Write pretty manifest output.")
     parser.add_argument("--generate-system-prompts", action=argparse.BooleanOptionalAction, default=True, help="Generate fleet prompts/cross-model artifacts.")
     parser.add_argument("--generate-agent-fine-tuning", action=argparse.BooleanOptionalAction, default=True, help="Generate per-agent datasets.")
-    parser.add_argument("--app-run-mode", default="testflight", help="Live runtime mode passed to improve-loop.")
+    parser.add_argument(
+        "--app-run-mode",
+        choices=("testflight", "device-debug"),
+        default="testflight",
+        help="Live runtime mode passed to improve-loop.",
+    )
     parser.add_argument("--testflight-build-label", default=None, help="Build/version label for runbook.")
-    parser.add_argument("--require-testflight-runtime-audit", action="store_true", help="Treat missing TestFlight audit as hard gap.")
+    parser.add_argument("--require-testflight-runtime-audit", action="store_true", help="Require current TestFlight proof; historical or receipt-unverified evidence is a hard gap.")
+    parser.add_argument(
+        "--runtime-audit-reference-time",
+        default=None,
+        help=(
+            "Explicit ISO-8601 comparison time for deterministic freshness classification. "
+            "This does not establish current proof without a strict verifier receipt."
+        ),
+    )
+    parser.add_argument(
+        "--runtime-audit-max-age-seconds",
+        type=int,
+        default=3600,
+        help="Maximum runtime-audit age relative to the explicit reference time.",
+    )
+    parser.add_argument("--verify-runtime-audit-now", action="store_true", help="Run strict host-clock verification for exactly one physical-device DEBUG package.")
+    parser.add_argument("--runtime-audit-expected-build-number", default=None, help="Exact app build required by --verify-runtime-audit-now.")
     parser.add_argument("--testflight-scenario-limit", type=int, default=120, help="Maximum TestFlight scenarios.")
     parser.add_argument("--fail-on-gaps", action="store_true", help="Exit non-zero on critical/error gaps.")
     parser.add_argument("--keep-going", action="store_true", help="Continue after failed commands.")
     parser.add_argument("--open-dashboard", action="store_true", help="Open generated dashboard.")
     parser.add_argument("--quiet-commands", action="store_true", help="Suppress live command output.")
     parser.add_argument("--tail-chars", type=int, default=16000, help="Command output tail chars to keep.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.verify_runtime_audit_now:
+        if args.deterministic:
+            parser.error(
+                "--verify-runtime-audit-now requires explicit --no-deterministic"
+            )
+        if args.app_run_mode.casefold() != "device-debug":
+            parser.error(
+                "--verify-runtime-audit-now supports only --app-run-mode device-debug"
+            )
+        if not str(args.runtime_audit_expected_build_number or "").strip():
+            parser.error(
+                "--verify-runtime-audit-now requires --runtime-audit-expected-build-number"
+            )
+        if args.require_testflight_runtime_audit:
+            parser.error(
+                "DEBUG verification cannot be combined with --require-testflight-runtime-audit"
+            )
+    elif args.runtime_audit_expected_build_number:
+        parser.error(
+            "--runtime-audit-expected-build-number requires --verify-runtime-audit-now"
+        )
+    return args
 
 
 def build_env(root: Path) -> dict[str, str]:
@@ -254,6 +302,20 @@ def _append_optional_improve_flags(
         improve.append("--require-testflight-runtime-audit")
     if args.testflight_build_label:
         improve.extend(["--testflight-build-label", args.testflight_build_label])
+    if args.runtime_audit_reference_time:
+        improve.extend(
+            ["--runtime-audit-reference-time", args.runtime_audit_reference_time]
+        )
+    if args.verify_runtime_audit_now:
+        improve.append("--verify-runtime-audit-now")
+    if args.runtime_audit_expected_build_number:
+        improve.extend([
+            "--runtime-audit-expected-build-number",
+            args.runtime_audit_expected_build_number,
+        ])
+    improve.extend(
+        ["--runtime-audit-max-age-seconds", str(args.runtime_audit_max_age_seconds)]
+    )
     if args.build_command:
         improve.extend(["--build-command", args.build_command])
     if args.train_command:
@@ -626,6 +688,134 @@ def pipeline_svg(steps: list[StepResult], artifacts: LoopArtifacts) -> str:
     return normalize_html_attribute_quotes(svg)
 
 
+def _public_repo_path(path: Path, root: Path) -> str:
+    """Return a stable repository-relative path for tracked dashboard output."""
+
+    try:
+        relative = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return "<external-path-redacted>"
+    return "." if relative == Path(".") else relative.as_posix()
+
+
+def _runtime_audit_public_replacements(
+    runtime_audits: Sequence[Path],
+) -> dict[str, str]:
+    """Map external audit locations to content-derived opaque references."""
+
+    replacements: dict[str, str] = {}
+    for path in runtime_audits:
+        resolved = str(path.resolve())
+        if path.is_file():
+            try:
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError:
+                replacements[resolved] = "<runtime-audit-input-redacted>"
+            else:
+                replacements[resolved] = f"runtime-audit-sha256-{digest}"
+        else:
+            replacements[resolved] = "<runtime-audit-input-redacted>"
+    return replacements
+
+
+def _sanitize_public_text(
+    value: str,
+    *,
+    root: Path,
+    replacements: dict[str, str],
+) -> str:
+    """Remove machine-local paths from dashboard text."""
+
+    sanitized = value.replace(str(Path(sys.executable).resolve()), "python")
+    for private_path, public_ref in sorted(
+        replacements.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        sanitized = sanitized.replace(private_path, public_ref)
+    sanitized = sanitized.replace(str(root.resolve()), ".")
+    sanitized = LOCAL_FILE_URL_PATTERN.sub("<local-file-url-redacted>", sanitized)
+    return LOCAL_ABSOLUTE_PATH_PATTERN.sub("<local-path-redacted>", sanitized)
+
+
+def _sanitize_public_value(
+    value: Any,
+    *,
+    root: Path,
+    replacements: dict[str, str],
+) -> Any:
+    """Recursively sanitize values before writing tracked dashboard artifacts."""
+
+    if isinstance(value, dict):
+        sanitized_dict: dict[Any, Any] = {}
+        for key, child in value.items():
+            if key in {"_artifactSha256", "_artifactByteCount"}:
+                continue
+            sanitized_key = (
+                _sanitize_public_text(key, root=root, replacements=replacements)
+                if isinstance(key, str)
+                else key
+            )
+            if sanitized_key in sanitized_dict:
+                raise ValueError("public artifact key collision after sanitization")
+            sanitized_dict[sanitized_key] = _sanitize_public_value(
+                child,
+                root=root,
+                replacements=replacements,
+            )
+        return sanitized_dict
+    if isinstance(value, list):
+        return [
+            _sanitize_public_value(child, root=root, replacements=replacements)
+            for child in value
+        ]
+    if isinstance(value, tuple):
+        return [
+            _sanitize_public_value(child, root=root, replacements=replacements)
+            for child in value
+        ]
+    if isinstance(value, str):
+        return _sanitize_public_text(value, root=root, replacements=replacements)
+    return value
+
+
+def _public_step_result(
+    step: StepResult,
+    *,
+    root: Path,
+    replacements: dict[str, str],
+) -> StepResult:
+    """Create a tracked-artifact-safe projection of one execution result."""
+
+    return StepResult(
+        name=step.name,
+        command=[
+            _sanitize_public_text(token, root=root, replacements=replacements)
+            for token in step.command
+        ],
+        cwd=_sanitize_public_text(step.cwd, root=root, replacements=replacements),
+        started_at=step.started_at,
+        ended_at=step.ended_at,
+        duration_seconds=step.duration_seconds,
+        returncode=step.returncode,
+        stdout_tail=_sanitize_public_text(
+            step.stdout_tail,
+            root=root,
+            replacements=replacements,
+        ),
+        stderr_tail=_sanitize_public_text(
+            step.stderr_tail,
+            root=root,
+            replacements=replacements,
+        ),
+        skipped=step.skipped,
+        notes=[
+            _sanitize_public_text(note, root=root, replacements=replacements)
+            for note in step.notes
+        ],
+    )
+
+
 def build_summary(root: Path, output: Path, loop_output: Path, fine_tuning_output: Path, args: argparse.Namespace, started_at: str, ended_at: str, steps: list[StepResult], artifacts: LoopArtifacts) -> dict[str, Any]:
     """Build the machine-readable summary payload for the run."""
     state = artifacts.state
@@ -637,13 +827,13 @@ def build_summary(root: Path, output: Path, loop_output: Path, fine_tuning_outpu
     hard_gaps = [gap for gap in artifacts.gaps if str(gap.get("severity")) in {"critical", "error"}]
     failed_steps = [step for step in steps if not step.passed and not step.skipped]
     return {
-        "schemaVersion": "2.0.0",
+        "schemaVersion": "2.1.0",
         "startedAt": started_at,
         "endedAt": ended_at,
-        "root": str(root),
-        "output": str(output),
-        "loopOutput": str(loop_output),
-        "fineTuningOutput": str(fine_tuning_output),
+        "root": _public_repo_path(root, root),
+        "output": _public_repo_path(output, root),
+        "loopOutput": _public_repo_path(loop_output, root),
+        "fineTuningOutput": _public_repo_path(fine_tuning_output, root),
         "passed": not hard_gaps and not failed_steps,
         "releaseBakeRequested": bool(args.release_bake),
         "manifest": manifest,
@@ -673,11 +863,17 @@ def build_html(summary: dict[str, Any], steps: list[StepResult], artifacts: Loop
     dataset = summary.get("dataset", {}) if isinstance(summary.get("dataset"), dict) else {}
     manifest = summary.get("manifest", {}) if isinstance(summary.get("manifest"), dict) else {}
     gaps = summary.get("gaps", {}) if isinstance(summary.get("gaps"), dict) else {}
+    runtime_evidence = (
+        summary.get("testFlight", {})
+        if isinstance(summary.get("testFlight"), dict)
+        else {}
+    )
     families = dataset.get("families", {}) if isinstance(dataset.get("families"), dict) else {}
     agent_ft = dataset.get("agentFineTuning", {}) if isinstance(dataset.get("agentFineTuning"), dict) else {}
     agent_counts = {agent: sum(int(value) for value in counts.values() if isinstance(value, int)) for agent, counts in agent_ft.items() if isinstance(counts, dict)}
     cards = [
-        ("status", "PASS" if summary.get("passed") else "NEEDS WORK"),
+        ("pipeline status", "PASS" if summary.get("passed") else "NEEDS WORK"),
+        ("runtime proof", runtime_evidence.get("proofStatus", "not-assessed")),
         ("tools", manifest.get("toolCount", 0)),
         ("intents", manifest.get("intentCount", 0)),
         ("dataset records", dataset.get("recordCount", 0)),
@@ -732,6 +928,7 @@ pre {{ white-space:pre-wrap; max-height:24rem; overflow:auto; background:#070b12
 <header><h1>Lumen Visual Improve-Loop v2</h1><p>Repo-rooted, adapter-first, release-bake explicit.</p></header>
 <main>
 <section class='grid'>{card_html}</section>
+<section class='panel'><h2>Runtime evidence boundary</h2><p>Pipeline PASS does not imply current device or TestFlight proof. Historical inputs may still feed repair datasets.</p><pre>{escape(json.dumps(runtime_evidence, ensure_ascii=False, indent=2, sort_keys=True))}</pre></section>
 <section class='panel'><h2>Pipeline</h2>{pipeline_svg(steps, artifacts)}</section>
 <section class='two'><section class='panel'><h2>Dataset records</h2>{svg_bar_chart(families, 'Dataset family records')}</section><section class='panel'><h2>Gap severities</h2>{svg_bar_chart(gaps.get('bySeverity', {}) if isinstance(gaps.get('bySeverity'), dict) else {}, 'Gap severities')}</section></section>
 <section class='panel'><h2>Agent fine-tuning records</h2>{svg_bar_chart(agent_counts, 'Agent fine-tuning records')}</section>
@@ -764,12 +961,53 @@ def write_visual_outputs(
     ended_at: str,
     steps: list[StepResult],
     artifacts: LoopArtifacts,
+    runtime_audits: Sequence[Path] = (),
 ) -> dict[str, Path]:
     """Write summary JSON, dashboard HTML, and pipeline SVG to disk."""
     dashboard_dir.mkdir(parents=True, exist_ok=True)
-    summary = build_summary(root, output, loop_output, fine_tuning_output, args, started_at, ended_at, steps, artifacts)
-    html_doc = build_html(summary, steps, artifacts)
-    svg_doc = pipeline_svg(steps, artifacts)
+    replacements = _runtime_audit_public_replacements(runtime_audits)
+    public_steps = [
+        _public_step_result(step, root=root, replacements=replacements)
+        for step in steps
+    ]
+    public_artifacts = LoopArtifacts(
+        state=_sanitize_public_value(artifacts.state, root=root, replacements=replacements),
+        gaps=_sanitize_public_value(artifacts.gaps, root=root, replacements=replacements),
+        next_prompts=_sanitize_public_value(
+            artifacts.next_prompts,
+            root=root,
+            replacements=replacements,
+        ),
+        testflight_scenarios=_sanitize_public_value(
+            artifacts.testflight_scenarios,
+            root=root,
+            replacements=replacements,
+        ),
+        release_bake_manifest=_sanitize_public_value(
+            artifacts.release_bake_manifest,
+            root=root,
+            replacements=replacements,
+        ),
+        adapter_runtime_manifest=_sanitize_public_value(
+            artifacts.adapter_runtime_manifest,
+            root=root,
+            replacements=replacements,
+        ),
+    )
+    summary = build_summary(
+        root,
+        output,
+        loop_output,
+        fine_tuning_output,
+        args,
+        started_at,
+        ended_at,
+        public_steps,
+        public_artifacts,
+    )
+    summary = _sanitize_public_value(summary, root=root, replacements=replacements)
+    html_doc = build_html(summary, public_steps, public_artifacts)
+    svg_doc = pipeline_svg(public_steps, public_artifacts)
     summary_path = dashboard_dir / "visual_improve_loop_summary.json"
     html_path = dashboard_dir / "index.html"
     svg_path = dashboard_dir / "pipeline.svg"
@@ -805,7 +1043,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     steps.append(preflight)
     if not preflight.passed and not args.keep_going:
         artifacts = read_artifacts(loop_output, fine_tuning_output, release_manifest)
-        write_visual_outputs(root=root, dashboard_dir=dashboard_output, output=output, loop_output=loop_output, fine_tuning_output=fine_tuning_output, args=args, started_at=started_at, ended_at=now_iso(), steps=steps, artifacts=artifacts)
+        write_visual_outputs(root=root, dashboard_dir=dashboard_output, output=output, loop_output=loop_output, fine_tuning_output=fine_tuning_output, args=args, started_at=started_at, ended_at=now_iso(), steps=steps, artifacts=artifacts, runtime_audits=())
         return 2
 
     runtime_audits = collect_runtime_audits(args, root, console)
@@ -824,7 +1062,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     console.step(total, total, "visual dashboard")
     artifacts = read_artifacts(loop_output, fine_tuning_output, release_manifest)
-    files = write_visual_outputs(root=root, dashboard_dir=dashboard_output, output=output, loop_output=loop_output, fine_tuning_output=fine_tuning_output, args=args, started_at=started_at, ended_at=now_iso(), steps=steps, artifacts=artifacts)
+    files = write_visual_outputs(root=root, dashboard_dir=dashboard_output, output=output, loop_output=loop_output, fine_tuning_output=fine_tuning_output, args=args, started_at=started_at, ended_at=now_iso(), steps=steps, artifacts=artifacts, runtime_audits=runtime_audits)
     console.ok(f"dashboard: {files['html']}")
     console.ok(f"summary: {files['summary']}")
     console.ok(f"pipeline svg: {files['svg']}")

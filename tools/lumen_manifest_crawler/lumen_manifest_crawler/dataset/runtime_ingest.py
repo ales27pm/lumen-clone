@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -23,6 +24,19 @@ SUPPORTED_TEXT_REPORT_SUFFIXES = {".txt", ".md", ".markdown", ".log"}
 SUPPORTED_RUNTIME_AUDIT_SUFFIXES = {".json", *SUPPORTED_TEXT_REPORT_SUFFIXES}
 MAX_REMEDIATION_PROPOSALS = 5
 MAX_REMEDIATION_FIELD_CHARS = 320
+INTERNAL_ARTIFACT_BINDING_KEYS = frozenset({"_artifactSha256", "_artifactByteCount"})
+
+
+def without_internal_artifact_bindings(
+    report: dict[str, Any],
+) -> dict[str, Any]:
+    """Remove ingest-only byte bindings before generated/training serialization."""
+
+    return {
+        key: value
+        for key, value in report.items()
+        if key not in INTERNAL_ARTIFACT_BINDING_KEYS
+    }
 
 
 def load_runtime_audit_reports(paths: list[Path] | None) -> list[dict[str, Any]]:
@@ -33,13 +47,27 @@ def load_runtime_audit_reports(paths: list[Path] | None) -> list[dict[str, Any]]
         candidates = _candidate_report_files(path)
         for candidate in candidates:
             try:
-                text = candidate.read_text(encoding="utf-8")
-            except OSError:
+                raw_bytes = candidate.read_bytes()
+                text = raw_bytes.decode("utf-8")
+            except (OSError, UnicodeError):
                 continue
             parent = candidate.parent
             if parent not in sidecar_cache:
                 sidecar_cache[parent] = _load_e2e_sidecars(parent)
-            reports.extend(_load_report_text(text, source=str(candidate), sidecars=sidecar_cache[parent]))
+            artifact_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+            normalized = _load_report_text(
+                text,
+                source=str(candidate),
+                sidecars=sidecar_cache[parent],
+            )
+            reports.extend(
+                {
+                    **report,
+                    "_artifactSha256": artifact_sha256,
+                    "_artifactByteCount": len(raw_bytes),
+                }
+                for report in normalized
+            )
     return _dedupe_runtime_reports(reports)
 
 
@@ -215,6 +243,9 @@ def _flatten_evidence_layer_envelope(envelope: dict[str, Any], *, source: str, s
                 sidecars=sidecars,
             )
             flattened.update(_app_metadata_fields(envelope.get("app")))
+            flattened["generatedAt"] = envelope.get("generatedAt")
+            flattened["reportStartedAt"] = payload.get("startedAt")
+            flattened["reportFinishedAt"] = payload.get("finishedAt")
             flattened["exportPolicy"] = export_policy
             return [flattened]
         return []
@@ -310,6 +341,8 @@ def _swift_e2e_payload_to_normalized_report(payload: dict[str, Any]) -> dict[str
         })
     return {
         "id": payload.get("id"),
+        "startedAt": payload.get("startedAt"),
+        "finishedAt": payload.get("finishedAt"),
         "kind": "lumen_e2e_test_report",
         "passed": payload.get("passed"),
         "failed": payload.get("failed"),
