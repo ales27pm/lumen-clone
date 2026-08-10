@@ -102,7 +102,8 @@ struct StructuredAgentKernelExecutor {
                 request: request,
                 availableTools: availableTools,
                 stepIndex: stepIndex,
-                scratchpad: scratchpad
+                scratchpad: scratchpad,
+                hasObservations: !observations.isEmpty
             )
             var generation = await generateStructuredTurn(
                 request: request,
@@ -586,8 +587,14 @@ struct StructuredAgentKernelExecutor {
             )
         }
 
+        let activeSystemPrompt = Self.activeStructuredTurnSystemPrompt(
+            systemPrompt,
+            availableTools: availableTools,
+            stepIndex: stepIndex,
+            hasObservations: hasObservations
+        )
         var genReq = GenerateRequest(
-            systemPrompt: systemPrompt,
+            systemPrompt: activeSystemPrompt,
             history: [],
             userMessage: userTurn,
             temperature: Self.agentTemperature(from: request.options.temperature),
@@ -1059,7 +1066,8 @@ private extension StructuredAgentKernelExecutor {
         request: AgentKernelRequest,
         availableTools: [ToolDefinition],
         stepIndex: Int,
-        scratchpad: String
+        scratchpad: String,
+        hasObservations: Bool
     ) -> String {
         var out = ""
         let context = sanitizedHistoryContext(request.history.map { ($0.role.messageRole, $0.content) })
@@ -1068,7 +1076,14 @@ private extension StructuredAgentKernelExecutor {
             out += "Conversation context, for reference only. Do not imitate its formatting:\n\(context)\n\n"
         }
         out += "User request:\n\(userMessage)"
-        if stepIndex > 0 {
+        if shouldForceFinalSchemaAfterObservation(
+            availableTools: availableTools,
+            stepIndex: stepIndex,
+            hasObservations: hasObservations
+        ) {
+            out += "\n\nPrior structured turns and trusted observations:\n\(compactStructuredScratchpad(scratchpad))"
+            out += "\n\nThe trusted observation already answers the request. Emit exactly one JSON object shaped as {\"final\":\"<concise answer grounded only in the observation>\"}. The action key and every tool call are forbidden on this turn."
+        } else if stepIndex > 0 {
             out += "\n\nPrior structured turns and observations:\n\(compactStructuredScratchpad(scratchpad))"
             out += "\n\nEmit the next JSON object now. If the observations already answer the user, choose final. If another tool is absolutely required, action must be an object like {\"tool\":\"tool.id\",\"args\":{}}; never emit action as a string."
         } else if shouldForceActionSchema(request: request, availableTools: availableTools, stepIndex: stepIndex, hasObservations: false) {
@@ -1079,6 +1094,25 @@ private extension StructuredAgentKernelExecutor {
             out += "\n\nEmit the first JSON object now. Choose either action or final."
         }
         return out
+    }
+
+    private static func activeStructuredTurnSystemPrompt(
+        _ systemPrompt: String,
+        availableTools: [ToolDefinition],
+        stepIndex: Int,
+        hasObservations: Bool
+    ) -> String {
+        guard shouldForceFinalSchemaAfterObservation(
+            availableTools: availableTools,
+            stepIndex: stepIndex,
+            hasObservations: hasObservations
+        ) else {
+            return systemPrompt
+        }
+        return systemPrompt + """
+
+        Active turn constraint: a trusted successful observation has completed the only available no-argument tool. This turn is final-only. Emit exactly one JSON object with a final string. Do not emit action, tool, or args, and do not repeat the tool.
+        """
     }
 
     static func structuredAgentResponseFormat(
@@ -2138,6 +2172,31 @@ private extension StructuredAgentKernelExecutor {
 
 #if DEBUG
 extension StructuredAgentKernelExecutor {
+    static func structuredAgentPromptsForTests(
+        request: AgentKernelRequest,
+        availableTools: [ToolDefinition],
+        stepIndex: Int,
+        scratchpad: String,
+        hasObservations: Bool
+    ) -> (system: String, user: String) {
+        let system = buildSystemPrompt(request: request, availableTools: availableTools)
+        return (
+            activeStructuredTurnSystemPrompt(
+                system,
+                availableTools: availableTools,
+                stepIndex: stepIndex,
+                hasObservations: hasObservations
+            ),
+            buildAgentUserTurn(
+                request: request,
+                availableTools: availableTools,
+                stepIndex: stepIndex,
+                scratchpad: scratchpad,
+                hasObservations: hasObservations
+            )
+        )
+    }
+
     static func resolvedStructuredOutputTokenCountForTests(
         explicit: Int?,
         completion: Int?,

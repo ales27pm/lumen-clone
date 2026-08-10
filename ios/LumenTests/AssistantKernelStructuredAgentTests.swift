@@ -271,6 +271,27 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testSingleNoArgumentToolUsesExplicitFinalOnlyPromptsAfterObservation() throws {
+        #if DEBUG
+        let request = structuredRequest(
+            "Check alarm authorization status.",
+            allowedToolIDs: ["alarm.authorization_status"]
+        )
+        let prompts = StructuredAgentKernelExecutor.structuredAgentPromptsForTests(
+            request: request,
+            availableTools: [try tool("alarm.authorization_status")],
+            stepIndex: 1,
+            scratchpad: "Tool alarm.authorization_status returned: authorized",
+            hasObservations: true
+        )
+
+        XCTAssertTrue(prompts.system.contains("This turn is final-only."))
+        XCTAssertTrue(prompts.system.contains("Do not emit action, tool, or args"))
+        XCTAssertTrue(prompts.user.contains("The action key and every tool call are forbidden"))
+        XCTAssertTrue(prompts.user.contains(#"{"final":"<concise answer grounded only in the observation>"}"#))
+        #endif
+    }
+
     func testArgumentBearingToolCanRequestAnotherActionAfterObservation() throws {
         #if DEBUG
         let request = structuredRequest(
