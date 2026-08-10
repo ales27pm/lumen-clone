@@ -19,6 +19,13 @@ from audit_to_adapter_contract import (
     IN_APP_DATASET_PACKAGE_SCHEMA_VERSIONS,
     IN_APP_DATASET_SOURCE_LAYER,
     LIVE_RUNTIME_SLOTS,
+    REDACTED_IN_APP_DATASET_EXPORT_FORMAT,
+    REDACTED_IN_APP_DATASET_EXPORT_KIND,
+    REDACTED_IN_APP_DATASET_FILE_PREFIX,
+    REDACTED_IN_APP_DATASET_PACKAGE_SCHEMA_VERSION,
+    REDACTED_IN_APP_DATASET_PRIVACY_POLICY,
+    REDACTED_IN_APP_DATASET_PROMPT_POLICY,
+    REDACTED_IN_APP_DATASET_SOURCE_ACTIONS,
 )
 
 
@@ -224,6 +231,105 @@ def inspect_jsonl_sidecar(path: Path, text: str) -> AuditInspection:
     return inspection
 
 
+def _claims_redacted_v1_package(value: dict[str, Any]) -> bool:
+    policy = value.get("exportPolicy") if isinstance(value.get("exportPolicy"), dict) else {}
+    test_flight = value.get("testFlight") if isinstance(value.get("testFlight"), dict) else {}
+    return (
+        value.get("exportKind") == REDACTED_IN_APP_DATASET_EXPORT_KIND
+        or policy.get("format") == REDACTED_IN_APP_DATASET_EXPORT_FORMAT
+        or test_flight.get("filePrefix") == REDACTED_IN_APP_DATASET_FILE_PREFIX
+        or (
+            value.get("schemaVersion") == REDACTED_IN_APP_DATASET_PACKAGE_SCHEMA_VERSION
+            and any(key in value for key in ("testFlight", "recentTraces", "improveLoop"))
+        )
+    )
+
+
+def _redacted_v1_contract_errors(value: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    expected = {
+        "schemaVersion": REDACTED_IN_APP_DATASET_PACKAGE_SCHEMA_VERSION,
+        "exportKind": REDACTED_IN_APP_DATASET_EXPORT_KIND,
+    }
+    for key, expected_value in expected.items():
+        if value.get(key) != expected_value:
+            errors.append(f"{key}={value.get(key)!r}; expected {expected_value!r}")
+    required_types = {
+        "generatedAt": str,
+        "app": dict,
+        "manifestSource": str,
+        "usedRuntimeFallback": bool,
+        "traceSelectedToolAllowedCount": int,
+        "traceParseErrorCount": int,
+    }
+    for key, expected_type in required_types.items():
+        field = value.get(key)
+        if type(field) is not expected_type or (expected_type is str and not field):
+            errors.append(f"{key} must be a non-empty {expected_type.__name__}")
+
+    policy = value.get("exportPolicy") if isinstance(value.get("exportPolicy"), dict) else {}
+    expected_policy = {
+        "format": REDACTED_IN_APP_DATASET_EXPORT_FORMAT,
+        "privacy": REDACTED_IN_APP_DATASET_PRIVACY_POLICY,
+        "promptPolicy": REDACTED_IN_APP_DATASET_PROMPT_POLICY,
+        "sourceLayer": IN_APP_DATASET_SOURCE_LAYER,
+        "ownsLiveE2EScenarios": False,
+    }
+    for key, expected_value in expected_policy.items():
+        if policy.get(key) != expected_value:
+            errors.append(f"exportPolicy.{key} does not match redacted-v1")
+    includes_static = policy.get("includesDeterministicStaticScenarios")
+    if not isinstance(includes_static, bool):
+        errors.append("exportPolicy.includesDeterministicStaticScenarios must be boolean")
+
+    traces = value.get("recentTraces")
+    scenarios = value.get("scenarioResults")
+    if not isinstance(traces, list):
+        errors.append("recentTraces must be an array")
+    if not isinstance(scenarios, list):
+        errors.append("scenarioResults must be an array")
+    elif includes_static is False and scenarios:
+        errors.append("scenarioResults must be empty when static scenarios are omitted")
+
+    test_flight = value.get("testFlight") if isinstance(value.get("testFlight"), dict) else {}
+    if test_flight.get("filePrefix") != REDACTED_IN_APP_DATASET_FILE_PREFIX:
+        errors.append("testFlight.filePrefix does not identify redacted-v1")
+    source_action = test_flight.get("sourceAction")
+    if source_action not in REDACTED_IN_APP_DATASET_SOURCE_ACTIONS:
+        errors.append("testFlight.sourceAction is not a current export action")
+    if (
+        source_action == REDACTED_IN_APP_DATASET_SOURCE_ACTIONS[1]
+        and value.get("manifestSource") != "interactive-model-tool-validation-live-e2e"
+    ):
+        errors.append("interactive model/tool exports require the exact manifestSource")
+    live_included = test_flight.get("liveE2EReportIncluded")
+    live_report = value.get("liveE2EReport")
+    if not isinstance(live_included, bool) or live_included != isinstance(live_report, dict):
+        errors.append("testFlight.liveE2EReportIncluded does not match liveE2EReport")
+    if source_action == REDACTED_IN_APP_DATASET_SOURCE_ACTIONS[1] and not live_included:
+        errors.append("interactive model/tool exports must include liveE2EReport")
+
+    if value.get("exportQualityFailures") != []:
+        errors.append("exportQualityFailures must be empty")
+
+    improve_loop = value.get("improveLoop") if isinstance(value.get("improveLoop"), dict) else {}
+    for key in ("acceptedTraining", "quarantinedSamples", "regressionTests"):
+        if improve_loop.get(key) != []:
+            errors.append(f"improveLoop.{key} must be empty in shareable evidence")
+
+    if isinstance(live_report, dict):
+        live_policy = live_report.get("exportPolicy") if isinstance(live_report.get("exportPolicy"), dict) else {}
+        if live_report.get("schemaVersion") != "1.0.0":
+            errors.append("liveE2EReport.schemaVersion must be '1.0.0'")
+        if live_policy.get("format") != "live-e2e-test-report-json":
+            errors.append("liveE2EReport export format is invalid")
+        if live_policy.get("sourceLayer") != "e2eTestReport" or live_policy.get("ownsLiveE2EScenarios") is not True:
+            errors.append("only embedded e2eTestReport may own live scenario results")
+        if live_report.get("traceSidecarField") != "recentTraces" or not isinstance(live_report.get("payload"), dict):
+            errors.append("liveE2EReport must use the recentTraces sidecar and object payload")
+    return errors
+
+
 def inspect_payload(value: Any, inspection: AuditInspection) -> None:
     if isinstance(value, list):
         for item in value:
@@ -231,6 +337,14 @@ def inspect_payload(value: Any, inspection: AuditInspection) -> None:
         return
     if not isinstance(value, dict):
         inspection.errors.append("top-level payload is not a JSON object/list")
+        return
+
+    if _claims_redacted_v1_package(value):
+        errors = _redacted_v1_contract_errors(value)
+        if errors:
+            inspection.errors.extend(errors)
+            return
+        inspect_in_app_package(value, inspection)
         return
 
     if is_evidence_layer_envelope(value):
@@ -355,6 +469,8 @@ def is_expected_diagnostics_cancellation(record: dict[str, Any]) -> bool:
 
 
 def is_in_app_dataset_package(value: dict[str, Any]) -> bool:
+    if _claims_redacted_v1_package(value):
+        return not _redacted_v1_contract_errors(value)
     return (
         str(value.get("schemaVersion") or "") in IN_APP_DATASET_PACKAGE_SCHEMA_VERSIONS
         and isinstance(value.get("exportPolicy"), dict)
@@ -373,7 +489,7 @@ def inspect_in_app_package(package: dict[str, Any], inspection: AuditInspection)
     inspection.package_trace_selected_tool_allowed_count = int(package.get("traceSelectedToolAllowedCount") or 0)
     inspection.package_trace_parse_error_count = int(package.get("traceParseErrorCount") or 0)
 
-    if inspection.source_format != IN_APP_DATASET_EXPORT_FORMAT:
+    if inspection.source_format not in {IN_APP_DATASET_EXPORT_FORMAT, REDACTED_IN_APP_DATASET_EXPORT_FORMAT}:
         inspection.warnings.append(f"unexpected export format: {inspection.source_format}")
     if inspection.source_layer != IN_APP_DATASET_SOURCE_LAYER:
         inspection.warnings.append(f"unexpected source layer: {inspection.source_layer}")
@@ -407,6 +523,10 @@ def inspect_in_app_package(package: dict[str, Any], inspection: AuditInspection)
     inspection.accepted_training_count += len([item for item in improve_loop.get("acceptedTraining", []) if isinstance(item, dict)])
     inspection.quarantined_sample_count += len([item for item in improve_loop.get("quarantinedSamples", []) if isinstance(item, dict)])
     inspection.regression_test_count += len([item for item in improve_loop.get("regressionTests", []) if isinstance(item, dict)])
+
+    live_report = package.get("liveE2EReport")
+    if isinstance(live_report, dict) and isinstance(live_report.get("payload"), dict):
+        inspect_e2e_report_payload(live_report["payload"], inspection)
 
 
 def inspect_trace(trace: dict[str, Any], inspection: AuditInspection) -> None:

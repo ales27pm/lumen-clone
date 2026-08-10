@@ -55,6 +55,24 @@ RUNTIME_AUDIT_TRAILING_INDEX_RE = re.compile(r"-\d+$")
 IN_APP_DATASET_PACKAGE_SCHEMA_VERSIONS: tuple[str, ...] = ("1.0.0", "1.1.0", "1.2.0")
 IN_APP_DATASET_EXPORT_FORMAT = "agent-grounding-runtime-json-package"
 IN_APP_DATASET_SOURCE_LAYER = "agentGroundingRuntimeAudit"
+REDACTED_IN_APP_DATASET_PACKAGE_SCHEMA_VERSION = "2.0.0"
+REDACTED_IN_APP_DATASET_EXPORT_KIND = "testflight-agent-grounding-runtime-export"
+REDACTED_IN_APP_DATASET_EXPORT_FORMAT = "testflight-agent-grounding-runtime-json-package"
+REDACTED_IN_APP_DATASET_FILE_PREFIX = "lumen-testflight-agent-grounding-redacted-v1"
+REDACTED_IN_APP_DATASET_SOURCE_ACTIONS: tuple[str, ...] = (
+    "Agent Grounding > Export TestFlight + Agent Grounding Package",
+    "E2E Tests > Export Correlated Model/Tool Evidence Package",
+)
+REDACTED_IN_APP_DATASET_PRIVACY_POLICY = (
+    "Contains metrics, safe categories, counts, one-way hash summaries, opaque per-export "
+    "correlation tokens, and no improve-loop sample records. Raw prompts, model outputs, audit "
+    "prose, scenario text, conversations, contacts, calendar bodies, files, photos, trace "
+    "identifiers, correlation UUIDs, local paths, and tool payload bodies are omitted."
+)
+REDACTED_IN_APP_DATASET_PROMPT_POLICY = (
+    "All prompt, output, audit, repair-sample, and scenario free-form fields are replaced by "
+    "one-way character-count and SHA-256 summaries; improve-loop arrays are intentionally empty."
+)
 
 
 @dataclass(frozen=True)
