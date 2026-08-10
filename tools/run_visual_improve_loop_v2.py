@@ -172,6 +172,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=Path("generated/agent_manifest"), help="Agent manifest output directory.")
     parser.add_argument("--loop-output", type=Path, default=Path("generated/agent_improvement_loop"), help="Improve-loop output directory.")
     parser.add_argument("--fine-tuning-output", type=Path, default=Path("generated/fine_tuning"), help="Per-agent fine-tuning output directory.")
+    parser.add_argument(
+        "--cross-model-train-dir",
+        type=Path,
+        default=Path("generated/cross_model_training"),
+        help="Mirrored cross-model training output directory.",
+    )
     parser.add_argument("--dashboard-output", type=Path, default=Path("generated/visual_improve_loop"), help="Visual report output directory.")
     parser.add_argument("--runtime-audit", action="append", type=Path, default=[], help="Runtime audit JSON file or directory. Can be passed more than once.")
     parser.add_argument("--no-auto-discover-runtime-audit", action="store_true", help="Disable runtime-audit auto-discovery.")
@@ -278,6 +284,8 @@ def _build_improve_command(
         str(loop_output),
         "--fine-tuning-output",
         str(fine_tuning_output),
+        "--cross-model-train-dir",
+        str(rooted_path(root, args.cross_model_train_dir)),
         "--testflight-scenario-limit",
         str(args.testflight_scenario_limit),
         "--app-run-mode",

@@ -58,6 +58,7 @@ Default outputs, all rooted under `--root`:
 ```text
 generated/agent_manifest/
 generated/agent_manifest/embedding/
+generated/cross_model_training/
 generated/agent_improvement_loop/
 generated/fine_tuning/
 generated/fine_tuning/release_bake_gguf_manifest.json

@@ -73,6 +73,8 @@ def test_command_queue_uses_repo_rooted_outputs(tmp_path: Path) -> None:
     assert str(output) in improve
     assert str(loop_output) in improve
     assert str(fine_tuning_output) in improve
+    cross_model_index = improve.index("--cross-model-train-dir") + 1
+    assert improve[cross_model_index] == str(root / "generated" / "cross_model_training")
     assert str(root / "generated" / "fine_tuning" / "release_bake_gguf_manifest.json") in release_manifest
     config_dir_index = release_manifest.index("--config-dir") + 1
     assert release_manifest[config_dir_index] == str(fine_tuning_output)
