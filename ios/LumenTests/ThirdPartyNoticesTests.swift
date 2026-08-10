@@ -17,7 +17,7 @@ struct ThirdPartyNoticesTests {
         #expect(notices.contains("a7f6720f68f4a4567ebf7e3257041dd0b72077b518efe56890aec3516b59b9de"))
         #expect(notices.contains("883151da3764fbbfc929e8d58eb11129e66c4d54aa9f13dafb01e1505ad19c12"))
         #expect(notices.contains("17330b63f6584362ae22ad0e708c390bc6af7114c847246622cb782d4a8f026d"))
-        #expect(notices.contains("The later public-corpus pipeline was not used"))
+        #expect(notices.contains("public-corpus pipeline was not used to train these pinned adapters."))
         #expect(notices.contains("Lumen-specific adapter deltas: Copyright 2026 Alexis Boulet"))
         #expect(!notices.contains("does not currently declare separate license"))
         #expect(!notices.contains("8abae6d695408dbc75a134212dd616cd14549ae1"))
