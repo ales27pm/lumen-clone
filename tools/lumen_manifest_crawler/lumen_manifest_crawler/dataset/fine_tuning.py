@@ -706,6 +706,13 @@ def _ordered_cortex_route_text(value: str) -> str:
     return _cortex_route_json(payload) if isinstance(payload, dict) else value
 
 
+def _ordered_cortex_dpo_chosen_route_text(value: str) -> str:
+    """Reject non-strict chosen JSON before applying canonical field order."""
+
+    payload = _strict_json_loads(value)
+    return _cortex_route_json(payload) if isinstance(payload, dict) else value
+
+
 def _ordered_cortex_rejected_route_text(value: str) -> str:
     """Order valid rejected routes without repairing malformed negative evidence."""
 
@@ -7929,7 +7936,7 @@ def _bind_cortex_dpo_route_contract(
                 ],
                 "chosen": {
                     **chosen,
-                    "content": _ordered_cortex_route_text(
+                    "content": _ordered_cortex_dpo_chosen_route_text(
                         _to_string(chosen.get("content"))
                     ),
                 },
