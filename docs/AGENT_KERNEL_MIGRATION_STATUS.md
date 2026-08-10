@@ -15,6 +15,7 @@ The offline Cortex five-field route and `actionStep` qualification payload is no
 | AppIntents | Shipped only for guarded local actions | `LumenAskIntent`, `LumenAddMemoryIntent`, `LumenMemorySearchIntent`, `LumenRunTriggerIntent` | Intents return degraded or open-app responses when required context is missing. |
 | Background triggers/headless | Shipped only for background-safe coordination | `HeadlessAgentKernelRunner`, `BackgroundToolExecutionPolicy` | Background tasks cannot load model assets or prompt for permissions. Background-safe tool-only runs are policy-assessed and return explicit skip diagnostics when context is missing. |
 | Live E2E model-backed probes | Shipped diagnostics | `E2ETestRunner` -> `AssistantKernel.run(...)` -> `StructuredAgentKernelExecutor` | Release live E2E scenarios enter the native structured Agent Kernel boundary, emit correlated parser-derived evidence, and do not call the legacy agent bridge. |
+| Physical interactive model/tool validation | DEBUG diagnostics only | `E2ETestRunner` -> `AssistantKernel.run(...)` -> `StructuredAgentKernelExecutor` -> `SecureToolRegistry` | Runs exactly one `alarm.authorization_status` action/observation/model-final scenario on a physical iPhone. A pass requires correlated model-backed evidence, a matching native observation/result, and fail-closed host verification. |
 | Remaining legacy live probes | DEBUG diagnostics only | `PersistentRuntimeDiagnosticsRunner`, `AgentGroundingAuditView` | Release records skipped diagnostic events instead of running the legacy agent path. |
 | Native tool groups | Shipped | `SecureToolRegistry` and `LocalTool` implementations | Tool execution requires registry lookup, policy approval, and schema-valid arguments. |
 
@@ -30,8 +31,11 @@ python3 tools/check_agent_kernel_boundary.py --strict
 python3 tools/check_release_hardening.py
 ```
 
+## Current Physical DEBUG Evidence
+
+One exact post-tool synthesis path now has physical DEBUG evidence: source `95174d975da515cf8625212592721cd0baa7bfa5`, build `20260810031810`, passed 1/1 on an iPhone 16 Pro running iOS 26.6 when the model final matched the native `alarm.authorization_status` observation. Submitted Release/TestFlight parity and broader tools remain unproven.
+
 ## Remaining DEBUG-Only Work
 
-- Live runtime evidence for model-backed post-tool synthesis after native tool execution.
 - Deleting the legacy agent migration wrapper after every DEBUG probe has a native replacement.
-- Native live diagnostic scenarios that prove tool-capable kernel behavior without using the legacy agent path.
+- Additional native live diagnostic scenarios that prove broader tool-capable kernel behavior without using the legacy agent path.

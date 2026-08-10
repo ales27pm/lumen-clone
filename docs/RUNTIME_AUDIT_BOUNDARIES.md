@@ -35,8 +35,11 @@ The developer UI now exposes exports for every layer, while keeping ownership ex
 | Agent Grounding | Export Static Scenario Checks | `lumen-static-scenario-checks-*` | `runtimeScenarioRunner.staticChecks` | `false` |
 | Agent Grounding | Export Recent Runtime Traces | `lumen-agent-runtime-traces-*` | `agentBehaviorTraceRecorder` | `false` |
 | End-to-end tests | Export Live E2E Report JSON | `lumen-live-e2e-report-*` | `e2eTestReport` | `true` |
+| End-to-end tests (DEBUG physical validation) | Export Correlated Model/Tool Evidence Package | `lumen-testflight-agent-grounding-redacted-v1-*` | `agentGroundingRuntimeAudit` parent embedding `e2eTestReport` | `false` for the parent; `true` for the embedded report |
 
 Only the E2E export should be treated as the live model scenario result layer. The other exports are diagnostics, grounding evidence, static checks, or trace evidence.
+
+The correlated model/tool package is not a second owner of scenario truth. Its parent envelope remains `agentGroundingRuntimeAudit`; only the embedded `e2eTestReport` owns the one scenario result. Before the package can support an exact physical-device claim, `tools/verify_interactive_model_tool_evidence.py` must fail-closed over the expected source revision and build, freshness, the single expected scenario, correlated model action and final traces, the matching native tool result and observation, absence of deterministic-compatibility evidence, and privacy redaction.
 
 ## 1. TestFlight + Agent Grounding runtime audit
 
@@ -183,19 +186,12 @@ Rules:
 
 ## Required next hardening
 
-The remaining critical implementation target is to ensure `AgentBehaviorTraceRecorder.record(...)` is wired into the live `SlotAgentService` model path for:
+The selected DEBUG physical run proves that `AgentBehaviorTraceRecorder` captured the correlated structured action and model final for one `alarm.authorization_status` scenario, together with its native result and observation. That exact proof does not establish trace completeness for other tools, parse-error and blocked-action paths, direct chat, voice, App Intents, background execution, or a submitted Release/TestFlight build.
 
-- structured Cortex turns;
-- parse errors;
-- selected actions;
-- blocked tool attempts;
-- final Mouth turns;
-- direct chat turns.
-
-Until that is fully wired, the loop may correctly flag:
+Continue expanding live evidence for those surfaces without weakening the existing fail-closed behavior. Whenever a selected package lacks the required correlated traces, the loop must continue to flag:
 
 ```text
 agent_grounding_no_recent_model_traces
 ```
 
-That gap is intentional. It prevents a visually successful export from being mistaken for complete runtime evidence.
+That gap remains intentional. It prevents a visually successful export, or the single proven alarm-status scenario, from being mistaken for complete runtime evidence across other surfaces.

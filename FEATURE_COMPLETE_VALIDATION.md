@@ -10,7 +10,11 @@ Release Settings no longer exposes the Developer Console and Release file sharin
 
 Fresh signed evidence used a physical iPhone 16 Pro running iOS 26.6. A signed Debug device build and device `build-for-testing` completed. The latest runtime-hardening physical-device risk suite passed 237 of 237 tests with 0 failures and 0 skips, superseding the earlier 57-test and 16-test subsets as the current risk-focused XCTest checkpoint. The corrected diagnostics resource-budget regression passed on device. No simulator result is used for this checkpoint.
 
-The signed app was installed and launched with `devicectl`, and its process was verified alive. This is install/launch process-liveness evidence only, not an interactive product feature smoke. A valid Apple Distribution signing identity and matching App Store provisioning profile were verified, with the profile valid through 2027-08-09, but no archive, export, TestFlight submission, or App Store upload was performed. This remains a production-readiness checkpoint, not a completed release qualification: interactive live model generation, native tools, RAG indexing/search, memory extraction/storage, voice, App Intents, real background scheduling, Microsoft OAuth/mailbox behavior, signed Release entitlement and privacy-manifest payloads, TestFlight behavior, App Store upload, and App Store acceptance remain unproven.
+The signed app was installed and launched with `devicectl`, and its process was verified alive. That remains install/launch process-liveness evidence rather than an interactive feature result.
+
+A separate, narrowly scoped DEBUG-only physical interactive model/tool validation ran from source `95174d975da515cf8625212592721cd0baa7bfa5`, build `20260810031810`, on the same iPhone 16 Pro running iOS 26.6. Its dedicated physical-device XCUITest passed 1/1 with no simulator involved. The actual local model emitted the correlated `alarm.authorization_status` action, `SecureToolRegistry` executed that permission-safe native status read and returned the trusted observation, and the model-authored final matched that observation. The fail-closed host verifier accepted the redacted evidence package whose selected byte identity had SHA-256 `d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f`.
+
+This proves only that exact DEBUG diagnostic flow for that source, build, device, and scenario; it is not evidence that the submitted Release surface exposes the flow or that another tool behaves the same way. A valid Apple Distribution signing identity and matching App Store provisioning profile were verified, with the profile valid through 2027-08-09, but no archive, export, TestFlight submission, or App Store upload was performed. RAG indexing/search, memory extraction/storage, voice, App Intents, real background scheduling, Microsoft OAuth/mailbox behavior, signed Release entitlement and privacy-manifest payloads, TestFlight behavior, App Store upload, processing, and acceptance remain unproven.
 
 ## Ubuntu training exact-model lineage hardening (local validation)
 
@@ -1132,7 +1136,8 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 ## Remaining Release Evidence Gaps
 
 - The 2026-08-09 runtime-hardening physical-device risk suite passed 237 of 237 tests with 0 failures and 0 skips, including the corrected diagnostics resource-budget regression. It supersedes the earlier 57-test and 16-test device subsets as the current risk-focused XCTest checkpoint; it is not a claim that every historical simulator-focused suite below was executed on the device.
-- The signed app was installed and launched with `devicectl`, and its process was verified alive. No interactive feature flow was exercised, so this is not a product feature smoke pass.
+- The signed app was installed and launched with `devicectl`, and its process was verified alive. This process-liveness checkpoint remains separate from interactive feature evidence.
+- A DEBUG-only physical interactive model/tool validation from source `95174d975da515cf8625212592721cd0baa7bfa5`, build `20260810031810`, passed its dedicated XCUITest 1/1 on an iPhone 16 Pro running iOS 26.6, with no simulator evidence. The actual local model selected `alarm.authorization_status`, the permission-safe native tool returned a trusted observation through `SecureToolRegistry`, and the model-authored final matched it. The fail-closed host verifier accepted the redacted package with SHA-256 `d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f`.
 - A valid Apple Distribution signing identity and matching App Store provisioning profile were verified, with the profile valid through 2027-08-09. No current-source archive, export, TestFlight submission, App Store upload, or acceptance proof exists yet.
 - Executed XCTest proof now exists for the new native approval-boundary regression test using `test-without-building` on the dedicated `Lumen Focused Test iPhone`; broader full-suite simulator XCTest proof is still missing.
 - Executed XCTest proof now exists for the Chat approval UI mapping regression test using the bounded focused simulator runner on the dedicated `Lumen Focused Test iPhone`; broader full-suite simulator XCTest proof is still missing.
@@ -1167,9 +1172,9 @@ Integration-gate note: `check-ios-build-readiness.sh` now hard-fails production 
 - Executed XCTest proof for the new alarm, health, and contacts privacy tests is still missing until the simulator launch/install path is stable; the dedicated-device non-launching `build-for-testing` checkpoint compiled them successfully.
 - Executed XCTest proof for the new planner/schema parity tests is still missing. The dedicated simulator reached SpringBoard/backboardd readiness through the probe fallback, but `test-without-building` stalled in Xcode's test-manager handoff before any XCTest output; the non-launching `build-for-testing` checkpoint compiled the tests successfully.
 - Fresh executed proof now exists for `ExecutorPreflightTests`, but the attached live E2E weather scenario was not rerun after the preflight gate fix in this documentation pass. Do not claim live model-backed scenario success until a new report proves it.
-- Live device/TestFlight evidence is still needed for model-backed tool-call loops, voice, AppIntent, RAG, memory, permissions, and real local model artifacts.
+- One exact model-backed local-model/tool/final loop now has physical DEBUG evidence for the permission-safe `alarm.authorization_status` status read. Device/TestFlight evidence is still needed for the submitted Release build, broader permission behavior and native tool groups, voice, App Intents, RAG, memory, and role-adapter behavior.
 - Live device/TestFlight evidence is still needed for real background scheduling and Microsoft OAuth/mailbox behavior.
-- The native kernel path currently executes validated intent-planned tool actions and surfaces the tool result honestly; model-driven post-tool synthesis still needs live runtime evidence before claiming full parity with every shipped workflow.
+- The exact alarm-authorization scenario now proves one model-driven post-tool synthesis path against its native observation. That narrow pass does not establish full parity across every shipped workflow or surface.
 
 ## Manual Validations Still Required
 
@@ -1178,10 +1183,10 @@ These require Apple credentials, signing assets, TestFlight, or physical hardwar
 - Signed archive/export with current App Store signing profile.
 - Signed entitlements inspection on exported `.ipa`.
 - Privacy manifest validation on the submitted archive.
-- TestFlight or real-device smoke test.
-- Real-device local model load with actual model artifacts.
+- TestFlight or real-device smoke test of the exact submitted Release build; the DEBUG diagnostic pass is not a substitute.
+- Real-device local-model load and interactive generation through a production user surface in the exact submitted Release build; the current proof is DEBUG-only.
 - Real-device role-adapter switching.
-- Live tool-call validation for any tool-capable surface enabled in that build.
+- Live tool-call validation for every tool-capable surface enabled in that submitted Release build beyond the one DEBUG `alarm.authorization_status` proof.
 - Live RAG indexing/search with user files/photos where permissions are granted.
 - Live memory extraction/storage with real model embeddings.
 - Voice and AppIntent flows for the exact submitted Release build.

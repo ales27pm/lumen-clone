@@ -92,7 +92,9 @@ The simulator commands above are fallback/coverage tools. Do not combine their o
 - A signed Debug build and signed `build-for-testing` completed on a physical iPhone 16 Pro running iOS 26.6. The device identifier is intentionally not recorded here.
 - The latest runtime-hardening physical-device risk suite passed 237 of 237 tests with 0 failures and 0 skips. This supersedes the earlier 57-test and 16-test subsets as the current risk-focused XCTest checkpoint.
 - The corrected diagnostics resource-budget regression passed on the physical device, confirming that persistent runtime diagnostics use the canonical heavy-model-work gate.
-- The signed app was installed and launched with `devicectl`, and its process was verified alive. This is install/launch process-liveness evidence only; no interactive product feature smoke was performed.
+- The signed app was installed and launched with `devicectl`, and its process was verified alive. That install/launch checkpoint is process-liveness evidence only; it did not itself exercise an interactive product flow.
+- A separate DEBUG-only physical interactive model/tool validation ran from source `95174d975da515cf8625212592721cd0baa7bfa5`, build `20260810031810`, on the iPhone 16 Pro running iOS 26.6. Its dedicated physical-device XCUITest passed 1/1. The actual local model emitted the correlated `alarm.authorization_status` action, `SecureToolRegistry` executed that permission-safe status read and returned the trusted observation, and the model-authored final matched the observation.
+- The fail-closed host verifier accepted the corresponding redacted package. Its selected byte identity had SHA-256 `d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f`; this digest records the verified package and does not imply that the exported package is tracked in Git.
 - No simulator was used as evidence for this hardening checkpoint.
 - A valid Apple Distribution signing identity and matching App Store provisioning profile were verified; the profile expires on 2027-08-09. No archive, export, TestFlight submission, or App Store upload was performed for this checkpoint.
 - The checked-in configuration pins MSAL exactly to `1.9.0`; the link and release validators enforce the exact requirement.
@@ -100,16 +102,16 @@ The simulator commands above are fallback/coverage tools. Do not combine their o
 - Background trigger/headless execution now distinguishes completed, deferred, failed, and cancelled outcomes. A background task succeeds only for a completed trigger scan; `beforeNextEvent` creation reports typed unavailability.
 - Persisted E2E results/exports, behavior traces, and in-app grounding packages are versioned `redacted-v1`; raw-content legacy filenames are purged and the current-tree privacy checker rejects legacy checked-in E2E artifacts.
 
-These are signed-device build, risk-focused XCTest, install, and process-liveness results, not a final release qualification or product feature smoke. Interactive live model generation and the product/release checks listed below remain unproven unless separately recorded.
+These checkpoints now include one exact DEBUG local-model/action/native-observation/model-final flow, but they are not a final Release qualification. The proof applies only to its source, build, device, and `alarm.authorization_status` scenario; the product and release checks below remain unproven unless separately recorded for the exact submitted Release build.
 
 Release submission validation also requires credentialed or physical-device checks:
 
 - signed archive and export
 - signed entitlement inspection
 - privacy manifest validation
-- TestFlight or real-device smoke test
-- real-device local model load and interactive generation
-- live tool-call validation
+- TestFlight or real-device smoke test of the exact submitted Release build
+- real-device local-model load and interactive generation through a production user surface in that submitted Release build
+- live tool-call validation for submitted Release surfaces beyond the one DEBUG `alarm.authorization_status` proof
 - live RAG indexing and search
 - live memory extraction and storage
 - live voice and AppIntent flows that are enabled in the submitted build
