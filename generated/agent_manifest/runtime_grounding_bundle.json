@@ -1227,7 +1227,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run, runLoop, availableTools.",
-        "sha256": "dc4e629e60754432f12d3e496635b50b9f958feeca21be8adb02aeb57126e24f",
+        "sha256": "a8d92278140d94e3c5fbfb6984c11bb196a4458d1519154cb9db7032d3bfdc40",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -2212,13 +2212,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "84fa7de6264ed85fe0913cfe0ae72403361423ef",
+  "manifestCommit": "95174d975da515cf8625212592721cd0baa7bfa5",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "aabccec3fd5462c743a5e3e20b6630945c2b104c7b2127bffa489056ac12560d",
+    "promptSHA256": "0e64c2f1a09d851d4a275655165dd6b724cb0736a0b9a91af3dc6039ecdf8376",
     "promptUTF8ByteCount": 26041,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2230,8 +2230,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "84fa7de6264ed85fe0913cfe0ae72403361423ef",
+    "baseCommit": "95174d975da515cf8625212592721cd0baa7bfa5",
     "dirtyState": false,
-    "workingTreeDigest": "800adc6c55352786da8baebc12e8c541cc0b28359f5fd357237b40d92c40c6b8"
+    "workingTreeDigest": "57eff06d53cee04197ae79bf342297d7d84fde9ad28684620c1959b50b03c711"
   }
 }
