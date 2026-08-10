@@ -7,6 +7,12 @@ PROJECT_FILE="$REPO_ROOT/ios/Lumen.xcodeproj/project.pbxproj"
 PACKAGE_RESOLVED_PATH="$REPO_ROOT/ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 EXPECTED_MSAL_VERSION="1.9.0"
 EXPECTED_MSAL_REVISION="be848ee7fa9516cec47ae6de47cf1087d51bc774"
+MSAL_DSYM_CACHE_DIR="${LUMEN_MSAL_DSYM_CACHE_DIR:-$REPO_ROOT/build/ReleaseSymbols/MSAL/$EXPECTED_MSAL_VERSION}"
+MSAL_DSYM_SOURCE_ZIP="${LUMEN_MSAL_DSYM_SOURCE_ZIP:-}"
+MSAL_DSYM_OFFLINE="${LUMEN_MSAL_DSYM_OFFLINE:-0}"
+if [[ "$MSAL_DSYM_CACHE_DIR" != /* ]]; then
+  MSAL_DSYM_CACHE_DIR="$REPO_ROOT/$MSAL_DSYM_CACHE_DIR"
+fi
 PROJECT_PATH_INPUT="${LUMEN_IOS_PROJECT_PATH:-ios/Lumen.xcodeproj}"
 PROJECT_PATH="$PROJECT_PATH_INPUT"
 if [[ "$PROJECT_PATH" != /* ]]; then
@@ -603,6 +609,15 @@ case "$AGENT_GROUNDING_RESOURCE_MODE_VALUE" in
   full|minimal|skip) ;;
   *) fail "Unsupported LUMEN_AGENT_GROUNDING_RESOURCE_MODE=$AGENT_GROUNDING_RESOURCE_MODE_VALUE (expected full, minimal, or skip)." ;;
 esac
+case "$MSAL_DSYM_OFFLINE" in
+  0|1) ;;
+  *) fail "LUMEN_MSAL_DSYM_OFFLINE must be 0 or 1; received $MSAL_DSYM_OFFLINE." ;;
+esac
+if [[ -n "$MSAL_DSYM_SOURCE_ZIP" ]]; then
+  [[ -f "$MSAL_DSYM_SOURCE_ZIP" ]] \
+    || fail "LUMEN_MSAL_DSYM_SOURCE_ZIP does not exist: $MSAL_DSYM_SOURCE_ZIP"
+  MSAL_DSYM_SOURCE_ZIP="$(cd "$(dirname "$MSAL_DSYM_SOURCE_ZIP")" && pwd -P)/$(basename "$MSAL_DSYM_SOURCE_ZIP")"
+fi
 
 cd "$REPO_ROOT"
 prepare_release_provenance
@@ -745,10 +760,29 @@ validate_archive_signing_arguments "${ARCHIVE_COMMAND[@]}" \
   || fail "Refusing to run an archive command that disables signing identity selection."
 run_logged "$LOG_PATH" "${ARCHIVE_COMMAND[@]}"
 
+if is_release_configuration "$CONFIGURATION"; then
+  info "Installing the official hash-pinned MSAL release dSYM"
+  MSAL_DSYM_INSTALL=(
+    python3 "$REPO_ROOT/scripts/install_msal_release_dsym.py"
+    --archive "$ARCHIVE_PATH"
+    --cache-dir "$MSAL_DSYM_CACHE_DIR"
+  )
+  if [[ -n "$MSAL_DSYM_SOURCE_ZIP" ]]; then
+    MSAL_DSYM_INSTALL+=(--source-zip "$MSAL_DSYM_SOURCE_ZIP")
+  fi
+  if [[ "$MSAL_DSYM_OFFLINE" == "1" ]]; then
+    MSAL_DSYM_INSTALL+=(--offline)
+  fi
+  "${MSAL_DSYM_INSTALL[@]}"
+fi
+
 info "Verifying archived app Info.plist"
 INFO_PLIST_CHECK=(python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$ARCHIVE_PATH" --expected-build-configuration "$CONFIGURATION")
 if [[ -n "$CURRENT_PROJECT_VERSION_VALUE" ]]; then
   INFO_PLIST_CHECK+=(--expected-bundle-version "$CURRENT_PROJECT_VERSION_VALUE")
+fi
+if is_release_configuration "$CONFIGURATION"; then
+  INFO_PLIST_CHECK+=(--require-dsym-archive "$ARCHIVE_PATH")
 fi
 "${INFO_PLIST_CHECK[@]}"
 

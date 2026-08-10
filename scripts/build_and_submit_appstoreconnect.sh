@@ -772,10 +772,14 @@ fi
 env "${ARCHIVE_ENV[@]}" bash "$STABLE_ARCHIVE_SCRIPT"
 
 info "Verify archived app Info.plist"
-python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" \
+ARCHIVE_INFO_CHECK=(python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" \
   "$ARCHIVE_PATH" \
   --expected-bundle-version "$BUILD_NUMBER" \
-  --expected-build-configuration "$CONFIGURATION"
+  --expected-build-configuration "$CONFIGURATION")
+if is_distribution_export "$EXPORT_METHOD"; then
+  ARCHIVE_INFO_CHECK+=(--require-dsym-archive "$ARCHIVE_PATH")
+fi
+"${ARCHIVE_INFO_CHECK[@]}"
 
 info "Verify archived full-commit provenance"
 verify_artifact_provenance_metadata \
@@ -799,14 +803,28 @@ run_logged "$EXPORT_LOG" \
     -allowProvisioningUpdates \
     "${XCODE_AUTH_ARGS[@]}"
 
+if is_distribution_export "$EXPORT_METHOD"; then
+  PACKAGING_LOG="$EXPORT_DIR/Packaging.log"
+  [[ -f "$PACKAGING_LOG" ]] \
+    || fail "Distribution export did not produce the required Packaging.log: $PACKAGING_LOG"
+  if grep -Fq "Upload Symbols Failed" "$PACKAGING_LOG"; then
+    fail "Distribution export reported 'Upload Symbols Failed' in $PACKAGING_LOG"
+  fi
+  info "Distribution export packaged symbols without an Upload Symbols Failed diagnostic"
+fi
+
 IPA_PATH="$("$FIND_BIN" "$EXPORT_DIR" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
 [[ -n "$IPA_PATH" ]] || fail "No IPA found in $EXPORT_DIR"
 
 info "Verify exported IPA Info.plist"
-python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" \
+IPA_INFO_CHECK=(python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" \
   "$IPA_PATH" \
   --expected-bundle-version "$BUILD_NUMBER" \
-  --expected-build-configuration "$CONFIGURATION"
+  --expected-build-configuration "$CONFIGURATION")
+if is_distribution_export "$EXPORT_METHOD"; then
+  IPA_INFO_CHECK+=(--require-dsym-archive "$ARCHIVE_PATH")
+fi
+"${IPA_INFO_CHECK[@]}"
 
 info "Verify exported full-commit provenance"
 verify_artifact_provenance_metadata \

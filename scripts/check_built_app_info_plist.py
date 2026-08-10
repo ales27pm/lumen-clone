@@ -11,7 +11,9 @@ import re
 import struct
 import subprocess
 import sys
+import uuid as uuidlib
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import NoReturn
 
@@ -42,6 +44,12 @@ FAT_MAGICS = {
     b"\xbf\xba\xfe\xca": ("<", True),
 }
 DYLIB_LOAD_COMMANDS = {0xC, 0x18, 0x1F, 0x23}
+LC_UUID = 0x1B
+MH_OBJECT = 0x1
+MH_EXECUTE = 0x2
+MH_DYLIB = 0x6
+MH_DSYM = 0xA
+STATIC_ARCHIVE_MAGIC = b"!<arch>\n"
 
 
 def _fail(message: str) -> NoReturn:
@@ -63,6 +71,24 @@ class DirectoryBundleReader:
         except OSError as error:
             _fail(f"could not read {relative_path} from {self.source}: {error}")
 
+    def framework_binaries(self) -> list[tuple[str, bytes]]:
+        frameworks_root = self.app_path / "Frameworks"
+        if not frameworks_root.is_dir():
+            return []
+        binaries: list[tuple[str, bytes]] = []
+        for framework in sorted(frameworks_root.rglob("*.framework")):
+            if not framework.is_dir():
+                continue
+            relative_root = framework.relative_to(self.app_path).as_posix()
+            info = _read_plist_bytes(
+                self.read_bytes(f"{relative_root}/Info.plist"),
+                f"{self.source}/{relative_root}/Info.plist",
+            )
+            executable = _framework_executable(info, f"{self.source}/{relative_root}")
+            relative_binary = f"{relative_root}/{executable}"
+            binaries.append((relative_binary, self.read_bytes(relative_binary)))
+        return binaries
+
 
 class IPABundleReader:
     def __init__(self, path: Path, archive: zipfile.ZipFile):
@@ -70,7 +96,10 @@ class IPABundleReader:
         self.archive = archive
         self.source = str(path)
         app_roots: set[str] = set()
-        for name in archive.namelist():
+        names = archive.namelist()
+        if len(names) != len(set(names)):
+            _fail(f"{path} contains duplicate archive member names")
+        for name in names:
             pure = PurePosixPath(name)
             if pure.is_absolute() or ".." in pure.parts:
                 _fail(f"{path} contains unsafe archive member {name!r}")
@@ -79,7 +108,7 @@ class IPABundleReader:
         if len(app_roots) != 1:
             _fail(f"expected exactly one Payload/*.app in {path}; found {len(app_roots)}")
         self.prefix = next(iter(app_roots)) + "/"
-        self.members = set(archive.namelist())
+        self.members = set(names)
 
     def read_bytes(self, relative_path: str) -> bytes:
         member = self.prefix + relative_path
@@ -89,6 +118,35 @@ class IPABundleReader:
             return self.archive.read(member)
         except (KeyError, OSError, RuntimeError) as error:
             _fail(f"could not read {relative_path} from {self.source}: {error}")
+
+    def framework_binaries(self) -> list[tuple[str, bytes]]:
+        binaries: list[tuple[str, bytes]] = []
+        info_paths: list[PurePosixPath] = []
+        for member in self.members:
+            if not member.startswith(self.prefix):
+                continue
+            relative = PurePosixPath(member[len(self.prefix) :])
+            if relative.name == "Info.plist" and relative.parent.name.endswith(
+                ".framework"
+            ):
+                info_paths.append(relative)
+        for info_path in sorted(info_paths, key=str):
+            relative_root = info_path.parent.as_posix()
+            info = _read_plist_bytes(
+                self.read_bytes(info_path.as_posix()),
+                f"{self.source}/{info_path.as_posix()}",
+            )
+            executable = _framework_executable(info, f"{self.source}/{relative_root}")
+            relative_binary = f"{relative_root}/{executable}"
+            binaries.append((relative_binary, self.read_bytes(relative_binary)))
+        return binaries
+
+
+def _framework_executable(info: dict, source: str) -> str:
+    executable = str(info.get("CFBundleExecutable") or "").strip()
+    if not executable or "/" in executable or executable in {".", ".."}:
+        _fail(f"{source} has invalid or missing CFBundleExecutable")
+    return executable
 
 
 def _find_app(path: Path) -> Path:
@@ -326,34 +384,47 @@ def _validate_agent_manifest(reader: DirectoryBundleReader | IPABundleReader) ->
     print(f"ok: AgentBehaviorManifest SHA-256={actual_digest}")
 
 
-def _thin_macho_dylib_loads(value: bytes) -> set[str]:
+@dataclass(frozen=True)
+class MachOSlice:
+    file_type: int
+    uuid: str | None
+    dylib_loads: frozenset[str]
+
+
+def _thin_macho_slice(value: bytes, source: str) -> MachOSlice:
     magic = value[:4]
     metadata = MACHO_MAGICS.get(magic)
     if metadata is None:
-        _fail("app executable is not a supported thin Mach-O image")
+        _fail(f"{source} is not a supported thin Mach-O image")
     endian, header_size = metadata
     if len(value) < header_size:
-        _fail("app executable has a truncated Mach-O header")
+        _fail(f"{source} has a truncated Mach-O header")
+    (file_type,) = struct.unpack_from(f"{endian}I", value, 12)
     ncmds, sizeofcmds = struct.unpack_from(f"{endian}II", value, 16)
     commands_end = header_size + sizeofcmds
     if ncmds > 100_000 or commands_end > len(value):
-        _fail("app executable has invalid Mach-O load-command bounds")
+        _fail(f"{source} has invalid Mach-O load-command bounds")
 
     loads: set[str] = set()
+    uuids: list[str] = []
     offset = header_size
     for _ in range(ncmds):
         if offset + 8 > commands_end:
-            _fail("app executable has a truncated Mach-O load command")
+            _fail(f"{source} has a truncated Mach-O load command")
         command, command_size = struct.unpack_from(f"{endian}II", value, offset)
         if command_size < 8 or offset + command_size > commands_end:
-            _fail("app executable has an invalid Mach-O load command size")
+            _fail(f"{source} has an invalid Mach-O load command size")
         command_without_required_bit = command & 0x7FFFFFFF
-        if command_without_required_bit in DYLIB_LOAD_COMMANDS:
+        if command_without_required_bit == LC_UUID:
+            if command_size != 24:
+                _fail(f"{source} has an invalid LC_UUID command size")
+            uuids.append(str(uuidlib.UUID(bytes=value[offset + 8 : offset + 24])).upper())
+        elif command_without_required_bit in DYLIB_LOAD_COMMANDS:
             if command_size < 24:
-                _fail("app executable has a truncated Mach-O dylib command")
+                _fail(f"{source} has a truncated Mach-O dylib command")
             (name_offset,) = struct.unpack_from(f"{endian}I", value, offset + 8)
             if name_offset < 24 or name_offset >= command_size:
-                _fail("app executable has an invalid Mach-O dylib name offset")
+                _fail(f"{source} has an invalid Mach-O dylib name offset")
             name_start = offset + name_offset
             name_end = value.find(b"\0", name_start, offset + command_size)
             if name_end < 0:
@@ -361,33 +432,41 @@ def _thin_macho_dylib_loads(value: bytes) -> set[str]:
             try:
                 loads.add(value[name_start:name_end].decode("utf-8", errors="strict"))
             except UnicodeDecodeError as error:
-                _fail(f"app executable has a non-UTF-8 Mach-O dylib path: {error}")
+                _fail(f"{source} has a non-UTF-8 Mach-O dylib path: {error}")
         offset += command_size
     if offset != commands_end:
-        _fail("app executable Mach-O load commands do not match sizeofcmds")
-    return loads
+        _fail(f"{source} Mach-O load commands do not match sizeofcmds")
+    if len(uuids) > 1:
+        _fail(f"{source} Mach-O slice has duplicate LC_UUID commands")
+    return MachOSlice(
+        file_type=file_type,
+        uuid=uuids[0] if uuids else None,
+        dylib_loads=frozenset(loads),
+    )
 
 
-def _macho_dylib_loads_by_slice(value: bytes) -> list[set[str]]:
+def _macho_slices(value: bytes, source: str) -> list[MachOSlice]:
     if len(value) < 4:
-        _fail("app executable is empty or truncated")
+        _fail(f"{source} is empty or truncated")
     if value[:4] in MACHO_MAGICS:
-        return [_thin_macho_dylib_loads(value)]
+        return [_thin_macho_slice(value, source)]
 
     fat_metadata = FAT_MAGICS.get(value[:4])
     if fat_metadata is None:
-        _fail("app executable is not a supported Mach-O image")
+        _fail(f"{source} is not a supported Mach-O image")
     endian, is_64_bit = fat_metadata
     if len(value) < 8:
-        _fail("app executable has a truncated universal Mach-O header")
+        _fail(f"{source} has a truncated universal Mach-O header")
     (architecture_count,) = struct.unpack_from(f"{endian}I", value, 4)
     architecture_size = 32 if is_64_bit else 20
     if architecture_count == 0 or architecture_count > 128:
-        _fail("app executable has an invalid universal Mach-O architecture count")
-    if 8 + architecture_count * architecture_size > len(value):
-        _fail("app executable has a truncated universal Mach-O architecture table")
+        _fail(f"{source} has an invalid universal Mach-O architecture count")
+    architecture_table_end = 8 + architecture_count * architecture_size
+    if architecture_table_end > len(value):
+        _fail(f"{source} has a truncated universal Mach-O architecture table")
 
-    slices: list[set[str]] = []
+    slices: list[MachOSlice] = []
+    slice_ranges: list[tuple[int, int]] = []
     for index in range(architecture_count):
         architecture_offset = 8 + index * architecture_size
         if is_64_bit:
@@ -399,10 +478,119 @@ def _macho_dylib_loads_by_slice(value: bytes) -> list[set[str]]:
                 f"{endian}II", value, architecture_offset + 8
             )
         slice_end = slice_offset + slice_size
-        if slice_size == 0 or slice_end > len(value):
-            _fail("app executable has invalid universal Mach-O slice bounds")
-        slices.append(_thin_macho_dylib_loads(value[slice_offset:slice_end]))
+        if (
+            slice_size == 0
+            or slice_offset < architecture_table_end
+            or slice_end > len(value)
+        ):
+            _fail(f"{source} has invalid universal Mach-O slice bounds")
+        if any(slice_offset < end and start < slice_end for start, end in slice_ranges):
+            _fail(f"{source} has overlapping universal Mach-O slices")
+        slice_ranges.append((slice_offset, slice_end))
+        slices.append(
+            _thin_macho_slice(
+                value[slice_offset:slice_end],
+                f"{source} slice {index}",
+            )
+        )
     return slices
+
+
+def _macho_dylib_loads_by_slice(value: bytes, source: str) -> list[frozenset[str]]:
+    return [slice_metadata.dylib_loads for slice_metadata in _macho_slices(value, source)]
+
+
+def _required_uuid_set(slices: list[MachOSlice], source: str) -> set[str]:
+    uuids: set[str] = set()
+    for index, slice_metadata in enumerate(slices):
+        if slice_metadata.uuid is None:
+            _fail(f"{source} slice {index} is missing LC_UUID")
+        if slice_metadata.uuid in uuids:
+            _fail(f"{source} contains duplicate UUID {slice_metadata.uuid}")
+        uuids.add(slice_metadata.uuid)
+    return uuids
+
+
+def _dsym_uuid_index(archive_path: Path) -> dict[str, Path]:
+    if archive_path.suffix != ".xcarchive" or not archive_path.is_dir():
+        _fail(f"dSYM coverage requires an existing .xcarchive: {archive_path}")
+    dwarf_root = archive_path / "dSYMs"
+    dwarf_files = sorted(
+        path
+        for path in dwarf_root.glob("*.dSYM/Contents/Resources/DWARF/*")
+        if path.is_file()
+    )
+    if not dwarf_files:
+        _fail(f"{archive_path} contains no dSYM DWARF binaries")
+
+    index: dict[str, Path] = {}
+    for dwarf_path in dwarf_files:
+        try:
+            value = dwarf_path.read_bytes()
+        except OSError as error:
+            _fail(f"could not read dSYM DWARF binary {dwarf_path}: {error}")
+        slices = _macho_slices(value, str(dwarf_path))
+        if {slice_metadata.file_type for slice_metadata in slices} != {MH_DSYM}:
+            _fail(f"{dwarf_path} must contain only MH_DSYM slices")
+        for uuid in _required_uuid_set(slices, str(dwarf_path)):
+            previous = index.get(uuid)
+            if previous is not None and previous != dwarf_path:
+                _fail(
+                    f"dSYM UUID {uuid} is ambiguously owned by {previous} and {dwarf_path}"
+                )
+            index[uuid] = dwarf_path
+    return index
+
+
+def _validate_dsym_coverage(
+    reader: DirectoryBundleReader | IPABundleReader,
+    executable: str,
+    archive_path: Path,
+) -> None:
+    symbol_index = _dsym_uuid_index(archive_path)
+    required: list[tuple[str, set[str]]] = []
+
+    app_source = f"{reader.source}/{executable}"
+    app_slices = _macho_slices(reader.read_bytes(executable), app_source)
+    if {slice_metadata.file_type for slice_metadata in app_slices} != {MH_EXECUTE}:
+        _fail(f"{app_source} must contain only MH_EXECUTE slices")
+    required.append((executable, _required_uuid_set(app_slices, app_source)))
+
+    for relative_path, value in reader.framework_binaries():
+        framework_source = f"{reader.source}/{relative_path}"
+        if value.startswith(STATIC_ARCHIVE_MAGIC):
+            print(f"ok: static framework symbol coverage inherited by app={relative_path}")
+            continue
+        slices = _macho_slices(value, framework_source)
+        file_types = {slice_metadata.file_type for slice_metadata in slices}
+        if file_types == {MH_OBJECT}:
+            print(f"ok: object framework symbol coverage inherited by app={relative_path}")
+            continue
+        if file_types != {MH_DYLIB}:
+            _fail(
+                f"{framework_source} must contain only MH_DYLIB slices, only "
+                "MH_OBJECT slices, or a static archive"
+            )
+        required.append(
+            (relative_path, _required_uuid_set(slices, framework_source))
+        )
+
+    missing: list[str] = []
+    required_uuid_count = 0
+    for relative_path, uuids in required:
+        required_uuid_count += len(uuids)
+        for uuid in sorted(uuids):
+            if uuid not in symbol_index:
+                missing.append(f"{relative_path} UUID {uuid}")
+    if missing:
+        _fail(
+            f"{reader.source} is missing matching archive dSYM coverage for: "
+            + "; ".join(missing)
+        )
+    print(
+        "ok: dSYM UUID coverage "
+        f"binaries={len(required)} UUIDs={required_uuid_count} archive={archive_path}"
+    )
 
 
 def _validate_msal(
@@ -432,7 +620,9 @@ def _validate_msal(
         _fail(f"{reader.source}/{MSAL_FRAMEWORK_BINARY_PATH} is empty")
 
     app_executable = reader.read_bytes(executable)
-    dylib_loads_by_slice = _macho_dylib_loads_by_slice(app_executable)
+    dylib_loads_by_slice = _macho_dylib_loads_by_slice(
+        app_executable, f"{reader.source}/{executable}"
+    )
     missing_slice_count = sum(
         MSAL_LOAD_PATH not in dylib_loads for dylib_loads in dylib_loads_by_slice
     )
@@ -453,6 +643,7 @@ def _validate_bundle(
     expected_build_configuration: str,
     expected_source_revision: str | None,
     expected_msal_version: str,
+    require_dsym_archive: Path | None,
 ) -> None:
     info = _read_plist_bytes(reader.read_bytes("Info.plist"), f"{reader.source}/Info.plist")
     executable = _validate_info(
@@ -467,6 +658,8 @@ def _validate_bundle(
     _validate_privacy_manifest(reader)
     _validate_agent_manifest(reader)
     _validate_msal(reader, executable, expected_msal_version)
+    if require_dsym_archive is not None:
+        _validate_dsym_coverage(reader, executable, require_dsym_archive)
 
 
 def main() -> int:
@@ -497,6 +690,14 @@ def main() -> int:
     parser.add_argument(
         "--expected-msal-version",
         help="Required embedded MSAL version; defaults to the exact Package.resolved pin.",
+    )
+    parser.add_argument(
+        "--require-dsym-archive",
+        type=Path,
+        help=(
+            "Require every app/framework Mach-O UUID in the checked artifact to be "
+            "covered by a matching dSYM in this .xcarchive."
+        ),
     )
     args = parser.parse_args()
 
@@ -538,6 +739,11 @@ def main() -> int:
         "expected_build_configuration": args.expected_build_configuration,
         "expected_source_revision": expected_source_revision,
         "expected_msal_version": expected_msal_version,
+        "require_dsym_archive": (
+            args.require_dsym_archive.resolve()
+            if args.require_dsym_archive is not None
+            else None
+        ),
     }
     if path.suffix == ".ipa":
         try:
