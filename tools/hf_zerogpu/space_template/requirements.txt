@@ -1,4 +1,5 @@
 torch==2.9.1
+torchao==0.15.0
 torchvision==0.24.1
 torchaudio==2.9.1
 gradio==6.17.3

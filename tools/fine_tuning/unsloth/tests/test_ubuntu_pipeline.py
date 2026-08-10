@@ -1642,6 +1642,7 @@ def test_docker_context_includes_the_dependency_lineage_build_preflight() -> Non
         "/tmp/lumen-training-lineage.py"
     ) in dockerfile
     assert "lineage.verify_training_dependency_lock(" in dockerfile
+    assert "import torch\nimport torchao\n" in dockerfile
     assert "setpriv --reuid=nobody --regid=nogroup --init-groups python" in dockerfile
     assert "lineage.build_resolved_training_environment_snapshot()" in dockerfile
     assert "lineage.verify_resolved_training_environment(environment)" in dockerfile

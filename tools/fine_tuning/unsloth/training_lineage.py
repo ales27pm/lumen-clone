@@ -89,6 +89,7 @@ DEFAULT_PACKAGE_VERSIONS: dict[str, str] = {
     "sentencepiece": "0.2.2",
     "spaces": "0.51.0",
     "torch": "2.9.1",
+    "torchao": "0.15.0",
     "torchaudio": "2.9.1",
     "torchvision": "0.24.1",
     "trackio": "0.20.2",

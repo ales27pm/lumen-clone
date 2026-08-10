@@ -55,6 +55,7 @@ import platform
 from pathlib import Path
 
 import torch
+import torchao
 
 assert platform.python_version_tuple()[:2] == ("3", "10"), platform.python_version()
 assert torch.__version__.split("+", 1)[0] == "2.9.1", torch.__version__

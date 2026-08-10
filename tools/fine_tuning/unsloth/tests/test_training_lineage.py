@@ -620,6 +620,15 @@ def test_dependency_lock_covers_every_direct_requirement() -> None:
     )
 
 
+def test_torchao_pin_matches_the_torch_291_binary_compatibility_contract() -> None:
+    requirements = ROOT / "tools/hf_zerogpu/space_template/requirements.txt"
+    requirement_lines = requirements.read_text(encoding="utf-8").splitlines()
+
+    assert training_lineage.DEFAULT_PACKAGE_VERSIONS["torch"] == "2.9.1"
+    assert training_lineage.DEFAULT_PACKAGE_VERSIONS["torchao"] == "0.15.0"
+    assert requirement_lines.count("torchao==0.15.0") == 1
+
+
 def test_resolved_environment_attests_transitive_distribution_content(
     tmp_path: Path,
 ) -> None:
