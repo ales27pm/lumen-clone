@@ -96,7 +96,11 @@ The simulator commands above are fallback/coverage tools. Do not combine their o
 - A separate DEBUG-only physical interactive model/tool validation ran from source `95174d975da515cf8625212592721cd0baa7bfa5`, build `20260810031810`, on the iPhone 16 Pro running iOS 26.6. Its dedicated physical-device XCUITest passed 1/1. The actual local model emitted the correlated `alarm.authorization_status` action, `SecureToolRegistry` executed that permission-safe status read and returned the trusted observation, and the model-authored final matched the observation.
 - The fail-closed host verifier accepted the corresponding redacted package. Its selected byte identity had SHA-256 `d15676774b3d28feef7eca63b67e06afc753cb4ef58d1d0956cd135ba46c610f`; this digest records the verified package and does not imply that the exported package is tracked in Git.
 - No simulator was used as evidence for this hardening checkpoint.
-- A valid Apple Distribution signing identity and matching App Store provisioning profile were verified; the profile expires on 2027-08-09. No archive, export, TestFlight submission, or App Store upload was performed for this checkpoint.
+- A no-upload Release archive/export completed from exact source `5df950aeb58088d2cf5a371a0b373a8ca9377d5e` with build number `20260810035524`. `xcodebuild` reported `** ARCHIVE SUCCEEDED **` for `build/Lumen-20260809-235633.xcarchive` and `** EXPORT SUCCEEDED **` for `build/export-Lumen-20260809-235633/Lumen.ipa`; the IPA had SHA-256 `760c1a4f8f7444211229bf73d7804fb1e5dd90ff36082c7f32615b35b27c9a83`.
+- The release wrapper verified archive and IPA Info.plist/provenance, the app privacy manifest, bundled `AgentBehaviorManifest.json` SHA-256 `f050e3b696cc73a82a2c1a9c613efa19ecd16027f0419b81c81ffcafd45817c8`, MSAL `1.9.0`, and signed entitlements. The exported signature used Apple Distribution identity `CF9FD3FF6D932AD1EB2822261611570904AE5641`, team `52T7P32J34`, with `get-task-allow=false`.
+- Xcode selected an automatically managed App Store profile with UUID `f16a0f00-406d-476a-9210-ce27e7df387c`, no provisioned devices, and expiration `2027-08-09`. It is distinct from the separately installed profile UUID `64b7a123-7fe8-48f4-a4a3-8d1aa8bfb91a`.
+- Export completed despite a nonfatal `Upload Symbols Failed` warning: the embedded MSAL framework UUID `67EC8882-4D2F-33F6-88ED-8B8CEAED65B3` has no matching dSYM in the archive. Lumen and llama symbol packages are present; MSAL crash symbolication remains unproven.
+- `LUMEN_NO_UPLOAD=1` was a hard boundary. No upload, TestFlight submission, processing, or App Store acceptance occurred, and the archive remains bound to source `5df950aeb58088d2cf5a371a0b373a8ca9377d5e` rather than any later documentation commit.
 - The checked-in configuration pins MSAL exactly to `1.9.0`; the link and release validators enforce the exact requirement.
 - Release/minimal AgentGrounding packaging fails closed on missing, drifted, invalid, warning-bearing, failed, or hash-mismatched runtime resources and on missing, unsafe, or hash-mismatched source files declared by `sourceIntegrity`. Only an explicit Debug diagnostic build may produce an empty fallback bundle.
 - Background trigger/headless execution now distinguishes completed, deferred, failed, and cancelled outcomes. A background task succeeds only for a completed trigger scan; `beforeNextEvent` creation reports typed unavailability.
@@ -106,9 +110,6 @@ These checkpoints now include one exact DEBUG local-model/action/native-observat
 
 Release submission validation also requires credentialed or physical-device checks:
 
-- signed archive and export
-- signed entitlement inspection
-- privacy manifest validation
 - TestFlight or real-device smoke test of the exact submitted Release build
 - real-device local-model load and interactive generation through a production user surface in that submitted Release build
 - live tool-call validation for submitted Release surfaces beyond the one DEBUG `alarm.authorization_status` proof

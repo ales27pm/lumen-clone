@@ -91,7 +91,7 @@ bash scripts/build_and_submit_appstoreconnect.sh
 
 Before submitting, ensure `CURRENT_PROJECT_VERSION` in `ios/Lumen.xcodeproj/project.pbxproj` is higher than the latest uploaded build. Treat App Store Connect upload output as authoritative: success requires `UPLOAD SUCCEEDED with no errors` plus a `Delivery UUID`; duplicate-build or `ENTITY_ERROR` output is a failed upload even if a wrapper script continues.
 
-The current device checkpoint includes one exact DEBUG-only physical model/tool diagnostic pass. It is not archive, upload, TestFlight, or App Store evidence; see `docs/VALIDATION.md` for the source/build-bound proof and remaining Release gaps.
+The current device checkpoint includes one exact DEBUG-only physical model/tool diagnostic pass. Separately, a no-upload signed Release archive/export is bound to source `5df950aeb58088d2cf5a371a0b373a8ca9377d5e`, build `20260810035524`. Neither checkpoint is upload, TestFlight, processing, or App Store acceptance evidence; see `docs/VALIDATION.md` for the exact provenance and remaining Release gaps.
 
 ## Generated Artifacts
 
