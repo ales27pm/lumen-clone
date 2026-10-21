@@ -646,7 +646,57 @@ nonisolated enum E2ETestRunner {
             return await override()
         }
         #endif
+        if CoreAIGemmaModelStore.isEnabled {
+            return await coreAIExecutorRuntimePreflight()
+        }
         return await ExecutorRuntimePreflight.run()
+    }
+
+    /// Explicit E2E runs may prepare the selected foreground engine. This checks
+    /// real model/tokenizer readiness; it makes no inference or device-success claim.
+    static func coreAIExecutorRuntimePreflight(
+        adapter: CoreAIGemmaRuntimeAdapter = .init()
+    ) async -> ExecutorRuntimePreflightResult {
+        do {
+            let readiness = try await adapter.prepareStructuredRuntime(slot: .executor)
+            let request = GenerateRequest(
+                systemPrompt: "Return a single JSON object with a final string.",
+                history: [],
+                userMessage: "Say hello.",
+                temperature: 0,
+                topP: 1,
+                repetitionPenalty: 1,
+                maxTokens: 128,
+                modelName: "agent-json-preflight",
+                relevantMemories: [],
+                responseFormat: .constrainedJSON(schema: StructuredAgentKernelExecutor.structuredAgentFinalResponseSchema)
+            )
+            let prompt = try await adapter.structuredPromptPreflight(request)
+            guard prompt.estimatedPromptTokens > 0,
+                  prompt.contextSize > prompt.estimatedPromptTokens + request.maxTokens + 128 else {
+                throw CoreAIGemmaError.contextFull
+            }
+            return ExecutorRuntimePreflightResult(
+                passed: true,
+                reason: "Core AI Gemma model and local tokenizer prepared; prompt fits context; inference has not run",
+                modelFamily: "gemma",
+                runtimeKind: AssistantRuntimeKind.coreAI.rawValue,
+                baseModelExists: readiness.baseModelExists,
+                resourceGateAllowed: readiness.resourceGateAllowed,
+                ensureReadySucceeded: true,
+                smokeProbeSucceeded: false
+            )
+        } catch {
+            let code = RuntimeMetricErrorSanitizer.code(for: error)
+            return ExecutorRuntimePreflightResult(
+                passed: false,
+                reason: "Core AI Gemma E2E preflight unavailable: \(code)",
+                modelFamily: "gemma",
+                runtimeKind: AssistantRuntimeKind.coreAI.rawValue,
+                budgetReason: (error as? CoreAIGemmaError) == .resourceDenied ? code : nil,
+                failureKind: code
+            )
+        }
     }
 
     static func runStandard(config: E2ERunConfig, ensureChatLoaded: EnsureChatLoaded? = nil, onResult: ResultCallback? = nil, onEvent: EventCallback? = nil) async -> E2ETestReport {
@@ -2480,7 +2530,9 @@ nonisolated enum E2ETestRunner {
     private nonisolated static func isPrimaryAgentJSONTrace(_ trace: AgentBehaviorTrace) -> Bool {
         trace.event == .modelTurn
             && trace.stage.hasPrefix("agent-json")
-            && trace.runtimePath == "agent-model"
+            && (trace.runtimePath == "agent-model"
+                || (trace.runtimePath == AssistantRuntimeKind.coreAI.rawValue
+                    && trace.selectedRuntime == AssistantRuntimeKind.coreAI.rawValue))
     }
 
     private nonisolated static func isValidModelBackedEvidenceTrace(
@@ -3261,7 +3313,7 @@ nonisolated enum E2ETestRunner {
             averageRAMMB: averageRAM,
             sampleCount: samples.count,
             notes: notes,
-            accelerationDiagnostics: await AppLlamaService.shared.currentAccelerationDiagnostics()
+            accelerationDiagnostics: await RuntimeAccelerationDiagnostics.forSelectedRuntime()
         )
     }
 
@@ -4001,21 +4053,23 @@ nonisolated enum E2ETestRunner {
             rewritePrompt += " For local-knowledge/RAG answers, explicitly reference retrieved evidence using bracketed markers like [1] and mention source/snippet/file context."
         }
 
-        let genReq = GenerateRequest(
-            systemPrompt: "You rewrite user-facing answers to satisfy strict eval hint constraints while preserving intent and safety policy.",
-            history: [],
-            userMessage: rewritePrompt,
-            temperature: 0.1,
-            topP: 0.8,
-            repetitionPenalty: 1.05,
-            maxTokens: 320,
-            modelName: "agent-summary",
-            relevantMemories: []
-        )
-        var out = ""
-        for await token in await AppLlamaService.shared.stream(genReq) {
-            if case .text(let s) = token { out += s }
-            if case .done = token { break }
+        let out: String
+        do {
+            out = try await AssistantKernel.shared.runTextTurn(AssistantTurnContext(
+                task: .summarization,
+                input: rewritePrompt,
+                systemPrompt: "You rewrite user-facing answers to satisfy strict eval hint constraints while preserving intent and safety policy.",
+                isForeground: true,
+                lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                thermalState: ProcessInfo.processInfo.thermalState,
+                prefersFoundationModels: false,
+                temperature: 0.1,
+                topP: 0.8,
+                repetitionPenalty: 1.05,
+                maxTokens: 320
+            ))
+        } catch {
+            return originalFinal
         }
         let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
         let candidate = trimmed.isEmpty ? originalFinal : trimmed

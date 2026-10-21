@@ -67,7 +67,8 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
             foundation: FoundationModelsRuntimeAdapter(),
             llama: LlamaRuntimeAdapter(isAvailable: false),
             fallback: DeterministicFallbackRuntime(),
-            coreML: CoreMLRuntimeAdapter(modelURL: nil)
+            coreML: CoreMLRuntimeAdapter(modelURL: nil),
+            coreAI: .disabled
         )
 
         let foundation = matrix.row(for: .foundationModels)
@@ -85,7 +86,7 @@ final class AssistantRuntimeAdapterRemediationTests: XCTestCase {
     }
 
     func testCapabilityMatrixDoesNotExposeBareLlamaAvailabilityStatus() {
-        let matrix = AssistantRuntimeCapabilityMatrix.current()
+        let matrix = AssistantRuntimeCapabilityMatrix.current(coreAI: .disabled)
         let llama = matrix.row(for: .llama)
 
         XCTAssertNotEqual(llama?.status, "available")

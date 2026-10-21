@@ -36,6 +36,69 @@ final class AssistantKernel {
         router.selection(for: context)
     }
 
+    var prefersUnifiedAssistant: Bool { router.coreAI.isPreferred }
+
+    /// Compatibility surfaces submit the same request to the production kernel.
+    /// This maps events only; there is no second model or tool execution loop.
+    func runAdaptedLegacyRequest(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
+        let kernelRequest = Self.adaptLegacyRequest(request, options: options)
+        return AsyncStream { continuation in
+            let task = Task { @MainActor in
+                for await event in self.run(kernelRequest, modelContext: options.modelContext) {
+                    guard !Task.isCancelled else { break }
+                    switch event {
+                    case .step(let step): continuation.yield(.step(step))
+                    case .stepDelta(let id, let text): continuation.yield(.stepDelta(id: id, text: text))
+                    case .finalDelta(let text): continuation.yield(.finalDelta(text))
+                    case .done(let text, let steps): continuation.yield(.done(finalText: text, steps: steps))
+                    case .error(let error): continuation.yield(.error(error))
+                    default: break
+                    }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
+    static func adaptLegacyRequest(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AgentKernelRequest {
+        let source: AgentKernelSource = options.groundingMode == .headlessTrigger ? .trigger : (options.diagnosticsEnabled ? .diagnostics : .chat)
+        return AgentKernelRequest(
+            conversationID: options.conversationID ?? request.conversationID,
+            turnID: options.turnID ?? request.turnID,
+            userMessage: request.userMessage,
+            history: request.history.map { AgentKernelMessage(messageRole: $0.role, content: $0.content) },
+            systemPrompt: request.systemPrompt,
+            relevantMemories: request.relevantMemories,
+            attachments: request.attachments,
+            task: source == .trigger ? .backgroundTrigger : .chat,
+            source: source,
+            options: AgentKernelOptions(
+                allowHeavyRuntime: source != .trigger,
+                allowDegradedMode: options.allowsMemoryPressureContinuation,
+                requireUserVisibleFinal: true,
+                diagnosticsEnabled: options.diagnosticsEnabled,
+                maxSteps: request.maxSteps,
+                prefersFoundationModels: false,
+                temperature: request.temperature,
+                topP: request.topP,
+                repetitionPenalty: request.repetitionPenalty,
+                maxTokens: request.maxTokens,
+                forceModelBackedToolPlanning: true,
+                structuredMode: .requiredAgentJSON,
+                structuredAllowedToolIDs: request.availableTools.map(\.id),
+                allowsToolExecution: !request.availableTools.isEmpty
+            ),
+            traceCorrelation: AgentTraceCorrelation(
+                scenarioID: options.scenarioID ?? request.scenarioID,
+                e2eRunID: options.e2eRunID ?? request.e2eRunID,
+                agentRunID: options.agentRunID ?? request.agentRunID,
+                conversationID: options.conversationID ?? request.conversationID,
+                turnID: options.turnID ?? request.turnID
+            )
+        )
+    }
+
     func streamStructuredLlama(_ request: GenerateRequest, slot: LumenModelSlot) async throws -> AsyncStream<GenerationToken> {
         try await router.llama.streamStructured(request, slot: slot)
     }
@@ -56,6 +119,59 @@ final class AssistantKernel {
 
     func preflightStructuredLlamaPrompt(_ request: GenerateRequest, slot: LumenModelSlot) async throws -> LlamaStructuredPromptPreflightSnapshot {
         try await router.llama.structuredPromptPreflight(request, slot: slot)
+    }
+
+    func prepareStructuredRuntime(
+        runtime: AssistantRuntimeKind,
+        slot: LumenModelSlot,
+        allowsLoadedMemoryPressureContinuation: Bool
+    ) async throws -> ExecutorRuntimePreflightResult {
+        switch runtime {
+        case .coreAI:
+            return try await router.coreAI.prepareStructuredRuntime(slot: slot)
+        case .llama:
+            return try await prepareStructuredLlamaRuntime(
+                slot: slot,
+                allowsLoadedMemoryPressureContinuation: allowsLoadedMemoryPressureContinuation
+            )
+        default:
+            throw KernelError.unsupportedRuntimeForTextTurn(runtime)
+        }
+    }
+
+    func preflightStructuredPrompt(
+        _ request: GenerateRequest,
+        runtime: AssistantRuntimeKind,
+        slot: LumenModelSlot
+    ) async throws -> LlamaStructuredPromptPreflightSnapshot {
+        switch runtime {
+        case .coreAI:
+            return try await router.coreAI.structuredPromptPreflight(request)
+        case .llama:
+            return try await preflightStructuredLlamaPrompt(request, slot: slot)
+        default:
+            throw KernelError.unsupportedRuntimeForTextTurn(runtime)
+        }
+    }
+
+    func streamStructuredGeneration(
+        _ request: GenerateRequest,
+        runtime: AssistantRuntimeKind,
+        slot: LumenModelSlot
+    ) async throws -> AsyncStream<GenerationToken> {
+        switch runtime {
+        case .coreAI:
+            return try await router.coreAI.streamStructured(request)
+        case .llama:
+            return try await streamStructuredLlama(request, slot: slot)
+        default:
+            throw KernelError.unsupportedRuntimeForTextTurn(runtime)
+        }
+    }
+
+    func takeCompletedStructuredTrace(requestID: UUID, runtime: AssistantRuntimeKind) async -> CompletedGenerationTracePayload? {
+        guard runtime == .llama else { return nil }
+        return await takeCompletedStructuredLlamaTrace(requestID: requestID)
     }
 
     func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?) async -> AssistantGroundingContext {
@@ -209,6 +325,9 @@ final class AssistantKernel {
         case .foundationModels:
             runtimePath = AssistantRuntimeKind.foundationModels.rawValue
             adapterSlot = nil
+        case .coreAI:
+            runtimePath = AssistantRuntimeKind.coreAI.rawValue
+            adapterSlot = nil
         case .coreML, .deterministicFallback, .unavailable:
             return
         }
@@ -254,6 +373,8 @@ final class AssistantKernel {
             return try await router.foundation.generate(request: request)
         case .llama:
             return try await router.llama.generate(request: request)
+        case .coreAI:
+            return try await router.coreAI.generate(request: request)
         case .deterministicFallback:
             return try await router.fallback.generate(request: request)
         case .coreML:
@@ -274,7 +395,7 @@ final class AssistantKernel {
             }
             let digest = try SHA256FileHasher.sha256Hex(forArtifactAt: modelURL)
             return EmbeddingRuntimeResult(vector: vector, modelIdentifier: "coreml:sha256:\(digest)")
-        case .foundationModels, .deterministicFallback, .unavailable:
+        case .foundationModels, .coreAI, .deterministicFallback, .unavailable:
             throw KernelError.unsupportedRuntimeForEmbedding(runtime)
         }
     }

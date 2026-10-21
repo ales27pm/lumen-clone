@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C0A100000000000000000001 /* CoreAILM in Frameworks */ = {isa = PBXBuildFile; productRef = C0A100000000000000000011 /* CoreAILM */; };
+		C0A100000000000000000002 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = C0A100000000000000000012 /* Tokenizers */; };
 		2292D5B92FD41142004AF85D /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2292D5B62FD4112C004AF85D /* CoreML.framework */; };
 		2292D5BC2FD41152004AF85D /* libswiftCoreML.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 2292D5B82FD4113C004AF85D /* libswiftCoreML.tbd */; };
 		2292D5BF2FD411A5004AF85D /* FoundationModels.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2292D5BD2FD411A2004AF85D /* FoundationModels.framework */; };
@@ -96,6 +98,8 @@
 			files = (
 				2292D5BC2FD41152004AF85D /* libswiftCoreML.tbd in Frameworks */,
 				9A1B2C3D4E5F678901234570 /* SwiftLlama in Frameworks */,
+				C0A100000000000000000001 /* CoreAILM in Frameworks */,
+				C0A100000000000000000002 /* Tokenizers in Frameworks */,
 				A27B0C0D0E0F000000000002 /* MSAL in Frameworks */,
 				2292D5BF2FD411A5004AF85D /* FoundationModels.framework in Frameworks */,
 				2292D5B92FD41142004AF85D /* CoreML.framework in Frameworks */,
@@ -173,6 +177,8 @@
 			name = Lumen;
 			packageProductDependencies = (
 				9A1B2C3D4E5F678901234571 /* SwiftLlama */,
+				C0A100000000000000000011 /* CoreAILM */,
+				C0A100000000000000000012 /* Tokenizers */,
 				A27B0C0D0E0F000000000004 /* MSAL */,
 			);
 			productName = Lumen;
@@ -259,6 +265,8 @@
 			mainGroup = 105FC5712E9EAD3100EA8BCF;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				C0A100000000000000000021 /* coreai-models */,
+				C0A100000000000000000022 /* swift-transformers */,
 				9A1B2C3D4E5F678901234572 /* XCRemoteSwiftPackageReference "swift-llama-cpp" */,
 				A27B0C0D0E0F000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */,
 			);
@@ -441,7 +449,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -506,7 +514,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.2;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -708,7 +716,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.2;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.27pm.lumenclone.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -736,7 +744,7 @@
 				CURRENT_PROJECT_VERSION = 20260809141525;
 				DEVELOPMENT_TEAM = 52T7P32J34;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.2;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.27pm.lumenclone.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -875,6 +883,16 @@
 				version = 1.9.0;
 			};
 		};
+		C0A100000000000000000021 /* coreai-models */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/coreai-models";
+			requirement = {kind = revision; revision = 9db747612f972001279f02adb04d3ef982310d0e; };
+		};
+		C0A100000000000000000022 /* swift-transformers */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-transformers";
+			requirement = {kind = revision; revision = eed7264ac5e4ec5dfa6165c6e5c5577364344fe4; };
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -887,6 +905,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A27B0C0D0E0F000000000003 /* XCRemoteSwiftPackageReference "microsoft-authentication-library-for-objc" */;
 			productName = MSAL;
+		};
+		C0A100000000000000000011 /* CoreAILM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0A100000000000000000021 /* coreai-models */;
+			productName = CoreAILM;
+		};
+		C0A100000000000000000012 /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0A100000000000000000022 /* swift-transformers */;
+			productName = Tokenizers;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

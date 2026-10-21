@@ -885,6 +885,7 @@ final actor AppLlamaService {
     }
 
     func loadSharedChatModel(path: String, contextSize: Int, batchSize: UInt32 = 256) async throws {
+        guard !Self.coreAISelected else { throw CoreAIGemmaError.busy }
         let operationGeneration = beginSharedChatOperation()
         if sharedChatBasePath == path, sharedChatRuntime != nil { return }
         guard FileManager.default.fileExists(atPath: path) else { throw LlamaError.modelFileNotFound(path) }
@@ -1182,6 +1183,21 @@ final actor AppLlamaService {
     }
 
     func unloadAllChat() async {
+        clearAllChatRuntimes()
+    }
+
+    /// A selected Core AI engine may reclaim llama chat memory only after every
+    /// detached generation has drained. Busy is explicit; callers never free live KV.
+    func suspendForCoreAI() throws {
+        guard activeGenerations.isEmpty else { throw CoreAIGemmaError.busy }
+        clearAllChatRuntimes()
+    }
+
+    private nonisolated static var coreAISelected: Bool {
+        CoreAIGemmaService.isSupported && CoreAIGemmaModelStore.isEnabled
+    }
+
+    private func clearAllChatRuntimes() {
         beginSharedChatOperation()
         beginAdapterActivation()
         chatRuntimes.removeAll()
@@ -1521,10 +1537,20 @@ final actor AppLlamaService {
     }
 
     func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
+        guard !Self.coreAISelected else {
+            return AsyncStream { continuation in
+                continuation.yield(.text("Generation error: Core AI Gemma is selected; llama chat is unavailable."))
+                continuation.yield(.done)
+                continuation.finish()
+            }
+        }
         return AsyncStream<GenerationToken>(bufferingPolicy: .unbounded) { (continuation: AsyncStream<GenerationToken>.Continuation) in
             let cancellationToken = LlamaGenerationCancellationToken()
             let taskBox = LlamaGenerationTaskBox()
             let diskWriteLease = DiskWriteBudget.shared.beginGeneration()
+            // Register before returning the stream so runtime replacement cannot
+            // miss a generation that has been scheduled but has not started yet.
+            registerActiveGeneration(requestID: req.id, slot: slot, token: cancellationToken, taskBox: taskBox, diskWriteLease: diskWriteLease)
             let generationTask = Task.detached(priority: LlamaRuntimeScheduling.inferenceTaskPriority) { [weak self] in
                 guard let self else {
                     diskWriteLease.end()
@@ -1533,7 +1559,6 @@ final actor AppLlamaService {
                     return
                 }
 
-                await self.registerActiveGeneration(requestID: req.id, slot: slot, token: cancellationToken, taskBox: taskBox, diskWriteLease: diskWriteLease)
                 let requestForGeneration = req.cappedForDeveloperReasoning()
                 let startedAt = Date()
                 var traceRequest = requestForGeneration
@@ -1613,6 +1638,9 @@ final actor AppLlamaService {
                             finalChunkReceived: false,
                             streamTerminationReason: emptyOutputReason
                         )
+                        await self.unregisterActiveGeneration(requestID: req.id)
+                        continuation.yield(GenerationToken.done)
+                        continuation.finish()
                         return
                     }
 
@@ -2074,9 +2102,6 @@ final actor AppLlamaService {
                 diskWriteLease.end()
                 cancellationToken.cancel(reason: "stream-terminated")
                 generationTask.cancel()
-                Task.detached(priority: .utility) {
-                    await AppLlamaService.shared.unregisterActiveGeneration(requestID: req.id)
-                }
             }
         }
     }
@@ -2138,6 +2163,7 @@ final actor AppLlamaService {
     }
 
     private func loadChatModelSync(path: String, slot: LumenModelSlot, contextSize: Int, batchSize: UInt32) throws {
+        guard !Self.coreAISelected else { throw CoreAIGemmaError.busy }
         guard slot != .embedding else {
             throw LlamaError.failedToInitializeContext("Embedding slot cannot be loaded as chat")
         }

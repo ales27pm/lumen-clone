@@ -5,10 +5,13 @@ import UIKit
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
+    @State private var gemmaContextLength: Int?
+    @State private var gemmaContextIssue: String?
     @State private var showDeveloperAlert = false
     @State private var developerAlertMessage = ""
     @State private var parseFailureSummary = "• Parse-failure traces: loading…"
     @State private var parseNoiseSummary = "• Recoverable noise traces: loading…"
+    @AppStorage("coreai.gemma.enabled") private var usesGemma = true
     @State private var selectedModelFamily = LumenModelFamily.persistedSelected
     @State private var isSwitchingModelFamily = false
     @State private var modelSetupError: String?
@@ -18,6 +21,10 @@ struct SettingsView: View {
 
         NavigationStack {
             Form {
+                CoreAIGemmaSettingsSection(onConfigurationChanged: {
+                    Task { await refreshGemmaContext() }
+                })
+
                 Section("Prompt Presets") {
                     Picker("Preset", selection: Binding(
                         get: { state.selectedPresetID },
@@ -33,18 +40,19 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Agent") {
-                    Toggle("Agent mode", isOn: Binding(get: { state.agentModeEnabled }, set: { state.agentModeEnabled = $0 }))
-                    Toggle("Show thinking by default", isOn: Binding(get: { state.showThinkingByDefault }, set: { state.showThinkingByDefault = $0 }))
+                Section(usesGemma ? "Tools" : "Agent") {
+                    Toggle(usesGemma ? "Allow tools" : "Agent mode", isOn: Binding(get: { state.agentModeEnabled }, set: { state.agentModeEnabled = $0 }))
+                    Toggle(usesGemma ? "Show tool steps" : "Show thinking by default", isOn: Binding(get: { state.showThinkingByDefault }, set: { state.showThinkingByDefault = $0 }))
                     Stepper(value: Binding(get: { state.maxAgentSteps }, set: { state.maxAgentSteps = $0 }), in: 1...10) {
                         HStack {
-                            Text("Max steps")
+                            Text(usesGemma ? "Max tool steps" : "Max steps")
                             Spacer()
                             Text("\(state.maxAgentSteps)")
                                 .font(.callout.monospacedDigit())
                                 .foregroundStyle(Theme.textSecondary)
                         }
                     }
+                    .disabled(!state.agentModeEnabled)
                 }
 
                 #if DEBUG
@@ -53,42 +61,44 @@ struct SettingsView: View {
                 }
                 #endif
 
-                Section {
-                    Picker("Model family", selection: $selectedModelFamily) {
-                        ForEach(LumenModelFamily.allCases) { family in
-                            Text(family.displayName).tag(family)
+                if !usesGemma {
+                    Section {
+                        Picker("Model family", selection: $selectedModelFamily) {
+                            ForEach(LumenModelFamily.allCases) { family in
+                                Text(family.displayName).tag(family)
+                            }
                         }
-                    }
-                    .accessibilityIdentifier("settings.fleet.modelFamily")
+                        .accessibilityIdentifier("settings.fleet.modelFamily")
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(selectedModelFamily.description)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(selectedModelFamily.description)
+                                .font(.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                            Text("Setup downloads this family’s verified chat, embedding, and required adapter artifacts after you confirm.")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+
+                        Text("Downloads start only after you tap the button below. The current family and model pair remain active unless the verified setup and runtime load both succeed.")
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
-                        Text("Setup downloads this family’s verified chat, embedding, and required adapter artifacts after you confirm.")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.textTertiary)
-                    }
 
-                    Text("Downloads start only after you tap the button below. The current family and model pair remain active unless the verified setup and runtime load both succeed.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.textSecondary)
-
-                    Button {
-                        switchModelFamily(selectedModelFamily)
-                    } label: {
-                        HStack {
-                            Label(isSwitchingModelFamily ? "Switching…" : "Download / repair selected family", systemImage: "arrow.down.circle")
-                            Spacer()
-                            if isSwitchingModelFamily { ProgressView() }
+                        Button {
+                            switchModelFamily(selectedModelFamily)
+                        } label: {
+                            HStack {
+                                Label(isSwitchingModelFamily ? "Switching…" : "Download / repair selected family", systemImage: "arrow.down.circle")
+                                Spacer()
+                                if isSwitchingModelFamily { ProgressView() }
+                            }
                         }
+                        .disabled(isSwitchingModelFamily)
+                        .accessibilityIdentifier("settings.fleet.repairSelectedFamily")
+                    } header: {
+                        Text("Fleet")
+                    } footer: {
+                        Text("Qwen3 is the default. A successful switch persists the chat and embedding selections together and restores them automatically on future launches.")
                     }
-                    .disabled(isSwitchingModelFamily)
-                    .accessibilityIdentifier("settings.fleet.repairSelectedFamily")
-                } header: {
-                    Text("Fleet")
-                } footer: {
-                    Text("Qwen3 is the default. A successful switch persists the chat and embedding selections together and restores them automatically on future launches.")
                 }
 
                 Section("Voice") {
@@ -120,16 +130,28 @@ struct SettingsView: View {
 
                 Section("Generation") {
                     sliderRow("Temperature", value: Binding(get: { state.temperature }, set: { state.temperature = $0 }), range: 0...2, format: "%.2f")
-                    sliderRow("Top-P", value: Binding(get: { state.topP }, set: { state.topP = $0 }), range: 0...1, format: "%.2f")
-                    sliderRow("Repetition penalty", value: Binding(get: { state.repetitionPenalty }, set: { state.repetitionPenalty = $0 }), range: 1...1.5, format: "%.2f")
-                    Stepper(value: Binding(get: { state.contextSize }, set: { state.contextSize = $0 }), in: 1024...32768, step: 1024) {
-                        HStack {
-                            Text("Context size")
-                            Spacer()
-                            Text("\(state.contextSize)")
-                                .font(.callout.monospacedDigit())
+                    if !usesGemma {
+                        sliderRow("Top-P", value: Binding(get: { state.topP }, set: { state.topP = $0 }), range: 0...1, format: "%.2f")
+                        sliderRow("Repetition penalty", value: Binding(get: { state.repetitionPenalty }, set: { state.repetitionPenalty = $0 }), range: 1...1.5, format: "%.2f")
+                        Stepper(value: Binding(get: { state.contextSize }, set: { state.contextSize = $0 }), in: 1024...32768, step: 1024) {
+                            HStack {
+                                Text("Context size")
+                                Spacer()
+                                Text("\(state.contextSize)")
+                                    .font(.callout.monospacedDigit())
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                        }
+                    } else {
+                        LabeledContent("Imported context", value: gemmaContextLength.map { "\($0) tokens" } ?? "Not available")
+                        if let gemmaContextIssue {
+                            Text(gemmaContextIssue)
+                                .font(.caption)
                                 .foregroundStyle(Theme.textSecondary)
                         }
+                        Text("The imported export defines the 8K or 32K context. Output is limited to the space remaining after your conversation and attachments.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                     Stepper(value: Binding(get: { state.maxTokens }, set: { state.maxTokens = $0 }), in: 128...4096, step: 128) {
                         HStack {
@@ -142,8 +164,17 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Memory") {
+                Section {
                     Toggle("Auto-remember", isOn: Binding(get: { state.autoMemory }, set: { state.autoMemory = $0 }))
+                    if usesGemma {
+                        NavigationLink("Embedding model") { ModelsView() }
+                    }
+                } header: {
+                    Text("Memory")
+                } footer: {
+                    if usesGemma {
+                        Text("Gemma handles memory reasoning. A separate local embedding model indexes and retrieves memories and documents; choose it in Models. Your existing memory and document index are preserved.")
+                    }
                 }
 
                 #if DEBUG
@@ -170,7 +201,9 @@ struct SettingsView: View {
                 Section("About") {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Lumen").font(.subheadline.weight(.semibold))
-                        Text("Runs open-source language models locally via llama.cpp. Conversations, embeddings, and memory stay on-device by default. Network tools and connected services send only the data needed for actions you explicitly request, subject to their permissions and approvals.")
+                        Text(usesGemma
+                             ? "One local Gemma assistant handles conversations, voice responses and reasoning for tools and memory through Core AI. Embeddings use a separate local model. Conversations, embeddings and memory stay on-device by default. Network tools and connected services send only the data needed for actions you explicitly request, subject to their permissions and approvals."
+                             : "Runs open-source language models locally via llama.cpp. Conversations, embeddings, and memory stay on-device by default. Network tools and connected services send only the data needed for actions you explicitly request, subject to their permissions and approvals.")
                             .font(.footnote)
                             .foregroundStyle(Theme.textSecondary)
                     }
@@ -191,6 +224,7 @@ struct SettingsView: View {
                 selectedModelFamily = LumenModelFamily.persistedSelected
                 await refreshParseFailureSummary()
             }
+            .task(id: usesGemma) { await refreshGemmaContext() }
             .alert("Run checks", isPresented: $showDeveloperAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -229,6 +263,14 @@ struct SettingsView: View {
     }
     #endif
 
+    private func refreshGemmaContext() async {
+        gemmaContextLength = nil
+        gemmaContextIssue = nil
+        guard usesGemma else { return }
+        do { gemmaContextLength = try await CoreAIGemmaModelStore.configuredContextLength() }
+        catch { gemmaContextIssue = "Import a complete Gemma model or check its configuration in Local Gemma." }
+    }
+
     private var currentVoiceName: String {
         if let id = appState.voiceID,
            let v = VoiceCatalog.available().first(where: { $0.id == id }) {
@@ -238,7 +280,7 @@ struct SettingsView: View {
     }
 
     private func switchModelFamily(_ family: LumenModelFamily) {
-        guard !isSwitchingModelFamily else { return }
+        guard !usesGemma, !isSwitchingModelFamily else { return }
         isSwitchingModelFamily = true
         Task { @MainActor in
             let result = await ModelLaunchBootstrap.switchFamily(family, appState: appState, context: modelContext)
@@ -554,7 +596,7 @@ struct E2ETestRunnerView: View {
                     LabeledContent("Prompt eval tok/s", value: accel.promptEvalTokensPerSecond.map { String(format: "%.1f", $0) } ?? "unknown")
                     LabeledContent("Decode tok/s", value: accel.decodeTokensPerSecond.map { String(format: "%.1f", $0) } ?? "unknown")
                     LabeledContent("Verification", value: accel.verificationLevel)
-                    LabeledContent("ANE used by runtime", value: accel.aneUsedByCurrentRuntime ? "yes" : "no")
+                    LabeledContent("ANE used by runtime", value: accel.backendRequested == "coreai" ? "unverified" : (accel.aneUsedByCurrentRuntime ? "yes" : "no"))
                     ForEach(accel.notes, id: \.self) { note in
                         Text("• \(note)")
                             .font(.caption)

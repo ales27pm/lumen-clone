@@ -26,6 +26,16 @@ nonisolated struct RuntimeAccelerationDiagnostics: Codable, Sendable, Hashable {
     let verificationLevel: String
     let notes: [String]
 
+    static func forSelectedRuntime() async -> RuntimeAccelerationDiagnostics {
+        if CoreAIGemmaModelStore.isEnabled {
+            return forCurrentRuntime(
+                requestedBackend: "coreai", requestedGpuLayers: nil, requestedKQVOffload: nil,
+                notes: ["Core AI Gemma is selected; selection does not establish a loaded model or successful inference."]
+            )
+        }
+        return await AppLlamaService.shared.currentAccelerationDiagnostics()
+    }
+
     static func forCurrentRuntime(
         requestedBackend: String,
         requestedGpuLayers: Int?,
@@ -49,7 +59,11 @@ nonisolated struct RuntimeAccelerationDiagnostics: Codable, Sendable, Hashable {
         let metalHeadless = device?.isHeadless
         #endif
         var notes = extra
-        notes.append("ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path.")
+        if requestedBackend == "coreai" {
+            notes.append("Core AI accelerator placement is unverified. Neural Engine execution requires a correlated device trace; GPU and ANE utilization are not measured.")
+        } else {
+            notes.append("ANE is not used by the GGUF/llama.cpp runtime. ANE requires a Core ML / ANE-compatible runtime path.")
+        }
         if actualBackend == nil && actualOffloadedLayers == nil && requestedBackend == "metal" {
             notes.append("llama.cpp Metal offload has not been confirmed by runtime logs yet.")
         }
@@ -58,7 +72,7 @@ nonisolated struct RuntimeAccelerationDiagnostics: Codable, Sendable, Hashable {
             verification = "cpu_only"
         } else if actualBackend != nil || actualOffloadedLayers != nil || actualKQVOffload != nil {
             verification = "confirmed"
-        } else if requestedBackend == "metal" {
+        } else if requestedBackend == "metal" || requestedBackend == "coreai" {
             verification = "requested_unverified"
         } else {
             verification = "unavailable"

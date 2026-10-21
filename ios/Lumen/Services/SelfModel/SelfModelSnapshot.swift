@@ -124,8 +124,10 @@ nonisolated enum SelfModelSnapshotBuilder {
             ),
             agent: .init(
                 logicalIdentity: "lumen",
-                activeSlot: slot.rawValue,
-                availableSlots: LumenModelSlot.allCases.map(\.rawValue).sorted(),
+                activeSlot: selectedRuntime.runtime == .coreAI ? "assistant" : slot.rawValue,
+                availableSlots: selectedRuntime.runtime == .coreAI
+                    ? ["assistant"]
+                    : LumenModelSlot.allCases.map(\.rawValue).sorted(),
                 manifestCommit: manifestCommit,
                 fleetContractVersion: LumenModelSlotContract.fleetContractVersion
             ),
@@ -187,6 +189,8 @@ nonisolated enum SelfModelSnapshotBuilder {
             return .foundationModels
         case .coreML:
             return .coreML
+        case .coreAI:
+            return .coreAI
         case .llama:
             return .llamaGGUF
         case .deterministicFallback:

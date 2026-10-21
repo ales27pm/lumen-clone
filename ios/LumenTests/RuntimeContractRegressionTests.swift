@@ -439,7 +439,10 @@ struct StrictVsProductionFallbackTests {
         var errorMessages: [String] = []
         var sawFinalDelta = false
         var sawDone = false
-        for await event in SlotAgentService.shared.run(request, options: options) {
+        let stream = LegacyAgentRunOptions.$forceLegacyRuntimeForTesting.withValue(true) {
+            SlotAgentService.shared.run(request, options: options)
+        }
+        for await event in stream {
             switch event {
             case .error(let message):
                 errorMessages.append(message)

@@ -2,6 +2,16 @@ import Foundation
 import SwiftData
 
 nonisolated struct LegacyAgentRunOptions: @unchecked Sendable {
+    #if DEBUG
+    @TaskLocal static var forceLegacyRuntimeForTesting = false
+    #endif
+
+    static var usesUnifiedAssistant: Bool {
+        #if DEBUG
+        if forceLegacyRuntimeForTesting { return false }
+        #endif
+        return CoreAIGemmaModelStore.isEnabled
+    }
     nonisolated enum GroundingMode: Sendable, Equatable { case foregroundChat, headlessTrigger, slotAgent, rolePipeline }
 
     var modelContext: ModelContext?

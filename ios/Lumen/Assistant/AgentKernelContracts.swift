@@ -153,6 +153,7 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
     let forceModelBackedToolPlanning: Bool
     let structuredMode: AgentStructuredMode
     let structuredAllowedToolIDs: [String]
+    let allowsToolExecution: Bool
 
     init(
         allowHeavyRuntime: Bool,
@@ -167,7 +168,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         maxTokens: Int = 1024,
         forceModelBackedToolPlanning: Bool = false,
         structuredMode: AgentStructuredMode = .automatic,
-        structuredAllowedToolIDs: [String] = []
+        structuredAllowedToolIDs: [String] = [],
+        allowsToolExecution: Bool = true
     ) {
         self.allowHeavyRuntime = allowHeavyRuntime
         self.allowDegradedMode = allowDegradedMode
@@ -182,6 +184,7 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         self.forceModelBackedToolPlanning = forceModelBackedToolPlanning
         self.structuredMode = structuredMode
         self.structuredAllowedToolIDs = Array(Set(structuredAllowedToolIDs.map(ToolRouteGuard.canonicalToolID))).sorted()
+        self.allowsToolExecution = allowsToolExecution
     }
 
     init(from decoder: Decoder) throws {
@@ -199,7 +202,8 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
             maxTokens: try container.decodeIfPresent(Int.self, forKey: .maxTokens) ?? 1024,
             forceModelBackedToolPlanning: try container.decodeIfPresent(Bool.self, forKey: .forceModelBackedToolPlanning) ?? false,
             structuredMode: try container.decodeIfPresent(AgentStructuredMode.self, forKey: .structuredMode) ?? .automatic,
-            structuredAllowedToolIDs: try container.decodeIfPresent([String].self, forKey: .structuredAllowedToolIDs) ?? []
+            structuredAllowedToolIDs: try container.decodeIfPresent([String].self, forKey: .structuredAllowedToolIDs) ?? [],
+            allowsToolExecution: try container.decodeIfPresent(Bool.self, forKey: .allowsToolExecution) ?? true
         )
     }
 
@@ -217,6 +221,7 @@ nonisolated struct AgentKernelOptions: Codable, Sendable, Equatable {
         case forceModelBackedToolPlanning
         case structuredMode
         case structuredAllowedToolIDs
+        case allowsToolExecution
     }
 
     static let chat = AgentKernelOptions(

@@ -389,7 +389,7 @@ final class DeveloperConsoleModel {
         let firstToken = workflowEvents.compactMap(\.firstTokenLatencyMs).last
         let tps = workflowEvents.compactMap(\.tokensPerSecond).last
         let metalDevice = MTLCreateSystemDefaultDevice()
-        let acceleration = await AppLlamaService.shared.currentAccelerationDiagnostics()
+        let acceleration = await RuntimeAccelerationDiagnostics.forSelectedRuntime()
         let runtime = diagnosticsSnapshot?.runtime
 
         telemetry = DeveloperTelemetrySnapshot(
@@ -412,7 +412,7 @@ final class DeveloperConsoleModel {
             gpuMemoryMB: acceleration.actualGpuMemoryMB,
             coreMLAvailable: runtime?.coreMLAvailable == true,
             coreMLStatus: runtime?.coreMLStatus ?? "cached",
-            aneStatus: acceleration.aneUsedByCurrentRuntime == true ? "active" : (runtime?.coreMLAvailable == true ? "available for Core ML" : "unavailable"),
+            aneStatus: acceleration.backendRequested == "coreai" ? "unverified" : (acceleration.aneUsedByCurrentRuntime == true ? "active" : (runtime?.coreMLAvailable == true ? "available for Core ML" : "unavailable")),
             aneUtilizationPercent: acceleration.aneUtilizationPercent
         )
     }

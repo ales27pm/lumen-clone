@@ -179,6 +179,15 @@ enum ModelLoader {
     private static var embedLoadEpoch: UInt64 = 0
     private static var chatEpochRequestKey: RoleLoadRequestKey?
     private static var embedEpochRequestKey: RoleLoadRequestKey?
+    private static var coreAIChatLoadFailure: String?
+    private(set) static var memoryEmbeddingReadiness = "not_checked"
+
+    static var chatModelUnavailableMessage: String {
+        if CoreAIGemmaModelStore.isEnabled {
+            return coreAIChatLoadFailure ?? "Import a complete local Gemma folder in Settings, then try again."
+        }
+        return "No chat model is loaded. Open the Models tab, download a chat model, and tap Use to activate it."
+    }
 
     static func canStartModelLoad(intent: ModelLoadIntent) -> Bool {
         switch intent {
@@ -204,6 +213,7 @@ enum ModelLoader {
                 _ = await finishEmbedLoad(pending)
             }
         }
+        Task { await CoreAIGemmaService.shared.cancelAndWait() }
     }
 
     #if DEBUG
@@ -357,13 +367,13 @@ enum ModelLoader {
     /// Backward-compatible entry point. In v1 this registers all available chat
     /// assignments for on-demand slot loading instead of loading all contexts.
     @discardableResult
-    static func ensureChatLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat) async -> Bool {
-        await ensureFleetChatLoaded(snapshot: ModelLoadSnapshot(appState: appState, stored: stored), appState: appState, intent: intent)
+    static func ensureChatLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat, coreAISelected: Bool = CoreAIGemmaModelStore.isEnabled) async -> Bool {
+        await ensureFleetChatLoaded(snapshot: ModelLoadSnapshot(appState: appState, stored: stored), appState: appState, intent: intent, coreAISelected: coreAISelected)
     }
 
     @discardableResult
-    static func ensureChatLoaded(snapshot: ModelLoadSnapshot, intent: ModelLoadIntent = .userChat) async -> Bool {
-        await ensureFleetChatLoaded(snapshot: snapshot, appState: nil, intent: intent)
+    static func ensureChatLoaded(snapshot: ModelLoadSnapshot, intent: ModelLoadIntent = .userChat, coreAISelected: Bool = CoreAIGemmaModelStore.isEnabled) async -> Bool {
+        await ensureFleetChatLoaded(snapshot: snapshot, appState: nil, intent: intent, coreAISelected: coreAISelected)
     }
 
     @discardableResult
@@ -372,7 +382,31 @@ enum ModelLoader {
     }
 
     @discardableResult
-    private static func ensureFleetChatLoaded(snapshot: ModelLoadSnapshot, appState: AppState?, intent: ModelLoadIntent) async -> Bool {
+    private static func ensureFleetChatLoaded(snapshot: ModelLoadSnapshot, appState: AppState?, intent: ModelLoadIntent, coreAISelected: Bool = CoreAIGemmaModelStore.isEnabled) async -> Bool {
+        if coreAISelected {
+            coreAIChatLoadFailure = nil
+            // Registration, diagnostics and background work must never warm Gemma.
+            guard intent == .userChat || intent == .userVoice,
+                  canStartModelLoad(intent: intent) else { return false }
+            guard CoreAIGemmaService.isSupported else {
+                coreAIChatLoadFailure = "Core AI Gemma requires a supported physical device running iOS 27.2 or later."
+                return false
+            }
+            guard CoreAIGemmaModelStore.isConfigured else { return false }
+            if await CoreAIGemmaService.shared.isLoaded() {
+                await prepareSelectedMemoryEmbedding(snapshot: snapshot, intent: intent)
+                return !Task.isCancelled
+            }
+            do {
+                try await CoreAIGemmaService.shared.prepare()
+                await prepareSelectedMemoryEmbedding(snapshot: snapshot, intent: intent)
+                return !Task.isCancelled
+            } catch {
+                // A selected model failure is not permission to substitute another model.
+                coreAIChatLoadFailure = "Gemma could not load (\(RuntimeMetricErrorSanitizer.code(for: error))). Check the imported model in Settings."
+                return false
+            }
+        }
         let requestKey = RoleLoadRequestKey(snapshot: snapshot)
         let requestEpoch = registerChatRequest(requestKey)
         await Task.yield()
@@ -384,7 +418,7 @@ enum ModelLoader {
             _ = await finishChatLoad(pending)
             guard chatLoadEpoch == requestEpoch,
                   chatRequestIsCurrent(snapshot: snapshot, appState: appState) else { return false }
-            return await ensureFleetChatLoaded(snapshot: snapshot, appState: appState, intent: intent)
+            return await ensureFleetChatLoaded(snapshot: snapshot, appState: appState, intent: intent, coreAISelected: coreAISelected)
         }
         guard chatSelectionIsCompatible(snapshot: snapshot) else {
             if let pending = chatLoadTask {
@@ -536,6 +570,41 @@ enum ModelLoader {
     ) -> Bool {
         currentFamily == requestedFamily
             && selectionRemainsOwned(currentID: currentID, requestedID: requestedID, loadedID: loadedID)
+    }
+
+    /// Foreground Gemma keeps the user's selected semantic memory model independent
+    /// of the chat fleet. This never chooses a different model or downloads assets.
+    static func prepareSelectedMemoryEmbedding(snapshot: ModelLoadSnapshot, intent: ModelLoadIntent) async {
+        guard !Task.isCancelled, intent == .userChat || intent == .userVoice,
+              canStartModelLoad(intent: intent) else {
+            memoryEmbeddingReadiness = "resource_denied"
+            return
+        }
+        guard let selectedID = snapshot.activeEmbeddingModelID else {
+            let ready = await AppLlamaService.shared.hasSemanticEmbeddingRuntime
+            memoryEmbeddingReadiness = ready ? "ready" : "not_selected"
+            return
+        }
+        guard let model = snapshot.storedModels.first(where: { $0.id.uuidString == selectedID && $0.modelRole == .embedding }) else {
+            memoryEmbeddingReadiness = "selected_model_missing"
+            return
+        }
+        if await AppLlamaService.shared.loadedEmbedPath == model.resolvedPath,
+           await AppLlamaService.shared.hasSemanticEmbeddingRuntime {
+            memoryEmbeddingReadiness = "ready"
+            return
+        }
+        guard FileManager.default.fileExists(atPath: model.resolvedPath) else {
+            memoryEmbeddingReadiness = "selected_file_missing"
+            return
+        }
+        do {
+            try Task.checkCancellation()
+            try await AppLlamaService.shared.loadEmbeddingModel(path: model.resolvedPath)
+            memoryEmbeddingReadiness = "ready"
+        } catch {
+            memoryEmbeddingReadiness = "embedding_unavailable:\(RuntimeMetricErrorSanitizer.code(for: error))"
+        }
     }
 
     @discardableResult

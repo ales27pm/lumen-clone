@@ -476,7 +476,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             scripts: [[.text(#"{"final":"unsupported weather claim"}"#), .done]]
         )
         let kernel = AssistantKernel(
-            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
             toolRegistry: SecureToolRegistry(tools: [])
         )
         let request = structuredRequest(
@@ -519,7 +519,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             ]
         )
         let kernel = AssistantKernel(
-            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
             toolRegistry: SecureToolRegistry(tools: [StubWeatherTool()])
         )
         let correlation = AgentTraceCorrelation(
@@ -585,7 +585,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             ]
         )
         let kernel = AssistantKernel(
-            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
             toolRegistry: SecureToolRegistry(tools: [
                 StubMemoryTool(id: "memory.save", observation: "Memory saved."),
                 StubMemoryTool(id: "memory.recall", observation: "I prefer concise bullet points.")
@@ -632,7 +632,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             ]
         )
         let kernel = AssistantKernel(
-            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
             toolRegistry: SecureToolRegistry(tools: [StubWeatherTool(observation: #"{"kind":"unsafe"}"#)])
         )
         let correlation = AgentTraceCorrelation(
@@ -664,7 +664,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         defer { AgentBehaviorTraceRecorder.clear() }
         let service = ScriptedLlamaService(isChatLoaded: false, scripts: [])
         let kernel = AssistantKernel(
-            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
             toolRegistry: SecureToolRegistry(tools: [])
         )
         let correlation = AgentTraceCorrelation(
@@ -702,7 +702,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             loadsChatOnReadiness: true
         )
         let kernel = AssistantKernel(
-            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
             toolRegistry: SecureToolRegistry(tools: [])
         )
 
@@ -717,6 +717,62 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testRuntimeErrorTextCannotRepairIntoRequiredMemoryActions() async {
+        let runtimeFailures = [
+            "Generation error: Core AI Gemma is selected; llama chat is unavailable.",
+            "Generation error: Local inference failed.",
+            "Prompt exceeded context window before generation"
+        ]
+        for failure in runtimeFailures {
+            let service = ScriptedLlamaService(
+                isChatLoaded: true,
+                scripts: [[.text(failure), .done]]
+            )
+            let kernel = AssistantKernel(
+                router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
+                toolRegistry: SecureToolRegistry(tools: [
+                    StubMemoryTool(id: "memory.save", observation: "Memory saved."),
+                    StubMemoryTool(id: "memory.recall", observation: "I prefer concise bullet points.")
+                ])
+            )
+            var toolInvocations = 0
+            var toolResults = 0
+            var errors = 0
+            for await event in kernel.run(structuredRequest(
+                "Remember that I prefer concise bullet points, then tell me what you remembered.",
+                allowedToolIDs: ["memory.save", "memory.recall"]
+            )) {
+                if case .toolInvocation = event { toolInvocations += 1 }
+                if case .toolResult = event { toolResults += 1 }
+                if case .error = event { errors += 1 }
+            }
+            let callOrder = await service.callOrder
+            XCTAssertEqual(callOrder, ["readiness", "preflight", "stream"])
+            XCTAssertEqual(errors, 1)
+            XCTAssertEqual(toolInvocations, 0)
+            XCTAssertEqual(toolResults, 0)
+        }
+    }
+
+    func testModelFinalMayDiscussRuntimeErrorWordingWithoutBecomingHostFailure() async {
+        let service = ScriptedLlamaService(
+            isChatLoaded: true,
+            scripts: [[.text(#"{"final":"The phrase Generation error: describes a runtime failure."}"#), .done]]
+        )
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [])
+        )
+        var finalText = ""
+        var errors = 0
+        for await event in kernel.run(structuredRequest("Explain runtime error wording.", allowedToolIDs: [])) {
+            if case .final(let text) = event { finalText = text }
+            if case .error = event { errors += 1 }
+        }
+        XCTAssertEqual(finalText, "The phrase Generation error: describes a runtime failure.")
+        XCTAssertEqual(errors, 0)
+    }
+
     func testPlausibleToolRequiredFinalRetriesActionBeforeAnswering() async {
         #if DEBUG
         let service = ScriptedLlamaService(
@@ -728,7 +784,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
             ]
         )
         let kernel = AssistantKernel(
-            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false),
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
             toolRegistry: SecureToolRegistry(tools: [StubWeatherTool()])
         )
 
@@ -1188,7 +1244,8 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         XCTAssertTrue(source.contains("AgentBehaviorTraceEmitter.recordModelTurn"))
         XCTAssertTrue(source.contains("correlation: request.traceCorrelation"))
         XCTAssertTrue(source.contains("stage: \"agent-json-step-\\(stepIndex)\""))
-        XCTAssertTrue(source.contains("runtimePath: \"agent-model\""))
+        XCTAssertTrue(source.contains("runtimePath: diagnostics.selectedRuntime == AssistantRuntimeKind.coreAI.rawValue"))
+        XCTAssertTrue(source.contains("AssistantRuntimeKind.coreAI.rawValue : \"agent-model\""))
         XCTAssertTrue(source.contains("selectedToolID: turn.action.map"))
         XCTAssertTrue(source.contains("allowedToolIDs: availableTools.map"))
         XCTAssertTrue(source.contains("parseError: turn.parseError?.rawValue"))

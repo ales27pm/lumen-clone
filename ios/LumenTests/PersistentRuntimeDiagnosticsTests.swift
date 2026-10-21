@@ -557,7 +557,7 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         let before = AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration)
         let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
 
-        for await _ in SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true, allowDeterministicCompatibility: false)) {}
+        for await _ in legacySlotAgentStream(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true, allowDeterministicCompatibility: false)) {}
         try? await Task.sleep(nanoseconds: 50_000_000)
 
         XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration), before)
@@ -571,7 +571,7 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         AppCancellationBus.shared.cancel(.chatGeneration)
         let before = AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration)
         let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
-        let stream = SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true))
+        let stream = legacySlotAgentStream(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true))
         XCTAssertGreaterThanOrEqual(AppCancellationBus.shared.activeRegistrationCount(category: .chatGeneration), before)
         let task = Task {
             for await _ in stream {}
@@ -597,7 +597,7 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         defer { PersistentRuntimeDiagnosticsObserver.shared.removeObserver(observerID) }
         let request = AgentRequest(systemPrompt: "diagnostic", history: [], userMessage: "Search the web for SwiftData cancellation patterns", temperature: 0, topP: 1, repetitionPenalty: 1, maxTokens: 64, maxSteps: 2, availableTools: ToolRegistry.all.filter { $0.id.hasPrefix("web.") }, relevantMemories: [], conversationID: UUID(), turnID: UUID())
 
-        for await _ in SlotAgentService.shared.run(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true, allowDeterministicCompatibility: false)) {}
+        for await _ in legacySlotAgentStream(request, options: .init(modelContext: nil, conversationID: request.conversationID, turnID: request.turnID, groundingMode: .slotAgent, allowDegradedGrounding: true, preventDoubleGrounding: true, diagnosticsEnabled: true, allowDeterministicCompatibility: false)) {}
 
         let kinds = capturedKinds.snapshot()
         XCTAssertTrue(kinds.contains(.slotAgentGroundingComplete))
@@ -827,6 +827,17 @@ final class PersistentRuntimeDiagnosticsTests: XCTestCase {
         )
     }
 
+
+    @MainActor
+    private func legacySlotAgentStream(_ request: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
+        #if DEBUG
+        return LegacyAgentRunOptions.$forceLegacyRuntimeForTesting.withValue(true) {
+            SlotAgentService.shared.run(request, options: options)
+        }
+        #else
+        return SlotAgentService.shared.run(request, options: options)
+        #endif
+    }
 
     private func makeStore() throws -> PersistentRuntimeDiagnosticsStore {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

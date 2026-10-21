@@ -65,8 +65,8 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         }
     }
 
-    func testDefaultRouterSelectsLiveLlamaWhenHeavyRuntimeAllowed() {
-        let router = AssistantRuntimeRouter()
+    func testRouterSelectsLiveLlamaWhenGemmaDisabledAndHeavyRuntimeAllowed() {
+        let router = AssistantRuntimeRouter(coreAI: .disabled)
         let context = AssistantTurnContext(
             task: .chat,
             input: "hello",
@@ -83,7 +83,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
             isChatLoaded: true,
             tokens: [.text(#"{"action":{"tool":"device.status","args":{}}}"#), .done]
         )
-        let kernel = AssistantKernel(router: AssistantRuntimeRouter(llamaService: service))
+        let kernel = AssistantKernel(router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled))
         let request = GenerateRequest(
             systemPrompt: "Return JSON.",
             history: [],
@@ -110,7 +110,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil, generateHandler: { _ in
             throw LocalRuntimeError.unavailable("controlled no loaded chat model")
         })
-        let router = AssistantRuntimeRouter(llama: adapter)
+        let router = AssistantRuntimeRouter(llama: adapter, coreAI: .disabled)
         let kernel = AssistantKernel(router: router)
         let context = AssistantTurnContext(
             task: .chat,
@@ -138,7 +138,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
         let adapter = LlamaRuntimeAdapter(isAvailable: true, unavailableReason: nil, generateHandler: { _ in
             throw LocalRuntimeError.unavailable("controlled no loaded chat model")
         })
-        let router = AssistantRuntimeRouter(llama: adapter)
+        let router = AssistantRuntimeRouter(llama: adapter, coreAI: .disabled)
         let kernel = AssistantKernel(router: router, metricsStore: RuntimeMetricsStore(fileURL: metricsURL))
         let context = AssistantTurnContext(
             task: .chat,
@@ -171,6 +171,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
 
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { _ in "should not run" }),
+            coreAI: .disabled,
             allowDiagnosticFallbackSelection: false
         )
         let kernel = AssistantKernel(router: router, metricsStore: RuntimeMetricsStore(fileURL: metricsURL))
@@ -254,7 +255,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
             embedding: [1.0]
         )
         let adapter = LlamaRuntimeAdapter.live(service: service)
-        let matrix = await AssistantRuntimeCapabilityMatrix.currentIncludingRuntimeState(llama: adapter)
+        let matrix = await AssistantRuntimeCapabilityMatrix.currentIncludingRuntimeState(llama: adapter, coreAI: .disabled)
         let llama = matrix.row(for: .llama)
 
         XCTAssertEqual(llama?.embeddingSupported, true)
@@ -272,7 +273,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
             isEmbedLoaded: true,
             embedding: [0.1, 0.2]
         )
-        let router = AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false)
+        let router = AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false)
         let kernel = AssistantKernel(router: router, metricsStore: RuntimeMetricsStore(fileURL: metricsURL))
         let context = AssistantTurnContext(
             task: .embedding,
@@ -301,7 +302,7 @@ final class AssistantKernelLlamaRuntimeAdapterTests: XCTestCase {
             embeddingModelIdentifier: "llama:sha256:atomic-stub"
         )
         let kernel = AssistantKernel(
-            router: AssistantRuntimeRouter(llamaService: service, allowDiagnosticFallbackSelection: false)
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false)
         )
         let context = AssistantTurnContext(
             task: .embedding,

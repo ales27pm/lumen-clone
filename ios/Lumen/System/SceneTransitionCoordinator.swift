@@ -80,6 +80,7 @@ final class SceneTransitionCoordinator {
         AppCancellationBus.shared.markCancellationRequested(reason)
         AppCancellationBus.shared.cancelAllSceneSensitiveDeferred(priority: .utility)
         Task.detached(priority: .userInitiated) {
+            await CoreAIGemmaService.shared.cancelAndWait()
             await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
         }
         scheduleDeferredSceneCleanup(reason: reason)

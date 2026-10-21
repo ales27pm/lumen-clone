@@ -120,7 +120,7 @@ final class ScenePhaseCancellationTests: XCTestCase {
 
         RuntimeLifecycleCanceller.cancelForSceneTransition(reason: "test")
 
-        let loaded = await ModelLoader.ensureChatLoaded(appState: appState, stored: [stored], intent: .userChat)
+        let loaded = await ModelLoader.ensureChatLoaded(appState: appState, stored: [stored], intent: .userChat, coreAISelected: false)
         XCTAssertFalse(loaded)
         XCTAssertFalse(ModelLoader.hasActiveChatLoadTaskForTesting)
     }

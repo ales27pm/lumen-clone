@@ -108,35 +108,47 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
         llama: LlamaRuntimeAdapter = .live(),
         fallback: DeterministicFallbackRuntime = .init(),
         coreML: CoreMLRuntimeAdapter = .init(modelURL: nil),
+        coreAI: CoreAIGemmaRuntimeAdapter = .init(),
         llamaEmbeddingSelectableOverride: Bool? = nil
     ) -> AssistantRuntimeCapabilityMatrix {
         let llamaEmbeddingSelectable = llamaEmbeddingSelectableOverride ?? llama.hasKnownSelectableEmbeddingRuntime
         return AssistantRuntimeCapabilityMatrix(rows: [
             AssistantRuntimeCapabilityRow(
-                kind: foundation.kind,
-                generationSupported: foundation.supportsGeneration,
-                generationSelectable: foundation.supportsGeneration && foundation.isAvailable,
+                kind: coreAI.kind,
+                generationSupported: CoreAIGemmaService.isSupported,
+                generationSelectable: coreAI.isPreferred && coreAI.isAvailable,
                 embeddingSupported: false,
                 embeddingSelectable: false,
-                status: foundation.availabilityStatus,
+                status: !coreAI.isPreferred ? "disabled" : (coreAI.isAvailable ? "configured; loads on user request" : "unavailable"),
+                unavailableReason: coreAI.unavailableReason
+            ),
+            AssistantRuntimeCapabilityRow(
+                kind: foundation.kind,
+                generationSupported: foundation.supportsGeneration,
+                generationSelectable: foundation.supportsGeneration && foundation.isAvailable && !coreAI.isPreferred,
+                embeddingSupported: false,
+                embeddingSelectable: false,
+                status: coreAI.isPreferred ? "generation inactive while Gemma is selected" : foundation.availabilityStatus,
                 unavailableReason: foundation.unavailableReason
             ),
             AssistantRuntimeCapabilityRow(
                 kind: llama.kind,
                 generationSupported: true,
-                generationSelectable: llama.isAvailable,
+                generationSelectable: llama.isAvailable && !coreAI.isPreferred,
                 embeddingSupported: llama.supportsEmbeddings,
                 embeddingSelectable: llamaEmbeddingSelectable,
-                status: llama.capabilityStatus(embeddingSelectable: llamaEmbeddingSelectable),
+                status: coreAI.isPreferred
+                    ? "Generation reserved for Gemma; semantic embeddings \(llamaEmbeddingSelectable ? "available" : "unavailable")"
+                    : llama.capabilityStatus(embeddingSelectable: llamaEmbeddingSelectable),
                 unavailableReason: llama.unavailableReason
             ),
             AssistantRuntimeCapabilityRow(
                 kind: fallback.kind,
                 generationSupported: fallback.isAvailable,
-                generationSelectable: fallback.isAvailable,
+                generationSelectable: fallback.isAvailable && !coreAI.isPreferred,
                 embeddingSupported: false,
                 embeddingSelectable: false,
-                status: fallback.availabilityStatus,
+                status: coreAI.isPreferred ? "diagnostic generation inactive while Gemma is selected" : fallback.availabilityStatus,
                 unavailableReason: fallback.unavailableReason
             ),
             AssistantRuntimeCapabilityRow(
@@ -155,7 +167,8 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
         foundation: FoundationModelsRuntimeAdapter = .init(),
         llama: LlamaRuntimeAdapter = .live(),
         fallback: DeterministicFallbackRuntime = .init(),
-        coreML: CoreMLRuntimeAdapter = .init(modelURL: nil)
+        coreML: CoreMLRuntimeAdapter = .init(modelURL: nil),
+        coreAI: CoreAIGemmaRuntimeAdapter = .init()
     ) async -> AssistantRuntimeCapabilityMatrix {
         let llamaEmbeddingSelectable = await llama.isEmbeddingSelectable()
         return current(
@@ -163,6 +176,7 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
             llama: llama,
             fallback: fallback,
             coreML: coreML,
+            coreAI: coreAI,
             llamaEmbeddingSelectableOverride: llamaEmbeddingSelectable
         )
     }

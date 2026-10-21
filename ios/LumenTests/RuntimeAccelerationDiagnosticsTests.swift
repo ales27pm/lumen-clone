@@ -3,6 +3,17 @@ import Testing
 @testable import Lumen
 
 struct RuntimeAccelerationDiagnosticsTests {
+    @Test func coreAISelectionDoesNotClaimMeasuredAcceleratorExecution() {
+        let diagnostics = RuntimeAccelerationDiagnostics.forCurrentRuntime(
+            requestedBackend: "coreai", requestedGpuLayers: nil, requestedKQVOffload: nil
+        )
+        #expect(diagnostics.verificationLevel == "requested_unverified")
+        #expect(diagnostics.actualBackend == nil)
+        #expect(diagnostics.aneUtilizationPercent == nil)
+        #expect(diagnostics.actualGpuUtilizationPercent == nil)
+        #expect(diagnostics.notes.contains { $0.contains("placement is unverified") })
+        #expect(!diagnostics.notes.contains { $0.contains("ANE is not used") })
+    }
     @Test func codableRoundTrip() throws {
         let input = RuntimeAccelerationDiagnostics.forCurrentRuntime(requestedBackend: "metal", requestedGpuLayers: 999, requestedKQVOffload: true)
         let encoder = JSONEncoder()

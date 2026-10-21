@@ -610,7 +610,8 @@ struct LumenFleetTests {
 
         _ = await ModelLoader.ensureChatLoaded(
             snapshot: ModelLoadSnapshot(appState: appState, stored: [sharedBase, exactExecutorAdapter]),
-            intent: .appStartup
+            intent: .appStartup,
+            coreAISelected: false
         )
 
         let assignment = await SlotModelRuntimeCoordinator.shared.assignment(for: .executor)

@@ -54,6 +54,11 @@ final class IntentClassifierService: Sendable {
             return IntentClarificationPolicy.apply(result, to: text)
         }
         let deterministic = DeterministicIntentFallback.classify(text)
+        if CoreAIGemmaModelStore.isEnabled {
+            // Gemma owns model-authored decisions. Deterministic host routing still
+            // bounds tool visibility without loading a second learned classifier.
+            return IntentClarificationPolicy.apply(deterministic, to: text)
+        }
         let modelResult = await BundledIntentClassifier.shared.classify(text)
         let resolved = IntentClassifierPolicy.resolve(modelResult: modelResult, deterministic: deterministic)
         return IntentClarificationPolicy.apply(resolved, to: text)

@@ -3,6 +3,7 @@ import Foundation
 enum AssistantRuntimeKind: String, Sendable {
     case foundationModels
     case coreML
+    case coreAI
     case llama
     case deterministicFallback
     case unavailable

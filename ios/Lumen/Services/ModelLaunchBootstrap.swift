@@ -61,6 +61,14 @@ enum ModelLaunchBootstrap {
     private static let storageSafetyBufferBytes: Int64 = 500_000_000
 
     static func ensureFleetDownloaded(appState: AppState, context: ModelContext) async {
+        if CoreAIGemmaModelStore.isEnabled {
+            appState.runtime.updateBootStep(
+                id: "models",
+                detail: CoreAIGemmaModelStore.isConfigured ? "Local Gemma imported; loads on request" : "Import a local Gemma folder in Settings",
+                state: CoreAIGemmaModelStore.isConfigured ? .complete : .warning
+            )
+            return
+        }
         guard appState.autoDownloadFleetModels else {
             appState.runtime.updateBootStep(id: "models", detail: "Fleet auto-download disabled", state: .warning)
             await linkExistingFleetFiles(appState: appState, context: context)
@@ -284,6 +292,11 @@ enum ModelLaunchBootstrap {
     }
 
     static func prepareLiveRuntimeArtifacts(appState: AppState, context: ModelContext, timeoutSeconds: TimeInterval = 300) async -> Bool {
+        if CoreAIGemmaModelStore.isEnabled {
+            // Artifact presence is not load or inference evidence. The kernel performs
+            // integrity, graph and resource preflight only for an explicit foreground run.
+            return CoreAIGemmaService.isSupported && CoreAIGemmaModelStore.isConfigured
+        }
         let family = LumenModelFamily.persistedSelected
         let models = liveRuntimeModelsForInstall(family: family)
         guard !models.isEmpty else {
@@ -452,6 +465,16 @@ enum ModelLaunchBootstrap {
     }
 
     static func liveRuntimeArtifactReadinessDetails(context: ModelContext, family: LumenModelFamily = LumenModelFamily.persistedSelected) async -> LiveRuntimeArtifactReadiness {
+        if CoreAIGemmaModelStore.isEnabled {
+            let imported = CoreAIGemmaModelStore.isConfigured
+            return LiveRuntimeArtifactReadiness(
+                ready: imported ? 1 : 0,
+                required: 1,
+                missingAdapterSlots: [],
+                missingArtifactFileNames: imported ? [] : ["Gemma local bundle"],
+                diagnostic: imported ? nil : "coreai_model_not_imported"
+            )
+        }
         let models = liveRuntimeModelsForInstall(family: family)
         guard let stored = fetchStoredModels(context: context, operation: "liveRuntimeArtifactReadinessDetails") else {
             return LiveRuntimeArtifactReadiness(

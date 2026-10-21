@@ -83,10 +83,14 @@ enum HeadlessAgentKernelRunner {
         source: AgentKernelSource = .appIntent
     ) async -> (text: String, steps: [AgentStep]) {
         let stored: [StoredModel]
-        do {
-            stored = try fetchStoredModels(context: context)
-        } catch {
-            return (storedModelFetchFailureMessage(error: error), [])
+        if CoreAIGemmaModelStore.isEnabled {
+            stored = []
+        } else {
+            do {
+                stored = try fetchStoredModels(context: context)
+            } catch {
+                return (storedModelFetchFailureMessage(error: error), [])
+            }
         }
         let fleet = LumenModelFleetResolver.resolveV1(appState: appState, storedModels: stored)
         let result = await runWithOutcome(
@@ -125,13 +129,17 @@ enum HeadlessAgentKernelRunner {
         source: AgentKernelSource = .trigger
     ) async -> HeadlessAgentRunResult {
         let stored: [StoredModel]
-        do {
-            stored = try fetchStoredModels(context: context)
-        } catch {
-            return .failed(
-                text: storedModelFetchFailureMessage(error: error),
-                code: "model_catalog_fetch_failed"
-            )
+        if CoreAIGemmaModelStore.isEnabled {
+            stored = []
+        } else {
+            do {
+                stored = try fetchStoredModels(context: context)
+            } catch {
+                return .failed(
+                    text: storedModelFetchFailureMessage(error: error),
+                    code: "model_catalog_fetch_failed"
+                )
+            }
         }
         let fleet = LumenModelFleetResolver.resolveV1(settings: settings, storedModels: stored)
         return await runWithOutcome(
@@ -258,9 +266,20 @@ enum HeadlessAgentKernelRunner {
             return nonRunnableResult
         }
         let canRunBackgroundToolOnly = backgroundToolAssessment?.canRunWithoutLoadedTextRuntime ?? false
-        let chatRuntimeLoaded = source == .trigger ? await AppLlamaService.shared.isChatLoaded : true
+        let chatRuntimeLoaded: Bool
+        if source == .trigger {
+            chatRuntimeLoaded = CoreAIGemmaModelStore.isEnabled ? false : await AppLlamaService.shared.isChatLoaded
+        } else {
+            chatRuntimeLoaded = true
+        }
         guard !cancellationToken.isCancelled, !Task.isCancelled else { return .cancelled(steps: []) }
         if source == .trigger, !canRunBackgroundToolOnly {
+            if CoreAIGemmaModelStore.isEnabled {
+                return .deferred(
+                    text: Self.backgroundSkipMessage(backgroundToolAssessment?.skipMessage, fallback: "Gemma generation requires the foreground app; no alternate model was started."),
+                    code: "gemma_foreground_required"
+                )
+            }
             let toolSkipMessage = backgroundToolAssessment?.skipMessage
             if !heavyModelAllowed {
                 return .deferred(
@@ -288,7 +307,10 @@ enum HeadlessAgentKernelRunner {
             temperature: settings.temperature,
             topP: settings.topP,
             repetitionPenalty: settings.repetitionPenalty,
-            maxTokens: source == .trigger ? min(settings.maxTokens, 256) : min(settings.maxTokens, 500)
+            maxTokens: source == .trigger ? min(settings.maxTokens, 256) : min(settings.maxTokens, 500),
+            forceModelBackedToolPlanning: CoreAIGemmaModelStore.isEnabled && source != .trigger,
+            structuredMode: CoreAIGemmaModelStore.isEnabled && settings.agentModeEnabled && source != .trigger ? .requiredAgentJSON : .automatic,
+            allowsToolExecution: settings.agentModeEnabled
         )
         let request = AgentKernelRequest(
             userMessage: executionPrompt,
@@ -309,6 +331,7 @@ enum HeadlessAgentKernelRunner {
         var kernelFailure: String?
         for await event in AssistantKernel.shared.run(request, modelContext: context) {
             if cancellationToken.isCancelled || Task.isCancelled {
+                await CoreAIGemmaService.shared.cancelAndWait()
                 await AppLlamaService.shared.cancelActiveGeneration(reason: cancellationToken.reason ?? "headless-agent-cancelled")
                 break
             }
@@ -379,12 +402,14 @@ enum HeadlessAgentKernelRunner {
             let reason = AppCancellationBus.shared.lastCancellationReason ?? "headless-agent-cancelled"
             token.cancel(reason: reason)
             Task.detached(priority: .userInitiated) {
+                await CoreAIGemmaService.shared.cancelAndWait()
                 await AppLlamaService.shared.cancelActiveGeneration(reason: reason)
             }
         }, category: .chatGeneration)
     }
 
     private static func composedSystemPrompt(basePrompt: String, fleetSnapshot: LumenModelFleetSnapshot, mimicry: MimicryProfile) -> String {
+        if CoreAIGemmaModelStore.isEnabled { return unifiedSystemPrompt(basePrompt: basePrompt, style: mimicry) }
         let trimmedBasePrompt = basePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let contracts = LumenModelSlotContract.all
             .filter { $0.slot != .embedding }
@@ -442,6 +467,19 @@ enum HeadlessAgentKernelRunner {
         \(trimmedBasePrompt)
 
         \(fleetPrompt)
+        """
+    }
+
+    static func unifiedSystemPrompt(basePrompt: String, style: MimicryProfile) -> String {
+        let rules = style.constraints.map { "- \($0)" }.joined(separator: "\n")
+        return """
+        \(CoreAIGemmaRuntimeAdapter.unifiedAssistantInstruction)
+
+        Application context:
+        \(basePrompt.trimmingCharacters(in: .whitespacesAndNewlines))
+
+        Response style: \(style.style). User state: \(style.state).
+        \(rules)
         """
     }
 

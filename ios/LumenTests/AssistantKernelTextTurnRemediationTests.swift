@@ -30,7 +30,7 @@ final class AssistantKernelTextTurnRemediationTests: XCTestCase {
     }
 
     func testRunTextTurnDoesNotSelectUnwiredLlamaMarkedAvailable() async throws {
-        let router = AssistantRuntimeRouter(llama: .init(isAvailable: true, unavailableReason: nil))
+        let router = AssistantRuntimeRouter(llama: .init(isAvailable: true, unavailableReason: nil), coreAI: .disabled)
         let kernel = AssistantKernel(router: router)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
 
@@ -44,7 +44,8 @@ final class AssistantKernelTextTurnRemediationTests: XCTestCase {
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { request in
                 "wired: \(request.prompt)"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
@@ -71,7 +72,8 @@ final class AssistantKernelTextTurnRemediationTests: XCTestCase {
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { request in
                 "model output for \(request.prompt)"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let context = AssistantTurnContext(

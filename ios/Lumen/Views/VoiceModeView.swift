@@ -7,6 +7,7 @@ struct VoiceModeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("coreai.gemma.enabled") private var usesGemma = true
     @State private var session = VoiceSessionController()
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Conversation.updatedAt, order: .reverse) private var conversations: [Conversation]
@@ -59,6 +60,11 @@ struct VoiceModeView: View {
                     .padding(.horizontal, 40)
 
                 VStack(spacing: 10) {
+                    if usesGemma {
+                        Text("Gemma 4 E2B")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
                     Text(statusTitle)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Theme.textPrimary)
@@ -272,7 +278,7 @@ struct VoiceModeView: View {
             convo.messages.append(userMsg)
             guard await ensureChatModelLoaded() else {
                 guard activeVoiceTurnID == turnID else { return }
-                let fallback = "No chat model is loaded. Open the Models tab, download a chat model, and tap Use to activate it."
+                let fallback = ModelLoader.chatModelUnavailableMessage
                 responseText = fallback
                 finishedStreaming = true
                 speakPending(turnID: turnID)

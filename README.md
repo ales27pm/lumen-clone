@@ -4,6 +4,14 @@ Lumen is an iOS app with on-device assistant runtime, tool routing, diagnostics,
 runtime-audit exports, and local pipeline tooling for manifest, dataset, and
 validation workflows.
 
+Lumen now targets iOS 27.2. Core AI Gemma is the default foreground engine:
+import a complete local Gemma 4 E2B Core AI export in Settings → Local Gemma.
+Disable “Use Gemma by default” to select the existing llama runtime. Model
+weights are supplied separately. See [Core AI setup and validation](docs/COREAI_GEMMA.md).
+In Gemma mode, one generative assistant handles chat and tools; embeddings remain
+separate for local memory retrieval. [Core AI embedding research](docs/COREAI_EMBEDDING_RESEARCH.md)
+records the verified community candidate and the remaining integration/device gaps.
+
 ## Repository Layout
 
 - `ios/Lumen/`: iOS app source.

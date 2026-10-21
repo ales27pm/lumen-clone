@@ -2,31 +2,31 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `bb165dacf35c5fad4a8f294758530333861686f0`
-- Working-tree digest: `76bf928b63b7f0d7cdf14c249c774e8ec38120b4ae467bd747a094f2e17253f6`
+- Base commit: `b8276064fb3fcbca8cbeed6a6a5394e767f2b00f`
+- Working-tree digest: `813a5ca7494917264a81469526ec976e7f922fddb1840d6daaf195ebf1cbf98b`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `864`
+- Codebase-home records: `880`
 
 ## Top Modules
-- `ios/LumenTests`: 174 files
+- `ios/LumenTests`: 180 files
 - `Services`: 67 files
-- `docs`: 60 files
+- `docs`: 62 files
 - `tools/fine_tuning/unsloth`: 54 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 48 files
 - `tools/lumen_manifest_crawler/tests`: 40 files
-- `Views`: 34 files
-- `Assistant`: 30 files
+- `Views`: 36 files
+- `Assistant`: 31 files
 - `scripts`: 25 files
-- `Services/LLM`: 22 files
+- `Services/LLM`: 23 files
 - `Diagnostics`: 21 files
 - `System`: 17 files
+- `tools`: 17 files
 - `Models`: 16 files
-- `tools`: 16 files
 - `Tools`: 15 files
+- `tools/pipeline/tests`: 15 files
 - `Services/AgentGrounding`: 14 files
 - `Services/Tools`: 14 files
-- `tools/pipeline/tests`: 14 files
 - `Tools/Builtin`: 12 files
 - `RAG`: 10 files
 - `repo`: 10 files
@@ -54,7 +54,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/AgentKernelRunOptions.swift` (Assistant): `ios/Lumen/Assistant/AgentKernelRunOptions.swift` owns AgentKernelRunOptions behavior and defines: AgentKernelRunOptions, GroundingMode, LegacyAgentRunOptions, modelContext, conversationID, turnID, groundingMode, allowDe Symbols: AgentKernelRunOptions, GroundingMode, LegacyAgentRunOptions, modelContext, conversationID, turnID, groundingMode, allowDegradedGrounding.
 - `ios/Lumen/Assistant/AssistantGroundingContext.swift` (Assistant): `ios/Lumen/Assistant/AssistantGroundingContext.swift` owns AssistantGroundingContext behavior and defines: AssistantGroundingContext, memoryCount, ragCount, toolCount, estimatedChars, estimatedTokens, contextProfile, max Symbols: AssistantGroundingContext, memoryCount, ragCount, toolCount, estimatedChars, estimatedTokens, contextProfile, maxInputTokens.
 - `ios/Lumen/Assistant/AssistantKernel+Streaming.swift` (Assistant): `ios/Lumen/Assistant/AssistantKernel+Streaming.swift` owns AssistantKernel+Streaming behavior and defines: AssistantKernel, NativeToolTurnOutcome, AgentKernelRequest, run, emitStep, runLegacyAgentBridge, runNativeToolTur Symbols: AssistantKernel, NativeToolTurnOutcome, AgentKernelRequest, run, emitStep, runLegacyAgentBridge, runNativeToolTurn, recordPolicyFirstFinal.
-- `ios/Lumen/Assistant/AssistantKernel.swift` (Assistant): `ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, streamStructuredLlama, takeCompletedStructuredLlamaTrace, prepar Symbols: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, streamStructuredLlama, takeCompletedStructuredLlamaTrace, prepareStructuredLlamaRuntime, preflightStructuredLlamaPrompt.
+- `ios/Lumen/Assistant/AssistantKernel.swift` (Assistant): `ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, runAdaptedLegacyRequest, adaptLegacyRequest, streamStructuredLla Symbols: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, runAdaptedLegacyRequest, adaptLegacyRequest, streamStructuredLlama, takeCompletedStructuredLlamaTrace.
 - `ios/Lumen/Assistant/AssistantRuntimeAdapters.swift` (Assistant): `ios/Lumen/Assistant/AssistantRuntimeAdapters.swift` owns AssistantRuntimeAdapters behavior and defines: LocalRuntimeError, LlamaRuntimeStreamingService, LlamaStructuredPromptPreflightSnapshot, AppLlamaService, CoreMLRun Symbols: LocalRuntimeError, LlamaRuntimeStreamingService, LlamaStructuredPromptPreflightSnapshot, AppLlamaService, CoreMLRuntimeError, AssistantRuntimeCapabilityRow, AssistantRuntimeCapabilityMatrix, DeterministicFallbackRuntime.
 - `ios/Lumen/Assistant/AssistantRuntimeProtocols.swift` (Assistant): `ios/Lumen/Assistant/AssistantRuntimeProtocols.swift` owns AssistantRuntimeProtocols behavior and defines: AssistantRuntimeKind, TextGenerationRequest, EmbeddingRequest, EmbeddingRuntimeResult, RuntimeHealthReporting, Ru Symbols: AssistantRuntimeKind, TextGenerationRequest, EmbeddingRequest, EmbeddingRuntimeResult, RuntimeHealthReporting, RuntimeMemoryPressureHandling, LocalTextGenerationRuntime, LocalEmbeddingRuntime.
 - `ios/Lumen/Assistant/AssistantRuntimeRouter.swift` (Assistant): `ios/Lumen/Assistant/AssistantRuntimeRouter.swift` owns AssistantRuntimeRouter behavior and defines: AssistantRuntimeRouter, Selection, embeddingSelection, selection, selectionIncludingRuntimeState, runtime, foundation,  Symbols: AssistantRuntimeRouter, Selection, embeddingSelection, selection, selectionIncludingRuntimeState, runtime, foundation, llama.
@@ -62,9 +62,10 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/BackgroundToolExecutionPolicy.swift` (Assistant): `ios/Lumen/Assistant/BackgroundToolExecutionPolicy.swift` owns BackgroundToolExecutionPolicy behavior and defines: BackgroundToolExecutionAssessment, Status, BackgroundToolExecutionPolicy, sortedCanonicalIDs, assess, ava Symbols: BackgroundToolExecutionAssessment, Status, BackgroundToolExecutionPolicy, sortedCanonicalIDs, assess, availableTools, canRunWithoutLoadedTextRuntime, status.
 - `ios/Lumen/Assistant/ContextBudgetAllocator.swift` (Assistant): `ios/Lumen/Assistant/ContextBudgetAllocator.swift` owns ContextBudgetAllocator behavior and defines: ContextBudgetTokenSections, ContextBudgetSections, ContextPolicyProfile, ContextBudgetPlan, ContextBudgetAllocator, all Symbols: ContextBudgetTokenSections, ContextBudgetSections, ContextPolicyProfile, ContextBudgetPlan, ContextBudgetAllocator, allocate, profile, estimateTokens.
 - `ios/Lumen/Assistant/ContextQueryRewriter.swift` (Assistant): `ios/Lumen/Assistant/ContextQueryRewriter.swift` owns ContextQueryRewriter behavior and defines: ContextQueryRewriteResult, ContextQueryRewriter, rewrite, addTerms, normalized, salientTerms, bounded, query, addedTerms, e Symbols: ContextQueryRewriteResult, ContextQueryRewriter, rewrite, addTerms, normalized, salientTerms, bounded, query.
+- `ios/Lumen/Assistant/CoreAIGemmaRuntimeAdapter.swift` (Assistant): Adapts the single Core AI owner to the existing kernel. The model only emits text; structured decisions still cross the kernel's schema and approval gates. Symbols: CoreAIGemmaRuntimeAdapter, generate, prepareStructuredRuntime, structuredPromptPreflight, streamStructured, handleMemoryPressure, requireAvailable, liveContextCapacity.
 - `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` (Assistant): `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` owns HeadlessAgentKernelRunner behavior and defines: HeadlessAgentRunResult, Status, IssueCategory, HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, complet Symbols: HeadlessAgentRunResult, Status, IssueCategory, HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, completed, deferred, blocked.
 - `ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift` (Assistant): Explicit Agent Kernel compatibility boundary for legacy agent services. Symbols: LegacyAgentCompatibilityBridge, AgentEvent, runLegacyAgentService, runSlotAgentKernelCompatibility, runSlotAgentCompatibility, task, agentKernelEvent.
-- `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` (Assistant): `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, scenarioID, e2eRunID, agentRunID, groundingMo Symbols: LegacyAgentRunOptions, GroundingMode, modelContext, conversationID, turnID, scenarioID, e2eRunID, agentRunID.
+- `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` (Assistant): `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, forceLegacyRuntimeForTesting, usesUnifiedAssistant, modelContext, conversationID, t Symbols: LegacyAgentRunOptions, GroundingMode, forceLegacyRuntimeForTesting, usesUnifiedAssistant, modelContext, conversationID, turnID, scenarioID.
 - `ios/Lumen/Assistant/LegacyGroundingBridge.swift` (Assistant): Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and d Symbols: LegacyGroundingBundle, LegacyGroundingBridge, build, tierSummary, grounding, budgetPlan, sections, renderedPromptContext.
 - `ios/Lumen/Assistant/LegacyGroundingCache.swift` (Assistant): `ios/Lumen/Assistant/LegacyGroundingCache.swift` owns LegacyGroundingCache behavior and defines: LegacyGroundingCache, Key, Entry, digest, get, put, invalidate, pruneExpired, conversationID, turnID. Symbols: LegacyGroundingCache, Key, Entry, digest, get, put, invalidate, pruneExpired.
 - `ios/Lumen/Assistant/LegacyGroundingContextProvider.swift` (Assistant): `ios/Lumen/Assistant/LegacyGroundingContextProvider.swift` owns LegacyGroundingContextProvider behavior and defines: LegacyGroundingContextProvider, resolveContext, directContext, allowSharedFallback, shared, degradedRea Symbols: LegacyGroundingContextProvider, resolveContext, directContext, allowSharedFallback, shared, degradedReason.
@@ -94,4 +95,3 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/Tools/MemoryTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MemoryTools.swift` owns MemoryTools behavior and defines: MemoryTools, RAGIndexExecution, save, recall, ragSearch, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos, ragIndexPhotosExecution, Symbols: MemoryTools, RAGIndexExecution, save, recall, ragSearch, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos.
 - `ios/Lumen/Services/Tools/MotionTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MotionTools.swift` owns MotionTools behavior and defines: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end, start, ped. Symbols: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end.
 - `ios/Lumen/Services/Tools/PhotosTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/PhotosTools.swift` owns PhotosTools behavior and defines: PhotosTools, searchPhotos, captureImage, formatAssetDate, assetPayloadJSON, assetPayloadDictionary, mediaSubtypeNames, jsonString, previ Symbols: PhotosTools, searchPhotos, captureImage, formatAssetDate, assetPayloadJSON, assetPayloadDictionary, mediaSubtypeNames, jsonString.
-- `ios/Lumen/Services/Tools/ToolNetworkResilience.swift` (Services/Tools): `ios/Lumen/Services/Tools/ToolNetworkResilience.swift` owns ToolNetworkResilience behavior and defines: ToolNetworkErrorClass, ToolRetryPolicy, ToolRequestMetrics, ToolCircuitBreaker, ToolNetworkTelemetry, Notification,  Symbols: ToolNetworkErrorClass, ToolRetryPolicy, ToolRequestMetrics, ToolCircuitBreaker, ToolNetworkTelemetry, Notification, ToolNetworkResilience, allowRequest.

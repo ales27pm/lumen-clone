@@ -534,7 +534,8 @@ Follow-up planner/schema parity files:
 
 ## Runtime Adapters Final Status
 
-- Canonical production text path: SwiftLlama/AppLlamaService through `LlamaRuntimeAdapter.live(...)`.
+- Default foreground text path: Core AI Gemma through `CoreAIGemmaRuntimeAdapter` and the existing kernel; requires an imported local bundle and iOS 27.2. Apple compilation, executed XCTest, physical inference and ANE execution remain unverified for this integration; see `docs/COREAI_GEMMA.md`.
+- Disabling Gemma selects SwiftLlama/AppLlamaService through `LlamaRuntimeAdapter.live(...)`; embedding ownership remains separate.
 - FoundationModels: excluded from Release routing until a real generation implementation exists.
 - CoreML embeddings: excluded from Release routing until real embedding extraction exists.
 - Deterministic runtime: DEBUG diagnostics only.

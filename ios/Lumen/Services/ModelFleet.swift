@@ -45,6 +45,7 @@ nonisolated enum LumenFleetRuntimeMode: String, Codable, Sendable {
 }
 
 nonisolated enum LumenRuntimePathKind: String, Codable, Sendable, Hashable {
+    case coreAI
     case llamaGGUF
     case coreML
     case foundationModels
@@ -114,6 +115,8 @@ nonisolated struct LumenModelSlotContract: Sendable, Hashable {
 
     static func runtimePathKind(for runtimePath: String) -> LumenRuntimePathKind {
         switch runtimePath {
+        case "coreAI":
+            return .coreAI
         case "sharedAdapter", "sharedAdapterLoadedContinuation", "legacySlot", "legacySlotLoadedContinuation", "agent-model":
             return .llamaGGUF
         case "coreML":

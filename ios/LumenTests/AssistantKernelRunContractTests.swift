@@ -19,7 +19,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { request in
                 "kernel final: \(request.prompt)"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let request = AgentKernelRequest(userMessage: "hello", task: .chat, source: .chat, options: .chat)
@@ -50,7 +51,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { _ in
                 "llama should not run"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let options = AgentKernelOptions(
@@ -90,7 +92,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { request in
                 "model planned: \(request.prompt)"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let options = AgentKernelOptions(
@@ -132,7 +135,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
             llama: .init(generateHandler: { request in
                 await capture.record(request)
                 return "grounded"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let memory = MemoryContextItem(
@@ -199,7 +203,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { _ in
                 "done"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let options = AgentKernelOptions(
@@ -228,7 +233,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
             llama: .init(generateHandler: { request in
                 await capture.record(request)
                 return "background trigger should use native tool execution"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let options = AgentKernelOptions(
@@ -282,7 +288,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
             llama: .init(generateHandler: { request in
                 await capture.record(request)
                 return "background trigger should not use text runtime"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let options = AgentKernelOptions(
@@ -338,7 +345,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
             llama: .init(generateHandler: { request in
                 await capture.record(request)
                 return "text runtime should not run"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let request = AgentKernelRequest(
@@ -399,7 +407,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { _ in
                 "text runtime should not run"
-            })
+            }),
+            coreAI: .disabled
         )
         let kernel = AssistantKernel(router: router)
         let request = AgentKernelRequest(
@@ -458,7 +467,8 @@ final class AssistantKernelRunContractTests: XCTestCase {
                 llama: .init(generateHandler: { request in
                     await capture.record(request)
                     return "text runtime should not run"
-                })
+                }),
+            coreAI: .disabled
             )
             let kernel = AssistantKernel(router: router)
             let request = AgentKernelRequest(

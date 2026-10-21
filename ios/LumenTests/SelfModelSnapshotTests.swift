@@ -2,6 +2,32 @@ import XCTest
 @testable import Lumen
 
 final class SelfModelSnapshotTests: XCTestCase {
+    func testGemmaSnapshotDescribesOneAssistantForEveryGenerativeRole() {
+        let tasks: [AssistantTaskKind] = [.chat, .agentPlan, .toolDecision, .summarization, .memoryExtraction]
+        for task in tasks {
+            let turn = AssistantTurnContext(
+                task: task,
+                input: "hello",
+                isForeground: true,
+                lowPowerMode: false,
+                thermalState: .nominal
+            )
+            let snapshot = SelfModelSnapshotBuilder.build(
+                turn: turn,
+                budget: ContextBudgetAllocator.allocate(for: turn, maxInputTokens: 800),
+                selectedRuntime: .init(runtime: .coreAI, reason: "Gemma selected"),
+                tools: [DeviceStatusTool().definition],
+                activeSlot: .executor
+            )
+
+            XCTAssertEqual(snapshot.agent.logicalIdentity, "lumen")
+            XCTAssertEqual(snapshot.agent.activeSlot, "assistant")
+            XCTAssertEqual(snapshot.agent.availableSlots, ["assistant"])
+            XCTAssertEqual(snapshot.runtime.selectedRuntimePathKind, LumenRuntimePathKind.coreAI.rawValue)
+            XCTAssertTrue(snapshot.tools.available.contains("device.status"))
+        }
+    }
+
     func testSnapshotUsesRuntimeSourcesWithoutRawPromptPayload() {
         let turn = AssistantTurnContext(
             task: .toolDecision,

@@ -23,6 +23,11 @@ struct StructuredAgentKernelExecutor {
     """
     nonisolated static let executorRuntimeOutputBoundary = "Runtime output boundary: start with { and stop immediately after the matching }. Choose exactly one of action or final. For a matching available tool, emit its exact listed ID. Action is a JSON object, never a string; never invent tool results."
 
+    nonisolated static let unifiedAssistantSystemPromptContract = executorRuntimeSystemPromptContract.replacingOccurrences(
+        of: "You are Executor, Lumen's structured routing executor.",
+        with: "You are Lumen, one unified local assistant using one shared Gemma model for conversation, planning, tool decisions, and final answers. These are steps of your work, not separate models or agents."
+    )
+
     private let kernel: AssistantKernel
     private let modelContext: ModelContext?
 
@@ -51,7 +56,7 @@ struct StructuredAgentKernelExecutor {
         let toolAvailability = await availableTools(for: request, routing: routing)
         let availableTools = toolAvailability.definitions
         let memoryCommandPlan = MemoryCommandPlan.saveThenRecall(from: userMessage)
-        let systemPrompt = Self.buildSystemPrompt(request: request, availableTools: availableTools)
+        let systemPrompt = Self.buildSystemPrompt(request: request, availableTools: availableTools, unifiedAssistant: kernel.prefersUnifiedAssistant)
         let availableToolIDs = Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
         let maxSteps = max(1, request.options.maxSteps)
 
@@ -68,7 +73,7 @@ struct StructuredAgentKernelExecutor {
             return
         }
 
-        if IntentRouter.intentRequiresTool(routing), availableTools.isEmpty {
+        if request.options.allowsToolExecution, IntentRouter.intentRequiresTool(routing), availableTools.isEmpty {
             let unavailable = Self.secureToolUnavailableFinal(
                 routing: routing,
                 excludedReasons: toolAvailability.excludedReasons
@@ -115,7 +120,8 @@ struct StructuredAgentKernelExecutor {
             )
             var turn = Self.strictToolExecutableTurn(AgentTurnParser.parse(generation.raw))
 
-            let requiresFirstActionRetry = generation.forcedParseError == nil
+            let requiresFirstActionRetry = !generation.preventsToolExecution
+                && generation.forcedParseError == nil
                 && Self.shouldForceActionSchema(
                     request: request,
                     availableTools: availableTools,
@@ -146,6 +152,19 @@ struct StructuredAgentKernelExecutor {
                     responseFormatOverride: .constrainedJSON(schema: Self.structuredAgentActionResponseSchema)
                 )
                 turn = Self.strictToolExecutableTurn(AgentTurnParser.parse(generation.raw))
+            }
+
+            // A failed load, tokenizer preflight, or inference is not malformed
+            // model output. Stop before semantic repairs can propose any action.
+            if generation.preventsToolExecution {
+                if !Task.isCancelled {
+                    let failedTurn = AgentTurn(thought: nil, action: nil, final: nil, parseError: generation.forcedParseError ?? .empty, hadNoise: false)
+                    recordModelTurnTrace(request: request, userTurn: userTurn, raw: "", turn: failedTurn, availableTools: availableTools, stepIndex: stepIndex, observations: observations, diagnostics: generation.diagnostics)
+                    emitModelTurnDiagnostic(request: request, turn: failedTurn, availableTools: availableTools, stepIndex: stepIndex, diagnostics: generation.diagnostics, continuation: continuation)
+                    continuation.yield(.error(generation.diagnostics.emptyOutputReason ?? "structured-model-runtime-failed"))
+                }
+                continuation.finish()
+                return
             }
 
             if let forced = generation.forcedParseError {
@@ -484,6 +503,9 @@ struct StructuredAgentKernelExecutor {
     }
 
     private func availableTools(for request: AgentKernelRequest, routing: IntentRoutingDecision) async -> StructuredToolAvailability {
+        guard request.options.allowsToolExecution else {
+            return StructuredToolAvailability(definitions: [], excludedReasons: [:])
+        }
         let context = ToolExecutionContext(
             isForeground: request.source.allowsPermissionPrompts,
             appState: nil,
@@ -556,11 +578,12 @@ struct StructuredAgentKernelExecutor {
             allowedToolIDs: availableTools.map { ToolRouteGuard.canonicalToolID($0.id) }
         )
         let selection = kernel.selectRuntimeSelection(for: turnContext)
-        guard selection.runtime == .llama else {
-            let reason = selection.runtime == .unavailable ? selection.reason : "structured agent-json requires llama executor runtime; selected \(selection.runtime.rawValue)"
+        guard selection.runtime == .llama || selection.runtime == .coreAI else {
+            let reason = selection.runtime == .unavailable ? selection.reason : "structured agent-json requires a supported executor runtime; selected \(selection.runtime.rawValue)"
             return StructuredGenerationResult(
                 raw: "Structured agent-json unavailable: \(reason)",
                 forcedParseError: .empty,
+                preventsToolExecution: true,
                 diagnostics: .init(
                     generationElapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
                     firstTokenLatencyMs: nil,
@@ -614,7 +637,8 @@ struct StructuredAgentKernelExecutor {
         )
         let runtimePreflight: ExecutorRuntimePreflightResult
         do {
-            runtimePreflight = try await kernel.prepareStructuredLlamaRuntime(
+            runtimePreflight = try await kernel.prepareStructuredRuntime(
+                runtime: selection.runtime,
                 slot: Self.structuredAgentModelSlot,
                 allowsLoadedMemoryPressureContinuation: request.options.allowDegradedMode
             )
@@ -641,7 +665,7 @@ struct StructuredAgentKernelExecutor {
 
         var preflight: StructuredPromptPreflight
         do {
-            preflight = try await preflightAgentJSONPrompt(genReq)
+            preflight = try await preflightAgentJSONPrompt(genReq, runtime: selection.runtime)
         } catch {
             return Self.preStreamFailureResult(
                 startedAt: startedAt,
@@ -655,7 +679,7 @@ struct StructuredAgentKernelExecutor {
         if !preflight.fits {
             genReq = Self.agentJSONContextCompactionRequest(from: genReq)
             do {
-                preflight = try await preflightAgentJSONPrompt(genReq)
+                preflight = try await preflightAgentJSONPrompt(genReq, runtime: selection.runtime)
             } catch {
                 return Self.preStreamFailureResult(
                     startedAt: startedAt,
@@ -684,14 +708,14 @@ struct StructuredAgentKernelExecutor {
         var modelLoaded = false
         if forcedParseError == nil {
             do {
-                let stream = try await kernel.streamStructuredLlama(genReq, slot: Self.structuredAgentModelSlot)
+                let stream = try await kernel.streamStructuredGeneration(genReq, runtime: selection.runtime, slot: Self.structuredAgentModelSlot)
                 streamStarted = true
                 modelLoaded = true
                 streamLoop: for await token in stream {
                     if Task.isCancelled { break streamLoop }
                     switch token {
                     case .text(let text):
-                        if firstTokenLatencyMs == nil {
+                        if firstTokenLatencyMs == nil, selection.runtime != .coreAI {
                             firstTokenLatencyMs = Int(Date().timeIntervalSince(startedAt) * 1000)
                         }
                         if !text.isEmpty { textChunkCount += 1 }
@@ -711,7 +735,7 @@ struct StructuredAgentKernelExecutor {
             raw = Self.contextWindowExceededRawOutputPrefix
         }
 
-        let payload = await kernel.takeCompletedStructuredLlamaTrace(requestID: genReq.id)
+        let payload = await kernel.takeCompletedStructuredTrace(requestID: genReq.id, runtime: selection.runtime)
         let trimmedRaw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let outputTokenCount = Self.resolvedStructuredOutputTokenCount(
             explicit: payload?.outputTokenCount,
@@ -719,12 +743,15 @@ struct StructuredAgentKernelExecutor {
             visible: payload?.tokenUsage?.visibleTokens,
             raw: trimmedRaw
         )
+        let runtimeFailure = Self.runtimeFailureParseError(from: raw)
         let emptyReason = payload?.emptyOutputReason
+            ?? runtimeFailure.map { "structured-runtime-stream-failed:\($0.rawValue)" }
             ?? (trimmedRaw.isEmpty ? preGenerationDenialReason : nil)
             ?? (trimmedRaw.isEmpty ? Self.agentJSONEmptyStreamReason(streamStarted: streamStarted, textChunkCount: textChunkCount, finalChunkReceived: finalChunkReceived, taskCancelled: Task.isCancelled, maxTokensEffective: genReq.maxTokens) : nil)
         return StructuredGenerationResult(
             raw: raw,
-            forcedParseError: forcedParseError,
+            forcedParseError: forcedParseError ?? runtimeFailure,
+            preventsToolExecution: forcedParseError != nil || runtimeFailure != nil || (selection.runtime == .coreAI && !finalChunkReceived),
             diagnostics: .init(
                 generationElapsedMs: payload?.elapsedMs ?? Int(Date().timeIntervalSince(startedAt) * 1000),
                 firstTokenLatencyMs: firstTokenLatencyMs,
@@ -751,15 +778,15 @@ struct StructuredAgentKernelExecutor {
         )
     }
 
-    private func preflightAgentJSONPrompt(_ request: GenerateRequest) async throws -> StructuredPromptPreflight {
-        let promptBuild = try await kernel.preflightStructuredLlamaPrompt(request, slot: Self.structuredAgentModelSlot)
+    private func preflightAgentJSONPrompt(_ request: GenerateRequest, runtime: AssistantRuntimeKind) async throws -> StructuredPromptPreflight {
+        let promptBuild = try await kernel.preflightStructuredPrompt(request, runtime: runtime, slot: Self.structuredAgentModelSlot)
         let contextSize = promptBuild.contextSize
         guard contextSize > 0 else {
-            throw LocalRuntimeError.unavailable("llama structured prompt preflight returned an invalid context size")
+            throw LocalRuntimeError.unavailable("structured prompt preflight returned an invalid context size")
         }
         let tokenLimit = max(128, contextSize - request.maxTokens - Self.structuredPromptPreflightSafetyTokens)
         let fits = promptBuild.estimatedPromptTokens <= tokenLimit
-            && promptBuild.finalPromptChars <= PromptBudget.agentJSON(contextSize: contextSize, maxTokens: request.maxTokens).totalChars + 256
+            && (runtime == .coreAI || promptBuild.finalPromptChars <= PromptBudget.agentJSON(contextSize: contextSize, maxTokens: request.maxTokens).totalChars + 256)
         return StructuredPromptPreflight(
             contextSize: contextSize,
             finalPromptChars: promptBuild.finalPromptChars,
@@ -815,14 +842,14 @@ struct StructuredAgentKernelExecutor {
             requiresApproval: turn.action.map { ToolRouteGuard.requiresUserApproval(ToolRouteGuard.canonicalToolID($0.tool)) },
             parseError: turn.parseError?.rawValue,
             emittedFinalInActionTurn: emittedFinal,
-            modelFamily: LumenModelFamily.persistedSelected.rawValue,
-            adapterSlot: Self.structuredAgentModelSlot.rawValue,
+            modelFamily: diagnostics.selectedRuntime == AssistantRuntimeKind.coreAI.rawValue ? "gemma" : LumenModelFamily.persistedSelected.rawValue,
+            adapterSlot: diagnostics.selectedRuntime == AssistantRuntimeKind.coreAI.rawValue ? nil : Self.structuredAgentModelSlot.rawValue,
             generationElapsedMs: diagnostics.generationElapsedMs,
             firstTokenLatencyMs: diagnostics.firstTokenLatencyMs,
             outputTokenCount: diagnostics.outputTokenCount,
             estimatedPromptTokenCount: diagnostics.estimatedPromptTokenCount,
-            runtimePath: "agent-model",
-            activeAdapterSlot: Self.structuredAgentModelSlot.rawValue,
+            runtimePath: diagnostics.selectedRuntime == AssistantRuntimeKind.coreAI.rawValue ? AssistantRuntimeKind.coreAI.rawValue : "agent-model",
+            activeAdapterSlot: diagnostics.selectedRuntime == AssistantRuntimeKind.coreAI.rawValue ? nil : Self.structuredAgentModelSlot.rawValue,
             maxTokensRequested: diagnostics.maxTokensRequested,
             maxTokensEffective: diagnostics.maxTokensEffective,
             promptCharCount: diagnostics.promptCharCount ?? userTurn.count,
@@ -997,6 +1024,7 @@ private extension StructuredAgentKernelExecutor {
     struct StructuredGenerationResult {
         let raw: String
         let forcedParseError: AgentTurnParseError?
+        let preventsToolExecution: Bool
         let diagnostics: StructuredTurnGenerationDiagnostics
     }
 
@@ -1011,6 +1039,7 @@ private extension StructuredAgentKernelExecutor {
         StructuredGenerationResult(
             raw: "",
             forcedParseError: .empty,
+            preventsToolExecution: true,
             diagnostics: .init(
                 generationElapsedMs: Int(Date().timeIntervalSince(startedAt) * 1000),
                 firstTokenLatencyMs: nil,
@@ -1044,8 +1073,8 @@ private extension StructuredAgentKernelExecutor {
         let fits: Bool
     }
 
-    static func buildSystemPrompt(request: AgentKernelRequest, availableTools: [ToolDefinition]) -> String {
-        var sys = executorRuntimeSystemPromptContract
+    static func buildSystemPrompt(request: AgentKernelRequest, availableTools: [ToolDefinition], unifiedAssistant: Bool = false) -> String {
+        var sys = unifiedAssistant ? unifiedAssistantSystemPromptContract : executorRuntimeSystemPromptContract
         if !availableTools.isEmpty {
             sys += "\nAvailable tools:\n"
             sys += compactStructuredToolList(availableTools, userMessage: request.userMessage)
@@ -2066,6 +2095,11 @@ private extension StructuredAgentKernelExecutor {
 
     static func runtimeFailureParseError(from raw: String) -> AgentTurnParseError? {
         let lower = raw.lowercased()
+        // The legacy stream represents host runtime failures as a leading text
+        // sentinel. It is never a model-authored decision eligible for tool repair.
+        if lower.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("generation error:") {
+            return .empty
+        }
         if lower.contains("prompt exceeded context window before generation")
             || lower.contains("prompt exceeds shared chat context window")
             || lower.contains("failed to initialize context: prompt exceeds") {

@@ -3962,7 +3962,14 @@ extension AgentGroundingRegressionTests {
         )
 
         var finalText = ""
-        for await event in AgentService.shared.run(req, options: .default) {
+        #if DEBUG
+        let stream = LegacyAgentRunOptions.$forceLegacyRuntimeForTesting.withValue(true) {
+            AgentService.shared.run(req, options: .default)
+        }
+        #else
+        let stream = AgentService.shared.run(req, options: .default)
+        #endif
+        for await event in stream {
             if case .done(let text, _) = event {
                 finalText = text
             }

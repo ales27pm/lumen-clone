@@ -7,7 +7,7 @@ final class RuntimeRouterTests: XCTestCase {
         FileManager.default.createFile(atPath: tempURL.path, contents: Data(), attributes: nil)
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
-        let router = AssistantRuntimeRouter(coreML: CoreMLRuntimeAdapter(modelURL: tempURL))
+        let router = AssistantRuntimeRouter(coreML: CoreMLRuntimeAdapter(modelURL: tempURL), coreAI: .disabled)
         let context = AssistantTurnContext(task: .embedding, input: "x", isForeground: true, lowPowerMode: false, thermalState: .nominal)
         let selection = router.selection(for: context)
         XCTAssertEqual(selection.runtime, .deterministicFallback)
@@ -19,6 +19,7 @@ final class RuntimeRouterTests: XCTestCase {
             llama: LlamaRuntimeAdapter(
                 embedHandler: { _ in [Float(1.0)] }
             ),
+            coreAI: .disabled,
             allowDiagnosticFallbackSelection: false
         )
         let context = AssistantTurnContext(task: .embedding, input: "x", isForeground: true, lowPowerMode: false, thermalState: .nominal)
@@ -29,14 +30,14 @@ final class RuntimeRouterTests: XCTestCase {
     }
 
     func testBackgroundTriggerUsesFallbackWhenConstrained() {
-        let router = AssistantRuntimeRouter()
+        let router = AssistantRuntimeRouter(coreAI: .disabled)
         let context = AssistantTurnContext(task: .backgroundTrigger, input: "x", isForeground: false, lowPowerMode: true, thermalState: .serious)
         XCTAssertEqual(router.runtime(for: context), .deterministicFallback)
     }
 
     func testChatFallsBackWhenHeavyRuntimeDisallowed() {
         let foundation = FoundationModelsRuntimeAdapter()
-        let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(generateHandler: { _ in "ok" }))
+        let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(generateHandler: { _ in "ok" }), coreAI: .disabled)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal, allowHeavyRuntime: false)
         let selection = router.selection(for: context)
         XCTAssertEqual(selection.runtime, .deterministicFallback)
@@ -45,7 +46,7 @@ final class RuntimeRouterTests: XCTestCase {
 
     func testChatLowPowerStillUsesLlamaWhenForegroundAndAvailable() {
         let foundation = FoundationModelsRuntimeAdapter()
-        let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(generateHandler: { _ in "ok" }))
+        let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(generateHandler: { _ in "ok" }), coreAI: .disabled)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: true, thermalState: .nominal)
         let selection = router.selection(for: context)
         XCTAssertEqual(selection.runtime, .llama)
@@ -54,7 +55,7 @@ final class RuntimeRouterTests: XCTestCase {
 
     func testChatDoesNotUseUnwiredFoundationModelsEvenWhenPreferred() {
         let foundation = FoundationModelsRuntimeAdapter()
-        let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(isAvailable: false))
+        let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(isAvailable: false), coreAI: .disabled)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal, prefersFoundationModels: true)
         let selection = router.selection(for: context)
         XCTAssertEqual(selection.runtime, .deterministicFallback)
@@ -65,7 +66,8 @@ final class RuntimeRouterTests: XCTestCase {
         let foundation = FoundationModelsRuntimeAdapter()
         let router = AssistantRuntimeRouter(foundation: foundation, llama: .init(generateHandler: { request in
             "llama: \(request.prompt)"
-        }))
+        }),
+            coreAI: .disabled)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
         XCTAssertEqual(router.runtime(for: context), .llama)
     }
@@ -75,7 +77,7 @@ final class RuntimeRouterTests: XCTestCase {
         let llama = LlamaRuntimeAdapter(generateHandler: { request in
             "llama: \(request.prompt)"
         })
-        let router = AssistantRuntimeRouter(foundation: foundation, llama: llama)
+        let router = AssistantRuntimeRouter(foundation: foundation, llama: llama, coreAI: .disabled)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal, prefersFoundationModels: true)
         let selection = router.selection(for: context)
         XCTAssertEqual(selection.runtime, .llama)
@@ -87,7 +89,7 @@ final class RuntimeRouterTests: XCTestCase {
         FileManager.default.createFile(atPath: tempURL.path, contents: Data(), attributes: nil)
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
-        let router = AssistantRuntimeRouter(llama: .init(isAvailable: false), coreML: CoreMLRuntimeAdapter(modelURL: tempURL))
+        let router = AssistantRuntimeRouter(llama: .init(isAvailable: false), coreML: CoreMLRuntimeAdapter(modelURL: tempURL), coreAI: .disabled)
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
         XCTAssertEqual(router.runtime(for: context), .deterministicFallback)
     }
@@ -95,6 +97,7 @@ final class RuntimeRouterTests: XCTestCase {
     func testReleasePolicyDoesNotSelectDiagnosticFallbackForChat() {
         let router = AssistantRuntimeRouter(
             llama: .init(isAvailable: false),
+            coreAI: .disabled,
             allowDiagnosticFallbackSelection: false
         )
         let context = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
@@ -107,6 +110,7 @@ final class RuntimeRouterTests: XCTestCase {
     func testReleasePolicyDoesNotSelectHeavyRuntimeWhenPolicyDeniedEvenIfLlamaAvailable() {
         let router = AssistantRuntimeRouter(
             llama: .init(generateHandler: { _ in "ok" }),
+            coreAI: .disabled,
             allowDiagnosticFallbackSelection: false
         )
         let context = AssistantTurnContext(
@@ -128,6 +132,7 @@ final class RuntimeRouterTests: XCTestCase {
     func testReleasePolicyDoesNotSelectDiagnosticFallbackForEmbedding() {
         let router = AssistantRuntimeRouter(
             coreML: CoreMLRuntimeAdapter(modelURL: nil),
+            coreAI: .disabled,
             allowDiagnosticFallbackSelection: false
         )
         let context = AssistantTurnContext(task: .embedding, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
@@ -141,6 +146,7 @@ final class RuntimeRouterTests: XCTestCase {
         let router = AssistantRuntimeRouter(
             llama: .init(isAvailable: false),
             coreML: CoreMLRuntimeAdapter(modelURL: nil),
+            coreAI: .disabled,
             allowDiagnosticFallbackSelection: true
         )
         let context = AssistantTurnContext(task: .embedding, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)

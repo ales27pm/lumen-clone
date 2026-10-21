@@ -290,6 +290,13 @@ actor PersistentRuntimeDiagnosticsRunner {
     }
 
     private func scenarioPlainFastPrompt(_ record: inout PersistentDiagnosticRunRecord) async {
+        if CoreAIGemmaModelStore.isEnabled {
+            // Continuous/passive diagnostics must not specialize or prompt Gemma.
+            // Explicit E2E validation uses the kernel's selected-runtime preflight.
+            record.metrics.promptLatencyClass = "coreAI"
+            finish(&record, status: .skipped, code: "coreai_passive_generation_skipped", message: "Gemma uses one shared foreground engine. Run explicit E2E validation to test generation.")
+            return
+        }
         let request = diagnosticGenerateRequest(developerTrace: false, reasoningCapture: false)
         let prompt = await AppLlamaService.shared.buildMessagesForDiagnostics(req: request, contextSize: 4096, slot: .cortex)
         record.metrics.promptLatencyClass = prompt.latencySelection.latencyClass.rawValue
@@ -306,6 +313,10 @@ actor PersistentRuntimeDiagnosticsRunner {
     }
 
     private func scenarioDeveloperTraceBypass(_ record: inout PersistentDiagnosticRunRecord) async {
+        if CoreAIGemmaModelStore.isEnabled {
+            finish(&record, status: .skipped, code: "coreai_no_role_trace_bypass", message: "Legacy role-model prompt bypass does not apply to the unified Gemma assistant.")
+            return
+        }
         let request = diagnosticGenerateRequest(developerTrace: true, reasoningCapture: true)
         let prompt = await AppLlamaService.shared.buildMessagesForDiagnostics(req: request, contextSize: 4096, slot: .cortex)
         record.metrics.promptLatencyClass = prompt.latencySelection.latencyClass.rawValue
@@ -317,6 +328,10 @@ actor PersistentRuntimeDiagnosticsRunner {
     }
 
     private func scenarioAgentFastPrompt(_ record: inout PersistentDiagnosticRunRecord) async {
+        if CoreAIGemmaModelStore.isEnabled {
+            finish(&record, status: .skipped, code: "coreai_no_slot_prompt", message: "Gemma uses the production kernel's unified assistant prompt, without a separate slot-agent model.")
+            return
+        }
         let req = diagnosticAgentRequest(userMessage: "Yo", tools: ToolRegistry.all)
         let fast = SlotAgentService.shouldUseFastAgentPath(req)
         let grounded = SlotAgentService.fastGroundingResult(for: req, options: .default)
@@ -600,18 +615,25 @@ actor PersistentRuntimeDiagnosticsRunner {
 
     private func runPlainGeneration(_ request: GenerateRequest, record: inout PersistentDiagnosticRunRecord) async {
         let started = ProcessInfo.processInfo.systemUptime
-        var updateCount = 0
-        for await token in await AppLlamaService.shared.stream(request) {
-            switch token {
-            case .text:
-                updateCount += 1
-                if updateCount > 64 { break }
-            case .done:
-                break
-            }
+        do {
+            _ = try await AssistantKernel.shared.runTextTurn(AssistantTurnContext(
+                task: .chat,
+                input: request.userMessage,
+                systemPrompt: request.systemPrompt,
+                isForeground: true,
+                lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
+                thermalState: ProcessInfo.processInfo.thermalState,
+                prefersFoundationModels: false,
+                temperature: request.temperature,
+                topP: request.topP,
+                repetitionPenalty: request.repetitionPenalty,
+                maxTokens: request.maxTokens
+            ))
+            record.metrics.streamingUpdateCount = 1
+        } catch {
+            finish(&record, status: .failed, code: RuntimeMetricErrorSanitizer.code(for: error), message: "The selected runtime could not complete the diagnostic turn.")
         }
         record.metrics.generationElapsedMs = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
-        record.metrics.streamingUpdateCount = updateCount
     }
 
     private func diagnosticGenerateRequest(developerTrace: Bool, reasoningCapture: Bool) -> GenerateRequest {

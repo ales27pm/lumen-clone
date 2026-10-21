@@ -73,6 +73,9 @@ final class SlotAgentService {
     }
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
+        if LegacyAgentRunOptions.usesUnifiedAssistant {
+            return AssistantKernel.shared.runAdaptedLegacyRequest(req, options: options)
+        }
         let cancellationToken = AgentGroundingCancellationToken()
         let registration = SlotAgentCancellationRegistration()
         return AsyncStream { continuation in

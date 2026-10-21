@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import CryptoKit
 
 enum SchemaPlaceholderDetector {
-    private static let repairFallback = "I couldn't produce a valid answer. Try rephrasing, or switch off Agent Mode for this prompt."
+    private static let repairFallback = "I couldn't produce a valid answer. Try rephrasing, or turn off tools for this prompt."
     private static let normalizedLiteralSentinelVariants: Set<String> = ["<user_final_text>", "<private_reasoning>"]
     private static let exactPlaceholderVariants: Set<String> = [
         "answershowntotheuser", "youranswertotheuser", "shortprivateroutingnote",
@@ -67,6 +67,8 @@ struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var storedModels: [StoredModel]
 
+    @AppStorage("coreai.gemma.enabled") private var usesGemma = true
+    @State private var gemmaContextLength: Int?
     @State private var draft: String = ""
     @State private var streamingText: String = ""
     @State private var streamingSteps: [AgentStep] = []
@@ -213,6 +215,11 @@ struct ChatView: View {
         .onChange(of: scenePhase) { _, phase in
             SceneTransitionCoordinator.shared.handleScenePhaseChange(phase)
         }
+        .task(id: usesGemma) {
+            gemmaContextLength = nil
+            if usesGemma { gemmaContextLength = try? await CoreAIGemmaModelStore.configuredContextLength() }
+            recomputeAttachmentPreview()
+        }
         .onAppear(perform: applyInitialDraftIfNeeded)
         .onDisappear { stopForSceneTransition() }
     }
@@ -244,7 +251,7 @@ struct ChatView: View {
             if horizontalSizeClass != .compact {
                 HStack(spacing: 6) {
                     LumenStatusChip(
-                        title: appState.agentModeEnabled ? "Agent" : "Chat",
+                        title: appState.agentModeEnabled ? (usesGemma ? "Tools enabled" : "Agent") : "Chat",
                         systemImage: appState.agentModeEnabled ? "wand.and.stars" : "text.bubble",
                         tint: appState.agentModeEnabled ? Theme.accent : LumenBrand.corona
                     )
@@ -278,9 +285,9 @@ struct ChatView: View {
     }
 
     private var activeModelName: String {
-        storedModels.first { $0.id.uuidString == appState.activeChatModelID }?.name
-            ?? conversation.modelName
-            ?? "No active model"
+        CoreAIGemmaPresentationPolicy(usesGemma: usesGemma).activeAssistantName(
+            legacyName: storedModels.first { $0.id.uuidString == appState.activeChatModelID }?.name ?? conversation.modelName
+        )
     }
 
     private func applyInitialDraftIfNeeded() {
@@ -304,7 +311,7 @@ struct ChatView: View {
         guard !attachments.isEmpty else { attachmentPreview = [:]; return }
         let states = PromptAssembler.previewAttachmentStates(
             attachments: attachments,
-            contextSize: appState.contextSize,
+            contextSize: usesGemma ? (gemmaContextLength ?? 8_192) : appState.contextSize,
             maxTokens: appState.maxTokens,
             systemPromptChars: (conversation.systemPrompt ?? appState.systemPrompt).count,
             userMessageChars: draft.count,
@@ -357,7 +364,7 @@ struct ChatView: View {
             }
             if !(await ensureChatModelLoaded()) {
                 guard activeTurnID == turnID else { return }
-                let msg = ChatMessage(role: .assistant, content: "No chat model is loaded. Open the Models tab, download a chat model, and tap Use to activate it.")
+                let msg = ChatMessage(role: .assistant, content: ModelLoader.chatModelUnavailableMessage)
                 conversation.messages.append(msg)
                 saveConversationIfBudgetAllows(estimatedBytes: 4096)
                 streamingSteps = []
@@ -367,7 +374,7 @@ struct ChatView: View {
                 return
             }
             if appState.agentModeEnabled {
-                streamingSteps = [AgentStep(kind: .thought, content: "Preparing agent context")]
+                streamingSteps = [AgentStep(kind: .thought, content: "Preparing conversation context")]
             }
             AgentGroundingInstrumentation.mark("before IntentClassifierService.route", metrics: .init(promptChars: text.count))
             let routeStart = ProcessInfo.processInfo.systemUptime
@@ -375,11 +382,7 @@ struct ChatView: View {
             AgentGroundingInstrumentation.mark("after IntentClassifierService.route", metrics: .init(promptChars: text.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: routeStart))
             let memories = await safeRecalledMemories(query: text, routing: routing)
             let recentContext = safeShortTermContext(excludingCurrentUserMessageID: userMsg.id)
-            if appState.agentModeEnabled {
-                await runAgent(turnID: turnID, requestID: controllerRequestID, text: text, routing: routing, memories: memories, attachments: turnAttachments, recentContext: recentContext)
-            } else {
-                await runPlain(turnID: turnID, requestID: controllerRequestID, text: text, memories: memories, attachments: turnAttachments)
-            }
+            await runAgent(turnID: turnID, requestID: controllerRequestID, text: text, routing: routing, memories: memories, attachments: turnAttachments, recentContext: recentContext)
         }
         _ = generationController.begin(for: conversation.id, task: task, requestID: controllerRequestID)
         streamingCancellationID = AppCancellationBus.shared.register(task, category: .chatGeneration)
@@ -418,7 +421,10 @@ struct ChatView: View {
                 temperature: appState.temperature,
                 topP: appState.topP,
                 repetitionPenalty: appState.repetitionPenalty,
-                maxTokens: appState.maxTokens
+                maxTokens: appState.maxTokens,
+                forceModelBackedToolPlanning: usesGemma,
+                structuredMode: usesGemma && appState.agentModeEnabled ? .requiredAgentJSON : .automatic,
+                allowsToolExecution: appState.agentModeEnabled
             )
         )
 
@@ -471,7 +477,7 @@ struct ChatView: View {
             let trace = makeAgentDeveloperTrace(
                 systemPrompt: baseSystemPrompt,
                 userPrompt: text,
-                modelName: "agent-kernel",
+                modelName: activeModelName,
                 memories: gatedMemories,
                 steps: sanitizedSteps,
                 visibleAnswer: persistedFinal,
@@ -521,118 +527,6 @@ struct ChatView: View {
     }
 
 
-    private var debugDeveloperTraceEnabled: Bool {
-        #if DEBUG
-        return appState.developerTraceModeEnabled
-        #else
-        return false
-        #endif
-    }
-
-    private var debugDeveloperReasoningCaptureEnabled: Bool {
-        #if DEBUG
-        return appState.developerReasoningCaptureEnabled
-        #else
-        return false
-        #endif
-    }
-
-    private func runPlain(turnID: UUID, requestID: UUID, text: String, memories: [MemoryContextItem], attachments: [ChatAttachment]) async {
-        emitChatViewTrace(turnID: turnID, phase: "plain_start", text: text, values: [
-            "path": "chat-view-plain",
-            "attachmentCount": String(attachments.count),
-            "memoryCount": String(memories.count)
-        ])
-        let request = GenerateRequest(
-            id: requestID,
-            sessionID: conversation.id.uuidString,
-            systemPrompt: conversation.systemPrompt ?? appState.systemPrompt,
-            history: safeShortTermContext(excludingCurrentUserMessageID: conversation.sortedMessages.last?.id, maxTurns: 8),
-            userMessage: text,
-            temperature: appState.temperature,
-            topP: appState.topP,
-            repetitionPenalty: appState.repetitionPenalty,
-            maxTokens: appState.maxTokens,
-            modelName: conversation.modelName ?? "default",
-            relevantMemories: memories,
-            attachments: attachments,
-            developerTraceModeEnabled: debugDeveloperTraceEnabled,
-            reasoningCaptureEnabled: debugDeveloperReasoningCaptureEnabled
-        )
-
-        var accumulated = ""
-        var lastUIUpdate = Date.distantPast
-        for await token in await AppLlamaService.shared.stream(request) {
-            if Task.isCancelled || activeTurnID != turnID || !generationController.isCurrent(requestID, for: conversation.id) || CPUWatchdogGuard.shared.shouldDegrade(category: .chatGeneration) || !ResourceBudgetGate.allowsHeavyModelWork(reason: "userChat.stream") { break }
-            let workStartedAt = ProcessInfo.processInfo.systemUptime
-            defer { CPUWatchdogGuard.shared.recordWork(category: .chatGeneration, duration: ProcessInfo.processInfo.systemUptime - workStartedAt) }
-            switch token {
-            case .text(let s):
-                accumulated += s
-                if Date().timeIntervalSince(lastUIUpdate) >= 0.1 {
-                    streamingText = AssistantOutputSanitizer.sanitize(accumulated, lastUserMessage: text)
-                    PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .uiUpdate, values: ["surface": "chat", "targetHz": "10"]))
-                    lastUIUpdate = Date()
-                }
-            case .done:
-                break
-            }
-        }
-
-        guard !Task.isCancelled, activeTurnID == turnID, generationController.isCurrent(requestID, for: conversation.id) else {
-            emitChatViewTrace(turnID: turnID, phase: "cancelled", text: text, values: ["path": "chat-view-plain", "reason": chatCancellationReason(turnID: turnID, requestID: requestID)])
-            return
-        }
-        let completedPayload = await AppLlamaService.shared.takeCompletedTracePayload(requestID: request.id)
-        let modelVisibleAnswer = completedPayload?.visibleAnswer ?? accumulated
-        let sanitized = AssistantOutputSanitizer.sanitize(modelVisibleAnswer, lastUserMessage: text)
-        let finalized = FinalOutputSanitizer.sanitizeUserVisibleText(sanitized).text
-        emitChatViewTrace(turnID: turnID, phase: "plain_final", text: text, values: [
-            "path": "chat-view-plain",
-            "modelName": request.modelName,
-            "finalChars": String(finalized.count),
-            "finalSHA256": chatTraceSHA256(finalized),
-            "finishReason": completedPayload?.finishReason ?? "unknown",
-            "parserWarningCount": String(completedPayload?.parserWarnings.count ?? 0)
-        ])
-        let assistantMsg = ChatMessage(
-            role: .assistant,
-            content: finalized,
-            visibleContent: finalized,
-            reasoningTrace: debugDeveloperTraceEnabled ? completedPayload?.reasoningText : nil,
-            rawModelOutput: debugDeveloperTraceEnabled ? completedPayload?.rawModelOutput : nil
-        )
-        #if DEBUG
-        if appState.developerTraceModeEnabled {
-            let trace = makeDeveloperTrace(
-                request: request,
-                messageID: assistantMsg.id,
-                userPrompt: text,
-                memories: memories,
-                attachments: attachments,
-                payload: completedPayload,
-                visibleAnswer: finalized,
-                error: nil
-            )
-            assistantMsg.developerTraceID = trace.id
-            assistantMsg.developerTraceJSON = DeveloperTraceCodec.encode(trace)
-        }
-        #endif
-        conversation.messages.append(assistantMsg)
-        streamingText = ""
-        activeTurnID = nil
-        generationController.clearIfCurrent(requestID, for: conversation.id)
-
-        if appState.autoMemory, finalized.count > 60 {
-            let memoryResult = await MemoryStore.rememberWithDiagnostics("User asked: \(text). Assistant said: \(finalized.prefix(140))", kind: .conversation, source: "chat", context: modelContext)
-            recordAutoMemoryResult(memoryResult, surface: "chat", turnID: turnID, userText: text, path: "chat-view-plain")
-        }
-
-        conversation.updatedAt = Date()
-        saveConversationIfBudgetAllows(estimatedBytes: finalized.utf8.count + 4096)
-        appState.isGenerating = false
-    }
-
     private func emitChatViewTrace(turnID: UUID, phase: String, text: String, values: [String: String] = [:]) {
         var payload = values
         LumenTrainedModelRuntimeRegistry.selected.traceValues.forEach { key, value in
@@ -680,38 +574,6 @@ struct ChatView: View {
         let memories = await MemoryRecall.recallAndNormalize(query: query, routing: routing, context: modelContext, limit: 8)
         AgentGroundingInstrumentation.mark("after safeRecalledMemories", metrics: .init(memoryCount: memories.count, promptChars: query.count), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: start))
         return memories
-    }
-
-    private func makeDeveloperTrace(
-        request: GenerateRequest,
-        messageID: UUID?,
-        userPrompt: String,
-        memories: [MemoryContextItem],
-        attachments: [ChatAttachment],
-        payload: CompletedGenerationTracePayload?,
-        visibleAnswer: String,
-        error: String?
-    ) -> DeveloperTrace {
-        DeveloperTrace(
-            conversationID: conversation.id,
-            messageID: messageID,
-            modelName: request.modelName,
-            systemPrompt: request.systemPrompt,
-            developerPrompt: ModelThinkingControl.developerInstruction(reasoningCaptureEnabled: request.reasoningCaptureEnabled),
-            userPrompt: userPrompt,
-            resolvedContext: traceContextItems(history: request.history, attachments: attachments),
-            retrievedMemory: memories.map(traceMemoryItem),
-            toolPlan: [],
-            toolCalls: [],
-            agentMessages: [],
-            rawModelOutput: payload?.rawModelOutput ?? "",
-            reasoningText: payload?.reasoningText,
-            visibleAnswer: visibleAnswer,
-            parserWarnings: payload?.parserWarnings ?? [],
-            tokenUsage: payload?.tokenUsage,
-            finishReason: payload?.finishReason,
-            error: error ?? payload?.error
-        )
     }
 
     private func makeAgentDeveloperTrace(

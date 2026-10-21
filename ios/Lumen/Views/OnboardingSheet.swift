@@ -5,6 +5,7 @@ struct OnboardingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
+    @AppStorage("coreai.gemma.enabled") private var usesGemma = true
     @State private var downloader = ModelDownloader.shared
     @State private var setupTask: Task<Void, Never>?
     @State private var setupError: String?
@@ -29,9 +30,13 @@ struct OnboardingSheet: View {
                             Divider().background(Theme.border).padding(.leading, 44)
                             FeatureRow(icon: "wrench.and.screwdriver", title: "Permission-gated tools", subtitle: "Network and connected services run only when you enable and request them")
                             Divider().background(Theme.border).padding(.leading, 44)
-                            FeatureRow(icon: "brain", title: "Vector memory", subtitle: "A local embedding model powers recall across chats")
+                            FeatureRow(icon: "brain", title: "Local memory", subtitle: "A separate local embedding model supports memory and document search")
                             Divider().background(Theme.border).padding(.leading, 44)
-                            FeatureRow(icon: "checkmark.shield", title: "Verified model downloads", subtitle: "Pinned artifacts are checked before installation")
+                            if usesGemma {
+                                FeatureRow(icon: "cpu", title: "One Gemma assistant", subtitle: "One model for conversations, voice responses and reasoning")
+                            } else {
+                                FeatureRow(icon: "checkmark.shield", title: "Verified model downloads", subtitle: "Pinned artifacts are checked before installation")
+                            }
                         }
                         .background(Theme.surface)
                         .clipShape(.rect(cornerRadius: 10))
@@ -41,24 +46,12 @@ struct OnboardingSheet: View {
                         }
 
                         VStack(spacing: 10) {
-                            if setupTask != nil {
-                                VStack(alignment: .leading, spacing: 7) {
-                                    ProgressView(value: setupProgress)
-                                        .tint(Theme.accent)
-                                    Text(setupProgressText)
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
-
-                                Button("Cancel setup", role: .cancel) {
-                                    cancelSetup()
-                                }
-                                .font(.subheadline)
-                            } else {
-                                Button {
-                                    startDefault()
+                            if usesGemma {
+                                NavigationLink {
+                                    Form { CoreAIGemmaSettingsSection() }
+                                        .navigationTitle("Import Gemma")
                                 } label: {
-                                    Text("Download verified model fleet (\(formattedFleetSize))")
+                                    Text("Import local Gemma model")
                                         .font(.subheadline.weight(.medium))
                                         .foregroundStyle(.white)
                                         .frame(maxWidth: .infinity)
@@ -66,23 +59,53 @@ struct OnboardingSheet: View {
                                         .background(Theme.accent)
                                         .clipShape(.rect(cornerRadius: 10))
                                 }
-                                .buttonStyle(.plain)
+                                Text("Use a complete Gemma 4 E2B Core AI folder with its local tokenizer. Import hashes detect later changes; they do not certify the publisher. You can choose or install an embedding model later in Models.")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.textSecondary)
+                            } else {
+                                if setupTask != nil {
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        ProgressView(value: setupProgress)
+                                            .tint(Theme.accent)
+                                        Text(setupProgressText)
+                                            .font(.caption)
+                                            .foregroundStyle(Theme.textSecondary)
+                                    }
 
-                                Text("This downloads the selected chat model, embedding model, and required role adapters from Hugging Face after you confirm.")
-                                    .font(.caption2)
-                                    .foregroundStyle(Theme.textTertiary)
-                                    .multilineTextAlignment(.center)
+                                    Button("Cancel setup", role: .cancel) {
+                                        cancelSetup()
+                                    }
+                                    .font(.subheadline)
+                                } else {
+                                    Button {
+                                        startDefault()
+                                    } label: {
+                                        Text("Download verified model fleet (\(formattedFleetSize))")
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(.white)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .background(Theme.accent)
+                                            .clipShape(.rect(cornerRadius: 10))
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Text("This downloads the selected chat model, embedding model, and required role adapters from Hugging Face after you confirm.")
+                                        .font(.caption2)
+                                        .foregroundStyle(Theme.textTertiary)
+                                        .multilineTextAlignment(.center)
+                                }
+
+                                if let setupError {
+                                    Text(setupError)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                        .multilineTextAlignment(.center)
+                                }
                             }
 
-                            if let setupError {
-                                Text(setupError)
-                                    .font(.caption)
-                                    .foregroundStyle(.red)
-                                    .multilineTextAlignment(.center)
-                            }
-
-                            Button("Skip for now") {
-                                _ = ModelProvisioningReceipt.markDeferred()
+                            Button(usesGemma ? "Continue" : "Skip for now") {
+                                if !usesGemma { _ = ModelProvisioningReceipt.markDeferred() }
                                 dismiss()
                             }
                                 .font(.subheadline)
@@ -100,7 +123,7 @@ struct OnboardingSheet: View {
     }
 
     private func startDefault() {
-        guard setupTask == nil else { return }
+        guard !usesGemma, setupTask == nil else { return }
         setupError = nil
         guard ModelProvisioningReceipt.markConsented() else {
             setupError = "Lumen could not save your download confirmation. Check available storage and retry."

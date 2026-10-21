@@ -64,6 +64,7 @@ final class MemoryPressureMonitor {
         warningCount += 1
         lastWarningAt = now
         ModelLoader.cancelActiveLoads()
+        await CoreAIGemmaService.shared.unload()
         await AppLlamaService.shared.cancelActiveGeneration(reason: "memory-warning")
         let cleanup = await FleetRuntimeCleanup.unloadNonCoreChatSlotsNow()
         let metric = RuntimeMetric(

@@ -18,6 +18,22 @@ struct RuntimeMetric: Codable, Sendable, Equatable {
 enum RuntimeMetricErrorSanitizer {
     static func code(for error: Error) -> String {
         switch error {
+        case let error as CoreAIGemmaError:
+            switch error {
+            case .unsupported: return "coreai_unsupported"
+            case .busy: return "coreai_busy"
+            case .invalidModel: return "coreai_invalid_model"
+            case .modelNotConfigured: return "coreai_model_not_configured"
+            case .integrityFailure: return "coreai_integrity_failure"
+            case .invalidMessages: return "coreai_invalid_messages"
+            case .invalidTemperature: return "coreai_invalid_temperature"
+            case .invalidTokenBudget: return "coreai_invalid_token_budget"
+            case .contextFull: return "coreai_context_full"
+            case .resourceDenied: return "coreai_resource_denied"
+            case .loadFailed: return "coreai_load_failed"
+            case .inferenceFailed: return "coreai_inference_failed"
+            case .emptyOutput: return "coreai_empty_output"
+            }
         case let error as AssistantKernel.KernelError:
             switch error {
             case .unsupportedTaskForTextTurn: return "unsupported_task_for_text_turn"

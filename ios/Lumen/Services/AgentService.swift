@@ -1790,6 +1790,9 @@ final class AgentService {
     }
 
     func run(_ req: AgentRequest, options: LegacyAgentRunOptions) -> AsyncStream<AgentEvent> {
+        if LegacyAgentRunOptions.usesUnifiedAssistant {
+            return AssistantKernel.shared.runAdaptedLegacyRequest(req, options: options)
+        }
         #if DEBUG
         if options.diagnosticsEnabled, options.allowsDeterministicCompatibilityExecution {
             return LegacyAgentCompatibilityBridge.runSlotAgentCompatibility(req, options: options)

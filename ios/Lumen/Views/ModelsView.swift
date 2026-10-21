@@ -5,8 +5,11 @@ struct ModelsView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StoredModel.downloadedAt, order: .reverse) private var storedModels: [StoredModel]
+    @AppStorage("coreai.gemma.enabled") private var usesGemma = true
     @State private var showAddModel = false
     @State private var downloader = ModelDownloader.shared
+    @State private var isGemmaLoaded = false
+    @State private var embeddingReadiness = "not_checked"
     @State private var loadedPaths: Set<String> = []
     @State private var selectedModelFamily = LumenModelFamily.persistedSelected
     @State private var isRepairingSelectedFamily = false
@@ -20,17 +23,21 @@ struct ModelsView: View {
                 ScrollView {
                     VStack(spacing: 24) {
                         activeRow
-                        modelFamilyCard
-                        FleetStatusCard(
-                            snapshot: runtimeAwareFleetSnapshot,
-                            progresses: downloader.progresses,
-                            loadedPaths: loadedPaths,
-                            onRepair: repairFleet
-                        )
+                        if usesGemma {
+                            gemmaModelCard
+                        } else {
+                            modelFamilyCard
+                            FleetStatusCard(
+                                snapshot: runtimeAwareFleetSnapshot,
+                                progresses: downloader.progresses,
+                                loadedPaths: loadedPaths,
+                                onRepair: repairFleet
+                            )
+                        }
 
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
-                                Text("Featured — \(selectedModelFamily.shortLabel)")
+                                Text(usesGemma ? "Embedding models" : "Featured — \(selectedModelFamily.shortLabel)")
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(Theme.textPrimary)
                                 Spacer()
@@ -42,6 +49,7 @@ struct ModelsView: View {
                                 ForEach(featuredModels) { model in
                                     ModelCard(
                                         catalog: model,
+                                        isGemmaMode: usesGemma,
                                         stored: installedStoredModel(for: model),
                                         progress: downloader.progresses[model.id],
                                         onDownload: { download(model) },
@@ -56,11 +64,11 @@ struct ModelsView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Downloaded")
+                            Text(usesGemma ? "Downloaded embeddings" : "Downloaded")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Theme.textPrimary)
-                            let installedModels = storedModels.filter { modelFileExists($0) }
-                            let staleModels = storedModels.filter { !modelFileExists($0) }
+                            let installedModels = visibleStoredModels.filter { modelFileExists($0) }
+                            let staleModels = visibleStoredModels.filter { !modelFileExists($0) }
                             if installedModels.isEmpty && staleModels.isEmpty {
                                 Text("No models yet.")
                                     .font(.footnote)
@@ -114,6 +122,7 @@ struct ModelsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showAddModel = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel(usesGemma ? "Add an embedding model" : "Add a model")
                 }
             }
             .sheet(isPresented: $showAddModel) {
@@ -125,6 +134,7 @@ struct ModelsView: View {
                     await refreshLoaded()
                 }
             }
+            .task(id: usesGemma) { await refreshLoaded() }
             .task(id: appState.activeChatModelID) { await refreshLoaded() }
             .task(id: appState.activeEmbeddingModelID) { await refreshLoaded() }
             .task(id: appState.runtime.modelAutoloadState) { await refreshLoaded() }
@@ -142,22 +152,45 @@ struct ModelsView: View {
     private var activeRow: some View {
         HStack(spacing: 10) {
             ActivePill(
-                title: "Chat",
-                name: activeChatModel?.name ?? "None",
-                modelID: appState.activeChatModelID,
+                title: "Assistant",
+                name: presentation.activeAssistantName(legacyName: activeChatModel?.name),
+                modelID: usesGemma ? (CoreAIGemmaModelStore.isConfigured ? "coreai-gemma" : nil) : appState.activeChatModelID,
                 icon: "bubble.left.and.bubble.right",
-                isLoaded: activeChatModel.map(isRuntimeLoaded) ?? false,
+                isLoaded: usesGemma ? isGemmaLoaded : (activeChatModel.map(isRuntimeLoaded) ?? false),
                 statusAccessibilityIdentifier: "models.chatRuntimeStatus"
             )
             ActivePill(
-                title: "Embed",
-                name: activeEmbeddingModel?.name ?? "None",
+                title: "Embedding",
+                name: CoreAIGemmaPresentationPolicy.embeddingDisplayName(activeEmbeddingModel?.name ?? "None"),
                 modelID: appState.activeEmbeddingModelID,
                 icon: "point.3.connected.trianglepath.dotted",
                 isLoaded: activeEmbeddingModel.map(isRuntimeLoaded) ?? false,
                 statusAccessibilityIdentifier: "models.embeddingRuntimeStatus"
             )
         }
+    }
+
+    private var gemmaModelCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("One Gemma assistant", systemImage: "cpu")
+                .font(.subheadline.weight(.semibold))
+            Text("Gemma handles conversations, voice responses and reasoning for tools and memory. Choose a separate local embedding model below for memory and document retrieval.")
+                .font(.caption)
+                .foregroundStyle(Theme.textSecondary)
+            Text(CoreAIGemmaPresentationPolicy.embeddingStatusMessage(embeddingReadiness))
+                .font(.caption)
+                .foregroundStyle(Theme.textSecondary)
+            NavigationLink("Manage Gemma model") {
+                Form { CoreAIGemmaSettingsSection() }
+                    .navigationTitle("Gemma")
+            }
+            .accessibilityIdentifier("models.manageGemma")
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface)
+        .clipShape(.rect(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border, lineWidth: 1) }
     }
 
     private var modelFamilyCard: some View {
@@ -200,7 +233,14 @@ struct ModelsView: View {
         .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border, lineWidth: 1) }
     }
 
-    private var featuredModels: [CatalogModel] { LumenModelFleetCatalog.bootstrapModels(for: selectedModelFamily) }
+    private var presentation: CoreAIGemmaPresentationPolicy { .init(usesGemma: usesGemma) }
+    private var visibleStoredModels: [StoredModel] { storedModels.filter { presentation.allowsModelManagement(role: $0.modelRole) } }
+    private var featuredModels: [CatalogModel] {
+        let candidates = usesGemma
+            ? ModelCatalog.featured + ModelCatalog.legacyFeatured + LumenModelFleetCatalog.allFleetModels
+            : LumenModelFleetCatalog.bootstrapModels(for: selectedModelFamily)
+        return presentation.catalogModels(candidates)
+    }
     private var installedModels: [StoredModel] { storedModels.filter { modelFileExists($0) } }
     private var activeChatModel: StoredModel? { installedModels.first { $0.id.uuidString == appState.activeChatModelID } }
     private var activeEmbeddingModel: StoredModel? { installedModels.first { $0.id.uuidString == appState.activeEmbeddingModelID } }
@@ -228,7 +268,7 @@ struct ModelsView: View {
     private func repairFleet() { repairSelectedFamily() }
 
     private func repairSelectedFamily() {
-        guard !isRepairingSelectedFamily else { return }
+        guard !usesGemma, !isRepairingSelectedFamily else { return }
         isRepairingSelectedFamily = true
         Task { @MainActor in
             let result = await ModelLaunchBootstrap.switchFamily(selectedModelFamily, appState: appState, context: modelContext)
@@ -246,6 +286,7 @@ struct ModelsView: View {
     }
 
     private func download(_ model: CatalogModel) {
+        guard presentation.allowsModelManagement(role: model.role) else { return }
         Task { @MainActor in
             _ = await downloader.start(model) { localURL in
                 Task { @MainActor in
@@ -255,12 +296,12 @@ struct ModelsView: View {
                             localURL: localURL,
                             context: modelContext
                         )
-                        if model.role == .chat && appState.activeChatModelID == nil {
+                        if !usesGemma && model.role == .chat && appState.activeChatModelID == nil {
                             try select(stored)
                         } else if model.role == .embedding && appState.activeEmbeddingModelID == nil {
                             try select(stored)
                         }
-                        if model.role != .roleAdapter {
+                        if model.role != .roleAdapter && presentation.allowsModelManagement(role: model.role) {
                             try await runtimeController.load(stored, appState: appState, storedModels: mergedStoredModels(including: stored))
                         }
                         await refreshLoaded()
@@ -284,6 +325,7 @@ struct ModelsView: View {
     }
 
     private func activate(stored: StoredModel) {
+        guard presentation.allowsModelManagement(role: stored.modelRole) else { return }
         guard modelFileExists(stored) else { return }
         guard stored.modelRole != .roleAdapter else {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -307,11 +349,30 @@ struct ModelsView: View {
     }
 
     private func refreshLoaded() async {
+        isGemmaLoaded = await CoreAIGemmaService.shared.isLoaded()
         guard let set = await runtimeController.refreshLoadedPaths() else { return }
         loadedPaths = set
+        if let selectedID = appState.activeEmbeddingModelID {
+            if let model = storedModels.first(where: { $0.id.uuidString == selectedID && $0.modelRole == .embedding }) {
+                let path = ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path
+                if !modelFileExists(model) {
+                    embeddingReadiness = "selected_file_missing"
+                } else if set.contains(path) {
+                    embeddingReadiness = "ready"
+                } else {
+                    let status = ModelLoader.memoryEmbeddingReadiness
+                    embeddingReadiness = status == "ready" ? "not_checked" : status
+                }
+            } else {
+                embeddingReadiness = "selected_model_missing"
+            }
+        } else {
+            embeddingReadiness = "not_selected"
+        }
     }
 
     private func load(_ sm: StoredModel) {
+        guard presentation.allowsModelManagement(role: sm.modelRole) else { return }
         guard modelFileExists(sm) else { return }
         Task {
             let previousSelection = PersistedModelSelectionStore.loadOrMigrate()
@@ -336,6 +397,7 @@ struct ModelsView: View {
     }
 
     private func unload(_ sm: StoredModel) {
+        guard presentation.allowsModelManagement(role: sm.modelRole) else { return }
         Task {
             await runtimeController.unload(sm) { adapterSlot(for: $0) }
             await refreshLoaded()
@@ -344,6 +406,7 @@ struct ModelsView: View {
     }
 
     private func reload(_ sm: StoredModel) {
+        guard presentation.allowsModelManagement(role: sm.modelRole) else { return }
         guard modelFileExists(sm) else { return }
         Task {
             do {
@@ -357,6 +420,7 @@ struct ModelsView: View {
     }
 
     private func deleteStoredModel(_ sm: StoredModel) {
+        guard presentation.allowsModelManagement(role: sm.modelRole) else { return }
         let fm = FileManager.default
         let modelID = sm.id.uuidString
         let role = sm.modelRole
@@ -411,6 +475,7 @@ struct ModelsView: View {
     }
 
     private func select(_ stored: StoredModel) throws {
+        guard presentation.allowsModelManagement(role: stored.modelRole) else { return }
         let family = LumenModelFamily.persistedSelected
         if stored.modelRole == .chat {
             try LumenModelSelectionPolicy.validatePersistedChatModel(
@@ -484,6 +549,7 @@ struct ActivePill: View {
 
 struct ModelCard: View {
     let catalog: CatalogModel
+    var isGemmaMode = false
     let stored: StoredModel?
     let progress: DownloadProgress?
     var onDownload: () -> Void
@@ -498,14 +564,14 @@ struct ModelCard: View {
             HStack(spacing: 10) {
                 Image(systemName: catalog.role == .embedding ? "point.3.connected.trianglepath.dotted" : "cpu").font(.body).foregroundStyle(Theme.textSecondary).frame(width: 28, height: 28)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(catalog.name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
+                    Text(catalog.role == .embedding ? CoreAIGemmaPresentationPolicy.embeddingDisplayName(catalog.name) : catalog.name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary)
                     Text("\(catalog.parameters) · \(catalog.quantization) · \(formatBytes(catalog.sizeBytes))").font(.caption.monospaced()).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
                 actionButton
             }
-            Text(catalog.description).font(.footnote).foregroundStyle(Theme.textSecondary)
-            if !catalog.tags.isEmpty {
+            Text(isGemmaMode ? "Local embeddings for memory and document retrieval." : catalog.description).font(.footnote).foregroundStyle(Theme.textSecondary)
+            if !isGemmaMode && !catalog.tags.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(catalog.tags, id: \.self) { tag in
                         Text(tag).font(.caption2).padding(.horizontal, 6).padding(.vertical, 2).foregroundStyle(Theme.textSecondary).background(Theme.surfaceHigh).clipShape(.rect(cornerRadius: 4))
@@ -587,7 +653,7 @@ struct DownloadedRow: View {
             Image(systemName: model.modelRole == .embedding ? "point.3.connected.trianglepath.dotted" : "cpu").foregroundStyle(isMissingFile ? .orange : Theme.textSecondary)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(model.name).font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary)
+                    Text(model.modelRole == .embedding ? CoreAIGemmaPresentationPolicy.embeddingDisplayName(model.name) : model.name).font(.subheadline.weight(.medium)).foregroundStyle(Theme.textPrimary)
                     if isLoaded { Circle().fill(Theme.accent).frame(width: 6, height: 6) }
                 }
                 Text(isMissingFile ? "Missing local file · stale record" : "\(model.parameters) · \(model.quantization) · \(formatBytes(model.sizeBytes))")
@@ -626,6 +692,7 @@ struct DownloadedRow: View {
 }
 
 struct ModelPickerSheet: View {
+    @AppStorage("coreai.gemma.enabled") private var usesGemma = true
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
     @Query private var stored: [StoredModel]
@@ -634,27 +701,41 @@ struct ModelPickerSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Chat model") {
-                    ForEach(stored.filter { model in
-                        model.modelRole == .chat
-                            && FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path)
-                            && LumenModelSelectionPolicy.isPersistedChatModelCompatible(
-                                repoID: model.repoId,
-                                fileName: model.fileName,
-                                sizeBytes: model.sizeBytes,
-                                family: LumenModelFamily.persistedSelected
-                            )
-                    }) { m in
-                        pickerRow(m, isActive: appState.activeChatModelID == m.id.uuidString) { select(m) }
+                if usesGemma {
+                    Section("Assistant") {
+                        LabeledContent("Model", value: "Gemma 4 E2B")
+                        Text("Manage the imported Gemma model in Settings. The embedding selection below is used only for memory and document retrieval.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                } else {
+                    Section("Chat model") {
+                        ForEach(stored.filter { model in
+                            model.modelRole == .chat
+                                && FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path)
+                                && LumenModelSelectionPolicy.isPersistedChatModelCompatible(
+                                    repoID: model.repoId,
+                                    fileName: model.fileName,
+                                    sizeBytes: model.sizeBytes,
+                                    family: LumenModelFamily.persistedSelected
+                                )
+                        }) { m in
+                            pickerRow(m, isActive: appState.activeChatModelID == m.id.uuidString) { select(m) }
+                        }
                     }
                 }
                 Section("Embedding model") {
+                    if !stored.contains(where: { $0.modelRole == .embedding && FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: $0.localPath, fileName: $0.fileName).path) }) {
+                        Text("No embedding model is installed. Choose or install one in Models.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
                     ForEach(stored.filter { $0.modelRole == .embedding && FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: $0.localPath, fileName: $0.fileName).path) }) { m in
                         pickerRow(m, isActive: appState.activeEmbeddingModelID == m.id.uuidString) { select(m) }
                     }
                 }
             }
-            .navigationTitle("Active Models")
+            .navigationTitle(usesGemma ? "Assistant & memory" : "Active Models")
             .navigationBarTitleDisplayMode(.inline)
             .alert("Selection not saved", isPresented: Binding(
                 get: { selectionError != nil },
@@ -668,6 +749,7 @@ struct ModelPickerSheet: View {
     }
 
     private func select(_ model: StoredModel) {
+        guard CoreAIGemmaPresentationPolicy(usesGemma: usesGemma).allowsModelManagement(role: model.modelRole) else { return }
         do {
             let family = LumenModelFamily.persistedSelected
             if model.modelRole == .chat {
@@ -696,7 +778,7 @@ struct ModelPickerSheet: View {
         Button(action: onTap) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text(m.name)
+                    Text(m.modelRole == .embedding ? CoreAIGemmaPresentationPolicy.embeddingDisplayName(m.name) : m.name)
                     Text("\(m.parameters) · \(m.quantization)").font(.caption.monospaced()).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
@@ -707,6 +789,8 @@ struct ModelPickerSheet: View {
 }
 
 struct AddModelSheet: View {
+    @AppStorage("coreai.gemma.enabled") private var usesGemma = true
+    @State private var selectedRole: ModelRole = .chat
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
@@ -716,6 +800,16 @@ struct AddModelSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                if usesGemma {
+                    Text("Choose a local GGUF embedding model for memory and document retrieval. Gemma remains the assistant.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                } else {
+                    Picker("Use for", selection: $selectedRole) {
+                        Text("Chat").tag(ModelRole.chat)
+                        Text("Embeddings").tag(ModelRole.embedding)
+                    }
+                }
                 if candidates.isEmpty {
                     Text("No .gguf files found in app bundle or Documents directory.").font(.footnote).foregroundStyle(Theme.textSecondary)
                 } else {
@@ -729,13 +823,16 @@ struct AddModelSheet: View {
                     }
                 }
             }
-            .navigationTitle("Select GGUF")
+            .navigationTitle(usesGemma ? "Add embedding model" : "Select GGUF")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) { Button("Refresh") { candidates = LocalModelDiscovery.discoverGGUF() } }
             }
-            .task { candidates = LocalModelDiscovery.discoverGGUF() }
+            .task {
+                selectedRole = usesGemma ? .embedding : .chat
+                candidates = LocalModelDiscovery.discoverGGUF()
+            }
             .alert("Model import", isPresented: Binding(
                 get: { importError != nil },
                 set: { if !$0 { importError = nil } }
@@ -749,7 +846,8 @@ struct AddModelSheet: View {
 
     private func addLocal(_ file: LocalModelFile) {
         let fileName = file.fileName
-        let role: ModelRole = fileName.lowercased().contains("embed") ? .embedding : .chat
+        let role: ModelRole = usesGemma ? .embedding : selectedRole
+        guard CoreAIGemmaPresentationPolicy(usesGemma: usesGemma).allowsModelManagement(role: role) else { return }
         let attrs = (try? FileManager.default.attributesOfItem(atPath: file.url.path)) ?? [:]
         let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
         do {

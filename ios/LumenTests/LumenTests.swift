@@ -334,7 +334,7 @@ struct LumenTests {
     }
 
     @Test func placeholderRepairFallsBackForSentinelCopies() async throws {
-        let fallback = "I couldn't produce a valid answer. Try rephrasing, or switch off Agent Mode for this prompt."
+        let fallback = "I couldn't produce a valid answer. Try rephrasing, or turn off tools for this prompt."
         #expect(SchemaPlaceholderDetector.repairOrFallback("<USER_FINAL_TEXT>") == fallback)
         #expect(SchemaPlaceholderDetector.repairOrFallback("<PRIVATE_REASONING>") == fallback)
         #expect(SchemaPlaceholderDetector.repairOrFallback("   ") == fallback)

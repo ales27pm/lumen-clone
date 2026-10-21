@@ -9,6 +9,7 @@ struct ChatHomeView: View {
     @Query private var storedModels: [StoredModel]
     @AppStorage("verifiedModelProvisioningReceipt") private var provisioningReceiptData: Data?
 
+    @AppStorage("coreai.gemma.enabled") private var usesGemma = true
     @State private var selectedConversation: Conversation?
     @State private var showingConversations = false
     @State private var showingModelPicker = false
@@ -70,7 +71,7 @@ struct ChatHomeView: View {
                 .presentationDetents([.medium])
         }
         .sheet(isPresented: $showingOnboarding, onDismiss: {
-            if ModelProvisioningReceipt.status() != .completed {
+            if !usesGemma, ModelProvisioningReceipt.status() != .completed {
                 _ = ModelProvisioningReceipt.markDeferred()
             }
         }) {
@@ -96,7 +97,7 @@ struct ChatHomeView: View {
     }
 
     private var activeModelPill: some View {
-        let name = storedModels.first { $0.id.uuidString == appState.activeChatModelID }?.name ?? "No model"
+        let name = activeModelName ?? "No model"
         return HStack(spacing: 6) {
             LumenBrandAsset(kind: .assistantMark)
                 .frame(width: 24, height: 24)
@@ -145,7 +146,8 @@ struct ChatHomeView: View {
     }
 
     private var activeModelName: String? {
-        storedModels.first { $0.id.uuidString == appState.activeChatModelID }?.name
+        if usesGemma { return "Gemma 4 E2B" }
+        return storedModels.first { $0.id.uuidString == appState.activeChatModelID }?.name
     }
 
     private var provisioningValidationKey: String {
@@ -154,6 +156,8 @@ struct ChatHomeView: View {
             .sorted()
             .joined(separator: "\n")
         return [
+            usesGemma ? "coreai-gemma" : "llama",
+            usesGemma && CoreAIGemmaModelStore.isConfigured ? "gemma-imported" : "gemma-not-imported",
             provisioningReceiptData?.base64EncodedString() ?? "none",
             appState.activeChatModelID ?? "none",
             appState.activeEmbeddingModelID ?? "none",
@@ -164,6 +168,10 @@ struct ChatHomeView: View {
     private func refreshProvisioningPresentation() async {
         guard !LumenLaunchArguments.isUITesting else {
             showingOnboarding = false
+            return
+        }
+        if usesGemma {
+            showingOnboarding = !CoreAIGemmaModelStore.isConfigured
             return
         }
         switch ModelProvisioningReceipt.status() {

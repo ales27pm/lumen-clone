@@ -565,7 +565,7 @@ extension AssistantKernel: AgentKernelRunning {
 
 private extension AgentKernelRequest {
     var supportsDeterministicToolExecution: Bool {
-        !options.forceModelBackedToolPlanning && (task == .chat || task == .backgroundTrigger)
+        options.allowsToolExecution && !options.forceModelBackedToolPlanning && (task == .chat || task == .backgroundTrigger)
     }
 
     var requiresBackgroundSafeToolExecution: Bool {

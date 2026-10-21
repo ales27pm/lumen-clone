@@ -79,7 +79,10 @@ enum VoiceAgentRuntimeBridge {
                 temperature: appState.temperature,
                 topP: appState.topP,
                 repetitionPenalty: appState.repetitionPenalty,
-                maxTokens: maxTokens
+                maxTokens: maxTokens,
+                forceModelBackedToolPlanning: CoreAIGemmaModelStore.isEnabled,
+                structuredMode: appState.agentModeEnabled && CoreAIGemmaModelStore.isEnabled ? .requiredAgentJSON : .automatic,
+                allowsToolExecution: appState.agentModeEnabled
             )
         )
     }

@@ -1,5 +1,9 @@
 # Lumen Validation
 
+Core AI Gemma now requires the iOS 27.2 deployment target. The Linux integration host cannot compile Apple frameworks or execute XCTest. See `COREAI_GEMMA.md` for the focused regression suites, local bundle requirements, and separate physical-device/ANE validation boundaries.
+
+Single-model mode adds `CoreAIGemmaSingleModelTests`, `CoreAIGemmaPresentationPolicyTests`, and `GemmaMemoryEmbeddingPolicyTests`: verify all foreground generation uses Gemma, tools-off cannot execute actions, background work cannot select another model, legacy model controls are hidden, and selected local embeddings remain separate. These XCTest suites require Apple execution; the community Core AI embedding export has not been activated or device-qualified.
+
 Structured-agent release validation must confirm that refresh and processing handlers register before application launch completion. For iOS 26 continued processing, confirm that the Info.plist advertises the wildcard pattern and that a user-initiated request dynamically registers and submits the same fully composed concrete identifier. Model-visible tools must remain a fail-closed subset of `SecureToolRegistry`, and exported E2E evidence is evaluated by `evidenceMode`. A `policyFirstAllowed` scenario may use correlated deterministic policy-first evidence, while `modelBackedRequired` remains strict.
 
 After an embedding format, model, or dimension change, run the in-app reindex workflow and confirm stale chunks report `rag_reindex_required` before reindex and become searchable afterward. Simulator compilation is not proof of real-device background registration, local model loading, or live E2E behavior.

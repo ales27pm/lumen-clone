@@ -16,6 +16,7 @@ actor BundledIntentClassifier {
     private init() {}
 
     func classify(_ text: String) async -> IntentClassificationResult? {
+        guard !CoreAIGemmaModelStore.isEnabled else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -36,6 +37,12 @@ actor BundledIntentClassifier {
         }
 
         return nil
+    }
+
+    func unload() {
+        cachedNLModel = nil
+        cachedCoreMLModel = nil
+        attemptedSourceModelCompilation = false
     }
 
     func resetPredictionMainThreadViolationCountForTesting() {
