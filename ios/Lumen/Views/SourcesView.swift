@@ -31,6 +31,8 @@ struct SourcesView: View {
         }
     }
 
+    @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @Query(
         filter: #Predicate<RAGChunk> {
@@ -44,6 +46,7 @@ struct SourcesView: View {
     @State private var pendingReindex: ReindexTarget?
     @State private var busy = false
     @State private var status: String?
+    @State private var indexingTask: Task<Void, Never>?
 
     private var counts: [RAGSourceType: Int] {
         var out: [RAGSourceType: Int] = [:]
@@ -145,6 +148,7 @@ struct SourcesView: View {
                     }
                 }
             }
+            .onDisappear { indexingTask?.cancel() }
         }
     }
 
@@ -204,17 +208,18 @@ struct SourcesView: View {
     }
 
     private func importFiles(urls: [URL]) {
-        Task {
-            busy = true; defer { busy = false }
+        startIndexing {
             var total = 0
             var failures: [String] = []
             for u in urls {
+                try Task.checkCancellation()
                 let imported = FileStore.importFileWithDiagnostics(from: u)
                 guard let dest = imported.url else {
                     failures.append("import failed: \(imported.diagnostic ?? "import_failed")")
                     continue
                 }
                 let result = await RAGStore.indexFileWithDiagnostics(url: dest, context: modelContext)
+                try Task.checkCancellation()
                 total += result.indexedCount
                 if result.didIndexAllChunks == false, let diagnostic = result.diagnostic {
                     failures.append("\(dest.lastPathComponent): \(diagnostic)")
@@ -229,12 +234,11 @@ struct SourcesView: View {
     }
 
     private func reindexFiles() {
-        Task {
-            busy = true; defer { busy = false }
-            guard let container = SharedContainer.shared else {
-                status = "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
-                return
-            }
+        guard let container = SharedContainer.shared else {
+            status = "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+            return
+        }
+        startIndexing {
             // Bulk replacement may roll back its transaction on failure. Keep it
             // isolated from unrelated unsaved edits owned by this view context.
             let result = await RAGStore.indexImportedFilesWithDiagnostics(context: ModelContext(container))
@@ -243,18 +247,40 @@ struct SourcesView: View {
     }
 
     private func reindexPhotos() {
-        Task {
-            busy = true; defer { busy = false }
-            guard let container = SharedContainer.shared else {
-                status = "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
-                return
-            }
+        guard let container = SharedContainer.shared else {
+            status = "RAG storage unavailable. Diagnostic: swiftdata_shared_container_unavailable."
+            return
+        }
+        startIndexing {
             let result = await RAGStore.indexPhotosWithDiagnostics(
                 monthsBack: 6,
                 context: ModelContext(container)
             )
             status = MemoryTools.ragIndexPhotosMessage(from: result)
         }
+    }
+
+    private func startIndexing(_ operation: @escaping @MainActor () async throws -> Void) {
+        guard !busy else { return }
+        busy = true
+        let task = Task { @MainActor in
+            defer { busy = false; indexingTask = nil }
+            do {
+                try await ForegroundEmbeddingWork.run(
+                    isForeground: scenePhase == .active, appState: appState, context: modelContext
+                ) {
+                    try await operation()
+                }
+            } catch is CancellationError {
+                status = "Source indexing cancelled."
+            } catch let error as ForegroundEmbeddingWork.Failure {
+                status = error.localizedDescription
+            } catch {
+                status = "Source indexing unavailable. Check the selected local model and model storage."
+            }
+        }
+        indexingTask = task
+        AppCancellationBus.shared.register(task, category: .ragIndexing)
     }
 
     private func confirmReindex(_ target: ReindexTarget) {
@@ -350,12 +376,15 @@ struct SourceDetailView: View {
 }
 
 struct AddNoteSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var title = ""
     @State private var body_ = ""
     @State private var saving = false
     @State private var status: String?
+    @State private var savingTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -385,19 +414,37 @@ struct AddNoteSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .onDisappear { savingTask?.cancel() }
         }
     }
 
     private func save() {
-        Task {
-            saving = true
-            let result = await RAGStore.indexNoteWithDiagnostics(title: title, body: body_, context: modelContext)
-            saving = false
-            if result.mode == .indexed || result.mode == .partial {
-                dismiss()
-            } else {
-                status = "Could not index note. Diagnostic: \(MemoryTools.diagnosticText(result.diagnostic))."
+        guard !saving else { return }
+        saving = true
+        let savedTitle = title
+        let savedBody = body_
+        let task = Task { @MainActor in
+            defer { saving = false; savingTask = nil }
+            do {
+                let result = try await ForegroundEmbeddingWork.run(
+                    isForeground: scenePhase == .active, appState: appState, context: modelContext
+                ) {
+                    await RAGStore.indexNoteWithDiagnostics(title: savedTitle, body: savedBody, context: modelContext)
+                }
+                if result.mode == .indexed || result.mode == .partial {
+                    dismiss()
+                } else {
+                    status = "Could not index note. Diagnostic: \(MemoryTools.diagnosticText(result.diagnostic))."
+                }
+            } catch is CancellationError {
+                status = "Note indexing cancelled."
+            } catch let error as ForegroundEmbeddingWork.Failure {
+                status = error.localizedDescription
+            } catch {
+                status = "Could not prepare the local embedding model. Your note remains in this editor."
             }
         }
+        savingTask = task
+        AppCancellationBus.shared.register(task, category: .ragIndexing)
     }
 }

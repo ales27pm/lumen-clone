@@ -6,9 +6,11 @@ struct ModelsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StoredModel.downloadedAt, order: .reverse) private var storedModels: [StoredModel]
     @AppStorage("coreai.gemma.enabled") private var usesGemma = true
+    @AppStorage("coreai.textEmbedding.selected") private var usesCoreAIEmbeddings = false
     @State private var showAddModel = false
     @State private var downloader = ModelDownloader.shared
     @State private var isGemmaLoaded = false
+    @State private var isCoreAIEmbeddingLoaded = false
     @State private var embeddingReadiness = "not_checked"
     @State private var loadedPaths: Set<String> = []
     @State private var selectedModelFamily = LumenModelFamily.persistedSelected
@@ -23,6 +25,7 @@ struct ModelsView: View {
                 ScrollView {
                     VStack(spacing: 24) {
                         activeRow
+                        coreAIEmbeddingCard
                         if usesGemma {
                             gemmaModelCard
                         } else {
@@ -86,7 +89,7 @@ struct ModelsView: View {
                                     ForEach(installedModels) { sm in
                                         DownloadedRow(model: sm,
                                                       isActiveChat: sm.id.uuidString == appState.activeChatModelID,
-                                                      isActiveEmbed: sm.id.uuidString == appState.activeEmbeddingModelID,
+                                                      isActiveEmbed: !usesCoreAIEmbeddings && sm.id.uuidString == appState.activeEmbeddingModelID,
                                                       isLoaded: loadedPaths.contains(ModelStorage.resolvedModelURL(from: sm.localPath, fileName: sm.fileName).path),
                                                       isMissingFile: false,
                                                       isAdapter: sm.modelRole == .roleAdapter,
@@ -134,6 +137,7 @@ struct ModelsView: View {
                     await refreshLoaded()
                 }
             }
+            .task(id: usesCoreAIEmbeddings) { await refreshLoaded() }
             .task(id: usesGemma) { await refreshLoaded() }
             .task(id: appState.activeChatModelID) { await refreshLoaded() }
             .task(id: appState.activeEmbeddingModelID) { await refreshLoaded() }
@@ -161,13 +165,38 @@ struct ModelsView: View {
             )
             ActivePill(
                 title: "Embedding",
-                name: CoreAIGemmaPresentationPolicy.embeddingDisplayName(activeEmbeddingModel?.name ?? "None"),
-                modelID: appState.activeEmbeddingModelID,
+                name: usesCoreAIEmbeddings ? "EmbeddingGemma 2" : CoreAIGemmaPresentationPolicy.embeddingDisplayName(activeEmbeddingModel?.name ?? "None"),
+                modelID: usesCoreAIEmbeddings ? (CoreAITextEmbeddingModelStore.isConfigured ? "coreai-embeddinggemma-2-text" : nil) : appState.activeEmbeddingModelID,
                 icon: "point.3.connected.trianglepath.dotted",
-                isLoaded: activeEmbeddingModel.map(isRuntimeLoaded) ?? false,
+                isLoaded: usesCoreAIEmbeddings ? isCoreAIEmbeddingLoaded : (activeEmbeddingModel.map(isRuntimeLoaded) ?? false),
                 statusAccessibilityIdentifier: "models.embeddingRuntimeStatus"
             )
         }
+    }
+
+    private var coreAIEmbeddingCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Text embeddings", systemImage: "point.3.connected.trianglepath.dotted")
+                .font(.subheadline.weight(.semibold))
+            Text(usesCoreAIEmbeddings
+                 ? "EmbeddingGemma 2 is selected for local text memory and document search. GGUF selections are preserved."
+                 : "Use the selected GGUF embedding model, or import and explicitly select the Core AI text encoder.")
+                .font(.caption).foregroundStyle(Theme.textSecondary)
+            NavigationLink("Manage text embeddings") {
+                Form {
+                    CoreAITextEmbeddingSettingsSection(onConfigurationChanged: {
+                        Task { await refreshLoaded() }
+                    })
+                }
+                .navigationTitle("Text embeddings")
+            }
+            .accessibilityIdentifier("models.manageCoreAIEmbeddings")
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface)
+        .clipShape(.rect(cornerRadius: 14))
+        .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border, lineWidth: 1) }
     }
 
     private var gemmaModelCard: some View {
@@ -297,11 +326,11 @@ struct ModelsView: View {
                             context: modelContext
                         )
                         if !usesGemma && model.role == .chat && appState.activeChatModelID == nil {
-                            try select(stored)
-                        } else if model.role == .embedding && appState.activeEmbeddingModelID == nil {
-                            try select(stored)
+                            try await select(stored)
+                        } else if model.role == .embedding && appState.activeEmbeddingModelID == nil && !usesCoreAIEmbeddings {
+                            try await select(stored)
                         }
-                        if model.role != .roleAdapter && presentation.allowsModelManagement(role: model.role) {
+                        if model.role != .roleAdapter && presentation.allowsModelManagement(role: model.role) && !(model.role == .embedding && usesCoreAIEmbeddings) {
                             try await runtimeController.load(stored, appState: appState, storedModels: mergedStoredModels(including: stored))
                         }
                         await refreshLoaded()
@@ -331,12 +360,15 @@ struct ModelsView: View {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             return
         }
-        do {
-            try select(stored)
-            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-        } catch {
-            modelOperationError = error.localizedDescription
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        Task { @MainActor in
+            do {
+                try await select(stored)
+                await refreshLoaded()
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+            } catch {
+                modelOperationError = error.localizedDescription
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
         }
     }
 
@@ -350,9 +382,12 @@ struct ModelsView: View {
 
     private func refreshLoaded() async {
         isGemmaLoaded = await CoreAIGemmaService.shared.isLoaded()
+        isCoreAIEmbeddingLoaded = await CoreAITextEmbeddingService.shared.isLoaded()
         guard let set = await runtimeController.refreshLoadedPaths() else { return }
         loadedPaths = set
-        if let selectedID = appState.activeEmbeddingModelID {
+        if usesCoreAIEmbeddings {
+            embeddingReadiness = isCoreAIEmbeddingLoaded ? "ready" : (CoreAITextEmbeddingModelStore.isConfigured ? "not_checked" : "selected_model_missing")
+        } else if let selectedID = appState.activeEmbeddingModelID {
             if let model = storedModels.first(where: { $0.id.uuidString == selectedID && $0.modelRole == .embedding }) {
                 let path = ModelStorage.resolvedModelURL(from: model.localPath, fileName: model.fileName).path
                 if !modelFileExists(model) {
@@ -376,20 +411,30 @@ struct ModelsView: View {
         guard modelFileExists(sm) else { return }
         Task {
             let previousSelection = PersistedModelSelectionStore.loadOrMigrate()
+            var attemptedSelection = previousSelection
             do {
-                if sm.modelRole != .roleAdapter {
-                    try select(sm)
+                try await runtimeController.preservingEmbeddingSelection(
+                    for: sm.modelRole,
+                    isCurrent: { PersistedModelSelectionStore.loadOrMigrate() == attemptedSelection },
+                    rollback: {
+                        try appState.commitActiveModelSelection(
+                            chatModelID: previousSelection.chatModelID,
+                            embeddingModelID: previousSelection.embeddingModelID,
+                            family: LumenModelFamily.fromStoredID(previousSelection.familyID),
+                            provisioningPlanID: previousSelection.provisioningPlanID
+                        )
+                    }
+                ) {
+                    if sm.modelRole != .roleAdapter {
+                        try commitSelection(sm)
+                        attemptedSelection = PersistedModelSelectionStore.loadOrMigrate()
+                    }
+                    try await runtimeController.load(sm, appState: appState, storedModels: storedModels)
                 }
-                try await runtimeController.load(sm, appState: appState, storedModels: storedModels)
                 await refreshLoaded()
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             } catch {
-                try? appState.commitActiveModelSelection(
-                    chatModelID: previousSelection.chatModelID,
-                    embeddingModelID: previousSelection.embeddingModelID,
-                    family: LumenModelFamily.fromStoredID(previousSelection.familyID),
-                    provisioningPlanID: previousSelection.provisioningPlanID
-                )
+                await refreshLoaded()
                 modelOperationError = error.localizedDescription
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
@@ -474,7 +519,20 @@ struct ModelsView: View {
         }
     }
 
-    private func select(_ stored: StoredModel) throws {
+    private func select(_ stored: StoredModel) async throws {
+        var attemptedSelection = PersistedModelSelectionStore.loadOrMigrate()
+        try await runtimeController.preservingEmbeddingSelection(
+            for: stored.modelRole,
+            isCurrent: { PersistedModelSelectionStore.loadOrMigrate() == attemptedSelection }
+        ) {
+            try commitSelection(stored)
+            attemptedSelection = PersistedModelSelectionStore.loadOrMigrate()
+        }
+    }
+
+    /// The surrounding transaction owns provider selection and rollback.
+    /// Keep this commit synchronous so another request cannot split the ID pair.
+    private func commitSelection(_ stored: StoredModel) throws {
         guard presentation.allowsModelManagement(role: stored.modelRole) else { return }
         let family = LumenModelFamily.persistedSelected
         if stored.modelRole == .chat {
@@ -693,6 +751,7 @@ struct DownloadedRow: View {
 
 struct ModelPickerSheet: View {
     @AppStorage("coreai.gemma.enabled") private var usesGemma = true
+    @AppStorage("coreai.textEmbedding.selected") private var usesCoreAIEmbeddings = false
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
     @Query private var stored: [StoredModel]
@@ -731,7 +790,7 @@ struct ModelPickerSheet: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                     ForEach(stored.filter { $0.modelRole == .embedding && FileManager.default.fileExists(atPath: ModelStorage.resolvedModelURL(from: $0.localPath, fileName: $0.fileName).path) }) { m in
-                        pickerRow(m, isActive: appState.activeEmbeddingModelID == m.id.uuidString) { select(m) }
+                        pickerRow(m, isActive: !usesCoreAIEmbeddings && appState.activeEmbeddingModelID == m.id.uuidString) { select(m) }
                     }
                 }
             }
@@ -750,27 +809,36 @@ struct ModelPickerSheet: View {
 
     private func select(_ model: StoredModel) {
         guard CoreAIGemmaPresentationPolicy(usesGemma: usesGemma).allowsModelManagement(role: model.modelRole) else { return }
-        do {
-            let family = LumenModelFamily.persistedSelected
-            if model.modelRole == .chat {
-                try LumenModelSelectionPolicy.validatePersistedChatModel(
-                    repoID: model.repoId,
-                    fileName: model.fileName,
-                    sizeBytes: model.sizeBytes,
-                    family: family
+        Task { @MainActor in
+          do {
+            var attemptedSelection = PersistedModelSelectionStore.loadOrMigrate()
+            try await ModelRuntimeController().preservingEmbeddingSelection(
+                for: model.modelRole,
+                isCurrent: { PersistedModelSelectionStore.loadOrMigrate() == attemptedSelection }
+            ) {
+                let family = LumenModelFamily.persistedSelected
+                if model.modelRole == .chat {
+                    try LumenModelSelectionPolicy.validatePersistedChatModel(
+                        repoID: model.repoId,
+                        fileName: model.fileName,
+                        sizeBytes: model.sizeBytes,
+                        family: family
+                    )
+                }
+                try appState.commitActiveModelSelection(
+                    chatModelID: model.modelRole == .chat ? model.id.uuidString : appState.activeChatModelID,
+                    embeddingModelID: model.modelRole == .embedding ? model.id.uuidString : appState.activeEmbeddingModelID,
+                    family: family,
+                    provisioningPlanID: nil
                 )
+                attemptedSelection = PersistedModelSelectionStore.loadOrMigrate()
+                ModelProvisioningReceipt.invalidate()
+                appState.runtime.requestModelAutoload()
             }
-            try appState.commitActiveModelSelection(
-                chatModelID: model.modelRole == .chat ? model.id.uuidString : appState.activeChatModelID,
-                embeddingModelID: model.modelRole == .embedding ? model.id.uuidString : appState.activeEmbeddingModelID,
-                family: family,
-                provisioningPlanID: nil
-            )
-            ModelProvisioningReceipt.invalidate()
-            appState.runtime.requestModelAutoload()
             dismiss()
-        } catch {
+          } catch {
             selectionError = error.localizedDescription
+          }
         }
     }
 

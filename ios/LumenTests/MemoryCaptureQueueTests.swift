@@ -88,6 +88,112 @@ final class MemoryCaptureQueueTests: XCTestCase {
     }
 
     @MainActor
+    func testDrainPreservesCaptureEnqueuedDuringPromotion() async throws {
+        let fileURL = temporaryQueueURL()
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        _ = try MemoryCaptureQueue.enqueue(content: "first", fileURL: fileURL)
+        let unattempted = try MemoryCaptureQueue.enqueue(content: "second", fileURL: fileURL)
+        var enqueued: PendingMemoryCapture?
+
+        let result = await MemoryCaptureQueue.drain(maxItems: 1, fileURL: fileURL) { _ in
+            enqueued = try MemoryCaptureQueue.enqueue(content: "new during inference", fileURL: fileURL)
+        }
+
+        XCTAssertEqual(result.promoted, 1)
+        XCTAssertEqual(result.remaining, 2)
+        let newCapture = try XCTUnwrap(enqueued)
+        XCTAssertEqual(try MemoryCaptureQueue.loadPending(fileURL: fileURL).map(\.id), [unattempted.id, newCapture.id])
+    }
+
+    @MainActor
+    func testDrainFailurePreservesConcurrentEnqueueAndUnattemptedCaptures() async throws {
+        let fileURL = temporaryQueueURL()
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let failed = try MemoryCaptureQueue.enqueue(content: "first", fileURL: fileURL)
+        let unattempted = try MemoryCaptureQueue.enqueue(content: "second", fileURL: fileURL)
+        var enqueued: PendingMemoryCapture?
+
+        let result = await MemoryCaptureQueue.drain(maxItems: 2, fileURL: fileURL) { _ in
+            enqueued = try MemoryCaptureQueue.enqueue(content: "new before failure", fileURL: fileURL)
+            throw TestPromotionError.embeddingUnavailable
+        }
+
+        XCTAssertEqual(result.promoted, 0)
+        XCTAssertEqual(result.remaining, 3)
+        let newCapture = try XCTUnwrap(enqueued)
+        let pending = try MemoryCaptureQueue.loadPending(fileURL: fileURL)
+        XCTAssertEqual(pending.map(\.id), [failed.id, unattempted.id, newCapture.id])
+        XCTAssertEqual(pending[0].retryCount, 1)
+        XCTAssertEqual(pending[1].retryCount, 0)
+        XCTAssertEqual(pending[2].retryCount, 0)
+    }
+
+    @MainActor
+    func testOverlappingDrainsCannotPromoteTheSameSnapshotTwice() async throws {
+        let fileURL = temporaryQueueURL()
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        _ = try MemoryCaptureQueue.enqueue(content: "first", fileURL: fileURL)
+        let unattempted = try MemoryCaptureQueue.enqueue(content: "second", fileURL: fileURL)
+        var nestedResult: MemoryCaptureDrainResult?
+        var nestedPromotions = 0
+
+        let result = await MemoryCaptureQueue.drain(maxItems: 1, fileURL: fileURL) { _ in
+            nestedResult = await MemoryCaptureQueue.drain(fileURL: fileURL) { _ in nestedPromotions += 1 }
+        }
+
+        XCTAssertEqual(result.promoted, 1)
+        XCTAssertEqual(nestedResult?.skippedReason, "drain_in_progress")
+        XCTAssertEqual(nestedPromotions, 0)
+        XCTAssertEqual(try MemoryCaptureQueue.loadPending(fileURL: fileURL).map(\.id), [unattempted.id])
+        // The admission is released on exit so a later explicit drain can run.
+        let resumed = await MemoryCaptureQueue.drain(fileURL: fileURL) { _ in nestedPromotions += 1 }
+        XCTAssertEqual(resumed.promoted, 1)
+        XCTAssertEqual(nestedPromotions, 1)
+    }
+
+    @MainActor
+    func testCancelledDrainKeepsItsUnpromotedCapturesWithoutRecordingFailure() async throws {
+        let fileURL = temporaryQueueURL()
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let first = try MemoryCaptureQueue.enqueue(content: "first", fileURL: fileURL)
+        let second = try MemoryCaptureQueue.enqueue(content: "second", fileURL: fileURL)
+        var enqueued: PendingMemoryCapture?
+
+        let result = await MemoryCaptureQueue.drain(fileURL: fileURL) { _ in
+            enqueued = try MemoryCaptureQueue.enqueue(content: "new before cancellation", fileURL: fileURL)
+            throw CancellationError()
+        }
+
+        XCTAssertEqual(result.skippedReason, "cancelled")
+        XCTAssertEqual(result.attempted, 1)
+        XCTAssertEqual(result.promoted, 0)
+        XCTAssertEqual(result.remaining, 3)
+        let newCapture = try XCTUnwrap(enqueued)
+        let pending = try MemoryCaptureQueue.loadPending(fileURL: fileURL)
+        XCTAssertEqual(pending.map(\.id), [first.id, second.id, newCapture.id])
+        XCTAssertTrue(pending.allSatisfy { $0.retryCount == 0 && $0.lastError == nil })
+    }
+
+    @MainActor
+    func testDrainPersistsOnlyAnErrorCategoryWithoutPrivateErrorPayload() async throws {
+        let fileURL = temporaryQueueURL()
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        _ = try MemoryCaptureQueue.enqueue(content: "Synthetic safe capture", fileURL: fileURL)
+        let privatePayload = "private-mailbox@example.test /Users/private/secret-note.txt"
+
+        let result = await MemoryCaptureQueue.drain(fileURL: fileURL) { _ in
+            throw LocalRuntimeError.unavailable(privatePayload)
+        }
+
+        XCTAssertEqual(result.lastError, "runtime_unavailable")
+        XCTAssertEqual(try MemoryCaptureQueue.diagnosticsSnapshot(fileURL: fileURL).lastError, "runtime_unavailable")
+        let encoded = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertFalse(encoded.contains("private-mailbox"))
+        XCTAssertFalse(encoded.contains("secret-note"))
+        XCTAssertFalse(encoded.contains("/Users/private"))
+    }
+
+    @MainActor
     func testDrainSkipsWhenLimitIsZero() async throws {
         let fileURL = temporaryQueueURL()
         defer { try? FileManager.default.removeItem(at: fileURL) }
@@ -136,7 +242,7 @@ final class MemoryCaptureQueueTests: XCTestCase {
         )
 
         _ = await MemoryCaptureQueue.drain(maxItems: 1, fileURL: fileURL) { _ in
-            throw TestPromotionError.embeddingUnavailable
+            throw CoreAITextEmbeddingError.notPrepared
         }
 
         let snapshot = try MemoryCaptureQueue.diagnosticsSnapshot(fileURL: fileURL)
@@ -144,7 +250,7 @@ final class MemoryCaptureQueueTests: XCTestCase {
         XCTAssertEqual(snapshot.pendingCount, 2)
         XCTAssertEqual(snapshot.oldestCreatedAt, oldest)
         XCTAssertEqual(snapshot.maxRetryCount, 1)
-        XCTAssertEqual(snapshot.lastError, "embeddingunavailable")
+        XCTAssertEqual(snapshot.lastError, "coreai_embedding_not_prepared")
     }
 
     private func temporaryQueueURL() -> URL {

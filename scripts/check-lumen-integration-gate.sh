@@ -32,6 +32,7 @@ run_check "Generated JSONL artifacts" python3 scripts/check-generated-jsonl-arti
 run_check "Runtime audit privacy" python3 tools/check_runtime_audit_privacy.py
 run_check "iOS LoRA hardening invariants" python3 tools/check_ios_lora_hardening_invariants.py
 run_check "Core AI runtime invariants" python3 tools/check_coreai_runtime_invariants.py
+run_check "Core AI text embedding invariants" python3 tools/check_coreai_embedding_invariants.py
 run_check "MSAL iOS release config" python3 scripts/validate-msal-ios-release-config.py
 run_check "iOS signing capabilities" python3 scripts/validate_ios_signing_capabilities.py
 run_check "No shell subprocess security check" python3 tools/security/check_no_shell_subprocess.py

@@ -2,6 +2,8 @@
 
 Research checked on 2026-10-20. This document describes a concrete candidate and its integration requirements. It does not enable a new embedding backend, install model weights, or establish iPhone qualification.
 
+The optional implementation now targets the separately pinned [EmbeddingGemma 2 text export](COREAI_TEXT_EMBEDDINGS.md). This document retains the earlier 300M candidate investigation; the 300M export below is not the installed provider. Lumen targets iOS 27.2, as chosen for its generative Gemma integration.
+
 ## Recommendation and current boundary
 
 Keep one Gemma generation model for the app and a separate embedding runtime. Evaluate the existing **EmbeddingGemma 300M Core AI export** as the first Core AI retrieval candidate. Its published graph returns a sentence vector directly through the system Core AI API; it does not need another chat model, agent, sampling loop, or KV cache. Preserve the current functional embedding backend until the candidate passes the checks below.

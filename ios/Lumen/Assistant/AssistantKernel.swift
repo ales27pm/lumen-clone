@@ -276,18 +276,18 @@ final class AssistantKernel {
         }
     }
 
-    func runEmbedding(_ context: AssistantTurnContext) async throws -> [Double] {
-        try await runEmbeddingWithIdentity(context).vector
+    func runEmbedding(_ context: AssistantTurnContext, purpose: EmbeddingPurpose = .legacyFormatted, dimensions: Int? = nil) async throws -> [Double] {
+        try await runEmbeddingWithIdentity(context, purpose: purpose, dimensions: dimensions).vector
     }
 
-    func runEmbeddingWithIdentity(_ context: AssistantTurnContext) async throws -> EmbeddingRuntimeResult {
+    func runEmbeddingWithIdentity(_ context: AssistantTurnContext, purpose: EmbeddingPurpose = .legacyFormatted, dimensions: Int? = nil) async throws -> EmbeddingRuntimeResult {
         guard context.task == .embedding else {
             throw KernelError.unsupportedTaskForEmbedding(context.task)
         }
         let selection = await router.selectionIncludingRuntimeState(for: context)
         let start = Date()
         do {
-            let result = try await generateEmbeddingWithIdentity(request: EmbeddingRequest(text: context.input), runtime: selection.runtime)
+            let result = try await generateEmbeddingWithIdentity(request: EmbeddingRequest(text: context.input, purpose: purpose, dimensions: dimensions), runtime: selection.runtime)
             let latency = Int(Date().timeIntervalSince(start) * 1000)
             try? await metricsStore.appendMetric(RuntimeMetric(timestamp: Date(), runtimeName: selection.runtime.rawValue, taskKind: "\(context.task)", modelIDHash: nil, policySummary: selection.reason, latencyMs: latency, success: true, errorCode: nil, thermalState: .from(processThermalState: context.thermalState), lowPowerMode: context.lowPowerMode, memoryWarningCount: 0))
             return result
@@ -395,7 +395,9 @@ final class AssistantKernel {
             }
             let digest = try SHA256FileHasher.sha256Hex(forArtifactAt: modelURL)
             return EmbeddingRuntimeResult(vector: vector, modelIdentifier: "coreml:sha256:\(digest)")
-        case .foundationModels, .coreAI, .deterministicFallback, .unavailable:
+        case .coreAI:
+            return try await router.coreAIEmbedding.embedWithIdentity(request: request)
+        case .foundationModels, .deterministicFallback, .unavailable:
             throw KernelError.unsupportedRuntimeForEmbedding(runtime)
         }
     }
@@ -404,12 +406,16 @@ final class AssistantKernel {
 extension AssistantKernel {
     static func runEmbedding(
         text: String,
+        purpose: EmbeddingPurpose = .legacyFormatted,
+        dimensions: Int? = nil,
         sourceContext: AssistantTurnContext? = nil,
         isForeground: Bool = true,
         allowHeavyRuntime: Bool = true
     ) async throws -> [Double] {
         try await runEmbeddingWithIdentity(
             text: text,
+            purpose: purpose,
+            dimensions: dimensions,
             sourceContext: sourceContext,
             isForeground: isForeground,
             allowHeavyRuntime: allowHeavyRuntime
@@ -418,6 +424,8 @@ extension AssistantKernel {
 
     static func runEmbeddingWithIdentity(
         text: String,
+        purpose: EmbeddingPurpose = .legacyFormatted,
+        dimensions: Int? = nil,
         sourceContext: AssistantTurnContext? = nil,
         isForeground: Bool = true,
         allowHeavyRuntime: Bool = true
@@ -441,7 +449,7 @@ extension AssistantKernel {
             traceCorrelation: sourceContext?.traceCorrelation,
             allowedToolIDs: sourceContext?.allowedToolIDs ?? []
         )
-        return try await shared.runEmbeddingWithIdentity(context)
+        return try await shared.runEmbeddingWithIdentity(context, purpose: purpose, dimensions: dimensions)
     }
 }
 

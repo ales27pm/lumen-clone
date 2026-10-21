@@ -5,6 +5,39 @@ nonisolated enum SemanticEmbeddingText {
     private static let maxContentCharacters = 4096
     private static let maxMetadataCharacters = 160
 
+    /// CoreAI receives the complete normalized body and rejects token overflow.
+    /// Preserve the earlier character bound only for the legacy embedding profile.
+    static func queryBody(_ text: String, legacyBounds: Bool = !CoreAITextEmbeddingModelStore.isSelected) -> String {
+        legacyBounds ? boundedInlineContent(text) : collapseWhitespace(text)
+    }
+
+    static func documentBody(
+        content: String,
+        sourceName: String? = nil,
+        sourceType: String? = nil,
+        chunkIndex: Int? = nil,
+        legacyBounds: Bool = !CoreAITextEmbeddingModelStore.isSelected
+    ) -> String {
+        var metadata: [String] = []
+        if let sourceType = cleanMetadata(sourceType) { metadata.append("Source type: \(sourceType)") }
+        if let sourceName = cleanMetadata(sourceName) { metadata.append("Source name: \(sourceName)") }
+        if let chunkIndex { metadata.append("Chunk index: \(chunkIndex)") }
+        return documentBody(metadata: metadata, content: content, legacyBounds: legacyBounds)
+    }
+
+    static func memoryDocumentBody(content: String, kind: MemoryKind, source: String, topic: String?, legacyBounds: Bool = !CoreAITextEmbeddingModelStore.isSelected) -> String {
+        var metadata = ["Memory kind: \(kind.rawValue)"]
+        if let source = cleanMetadata(source) { metadata.append("Memory source: \(source)") }
+        if let topic = cleanMetadata(topic) { metadata.append("Topic: \(topic)") }
+        return documentBody(metadata: metadata, content: content, legacyBounds: legacyBounds)
+    }
+
+    private static func documentBody(metadata: [String], content: String, legacyBounds: Bool) -> String {
+        let body = legacyBounds ? boundedDocumentContent(content) : normalizedDocumentContent(content)
+        guard !metadata.isEmpty else { return body }
+        return "\(metadata.joined(separator: "\n"))\nContent:\n\(body)"
+    }
+
     static func query(_ text: String) -> String {
         "search_query: \(boundedInlineContent(text))"
     }
@@ -62,11 +95,15 @@ nonisolated enum SemanticEmbeddingText {
         return String(collapsed.prefix(maxContentCharacters))
     }
 
-    private static func boundedDocumentContent(_ text: String) -> String {
-        let normalized = text
+    private static func normalizedDocumentContent(_ text: String) -> String {
+        text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func boundedDocumentContent(_ text: String) -> String {
+        let normalized = normalizedDocumentContent(text)
         guard normalized.count > maxContentCharacters else { return normalized }
         return String(normalized.prefix(maxContentCharacters))
     }
@@ -93,5 +130,16 @@ enum RAGEmbeddingMetadata {
 
     nonisolated static func modelIdentifier(forFileURL fileURL: URL) throws -> String {
         "llama:sha256:\(try SHA256FileHasher.sha256Hex(for: fileURL))"
+    }
+}
+
+/// Readiness discovery must never tokenize, load a model, or run inference.
+@MainActor
+enum SemanticEmbeddingReadiness {
+    static func isLoaded() async -> Bool {
+        if CoreAITextEmbeddingModelStore.isSelected {
+            return await CoreAITextEmbeddingService.shared.isLoaded()
+        }
+        return await AppLlamaService.shared.hasSemanticEmbeddingRuntime
     }
 }

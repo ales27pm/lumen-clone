@@ -25,6 +25,8 @@ struct SettingsView: View {
                     Task { await refreshGemmaContext() }
                 })
 
+                CoreAITextEmbeddingSettingsSection()
+
                 Section("Prompt Presets") {
                     Picker("Preset", selection: Binding(
                         get: { state.selectedPresetID },

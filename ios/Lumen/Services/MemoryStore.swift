@@ -6,15 +6,39 @@ import OSLog
 enum MemoryStore {
     private static let logger = Logger(subsystem: "ai.lumen.app", category: "persistence")
 
-    private static func persist(_ context: ModelContext, operation: String, scope: String) throws {
-        guard DiskWriteBudget.shared.canWrite(bytes: 64 * 1024, category: .memory) else { return }
+    enum PersistenceFailure: Error {
+        case diskWriteDeferred
+    }
+
+    private static func persist(
+        _ context: ModelContext,
+        operation: String,
+        scope: String,
+        save: ((ModelContext) throws -> Void)? = nil,
+        writeBudget: DiskWriteBudget = .shared
+    ) throws {
+        guard let reservation = writeBudget.reserveWrite(bytes: 64 * 1024, category: .memory) else {
+            throw PersistenceFailure.diskWriteDeferred
+        }
         do {
-            try context.save()
-            DiskWriteBudget.shared.recordWrite(bytes: 64 * 1024, category: .memory)
+            if let save { try save(context) } else { try context.save() }
+            writeBudget.commitReservedWrite(reservation)
         } catch {
+            writeBudget.releaseReservedWrite(reservation)
             logger.error("persist_failed op=\(operation, privacy: .public) scope=\(scope, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
+    }
+
+    /// Editing source text makes its existing vector stale immediately. Preserve
+    /// the vector until an explicit successful rebuild replaces it.
+    static func updateContent(_ content: String, for item: MemoryItem) {
+        guard item.modelContext != nil, !item.isDeleted, item.content != content else { return }
+        item.content = content
+        item.embeddingFormatVersion = nil
+        item.embeddingModelIdentifier = nil
+        item.embeddingDimension = nil
+        MemoryVectorIndex.shared.invalidate()
     }
 
     static func auditPersistence(operation: String, scope: String, save: () throws -> Void) -> Bool {
@@ -82,9 +106,11 @@ enum MemoryStore {
             )
         }
 
-        let queryVec: [Double]
+        let queryEmbedding: EmbeddingRuntimeResult
         do {
-            queryVec = try await AssistantKernel.runEmbedding(text: SemanticEmbeddingText.memoryQuery(trimmed))
+            queryEmbedding = try await AssistantKernel.runEmbeddingWithIdentity(
+                text: SemanticEmbeddingText.queryBody(trimmed), purpose: .retrievalQuery
+            )
         } catch {
             logger.error("memory_embedding_failed op=recall error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             let fallback = lexicalRecallResult(query: trimmed, context: context, limit: limit)
@@ -97,6 +123,7 @@ enum MemoryStore {
                 )
             )
         }
+        let queryVec = queryEmbedding.vector
         guard !queryVec.isEmpty else {
             logger.error("memory_embedding_empty op=recall")
             let fallback = lexicalRecallResult(query: trimmed, context: context, limit: limit)
@@ -120,7 +147,12 @@ enum MemoryStore {
         }
         let itemByID = Dictionary(uniqueKeysWithValues: availableItems.map { ($0.persistentModelID, $0) })
 
-        let vectorLoad = MemoryVectorIndex.shared.ensureLoaded(context: context)
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: queryEmbedding.formatVersion,
+            modelIdentifier: queryEmbedding.modelIdentifier,
+            dimension: queryVec.count
+        )
+        let vectorLoad = MemoryVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
         var diagnostic = vectorLoad.diagnostic
         var results: [MemoryItem] = []
         results.reserveCapacity(limit)
@@ -152,7 +184,7 @@ enum MemoryStore {
 
         if sawStaleVectorID {
             MemoryVectorIndex.shared.invalidate()
-            let reload = MemoryVectorIndex.shared.ensureLoaded(context: context)
+            let reload = MemoryVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
             if let reloadDiagnostic = reload.diagnostic {
                 diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: reloadDiagnostic) } ?? reloadDiagnostic
             }
@@ -160,12 +192,13 @@ enum MemoryStore {
         if results.count < limit {
             let existingIDs = Set(results.map(\.persistentModelID))
             let backfill = lexicalRecallResult(query: trimmed, context: context, limit: limit - results.count, excluding: existingIDs)
+            let semanticMatchCount = results.count
             results.append(contentsOf: backfill.items)
             if !backfill.items.isEmpty {
                 if let backfillDiagnostic = backfill.diagnostic {
                     diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: backfillDiagnostic) } ?? backfillDiagnostic
                 }
-                return RecallResult(items: results, mode: "semantic_with_lexical_backfill", diagnostic: diagnostic)
+                return RecallResult(items: results, mode: semanticMatchCount > 0 ? "semantic_with_lexical_backfill" : "lexical_fallback", diagnostic: diagnostic)
             }
             if let backfillDiagnostic = backfill.diagnostic {
                 diagnostic = diagnostic.map { combinedDiagnostic(primary: $0, secondary: backfillDiagnostic) } ?? backfillDiagnostic
@@ -260,7 +293,20 @@ enum MemoryStore {
         }
     }
 
-    private static func rememberResult(_ content: String, kind: MemoryKind, source: String, topic: String?, context: ModelContext) async throws -> RememberResult {
+    static func rememberResult(
+        _ content: String,
+        kind: MemoryKind,
+        source: String,
+        topic: String?,
+        context: ModelContext,
+        embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult = { request in
+            try await AssistantKernel.runEmbeddingWithIdentity(
+                text: request.text, purpose: request.purpose, dimensions: request.dimensions
+            )
+        },
+        save: ((ModelContext) throws -> Void)? = nil,
+        writeBudget: DiskWriteBudget = .shared
+    ) async throws -> RememberResult {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return RememberResult(mode: "skipped", diagnostic: "empty_content")
@@ -275,20 +321,27 @@ enum MemoryStore {
             logger.error("memory_fetch_failed op=remember.duplicate_check diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
-        let embedding: [Double]
+        let embeddingResult: EmbeddingRuntimeResult
         do {
-            let embeddingText = SemanticEmbeddingText.memoryDocument(
+            let embeddingText = SemanticEmbeddingText.memoryDocumentBody(
                 content: trimmed,
                 kind: kind,
                 source: source,
                 topic: topic
             )
-            embedding = try await AssistantKernel.runEmbedding(text: embeddingText)
+            embeddingResult = try await embed(EmbeddingRequest(
+                text: embeddingText, purpose: .retrievalDocument(title: topic)
+            ))
         } catch {
             logger.error("memory_embedding_failed op=remember error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             throw error
         }
-        guard !embedding.isEmpty else {
+        try Task.checkCancellation()
+        let embedding = embeddingResult.vector
+        guard !embedding.isEmpty, embedding.allSatisfy(\.isFinite),
+              !embeddingResult.modelIdentifier.isEmpty,
+              embeddingResult.modelIdentifier != RAGEmbeddingMetadata.unidentifiedModelIdentifier,
+              embeddingResult.formatVersion > 0 else {
             logger.error("memory_embedding_empty op=remember")
             throw LlamaError.embeddingFailed("Memory embedding returned empty vector")
         }
@@ -300,13 +353,163 @@ enum MemoryStore {
             embedding: embedding,
             topic: topic,
             expiresAt: policy.ttl.map { Date().addingTimeInterval($0) },
-            freshnessClass: policy.freshness
+            freshnessClass: policy.freshness,
+            embeddingFormatVersion: embeddingResult.formatVersion,
+            embeddingModelIdentifier: embeddingResult.modelIdentifier,
+            embeddingDimension: embedding.count
         )
         context.insert(item)
-        try persist(context, operation: "remember.insert", scope: "MemoryItem")
-        MemoryVectorIndex.shared.ensureLoaded(context: context)
-        MemoryVectorIndex.shared.append(id: item.persistentModelID, isPinned: item.isPinned, vector: embedding)
+        do {
+            try persist(context, operation: "remember.insert", scope: "MemoryItem", save: save, writeBudget: writeBudget)
+        } catch {
+            // Only undo our new row. Rolling back a shared context would discard
+            // unrelated edits made while the encoder was suspended.
+            context.delete(item)
+            throw error
+        }
+        let metadata = RAGEmbeddingIndexMetadata(
+            formatVersion: embeddingResult.formatVersion,
+            modelIdentifier: embeddingResult.modelIdentifier,
+            dimension: embedding.count
+        )
+        MemoryVectorIndex.shared.ensureLoaded(context: context, metadata: metadata)
+        MemoryVectorIndex.shared.append(id: item.persistentModelID, isPinned: item.isPinned, vector: embedding, metadata: metadata)
         return RememberResult(mode: "stored", diagnostic: nil)
+    }
+
+    struct ReembeddingCursor: Sendable, Equatable {
+        let createdAt: Date
+        let id: UUID
+        let metadata: RAGEmbeddingIndexMetadata
+    }
+
+    struct ReembeddingResult: Sendable, Equatable {
+        let attempted: Int
+        let rebuilt: Int
+        let skipped: Int
+        let remaining: Int
+        let mode: String
+        let diagnostic: String?
+        let nextCursor: ReembeddingCursor?
+    }
+
+    /// Preserves source records and legacy vectors until each replacement saves.
+    /// The caller supplies metadata from its already prepared selected provider.
+    static func reembedStaleEmbeddings(
+        context: ModelContext,
+        matching metadata: RAGEmbeddingIndexMetadata,
+        limit: Int = 16,
+        after cursor: ReembeddingCursor? = nil,
+        embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult = { request in
+            try await AssistantKernel.runEmbeddingWithIdentity(
+                text: request.text, purpose: request.purpose, dimensions: request.dimensions
+            )
+        },
+        save: ((ModelContext) throws -> Void)? = nil,
+        writeBudget: DiskWriteBudget = .shared
+    ) async -> ReembeddingResult {
+        let initialCursor = cursor?.metadata == metadata ? cursor : nil
+        let items: [MemoryItem]
+        do {
+            items = try context.fetch(FetchDescriptor<MemoryItem>())
+        } catch {
+            return ReembeddingResult(attempted: 0, rebuilt: 0, skipped: 0, remaining: 0, mode: "failed", diagnostic: "memory_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))", nextCursor: initialCursor)
+        }
+        let stale = items.filter { !MemoryVectorIndex.matches($0, metadata: metadata) }
+            .sorted { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
+        var attempted = 0
+        var rebuilt = 0
+        var skipped = 0
+        var completedCursor = initialCursor
+        func result(_ mode: String, _ diagnostic: String?, finished: Bool = false) -> ReembeddingResult {
+            let skippedDiagnostic = skipped > 0 ? "memory_inputs_skipped:\(skipped)" : nil
+            let combined = diagnostic.map { combinedDiagnostic(primary: $0, secondary: skippedDiagnostic) } ?? skippedDiagnostic
+            return ReembeddingResult(attempted: attempted, rebuilt: rebuilt, skipped: skipped, remaining: stale.count - rebuilt, mode: mode, diagnostic: combined, nextCursor: finished ? nil : completedCursor)
+        }
+        guard metadata.formatVersion > 0, metadata.dimension > 0, !metadata.modelIdentifier.isEmpty,
+              metadata.modelIdentifier != RAGEmbeddingMetadata.unidentifiedModelIdentifier else {
+            return result("failed", "embedding_identity_invalid", finished: true)
+        }
+        let candidates = stale.filter { item in
+            guard let initialCursor else { return true }
+            return item.createdAt > initialCursor.createdAt
+                || (item.createdAt == initialCursor.createdAt && item.id.uuidString > initialCursor.id.uuidString)
+        }
+        for item in candidates.prefix(min(32, max(1, limit))) {
+            guard !Task.isCancelled else { return result("cancelled", "cancelled") }
+            guard item.modelContext === context, !item.isDeleted else {
+                return result(rebuilt > 0 ? "partial" : "failed", "memory_deleted_during_reindex")
+            }
+            guard ResourceBudgetGate.diagnosticSnapshot().scenePhase == .active,
+                  ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.reembed") == nil else {
+                return result(rebuilt > 0 ? "partial" : "skipped", "foreground_embedding_budget_required")
+            }
+            let content = item.content
+            let kind = item.memoryKind
+            let source = item.source
+            let topic = item.topic
+            let itemCursor = ReembeddingCursor(createdAt: item.createdAt, id: item.id, metadata: metadata)
+            let embeddingResult: EmbeddingRuntimeResult
+            attempted += 1
+            do {
+                embeddingResult = try await embed(EmbeddingRequest(
+                    text: SemanticEmbeddingText.memoryDocumentBody(content: content, kind: kind, source: source, topic: topic),
+                    purpose: .retrievalDocument(title: topic), dimensions: metadata.dimension
+                ))
+            } catch is CancellationError {
+                return result("cancelled", "cancelled")
+            } catch let error as CoreAITextEmbeddingError where error == .invalidRequest || error == .inputTooLong {
+                guard !Task.isCancelled else { return result("cancelled", "cancelled") }
+                guard ResourceBudgetGate.diagnosticSnapshot().scenePhase == .active,
+                      ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.reembed") == nil else {
+                    return result(rebuilt > 0 ? "partial" : "skipped", "foreground_embedding_budget_required")
+                }
+                // A single oversized legacy record must not block later records.
+                // Keep its source/vector intact and advance only this explicit pass.
+                skipped += 1
+                completedCursor = itemCursor
+                continue
+            } catch {
+                return result(rebuilt > 0 ? "partial" : "failed", "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+            }
+            guard !Task.isCancelled else { return result("cancelled", "cancelled") }
+            guard item.modelContext === context, !item.isDeleted else {
+                return result(rebuilt > 0 ? "partial" : "failed", "memory_deleted_during_reindex")
+            }
+            guard ResourceBudgetGate.diagnosticSnapshot().scenePhase == .active,
+                  ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.reembed") == nil else {
+                return result(rebuilt > 0 ? "partial" : "skipped", "foreground_embedding_budget_required")
+            }
+            guard embeddingResult.modelIdentifier == metadata.modelIdentifier,
+                  embeddingResult.formatVersion == metadata.formatVersion,
+                  embeddingResult.vector.count == metadata.dimension,
+                  embeddingResult.vector.allSatisfy(\.isFinite) else {
+                return result(rebuilt > 0 ? "partial" : "failed", "embedding_identity_changed_during_reindex")
+            }
+            guard item.content == content, item.memoryKind == kind, item.source == source, item.topic == topic else {
+                return result(rebuilt > 0 ? "partial" : "failed", "memory_changed_during_reindex")
+            }
+            guard let reservation = writeBudget.reserveWrite(bytes: 64 * 1024, category: .memory) else {
+                return result(rebuilt > 0 ? "partial" : "skipped", "disk_write_budget_denied")
+            }
+            let previous = (item.embedding, item.embeddingFormatVersion, item.embeddingModelIdentifier, item.embeddingDimension)
+            item.embedding = embeddingResult.vector
+            item.embeddingFormatVersion = metadata.formatVersion
+            item.embeddingModelIdentifier = metadata.modelIdentifier
+            item.embeddingDimension = metadata.dimension
+            do {
+                if let save { try save(context) } else { try context.save() }
+                writeBudget.commitReservedWrite(reservation)
+            } catch {
+                writeBudget.releaseReservedWrite(reservation)
+                (item.embedding, item.embeddingFormatVersion, item.embeddingModelIdentifier, item.embeddingDimension) = previous
+                return result(rebuilt > 0 ? "partial" : "failed", "persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
+            }
+            rebuilt += 1
+            completedCursor = itemCursor
+            MemoryVectorIndex.shared.invalidate()
+        }
+        return result(stale.count > rebuilt ? "partial" : "rebuilt", nil, finished: attempted == candidates.count)
     }
 
     @discardableResult

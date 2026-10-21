@@ -1,5 +1,6 @@
 import importlib.util
 import plistlib
+import shlex
 import subprocess
 import sys
 from datetime import datetime
@@ -13,6 +14,58 @@ SCRIPT = ROOT / "scripts" / "validate_ios_signing_capabilities.py"
 ARCHIVE_SCRIPT = ROOT / "scripts" / "archive_lumen_stable.sh"
 SUBMIT_SCRIPT = ROOT / "scripts" / "build_and_submit_appstoreconnect.sh"
 READINESS_SCRIPT = ROOT / "scripts" / "check-ios-build-readiness.sh"
+
+
+def _run_readiness_unfinished_scan(path: Path) -> subprocess.CompletedProcess[str]:
+    # Exercise the patterns used by the shell gate through the same rg engine,
+    # without invoking Xcode/signing checks unrelated to token recognition.
+    line = next(
+        line for line in READINESS_SCRIPT.read_text(encoding="utf-8").splitlines()
+        if line.startswith("if rg ") and "ios/Lumen; then" in line
+    )
+    tokens = shlex.split(line)
+    patterns = []
+    for index, token in enumerate(tokens):
+        if token == "-e":
+            patterns.extend([token, tokens[index + 1]])
+    assert patterns
+    return subprocess.run(["rg", "-n", *patterns, str(path)], text=True, capture_output=True, check=False)
+
+
+@pytest.mark.parametrize("text", (
+    "// TODO: connect the shipping backend",
+    "// FIXME handle failure",
+    "// XXX: incomplete branch",
+    'let message = "TODO"',
+    'let message = "not implemented"',
+    "// stub backend",
+))
+def test_readiness_unfinished_markers_still_match_actual_tokens(tmp_path: Path, text: str):
+    source = tmp_path / "Production.swift"
+    source.write_text(text, encoding="utf-8")
+    result = _run_readiness_unfinished_scan(source)
+    assert result.returncode == 0
+    assert text in result.stdout
+
+
+@pytest.mark.parametrize("text", (
+    r"// every \uXXXX escape, including surrogate pairs, is decoded to UTF-8",
+    r"// every \\uXXXX escape, including surrogate pairs, is decoded to UTF-8",
+    "let TODOCounter = 1",
+    "// XXXX is a four-character example",
+))
+def test_readiness_unicode_escape_examples_and_identifier_substrings_are_not_markers(tmp_path: Path, text: str):
+    source = tmp_path / "Complete.swift"
+    source.write_text(text, encoding="utf-8")
+    result = _run_readiness_unfinished_scan(source)
+    assert result.returncode == 1
+    assert result.stdout == ""
+
+
+def test_readiness_accepts_unmodified_vendored_exact_json_parser():
+    source = ROOT / "ios/Lumen/Services/LLM/CoreAI/EmbeddingGemma2Tokenizer/ExactJSON.swift"
+    result = _run_readiness_unfinished_scan(source)
+    assert result.returncode == 1, result.stdout
 
 
 def _write_plist(path: Path, value: dict) -> Path:

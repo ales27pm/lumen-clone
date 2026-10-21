@@ -8,6 +8,10 @@ final class MemoryItem {
     var source: String = "manual"
     var createdAt: Date = Date()
     var embedding: [Double] = []
+    // Nil metadata denotes a legacy vector with unknown embedding space.
+    var embeddingFormatVersion: Int? = nil
+    var embeddingModelIdentifier: String? = nil
+    var embeddingDimension: Int? = nil
     var kind: String = "fact"
     var isPinned: Bool = false
     var topic: String?
@@ -21,12 +25,18 @@ final class MemoryItem {
         embedding: [Double] = [],
         topic: String? = nil,
         expiresAt: Date? = nil,
-        freshnessClass: MemoryFreshnessClass? = nil
+        freshnessClass: MemoryFreshnessClass? = nil,
+        embeddingFormatVersion: Int? = nil,
+        embeddingModelIdentifier: String? = nil,
+        embeddingDimension: Int? = nil
     ) {
         self.content = content
         self.kind = kind.rawValue
         self.source = source
         self.embedding = embedding
+        self.embeddingFormatVersion = embeddingFormatVersion
+        self.embeddingModelIdentifier = embeddingModelIdentifier
+        self.embeddingDimension = embeddingDimension
         self.topic = topic
         self.expiresAt = expiresAt
         self.freshnessClass = freshnessClass?.rawValue

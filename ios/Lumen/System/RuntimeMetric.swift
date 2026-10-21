@@ -18,6 +18,23 @@ struct RuntimeMetric: Codable, Sendable, Equatable {
 enum RuntimeMetricErrorSanitizer {
     static func code(for error: Error) -> String {
         switch error {
+        case let error as CoreAITextEmbeddingError:
+            switch error {
+            case .unsupported: return "coreai_embedding_unsupported"
+            case .busy: return "coreai_embedding_busy"
+            case .notPrepared: return "coreai_embedding_not_prepared"
+            case .notSelected: return "coreai_embedding_not_selected"
+            case .invalidRequest: return "coreai_embedding_invalid_request"
+            case .inputTooLong: return "coreai_embedding_input_too_long"
+            case .invalidDimensions: return "coreai_embedding_invalid_dimensions"
+            case .resourceDenied: return "coreai_embedding_resource_denied"
+            case .modelNotConfigured: return "coreai_embedding_model_not_configured"
+            case .integrityFailure: return "coreai_embedding_integrity_failure"
+            case .invalidModel: return "coreai_embedding_invalid_model"
+            case .loadFailed: return "coreai_embedding_load_failed"
+            case .inferenceFailed: return "coreai_embedding_inference_failed"
+            case .invalidOutput: return "coreai_embedding_invalid_output"
+            }
         case let error as CoreAIGemmaError:
             switch error {
             case .unsupported: return "coreai_unsupported"

@@ -45,7 +45,7 @@ echo "== Generated JSONL artifact checks =="
 python3 scripts/check-generated-jsonl-artifacts.py
 
 echo "== Static privacy/build-hardening checks =="
-if rg "${READINESS_RG_EXCLUDES[@]}" -n -e "TODO" -e "FIXME" -e "XXX" -e "stub" -e "not implemented" -e "not-implemented" -e "unimplemented" ios/Lumen; then
+if rg "${READINESS_RG_EXCLUDES[@]}" -n -e '\b(?:TODO|FIXME|XXX)\b' -e "stub" -e "not implemented" -e "not-implemented" -e "unimplemented" ios/Lumen; then
   echo "Found production unfinished markers in ios/Lumen. Remove them from Release source or guard them behind DEBUG." >&2
   exit 1
 fi

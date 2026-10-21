@@ -109,18 +109,23 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
         fallback: DeterministicFallbackRuntime = .init(),
         coreML: CoreMLRuntimeAdapter = .init(modelURL: nil),
         coreAI: CoreAIGemmaRuntimeAdapter = .init(),
+        coreAIEmbedding: CoreAITextEmbeddingRuntimeAdapter = .init(),
         llamaEmbeddingSelectableOverride: Bool? = nil
     ) -> AssistantRuntimeCapabilityMatrix {
         let llamaEmbeddingSelectable = llamaEmbeddingSelectableOverride ?? llama.hasKnownSelectableEmbeddingRuntime
+        let embeddingStatus = coreAIEmbedding.isPreferred
+            ? (coreAIEmbedding.isAvailable ? "text embeddings selected; loads on foreground request" : "text embeddings unavailable")
+            : "text embeddings inactive"
         return AssistantRuntimeCapabilityMatrix(rows: [
             AssistantRuntimeCapabilityRow(
                 kind: coreAI.kind,
                 generationSupported: CoreAIGemmaService.isSupported,
                 generationSelectable: coreAI.isPreferred && coreAI.isAvailable,
-                embeddingSupported: false,
-                embeddingSelectable: false,
-                status: !coreAI.isPreferred ? "disabled" : (coreAI.isAvailable ? "configured; loads on user request" : "unavailable"),
-                unavailableReason: coreAI.unavailableReason
+                embeddingSupported: CoreAITextEmbeddingService.isSupported,
+                embeddingSelectable: coreAIEmbedding.isPreferred && coreAIEmbedding.isAvailable,
+                status: (!coreAI.isPreferred ? "generation disabled" : (coreAI.isAvailable ? "generation configured; loads on user request" : "generation unavailable")) + "; " + embeddingStatus,
+                unavailableReason: coreAIEmbedding.isPreferred && !coreAIEmbedding.isAvailable
+                    ? coreAIEmbedding.unavailableReason : coreAI.unavailableReason
             ),
             AssistantRuntimeCapabilityRow(
                 kind: foundation.kind,
@@ -136,7 +141,7 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
                 generationSupported: true,
                 generationSelectable: llama.isAvailable && !coreAI.isPreferred,
                 embeddingSupported: llama.supportsEmbeddings,
-                embeddingSelectable: llamaEmbeddingSelectable,
+                embeddingSelectable: llamaEmbeddingSelectable && !coreAIEmbedding.isPreferred,
                 status: coreAI.isPreferred
                     ? "Generation reserved for Gemma; semantic embeddings \(llamaEmbeddingSelectable ? "available" : "unavailable")"
                     : llama.capabilityStatus(embeddingSelectable: llamaEmbeddingSelectable),
@@ -156,7 +161,7 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
                 generationSupported: false,
                 generationSelectable: false,
                 embeddingSupported: coreML.supportsEmbeddings,
-                embeddingSelectable: coreML.supportsEmbeddings && coreML.isAvailable,
+                embeddingSelectable: coreML.supportsEmbeddings && coreML.isAvailable && !coreAIEmbedding.isPreferred,
                 status: coreML.availabilityStatus,
                 unavailableReason: coreML.unavailableReason
             )
@@ -168,7 +173,8 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
         llama: LlamaRuntimeAdapter = .live(),
         fallback: DeterministicFallbackRuntime = .init(),
         coreML: CoreMLRuntimeAdapter = .init(modelURL: nil),
-        coreAI: CoreAIGemmaRuntimeAdapter = .init()
+        coreAI: CoreAIGemmaRuntimeAdapter = .init(),
+        coreAIEmbedding: CoreAITextEmbeddingRuntimeAdapter = .init()
     ) async -> AssistantRuntimeCapabilityMatrix {
         let llamaEmbeddingSelectable = await llama.isEmbeddingSelectable()
         return current(
@@ -177,6 +183,7 @@ struct AssistantRuntimeCapabilityMatrix: Sendable, Equatable {
             fallback: fallback,
             coreML: coreML,
             coreAI: coreAI,
+            coreAIEmbedding: coreAIEmbedding,
             llamaEmbeddingSelectableOverride: llamaEmbeddingSelectable
         )
     }
@@ -386,10 +393,11 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         guard await liveService.isEmbedLoaded else {
             throw LocalRuntimeError.unavailable("llama embedding runtime has no loaded embedding model")
         }
-        let vector = try await liveService.embed(request.text)
+        let vector = try await liveService.embed(Self.legacyEmbeddingText(request))
         guard !vector.isEmpty else {
             throw LocalRuntimeError.unavailable("llama embedding runtime produced an empty vector")
         }
+        try Self.validateEmbeddingDimension(request, count: vector.count)
         return vector.map(Float.init)
     }
 
@@ -402,6 +410,7 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
             guard !vector.isEmpty else {
                 throw LocalRuntimeError.unavailable("llama embedding runtime produced an empty vector")
             }
+            try Self.validateEmbeddingDimension(request, count: vector.count)
             return EmbeddingRuntimeResult(vector: vector, modelIdentifier: injectedEmbeddingModelIdentifier)
         }
         guard let liveService else {
@@ -410,11 +419,26 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
         guard await liveService.isEmbedLoaded else {
             throw LocalRuntimeError.unavailable("llama embedding runtime has no loaded embedding model")
         }
-        let result = try await liveService.embedWithIdentity(request.text)
+        let result = try await liveService.embedWithIdentity(Self.legacyEmbeddingText(request))
         guard !result.vector.isEmpty, !result.modelIdentifier.isEmpty else {
             throw LocalRuntimeError.unavailable("llama embedding runtime produced incomplete embedding metadata")
         }
+        try Self.validateEmbeddingDimension(request, count: result.vector.count)
         return result
+    }
+
+    static func legacyEmbeddingText(_ request: EmbeddingRequest) -> String {
+        switch request.purpose {
+        case .legacyFormatted, .semanticSimilarity: return request.text
+        case .retrievalQuery, .codeQuery: return "search_query: " + request.text
+        case .retrievalDocument: return "search_document:\n" + request.text
+        }
+    }
+
+    private static func validateEmbeddingDimension(_ request: EmbeddingRequest, count: Int) throws {
+        if let dimension = request.dimensions, dimension != count {
+            throw LocalRuntimeError.unavailable("The selected legacy embedding model does not support this vector dimension")
+        }
     }
 
     func capabilityStatus(embeddingSelectable: Bool? = nil) -> String {

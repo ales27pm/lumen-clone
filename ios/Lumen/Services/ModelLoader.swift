@@ -213,7 +213,11 @@ enum ModelLoader {
                 _ = await finishEmbedLoad(pending)
             }
         }
-        Task { await CoreAIGemmaService.shared.cancelAndWait() }
+        Task {
+            async let gemma: Void = CoreAIGemmaService.shared.cancelAndWait()
+            async let embeddings: Void = CoreAITextEmbeddingService.shared.cancelAndWait()
+            _ = await (gemma, embeddings)
+        }
     }
 
     #if DEBUG
@@ -368,12 +372,22 @@ enum ModelLoader {
     /// assignments for on-demand slot loading instead of loading all contexts.
     @discardableResult
     static func ensureChatLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat, coreAISelected: Bool = CoreAIGemmaModelStore.isEnabled) async -> Bool {
-        await ensureFleetChatLoaded(snapshot: ModelLoadSnapshot(appState: appState, stored: stored), appState: appState, intent: intent, coreAISelected: coreAISelected)
+        let snapshotForEmbedding = ModelLoadSnapshot(appState: appState, stored: stored)
+        let loaded = await ensureFleetChatLoaded(snapshot: snapshotForEmbedding, appState: appState, intent: intent, coreAISelected: coreAISelected)
+        if loaded, !coreAISelected, CoreAITextEmbeddingModelStore.isSelected {
+            await prepareSelectedMemoryEmbedding(snapshot: snapshotForEmbedding, intent: intent)
+        }
+        return loaded && !Task.isCancelled
     }
 
     @discardableResult
     static func ensureChatLoaded(snapshot: ModelLoadSnapshot, intent: ModelLoadIntent = .userChat, coreAISelected: Bool = CoreAIGemmaModelStore.isEnabled) async -> Bool {
-        await ensureFleetChatLoaded(snapshot: snapshot, appState: nil, intent: intent, coreAISelected: coreAISelected)
+        let snapshotForEmbedding = snapshot
+        let loaded = await ensureFleetChatLoaded(snapshot: snapshotForEmbedding, appState: nil, intent: intent, coreAISelected: coreAISelected)
+        if loaded, !coreAISelected, CoreAITextEmbeddingModelStore.isSelected {
+            await prepareSelectedMemoryEmbedding(snapshot: snapshotForEmbedding, intent: intent)
+        }
+        return loaded && !Task.isCancelled
     }
 
     @discardableResult
@@ -580,6 +594,16 @@ enum ModelLoader {
             memoryEmbeddingReadiness = "resource_denied"
             return
         }
+        if CoreAITextEmbeddingModelStore.isSelected {
+            do {
+                try await CoreAITextEmbeddingService.shared.prepare()
+                try Task.checkCancellation()
+                memoryEmbeddingReadiness = "ready"
+            } catch {
+                memoryEmbeddingReadiness = "coreai_embedding_unavailable:\(RuntimeMetricErrorSanitizer.code(for: error))"
+            }
+            return
+        }
         guard let selectedID = snapshot.activeEmbeddingModelID else {
             let ready = await AppLlamaService.shared.hasSemanticEmbeddingRuntime
             memoryEmbeddingReadiness = ready ? "ready" : "not_selected"
@@ -715,6 +739,11 @@ enum ModelLoader {
     @discardableResult
     static func ensureEmbedLoaded(appState: AppState, stored: [StoredModel], intent: ModelLoadIntent = .userChat) async -> Bool {
         let snapshot = ModelLoadSnapshot(appState: appState, stored: stored)
+        if CoreAITextEmbeddingModelStore.isSelected {
+            await prepareSelectedMemoryEmbedding(snapshot: snapshot, intent: intent)
+            let ready = await CoreAITextEmbeddingService.shared.isLoaded()
+            return !Task.isCancelled && CoreAITextEmbeddingModelStore.isSelected && ready
+        }
         let requestKey = RoleLoadRequestKey(
             activeModelID: snapshot.activeEmbeddingModelID,
             modelFamily: snapshot.selectedModelFamily
@@ -801,7 +830,8 @@ enum ModelLoader {
         snapshot: ModelLoadSnapshot,
         appState: AppState
     ) -> Bool {
-        appState.activeEmbeddingModelID == snapshot.activeEmbeddingModelID
+        !CoreAITextEmbeddingModelStore.isSelected
+            && appState.activeEmbeddingModelID == snapshot.activeEmbeddingModelID
             && LumenModelFamily.persistedSelected == snapshot.selectedModelFamily
     }
 
@@ -816,7 +846,7 @@ enum ModelLoader {
         snapshot: ModelLoadSnapshot,
         intent: ModelLoadIntent
     ) async -> EmbeddingLoadResult {
-        guard !Task.isCancelled,
+        guard !Task.isCancelled, !CoreAITextEmbeddingModelStore.isSelected,
               await MainActor.run(body: { canStartModelLoad(intent: intent) }) else {
             return EmbeddingLoadResult(loaded: false, selectedEmbeddingModelID: nil)
         }

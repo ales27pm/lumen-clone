@@ -11,13 +11,13 @@ final class RAGIndexer {
         for (i,c) in chunks.enumerated() {
             let embeddingResult: EmbeddingRuntimeResult
             do {
-                let embeddingText = SemanticEmbeddingText.document(
+                let embeddingText = SemanticEmbeddingText.documentBody(
                     content: c.text,
                     sourceName: title,
                     sourceType: type.rawValue,
                     chunkIndex: i
                 )
-                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText)
+                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText, purpose: .retrievalDocument(title: title))
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -26,7 +26,7 @@ final class RAGIndexer {
             let embedding = embeddingResult.vector
             guard !embedding.isEmpty else { throw RAGIndexingError.emptyEmbedding }
             let embeddingMetadata = RAGEmbeddingIndexMetadata(
-                formatVersion: SemanticEmbeddingText.formatVersion,
+                formatVersion: embeddingResult.formatVersion,
                 modelIdentifier: embeddingResult.modelIdentifier,
                 dimension: embedding.count
             )

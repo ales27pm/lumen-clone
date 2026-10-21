@@ -19,8 +19,11 @@ struct MessageBubble: View {
     var streamingOverride: String? = nil
 
     @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @State private var didBookmark: Bool = false
+    @State private var bookmarkTask: Task<Void, Never>?
+    @State private var bookmarkError: String?
     @State private var webPreview: WebPreviewItem?
     @State private var mapPreview: MapPreviewItem?
     @State private var imagePreview: ImagePreviewItem?
@@ -168,6 +171,14 @@ struct MessageBubble: View {
         .sheet(item: $mapPreview) { item in EmbeddedMapSheet(query: item.query) }
         .sheet(item: $imagePreview) { item in EmbeddedImageSheet(url: item.url) }
         .sheet(item: $videoPreview) { item in EmbeddedVideoSheet(url: item.url) }
+        .onDisappear { bookmarkTask?.cancel() }
+        .alert("Memory could not be saved", isPresented: Binding(
+            get: { bookmarkError != nil }, set: { if !$0 { bookmarkError = nil } }
+        )) {
+            Button("OK", role: .cancel) { bookmarkError = nil }
+        } message: {
+            Text(bookmarkError ?? "")
+        }
         .sheet(item: $pdfPreview) { item in EmbeddedPDFSheet(url: item.url) }
     }
 
@@ -252,8 +263,31 @@ struct MessageBubble: View {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         let snippet = String(cleaned.prefix(400))
         let ctx = modelContext
-        Task { @MainActor in
-            let result = await MemoryStore.rememberWithDiagnostics(snippet, kind: .fact, source: "bookmark", context: ctx)
+        let task = Task { @MainActor in
+            defer { bookmarkTask = nil }
+            let result: MemoryStore.RememberResult
+            do {
+                result = try await ForegroundEmbeddingWork.run(
+                    isForeground: scenePhase == .active, appState: appState, context: ctx
+                ) {
+                    await MemoryStore.rememberWithDiagnostics(snippet, kind: .fact, source: "bookmark", context: ctx)
+                }
+            } catch is CancellationError {
+                didBookmark = false
+                return
+            } catch let error as ForegroundEmbeddingWork.Failure {
+                didBookmark = false
+                bookmarkError = error.localizedDescription
+                return
+            } catch {
+                didBookmark = false
+                bookmarkError = "Check the selected local embedding model and model storage."
+                return
+            }
+            if result.mode == "failed" {
+                didBookmark = false
+                bookmarkError = "The local memory could not be saved. Please try again."
+            }
             if result.mode != "stored" {
                 PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .fallbackUsed, values: [
                     "surface": "message_bubble",
@@ -265,6 +299,8 @@ struct MessageBubble: View {
                 ]))
             }
         }
+        bookmarkTask = task
+        AppCancellationBus.shared.register(task, category: .memoryMaintenance)
     }
 }
 

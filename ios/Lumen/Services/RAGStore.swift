@@ -826,7 +826,7 @@ enum RAGStore {
 
         let queryEmbedding: EmbeddingRuntimeResult
         do {
-            queryEmbedding = try await AssistantKernel.runEmbeddingWithIdentity(text: SemanticEmbeddingText.query(trimmed))
+            queryEmbedding = try await AssistantKernel.runEmbeddingWithIdentity(text: SemanticEmbeddingText.queryBody(trimmed), purpose: .retrievalQuery)
         } catch {
             logger.error("rag_embedding_failed op=search error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
             let fallback = lexicalSearchResult(query: trimmed, context: context, allowed: allowed, limit: limit)
@@ -853,12 +853,12 @@ enum RAGStore {
         let embeddingModelIdentifier = queryEmbedding.modelIdentifier
         let vectorLoad = RAGVectorIndex.shared.ensureLoaded(
             context: context,
-            formatVersion: SemanticEmbeddingText.formatVersion,
+            formatVersion: queryEmbedding.formatVersion,
             modelIdentifier: embeddingModelIdentifier,
             dimension: queryVec.count
         )
         var diagnostic = vectorLoad.diagnostic
-        if hasStaleEmbeddings(context: context, modelIdentifier: embeddingModelIdentifier, dimension: queryVec.count) {
+        if hasStaleEmbeddings(context: context, formatVersion: queryEmbedding.formatVersion, modelIdentifier: embeddingModelIdentifier, dimension: queryVec.count) {
             diagnostic = combinedDiagnostic(primary: diagnostic ?? "rag_reindex_required", secondary: diagnostic == nil ? nil : "rag_reindex_required")
         }
 
@@ -1033,7 +1033,7 @@ enum RAGStore {
         return "\(primary);\(secondary)"
     }
 
-    private static func hasStaleEmbeddings(context: ModelContext, modelIdentifier: String, dimension: Int) -> Bool {
+    private static func hasStaleEmbeddings(context: ModelContext, formatVersion: Int, modelIdentifier: String, dimension: Int) -> Bool {
         let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
         let descriptor = FetchDescriptor<RAGChunk>(
             predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
@@ -1041,7 +1041,7 @@ enum RAGStore {
         guard let chunks = try? context.fetch(descriptor) else { return false }
         return chunks.contains {
             !$0.isReplacementStaging && !$0.embedding.isEmpty && (
-                $0.embeddingFormatVersion != SemanticEmbeddingText.formatVersion
+                $0.embeddingFormatVersion != formatVersion
                     || $0.embeddingModelIdentifier != modelIdentifier
                     || $0.embeddingDimension != dimension
                     || $0.embeddingDimension != $0.embedding.count
@@ -1051,7 +1051,7 @@ enum RAGStore {
 
     private static func embeddingMetadata(for result: EmbeddingRuntimeResult) -> RAGEmbeddingIndexMetadata {
         RAGEmbeddingIndexMetadata(
-            formatVersion: SemanticEmbeddingText.formatVersion,
+            formatVersion: result.formatVersion,
             modelIdentifier: result.modelIdentifier,
             dimension: result.vector.count
         )
@@ -1186,8 +1186,8 @@ enum RAGStore {
         context: ModelContext,
         progress: ((Double) -> Void)? = nil,
         importedFilesResult: FileStore.ImportedFilesResult? = nil,
-        embed: (String) async throws -> EmbeddingRuntimeResult = { text in
-            try await AssistantKernel.runEmbeddingWithIdentity(text: text)
+        embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult = { request in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: request.text, purpose: request.purpose, dimensions: request.dimensions)
         },
         save: ((ModelContext, String, String) throws -> Void)? = nil,
         writeBudget: DiskWriteBudget = .shared
@@ -1455,9 +1455,12 @@ enum RAGStore {
         url: URL,
         pending: inout [PendingVector],
         activeEmbeddingMetadata: inout RAGEmbeddingIndexMetadata?,
-        embed: (String) async throws -> EmbeddingRuntimeResult,
+        embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult,
         flush: ((inout [PendingVector]) -> CorpusReplacementStageResult)? = nil
     ) async -> IndexResult {
+        guard !Task.isCancelled else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cancelled")
+        }
         let name = url.lastPathComponent
         let extracted = recordingRAGSynchronousWork {
             extractFileTextWithDiagnostics(url: url)
@@ -1486,13 +1489,17 @@ enum RAGStore {
 
             let embeddingResult: EmbeddingRuntimeResult
             do {
-                let embeddingText = SemanticEmbeddingText.document(
+                let embeddingText = SemanticEmbeddingText.documentBody(
                     content: piece,
                     sourceName: name,
                     sourceType: type.rawValue,
                     chunkIndex: index
                 )
-                embeddingResult = try await embed(embeddingText)
+                embeddingResult = try await embed(EmbeddingRequest(text: embeddingText, purpose: .retrievalDocument(title: name)))
+            } catch is CancellationError {
+                // Provider replacement cancels its own task without necessarily
+                // cancelling this caller. Stop the entire replacement explicitly.
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cancelled")
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexImportedFiles.stage source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
@@ -1551,8 +1558,8 @@ enum RAGStore {
     static func indexFileWithDiagnostics(
         url: URL,
         context: ModelContext,
-        embed: (String) async throws -> EmbeddingRuntimeResult = { text in
-            try await AssistantKernel.runEmbeddingWithIdentity(text: text)
+        embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult = { request in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: request.text, purpose: request.purpose, dimensions: request.dimensions)
         },
         save: ((ModelContext, String, String) throws -> Void)? = nil
     ) async -> IndexResult {
@@ -1583,13 +1590,13 @@ enum RAGStore {
             }
             let embeddingResult: EmbeddingRuntimeResult
             do {
-                let embeddingText = SemanticEmbeddingText.document(
+                let embeddingText = SemanticEmbeddingText.documentBody(
                     content: piece,
                     sourceName: name,
                     sourceType: type.rawValue,
                     chunkIndex: i
                 )
-                embeddingResult = try await embed(embeddingText)
+                embeddingResult = try await embed(EmbeddingRequest(text: embeddingText, purpose: .retrievalDocument(title: name)))
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
@@ -1760,8 +1767,8 @@ enum RAGStore {
         context: ModelContext,
         photoLibrarySnapshot: PhotoLibrarySnapshot? = nil,
         photoIndexSummaries: [PhotoIndexSummary]? = nil,
-        embed: (String) async throws -> EmbeddingRuntimeResult = { text in
-            try await AssistantKernel.runEmbeddingWithIdentity(text: text)
+        embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult = { request in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: request.text, purpose: request.purpose, dimensions: request.dimensions)
         },
         save: ((ModelContext, String, String) throws -> Void)? = nil,
         writeBudget: DiskWriteBudget = .shared
@@ -1934,13 +1941,24 @@ enum RAGStore {
 
             let embeddingResult: EmbeddingRuntimeResult
             do {
-                let embeddingText = SemanticEmbeddingText.document(
+                let embeddingText = SemanticEmbeddingText.documentBody(
                     content: summary,
                     sourceName: "Photos \(month)",
                     sourceType: RAGSourceType.photo.rawValue,
                     chunkIndex: 0
                 )
-                embeddingResult = try await embed(embeddingText)
+                embeddingResult = try await embed(EmbeddingRequest(text: embeddingText, purpose: .retrievalDocument(title: "Photos \(month)")))
+            } catch is CancellationError {
+                let cleanup = discardReplacementStaging(
+                    context: context,
+                    operation: "indexPhotos.discard",
+                    stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes,
+                    stagedCount: stagedCount,
+                    authorization: writeAuthorization,
+                    save: save
+                )
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cancelled", cleanup: cleanup))
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexPhotos source=\(month, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
@@ -2160,13 +2178,13 @@ enum RAGStore {
             if Task.isCancelled || shouldDegradeRAGWork() || !ResourceBudgetGate.allowsMaintenance(reason: "rag.indexNote") { break }
             let embeddingResult: EmbeddingRuntimeResult
             do {
-                let embeddingText = SemanticEmbeddingText.document(
+                let embeddingText = SemanticEmbeddingText.documentBody(
                     content: piece,
                     sourceName: title,
                     sourceType: RAGSourceType.note.rawValue,
                     chunkIndex: i
                 )
-                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText)
+                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText, purpose: .retrievalDocument(title: title))
             } catch {
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
@@ -2225,17 +2243,7 @@ enum RAGStore {
     }
 
     static func embeddingRuntimeAvailable() async -> Bool {
-        do {
-            let probe = try await AssistantKernel.runEmbedding(text: "embedding_readiness_probe")
-            if probe.isEmpty {
-                logger.error("rag_embedding_empty op=readiness")
-                return false
-            }
-            return true
-        } catch {
-            logger.error("rag_embedding_failed op=readiness error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
-            return false
-        }
+        await SemanticEmbeddingReadiness.isLoaded()
     }
 
     private static func photoAuthorizationDiagnostic(_ status: PHAuthorizationStatus) -> String {

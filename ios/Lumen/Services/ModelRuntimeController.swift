@@ -11,6 +11,7 @@ final class ModelRuntimeController {
 
     enum Failure: LocalizedError {
         case runtimeDidNotLoad(ModelRole)
+        case selectionSuperseded
 
         var errorDescription: String? {
             switch self {
@@ -20,6 +21,8 @@ final class ModelRuntimeController {
                 return "The selected embedding model could not be loaded."
             case .runtimeDidNotLoad(.roleAdapter):
                 return "The selected role adapter could not be loaded."
+            case .selectionSuperseded:
+                return "A newer model selection replaced this request."
             }
         }
     }
@@ -68,6 +71,47 @@ final class ModelRuntimeController {
             guard await ModelLoader.ensureEmbedLoaded(appState: appState, stored: storedModels, intent: .userChat) else {
                 throw Failure.runtimeDidNotLoad(.embedding)
             }
+        }
+    }
+
+    /// A legacy selection owns its provider revision and persisted IDs until
+    /// another user selection supersedes it. Restore only that owned revision;
+    /// a failed old load must never undo a newer selection.
+    func preservingEmbeddingSelection(
+        for role: ModelRole,
+        readSelection: () -> CoreAITextEmbeddingModelStore.SelectionSnapshot = { CoreAITextEmbeddingModelStore.selectionSnapshot },
+        chooseLegacy: () async throws -> CoreAITextEmbeddingModelStore.SelectionSnapshot = { try await CoreAITextEmbeddingModelStore.setSelected(false) },
+        restoreSelection: (Bool, CoreAITextEmbeddingModelStore.SelectionSnapshot) async throws -> Bool = {
+            try await CoreAITextEmbeddingModelStore.restoreSelection($0, ifUnchanged: $1)
+        },
+        isCurrent: () -> Bool = { true },
+        rollback: () throws -> Void = {},
+        operation: () async throws -> Void
+    ) async throws {
+        try Task.checkCancellation()
+        let previousSelection = readSelection()
+        let attemptedSelection: CoreAITextEmbeddingModelStore.SelectionSnapshot?
+        if role == .embedding { attemptedSelection = try await chooseLegacy() }
+        else { attemptedSelection = nil }
+        do {
+            try Task.checkCancellation()
+            guard isCurrent(), attemptedSelection.map({ readSelection() == $0 }) ?? true else {
+                throw Failure.selectionSuperseded
+            }
+            try await operation()
+            try Task.checkCancellation()
+            guard isCurrent(), attemptedSelection.map({ readSelection() == $0 }) ?? true else {
+                throw Failure.selectionSuperseded
+            }
+        } catch {
+            if let attemptedSelection {
+                guard try await restoreSelection(previousSelection.selected, attemptedSelection) else { throw error }
+                // The provider restore awaits its actor gate. IDs may have been
+                // changed by a newer request during that suspension.
+            }
+            guard isCurrent() else { throw error }
+            try rollback()
+            throw error
         }
     }
 

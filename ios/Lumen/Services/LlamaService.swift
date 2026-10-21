@@ -1140,6 +1140,7 @@ final actor AppLlamaService {
     }
 
     func loadEmbeddingModel(path: String) async throws {
+        guard !CoreAITextEmbeddingModelStore.isSelected else { throw CoreAITextEmbeddingError.notSelected }
         guard FileManager.default.fileExists(atPath: path) else {
             throw LlamaError.modelFileNotFound(path)
         }
@@ -2121,6 +2122,9 @@ final actor AppLlamaService {
     }
 
     private func embedVector(_ text: String) throws -> [Double] {
+        // Selection can change after kernel routing but before this actor admits
+        // the queued request. Never run the former provider in the new space.
+        guard !CoreAITextEmbeddingModelStore.isSelected else { throw CoreAITextEmbeddingError.notSelected }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 

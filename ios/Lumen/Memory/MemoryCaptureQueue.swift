@@ -103,6 +103,7 @@ enum MemoryCaptureQueue {
     nonisolated static let defaultDrainLimit = 8
 
     private static let fileName = "pending-memory-captures.json"
+    private static var activeDrainPaths: Set<String> = []
 
     static func enqueue(
         content: String,
@@ -175,7 +176,7 @@ enum MemoryCaptureQueue {
             return skippedDrainResult(reason: "promotion_not_allowed", fileURL: fileURL)
         }
 
-        let hasEmbeddingRuntime = await AppLlamaService.shared.hasSemanticEmbeddingRuntime
+        let hasEmbeddingRuntime = await SemanticEmbeddingReadiness.isLoaded()
         guard hasEmbeddingRuntime else {
             return skippedDrainResult(reason: "embedding_runtime_unavailable", fileURL: fileURL)
         }
@@ -203,34 +204,55 @@ enum MemoryCaptureQueue {
 
         do {
             let url = try resolvedFileURL(fileURL)
+            let drainPath = url.standardizedFileURL.path(percentEncoded: false)
+            guard activeDrainPaths.insert(drainPath).inserted else {
+                return skippedDrainResult(reason: "drain_in_progress", fileURL: url)
+            }
+            defer { activeDrainPaths.remove(drainPath) }
             let captures = try loadPending(fileURL: url)
             guard !captures.isEmpty else {
                 return MemoryCaptureDrainResult(attempted: 0, promoted: 0, remaining: 0, skippedReason: nil, lastError: nil)
             }
 
             let candidates = Array(captures.prefix(boundedLimit))
-            var remainder = Array(captures.dropFirst(candidates.count))
+            var promotedIDs: Set<UUID> = []
+            var failedCaptures: [UUID: PendingMemoryCapture] = [:]
             var promoted = 0
             var attempted = 0
             var lastError: String?
+            var skippedReason: String?
 
             for capture in candidates {
+                guard !Task.isCancelled else {
+                    skippedReason = "cancelled"
+                    break
+                }
                 attempted += 1
                 do {
                     try await promote(capture)
+                    promotedIDs.insert(capture.id)
                     promoted += 1
+                } catch is CancellationError {
+                    skippedReason = "cancelled"
+                    break
                 } catch {
                     let failed = capture.recordingFailure(error)
                     lastError = failed.lastError
-                    remainder.insert(failed, at: 0)
-                    let unattempted = candidates.dropFirst(attempted)
-                    remainder.insert(contentsOf: unattempted, at: 1)
+                    failedCaptures[capture.id] = failed
                     break
                 }
             }
 
+            // Promotion suspends the main actor. Enqueue may have saved new IDs
+            // in the meantime; update the live file instead of overwriting it
+            // with the snapshot taken before inference.
+            let remainder = try loadPending(fileURL: url).compactMap { capture in
+                promotedIDs.contains(capture.id) ? nil : failedCaptures[capture.id] ?? capture
+            }
             do {
-                try savePending(remainder, fileURL: url)
+                if !promotedIDs.isEmpty || !failedCaptures.isEmpty {
+                    try savePending(remainder, fileURL: url)
+                }
             } catch {
                 return MemoryCaptureDrainResult(
                     attempted: attempted,
@@ -244,7 +266,7 @@ enum MemoryCaptureQueue {
                 attempted: attempted,
                 promoted: promoted,
                 remaining: remainder.count,
-                skippedReason: nil,
+                skippedReason: skippedReason,
                 lastError: lastError
             )
         } catch {
@@ -272,7 +294,7 @@ enum MemoryCaptureQueue {
     }
 
     nonisolated static func sanitizedErrorCode(for error: Error) -> String {
-        let raw = String(describing: error)
+        let raw = RuntimeMetricErrorSanitizer.code(for: error)
             .lowercased()
             .replacingOccurrences(of: #"[^a-z0-9_.-]+"#, with: "_", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "_"))

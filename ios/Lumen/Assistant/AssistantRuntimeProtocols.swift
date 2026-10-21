@@ -43,21 +43,38 @@ struct TextGenerationRequest: Sendable {
     }
 }
 
-struct EmbeddingRequest: Sendable {
+nonisolated enum EmbeddingPurpose: Sendable, Equatable {
+    /// Compatibility for callers that already supplied the legacy model's task prefix.
+    /// New production retrieval calls must use an explicit purpose instead.
+    case legacyFormatted
+    case retrievalQuery
+    case retrievalDocument(title: String?)
+    case semanticSimilarity
+    case codeQuery
+}
+
+nonisolated struct EmbeddingRequest: Sendable, Equatable {
     let text: String
+    let purpose: EmbeddingPurpose
+    let dimensions: Int?
 
-    init(text: String) {
+    init(text: String, purpose: EmbeddingPurpose = .legacyFormatted, dimensions: Int? = nil) {
         self.text = text
-    }
-
-    init(text: String, dimensions: Int?) {
-        self.text = text
+        self.purpose = purpose
+        self.dimensions = dimensions
     }
 }
 
 nonisolated struct EmbeddingRuntimeResult: Sendable, Equatable {
     let vector: [Double]
     let modelIdentifier: String
+    let formatVersion: Int
+
+    init(vector: [Double], modelIdentifier: String, formatVersion: Int = SemanticEmbeddingText.formatVersion) {
+        self.vector = vector
+        self.modelIdentifier = modelIdentifier
+        self.formatVersion = formatVersion
+    }
 }
 
 protocol RuntimeHealthReporting: Sendable {

@@ -270,6 +270,8 @@ final class MemoryVectorIndex {
     private var matrix: [Float] = []
     private var dim: Int = 0
     private var loaded: Bool = false
+    private var loadedMetadata: RAGEmbeddingIndexMetadata?
+    private var hasStaleEmbeddings = false
 
     private init() {}
 
@@ -279,21 +281,30 @@ final class MemoryVectorIndex {
         matrix.removeAll(keepingCapacity: false)
         dim = 0
         loaded = false
+        loadedMetadata = nil
+        hasStaleEmbeddings = false
     }
 
     @discardableResult
-    func ensureLoaded(context: ModelContext) -> VectorIndexLoadResult {
-        ensureLoaded(fetch: { try context.fetch(FetchDescriptor<MemoryItem>()) })
+    func ensureLoaded(context: ModelContext, metadata: RAGEmbeddingIndexMetadata) -> VectorIndexLoadResult {
+        ensureLoaded(metadata: metadata, fetch: { try context.fetch(FetchDescriptor<MemoryItem>()) })
     }
 
     @discardableResult
-    func ensureLoadedForTests(fetch: () throws -> [MemoryItem]) -> VectorIndexLoadResult {
-        ensureLoaded(fetch: fetch)
+    func ensureLoadedForTests(
+        metadata: RAGEmbeddingIndexMetadata? = nil,
+        fetch: () throws -> [MemoryItem]
+    ) -> VectorIndexLoadResult {
+        ensureLoaded(metadata: metadata, fetch: fetch)
     }
 
-    private func ensureLoaded(fetch: () throws -> [MemoryItem]) -> VectorIndexLoadResult {
+    private func ensureLoaded(
+        metadata: RAGEmbeddingIndexMetadata?,
+        fetch: () throws -> [MemoryItem]
+    ) -> VectorIndexLoadResult {
+        if loaded, loadedMetadata != metadata { invalidate() }
         guard !loaded else {
-            return VectorIndexLoadResult(loadedCount: ids.count, mode: "already_loaded", diagnostic: nil)
+            return VectorIndexLoadResult(loadedCount: ids.count, mode: "already_loaded", diagnostic: hasStaleEmbeddings ? "memory_reindex_required" : nil)
         }
         let fetched: [MemoryItem]
         do {
@@ -304,21 +315,37 @@ final class MemoryVectorIndex {
             return VectorIndexLoadResult(loadedCount: 0, mode: "failed", diagnostic: diagnostic)
         }
         loaded = true
-        var d = 0
-        for m in fetched where !m.embedding.isEmpty {
-            if d == 0 { d = m.embedding.count }
-            guard m.embedding.count == d else { continue }
-            append(id: m.persistentModelID, isPinned: m.isPinned, vector: m.embedding, expectedDim: d)
+        loadedMetadata = metadata
+        guard let metadata, metadata.dimension > 0, !metadata.modelIdentifier.isEmpty else {
+            hasStaleEmbeddings = !fetched.isEmpty
+            return VectorIndexLoadResult(loadedCount: 0, mode: "loaded", diagnostic: hasStaleEmbeddings ? "memory_reindex_required" : nil)
         }
-        dim = d
-        return VectorIndexLoadResult(loadedCount: ids.count, mode: "loaded", diagnostic: nil)
+        dim = metadata.dimension
+        var staleCount = 0
+        for item in fetched {
+            guard Self.matches(item, metadata: metadata) else { staleCount += 1; continue }
+            append(id: item.persistentModelID, isPinned: item.isPinned, vector: item.embedding, expectedDim: dim)
+        }
+        hasStaleEmbeddings = staleCount > 0
+        return VectorIndexLoadResult(loadedCount: ids.count, mode: "loaded", diagnostic: hasStaleEmbeddings ? "memory_reindex_required" : nil)
     }
 
-    func append(id: PersistentIdentifier, isPinned: Bool, vector: [Double]) {
-        guard loaded, !vector.isEmpty else { return }
-        if dim == 0 { dim = vector.count }
-        guard vector.count == dim else { return }
+    static func matches(_ item: MemoryItem, metadata: RAGEmbeddingIndexMetadata) -> Bool {
+        item.embeddingFormatVersion == metadata.formatVersion
+            && item.embeddingModelIdentifier == metadata.modelIdentifier
+            && item.embeddingDimension == metadata.dimension
+            && item.embedding.count == metadata.dimension
+            && !item.embedding.isEmpty
+            && item.embedding.allSatisfy(\.isFinite)
+    }
+
+    @discardableResult
+    func append(id: PersistentIdentifier, isPinned: Bool, vector: [Double], metadata: RAGEmbeddingIndexMetadata) -> Bool {
+        guard loaded, loadedMetadata == metadata, dim == metadata.dimension,
+              !vector.isEmpty, vector.count == metadata.dimension, vector.allSatisfy(\.isFinite) else { return false }
+        if ids.contains(id) { return true }
         append(id: id, isPinned: isPinned, vector: vector, expectedDim: dim)
+        return true
     }
 
     func removeAll(keepPinned: Bool) {

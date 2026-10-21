@@ -6,6 +6,7 @@ struct AssistantRuntimeRouter {
     let fallback: DeterministicFallbackRuntime
     let coreML: CoreMLRuntimeAdapter
     let coreAI: CoreAIGemmaRuntimeAdapter
+    let coreAIEmbedding: CoreAITextEmbeddingRuntimeAdapter
     let allowDiagnosticFallbackSelection: Bool
 
     init(
@@ -16,6 +17,7 @@ struct AssistantRuntimeRouter {
         fallback: DeterministicFallbackRuntime = .init(),
         coreML: CoreMLRuntimeAdapter = .init(modelURL: nil),
         coreAI: CoreAIGemmaRuntimeAdapter = .init(),
+        coreAIEmbedding: CoreAITextEmbeddingRuntimeAdapter = .init(),
         allowDiagnosticFallbackSelection: Bool = Self.defaultAllowDiagnosticFallbackSelection
     ) {
         self.foundation = foundation
@@ -23,6 +25,7 @@ struct AssistantRuntimeRouter {
         self.fallback = fallback
         self.coreML = coreML
         self.coreAI = coreAI
+        self.coreAIEmbedding = coreAIEmbedding
         self.allowDiagnosticFallbackSelection = allowDiagnosticFallbackSelection
     }
 
@@ -44,6 +47,15 @@ struct AssistantRuntimeRouter {
         llamaEmbeddingSelectable: Bool,
         allowDiagnosticFallback: Bool
     ) -> Selection {
+        if coreAIEmbedding.isPreferred {
+            guard decision.allowHeavyRuntime else {
+                return .init(runtime: .unavailable, reason: decision.denialReason ?? "embedding runtime resource denied")
+            }
+            guard coreAIEmbedding.isAvailable else {
+                return .init(runtime: .unavailable, reason: coreAIEmbedding.unavailableReason ?? "Core AI text embeddings unavailable")
+            }
+            return .init(runtime: .coreAI, reason: "Core AI text embeddings explicitly selected")
+        }
         if decision.allowHeavyRuntime, llamaEmbeddingSelectable {
             return .init(runtime: .llama, reason: "llama embedding available")
         }

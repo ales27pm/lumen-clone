@@ -214,7 +214,10 @@ struct MemoryRow: View {
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 4) {
                 if isEditing {
-                    TextField("Memory", text: $item.content, axis: .vertical)
+                    TextField("Memory", text: Binding(
+                        get: { item.content },
+                        set: { MemoryStore.updateContent($0, for: item) }
+                    ), axis: .vertical)
                         .font(.footnote)
                         .foregroundStyle(Theme.textPrimary)
                         .textFieldStyle(.plain)
@@ -267,6 +270,8 @@ struct MemoryRow: View {
 }
 
 struct AddMemorySheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var content: String = ""
@@ -275,6 +280,7 @@ struct AddMemorySheet: View {
     @State private var pinned: Bool = false
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var savingTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -306,9 +312,13 @@ struct AddMemorySheet: View {
                 }
                 Section {
                     Button("Save") {
-                        Task {
+                        guard !isSaving else { return }
+                        isSaving = true
+                        let task = Task { @MainActor in
                             await saveMemory()
                         }
+                        savingTask = task
+                        AppCancellationBus.shared.register(task, category: .memoryMaintenance)
                     }
                     .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
@@ -321,30 +331,49 @@ struct AddMemorySheet: View {
                         .disabled(isSaving)
                 }
             }
+            .onDisappear { savingTask?.cancel() }
         }
     }
 
     @MainActor
     private func saveMemory() async {
+        defer { isSaving = false; savingTask = nil }
         let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedContent.isEmpty else { return }
-        isSaving = true
+        let savedKind = kind
+        let savedTopic = topic.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldPin = pinned
         saveError = nil
-        defer { isSaving = false }
 
-        let result = await MemoryStore.rememberWithDiagnostics(
-            trimmedContent,
-            kind: kind,
-            source: "manual",
-            topic: topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : topic.trimmingCharacters(in: .whitespacesAndNewlines),
-            context: modelContext
-        )
+        let result: MemoryStore.RememberResult
+        do {
+            result = try await ForegroundEmbeddingWork.run(
+                isForeground: scenePhase == .active, appState: appState, context: modelContext
+            ) {
+                await MemoryStore.rememberWithDiagnostics(
+                    trimmedContent,
+                    kind: savedKind,
+                    source: "manual",
+                    topic: savedTopic.isEmpty ? nil : savedTopic,
+                    context: modelContext
+                )
+            }
+        } catch is CancellationError {
+            saveError = "Memory saving cancelled. Any completed save is preserved."
+            return
+        } catch let error as ForegroundEmbeddingWork.Failure {
+            saveError = error.localizedDescription
+            return
+        } catch {
+            saveError = "Could not prepare the local embedding model. Your memory remains in this editor."
+            return
+        }
         guard result.mode != "failed" else {
             saveError = "Could not save memory. Diagnostic: \(result.diagnostic ?? "unknown")."
             return
         }
 
-        if pinned {
+        if shouldPin {
             do {
                 let saved = try modelContext.fetch(FetchDescriptor<MemoryItem>()).first { item in
                     item.content.caseInsensitiveCompare(trimmedContent) == .orderedSame

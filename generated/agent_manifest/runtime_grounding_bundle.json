@@ -594,7 +594,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantKernel.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, runAdaptedLegacyRequest, adaptLegacyRequest, streamStructuredLlama, takeCompletedStructuredLlamaTrace, prepareStructuredLlamaRuntime, preflightStructuredLlamaPrompt.",
-        "sha256": "5b40baa198a09a3a5e6037cd987c11e16a7dd85ca9681eedf0dd6fd43f1ef9e7",
+        "sha256": "c5c1b491618b574308d8943745935321240d58dad5fcc2adb0f4c948b2af1339",
         "symbols": [
           "AssistantKernel",
           "KernelError",
@@ -623,7 +623,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeAdapters.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeAdapters.swift` owns AssistantRuntimeAdapters behavior and defines: LocalRuntimeError, LlamaRuntimeStreamingService, LlamaStructuredPromptPreflightSnapshot, AppLlamaService, CoreMLRuntimeError, AssistantRuntimeCapabilityRow, AssistantRuntimeCapabilityMatrix, DeterministicFallbackRuntime, LlamaRuntimeAdapter, LiveGenerationDefaults.",
-        "sha256": "2488fd13365f73288f47eab27ace8520c8962fb7942c91012fca61a8090865b7",
+        "sha256": "a4026d06be2b2d3442c67f38746694c38881228e20d4f19fd92224e61ceae22c",
         "symbols": [
           "LocalRuntimeError",
           "LlamaRuntimeStreamingService",
@@ -650,11 +650,12 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeProtocols.swift",
-        "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeProtocols.swift` owns AssistantRuntimeProtocols behavior and defines: AssistantRuntimeKind, TextGenerationRequest, EmbeddingRequest, EmbeddingRuntimeResult, RuntimeHealthReporting, RuntimeMemoryPressureHandling, LocalTextGenerationRuntime, LocalEmbeddingRuntime, handleMemoryPressure, generate.",
-        "sha256": "871554fc68d811f3a00a9590390a068a1edc67395602dc391993adb7441be195",
+        "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeProtocols.swift` owns AssistantRuntimeProtocols behavior and defines: AssistantRuntimeKind, TextGenerationRequest, EmbeddingPurpose, EmbeddingRequest, EmbeddingRuntimeResult, RuntimeHealthReporting, RuntimeMemoryPressureHandling, LocalTextGenerationRuntime, LocalEmbeddingRuntime, handleMemoryPressure.",
+        "sha256": "df9a9a63bcd240ec99a87b006ad5806c478bee01d252a6ec45448134528d7df1",
         "symbols": [
           "AssistantRuntimeKind",
           "TextGenerationRequest",
+          "EmbeddingPurpose",
           "EmbeddingRequest",
           "EmbeddingRuntimeResult",
           "RuntimeHealthReporting",
@@ -667,8 +668,7 @@
           "prompt",
           "systemPrompt",
           "history",
-          "temperature",
-          "topP"
+          "temperature"
         ]
       },
       {
@@ -679,7 +679,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeRouter.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeRouter.swift` owns AssistantRuntimeRouter behavior and defines: AssistantRuntimeRouter, Selection, embeddingSelection, selection, selectionIncludingRuntimeState, runtime, foundation, llama, fallback, coreML.",
-        "sha256": "a0d2c55272a4f07050f2cbce83733eb4b205bb1197a42df7a6eb1bcb28b87679",
+        "sha256": "b1daf1f3ea021f0e643ebc0031219ebb6a49dfaad538eba791709183ac6b63bc",
         "symbols": [
           "AssistantRuntimeRouter",
           "Selection",
@@ -692,6 +692,7 @@
           "fallback",
           "coreML",
           "coreAI",
+          "coreAIEmbedding",
           "allowDiagnosticFallbackSelection",
           "defaultAllowDiagnosticFallbackSelection",
           "reason",
@@ -1228,25 +1229,25 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/SemanticEmbeddingText.swift",
-        "responsibility": "`ios/Lumen/Assistant/SemanticEmbeddingText.swift` owns SemanticEmbeddingText behavior and defines: SemanticEmbeddingText, RAGEmbeddingMetadata, query, document, memoryQuery, memoryDocument, prefixed, boundedInlineContent, boundedDocumentContent, cleanMetadata.",
-        "sha256": "5db553de4e8743a9dc04892e3408b4b47baba9ba82c8b6cc4ca19f15915fe368",
+        "responsibility": "CoreAI receives the complete normalized body and rejects token overflow. Preserve the earlier character bound only for the legacy embedding profile.",
+        "sha256": "af42d0db1df49efb07b9bbe8c110ab6f582ab9330432b74d4fe98456af5109a7",
         "symbols": [
           "SemanticEmbeddingText",
           "RAGEmbeddingMetadata",
+          "SemanticEmbeddingReadiness",
+          "queryBody",
+          "documentBody",
+          "memoryDocumentBody",
           "query",
           "document",
           "memoryQuery",
           "memoryDocument",
           "prefixed",
           "boundedInlineContent",
+          "normalizedDocumentContent",
           "boundedDocumentContent",
           "cleanMetadata",
-          "collapseWhitespace",
-          "modelIdentifier",
-          "formatVersion",
-          "maxContentCharacters",
-          "maxMetadataCharacters",
-          "metadata"
+          "collapseWhitespace"
         ]
       },
       {
@@ -2027,7 +2028,7 @@
         "module": "Memory",
         "path": "ios/Lumen/Memory/MemoryCaptureQueue.swift",
         "responsibility": "`ios/Lumen/Memory/MemoryCaptureQueue.swift` owns MemoryCaptureQueue behavior and defines: PendingMemoryCapture, MemoryCaptureDrainResult, MemoryCaptureQueueDiagnostics, MemoryCaptureQueueError, MemoryCaptureQueue, recordingFailure, skipped, enqueue, pendingCount, diagnosticsSnapshot.",
-        "sha256": "c90cc045363eb7d44f88ec98019a70d9ed1eccb050e19f2d41ddfc5f63406be0",
+        "sha256": "5fc7fa6731e4ff6204ea06f233011df7cf4d3c4e70e396d95f245e217ae7edd3",
         "symbols": [
           "PendingMemoryCapture",
           "MemoryCaptureDrainResult",
@@ -2215,14 +2216,14 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "b8276064fb3fcbca8cbeed6a6a5394e767f2b00f",
+  "manifestCommit": "d980fac27802072819baa085c29d3b3e6e2c491e",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "a27fce2d6ac2a5c7f0804fc57442f29753e92500a315bc26daa2d1f63f1e97b8",
-    "promptUTF8ByteCount": 25998,
+    "promptSHA256": "ddf6764a86a8b8d33528b7bb77c4bb95bb20bd8a1237578d08ab2f794a6e081d",
+    "promptUTF8ByteCount": 25933,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
   "schemaVersion": "1.0.0",
@@ -2233,8 +2234,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "b8276064fb3fcbca8cbeed6a6a5394e767f2b00f",
+    "baseCommit": "d980fac27802072819baa085c29d3b3e6e2c491e",
     "dirtyState": true,
-    "workingTreeDigest": "813a5ca7494917264a81469526ec976e7f922fddb1840d6daaf195ebf1cbf98b"
+    "workingTreeDigest": "2e0cf1c84ac5d23bc87322f56ccff9b0e1ae7338d6dbddea821045e4dc27669f"
   }
 }

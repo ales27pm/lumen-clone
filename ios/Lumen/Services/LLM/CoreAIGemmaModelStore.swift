@@ -1,9 +1,5 @@
-import CryptoKit
 import Foundation
 import Darwin
-#if canImport(FileProvider)
-import FileProvider
-#endif
 
 /// Owns a user-imported, completely local Gemma package. Imported hashes establish
 /// byte identity for later loads; they do not certify the model's provenance.
@@ -81,25 +77,8 @@ nonisolated enum CoreAIGemmaModelStore {
         return (error as? Failure) ?? Failure.storage
     }
 
-    enum Failure: Error, LocalizedError, Equatable {
-        case localDirectory, invalidPackage, integrity, notConfigured, storage
-
-        var errorDescription: String? {
-            switch self {
-            case .localDirectory: return "Choose a fully downloaded local folder without symbolic links."
-            case .invalidPackage: return "A complete Gemma 4 E2B Core AI text export with its local tokenizer and 8K or 32K context is required."
-            case .integrity: return "The imported model changed or is incomplete. Import the original package again."
-            case .notConfigured: return "Import a local Gemma Core AI model in Settings before starting a conversation."
-            case .storage: return "The local Gemma model could not be saved or removed. Check available storage and try again."
-            }
-        }
-    }
-
-    struct FileIdentity: Codable, Sendable, Equatable {
-        let path: String
-        let bytes: Int64
-        let sha256: String
-    }
+    typealias Failure = CoreAILocalPackageIO.Failure
+    typealias FileIdentity = CoreAILocalPackageIO.FileIdentity
 
     struct Identity: Codable, Sendable {
         let version: Int
@@ -114,6 +93,7 @@ nonisolated enum CoreAIGemmaModelStore {
         private static let maximumEntries = 4_096
         private static let maximumIdentityBytes = 1_024 * 1_024
         private static let maximumPackageBytes: Int64 = 32 * 1_024 * 1_024 * 1_024
+        private var io: CoreAILocalPackageIO { .init(maximumPackageBytes: Self.maximumPackageBytes) }
         private var identityURL: URL { directory.appendingPathComponent("active.json") }
         var isConfigured: Bool { FileManager.default.fileExists(atPath: identityURL.path) }
 
@@ -127,7 +107,7 @@ nonisolated enum CoreAIGemmaModelStore {
             let identity = try readIdentity()
             let bundle = directory.appendingPathComponent(identity.installation, isDirectory: true)
                 .appendingPathComponent("bundle", isDirectory: true)
-            let owned = try openDirectory(directory)
+            let owned = try io.openDirectory(directory)
             defer { close(owned) }
             let installation = openat(owned, identity.installation, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             guard installation >= 0 else { throw Failure.integrity }
@@ -135,11 +115,11 @@ nonisolated enum CoreAIGemmaModelStore {
             let descriptor = openat(installation, "bundle", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             guard descriptor >= 0 else { throw Failure.integrity }
             defer { close(descriptor) }
-            let paths = try inventory(bundle)
+            let paths = try io.inventory(bundle)
             guard paths == identity.files.map(\.path), !paths.isEmpty else { throw Failure.integrity }
             for expected in identity.files {
                 try Task.checkCancellation()
-                guard try digest(relative: expected.path, descriptor: descriptor) == expected else { throw Failure.integrity }
+                guard try io.digest(relative: expected.path, descriptor: descriptor) == expected else { throw Failure.integrity }
             }
             let metadata = try readMetadata(descriptor: descriptor)
             guard metadata.language.max_context_length == identity.contextLength else { throw Failure.integrity }
@@ -149,9 +129,9 @@ nonisolated enum CoreAIGemmaModelStore {
 
         func install(source: URL) throws {
             guard source.isFileURL else { throw Failure.localDirectory }
-            let sourceDescriptor = try openDirectory(source)
+            let sourceDescriptor = try io.openDirectory(source)
             defer { close(sourceDescriptor) }
-            let paths = try inventory(source)
+            let paths = try io.inventory(source)
             let metadata = try readMetadata(descriptor: sourceDescriptor)
             try validateRequiredFiles(metadata: metadata, paths: Set(paths))
             let manager = FileManager.default
@@ -176,15 +156,15 @@ nonisolated enum CoreAIGemmaModelStore {
                 try Task.checkCancellation()
                 let output = bundle.appendingPathComponent(path)
                 try manager.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let file = try digest(relative: path, descriptor: sourceDescriptor, copyTo: output)
+                let file = try io.digest(relative: path, descriptor: sourceDescriptor, copyTo: output)
                 total += file.bytes
                 guard total <= Self.maximumPackageBytes else { throw Failure.invalidPackage }
                 files.append(file)
             }
             // Detect source-directory changes during the copy. All bytes above were
             // opened relative to the original root descriptor with no-follow opens.
-            guard try inventory(source) == paths else { throw Failure.integrity }
-            let copiedDescriptor = try openDirectory(bundle)
+            guard try io.inventory(source) == paths else { throw Failure.integrity }
+            let copiedDescriptor = try io.openDirectory(bundle)
             let copiedMetadata: Metadata
             do {
                 copiedMetadata = try readMetadata(descriptor: copiedDescriptor)
@@ -219,16 +199,16 @@ nonisolated enum CoreAIGemmaModelStore {
         }
 
         private func readIdentity() throws -> Identity {
-            let descriptor = try openDirectory(directory)
+            let descriptor = try io.openDirectory(directory)
             defer { close(descriptor) }
-            let data = try smallFile("active.json", descriptor: descriptor, limit: Self.maximumIdentityBytes)
+            let data = try io.smallFile("active.json", descriptor: descriptor, limit: Self.maximumIdentityBytes)
             guard let identity = try? JSONDecoder().decode(Identity.self, from: data), identity.version == 1,
                   UUID(uuidString: identity.installation)?.uuidString.lowercased() == identity.installation,
                   [8_192, 32_768].contains(identity.contextLength), !identity.files.isEmpty,
                   identity.files.count <= Self.maximumEntries,
                   identity.files.map(\.path) == identity.files.map(\.path).sorted(),
                   Set(identity.files.map(\.path)).count == identity.files.count,
-                  identity.files.allSatisfy({ validRelativePath($0.path) && $0.bytes >= 0 && $0.bytes <= Self.maximumPackageBytes &&
+                  identity.files.allSatisfy({ io.validRelativePath($0.path) && $0.bytes >= 0 && $0.bytes <= Self.maximumPackageBytes &&
                       $0.sha256.count == 64 && $0.sha256.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) })
             else { throw Failure.integrity }
             return identity
@@ -247,12 +227,12 @@ nonisolated enum CoreAIGemmaModelStore {
         }
 
         private func readMetadata(descriptor: Int32) throws -> Metadata {
-            let data = try smallFile("metadata.json", descriptor: descriptor, limit: 256 * 1_024)
+            let data = try io.smallFile("metadata.json", descriptor: descriptor, limit: 256 * 1_024)
             guard let metadata = try? JSONDecoder().decode(Metadata.self, from: data), metadata.kind == "llm",
                   metadata.language.tokenizer == "google/gemma-4-E2B-it", metadata.language.embedded_tokenizer != false,
                   [8_192, 32_768].contains(metadata.language.max_context_length),
                   Set(metadata.assets.keys) == ["main"], Set(metadata.auxiliary_assets.keys) == ["per_layer_embeddings"],
-                  metadata.assets.values.allSatisfy(validRelativePath), metadata.auxiliary_assets.values.allSatisfy(validRelativePath),
+                  metadata.assets.values.allSatisfy(io.validRelativePath), metadata.auxiliary_assets.values.allSatisfy(io.validRelativePath),
                   metadata.assets["main"]?.hasSuffix(".aimodel") == true
             else { throw Failure.invalidPackage }
             return metadata
@@ -268,136 +248,10 @@ nonisolated enum CoreAIGemmaModelStore {
         private func verifyStoredMainHash(metadata: Metadata, root: URL, files: [FileIdentity]) throws {
             guard let model = metadata.assets["main"], let bytecode = files.first(where: { $0.path == model + "/main.mlirb" })
             else { throw Failure.invalidPackage }
-            let descriptor = try openDirectory(root)
+            let descriptor = try io.openDirectory(root)
             defer { close(descriptor) }
-            let hash = try smallFile(model + "/main.hash", descriptor: descriptor, limit: 32)
-            guard hash.count == 32, hex(hash) == bytecode.sha256 else { throw Failure.integrity }
+            let hash = try io.smallFile(model + "/main.hash", descriptor: descriptor, limit: 32)
+            guard hash.count == 32, io.hex(hash) == bytecode.sha256 else { throw Failure.integrity }
         }
-
-        private func inventory(_ root: URL) throws -> [String] {
-            let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
-                                           .isReadableKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
-                                           .ubiquitousItemIsDownloadingKey]
-            var pending = [root]
-            var result: [String] = []
-            var visited = 0
-            while let url = pending.popLast() {
-                try Task.checkCancellation()
-                visited += 1
-                guard visited <= Self.maximumEntries else { throw Failure.invalidPackage }
-                var status = stat()
-                guard lstat(url.path, &status) == 0, status.st_flags & UInt32(SF_DATALESS) == 0 else {
-                    throw Failure.localDirectory
-                }
-                #if canImport(FileProvider)
-                guard !FileManager.default.fileExists(atPath: NSFileProviderManager.placeholderURL(for: url).path) else {
-                    throw Failure.localDirectory
-                }
-                #endif
-                let values = try url.resourceValues(forKeys: keys)
-                guard values.isSymbolicLink == false, values.isReadable == true,
-                      values.ubiquitousItemIsDownloading != true,
-                      values.isUbiquitousItem != true,
-                      values.ubiquitousItemDownloadingStatus == nil || values.ubiquitousItemDownloadingStatus == .current ||
-                        values.ubiquitousItemDownloadingStatus == .downloaded
-                else { throw Failure.localDirectory }
-                if values.isDirectory == true {
-                    pending.append(contentsOf: try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: Array(keys)))
-                } else {
-                    guard values.isRegularFile == true, url.path.hasPrefix(root.path + "/") else { throw Failure.localDirectory }
-                    let relative = String(url.path.dropFirst(root.path.count + 1))
-                    guard validRelativePath(relative) else { throw Failure.localDirectory }
-                    result.append(relative)
-                }
-            }
-            return result.sorted()
-        }
-
-        private func openDirectory(_ url: URL) throws -> Int32 {
-            guard url.isFileURL else { throw Failure.localDirectory }
-            var status = stat()
-            guard lstat(url.path, &status) == 0, UInt32(status.st_mode) & UInt32(S_IFMT) == UInt32(S_IFDIR),
-                  status.st_flags & UInt32(SF_DATALESS) == 0 else { throw Failure.localDirectory }
-            let descriptor = Darwin.open(url.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-            guard descriptor >= 0 else { throw Failure.localDirectory }
-            return descriptor
-        }
-
-        private func openFile(_ relative: String, descriptor: Int32) throws -> Int32 {
-            guard validRelativePath(relative) else { throw Failure.invalidPackage }
-            var parent = dup(descriptor)
-            guard parent >= 0 else { throw Failure.localDirectory }
-            defer { close(parent) }
-            let pieces = relative.split(separator: "/").map(String.init)
-            for component in pieces.dropLast() {
-                let next = openat(parent, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-                guard next >= 0 else { throw Failure.localDirectory }
-                close(parent)
-                parent = next
-            }
-            var entry = stat()
-            guard fstatat(parent, pieces[pieces.count - 1], &entry, AT_SYMLINK_NOFOLLOW) == 0,
-                  UInt32(entry.st_mode) & UInt32(S_IFMT) == UInt32(S_IFREG), entry.st_flags & UInt32(SF_DATALESS) == 0 else {
-                throw Failure.localDirectory
-            }
-            let result = openat(parent, pieces[pieces.count - 1], O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
-            guard result >= 0 else { throw Failure.localDirectory }
-            var information = stat()
-            guard fstat(result, &information) == 0, UInt32(information.st_mode) & UInt32(S_IFMT) == UInt32(S_IFREG),
-                  information.st_flags & UInt32(SF_DATALESS) == 0,
-                  information.st_size >= 0, information.st_size <= Self.maximumPackageBytes else {
-                close(result)
-                throw Failure.localDirectory
-            }
-            return result
-        }
-
-        private func smallFile(_ path: String, descriptor: Int32, limit: Int) throws -> Data {
-            let file = try openFile(path, descriptor: descriptor)
-            let handle = FileHandle(fileDescriptor: file, closeOnDealloc: true)
-            defer { try? handle.close() }
-            guard let data = try handle.read(upToCount: limit + 1), data.count <= limit else { throw Failure.invalidPackage }
-            return data
-        }
-
-        private func digest(relative: String, descriptor: Int32, copyTo output: URL? = nil) throws -> FileIdentity {
-            let file = try openFile(relative, descriptor: descriptor)
-            let input = FileHandle(fileDescriptor: file, closeOnDealloc: true)
-            defer { try? input.close() }
-            var before = stat()
-            guard fstat(file, &before) == 0 else { throw Failure.integrity }
-            let destination: FileHandle?
-            if let output {
-                guard FileManager.default.createFile(atPath: output.path, contents: nil,
-                    attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]) else { throw Failure.storage }
-                destination = try FileHandle(forWritingTo: output)
-            } else { destination = nil }
-            defer { try? destination?.close() }
-            var hasher = SHA256()
-            var count: Int64 = 0
-            while let data = try input.read(upToCount: 1_024 * 1_024), !data.isEmpty {
-                try Task.checkCancellation()
-                count += Int64(data.count)
-                guard count <= before.st_size else { throw Failure.integrity }
-                hasher.update(data: data)
-                try destination?.write(contentsOf: data)
-            }
-            try destination?.synchronize()
-            var after = stat()
-            guard fstat(file, &after) == 0, count == before.st_size, after.st_size == before.st_size,
-                  after.st_ino == before.st_ino, after.st_mtimespec.tv_sec == before.st_mtimespec.tv_sec,
-                  after.st_mtimespec.tv_nsec == before.st_mtimespec.tv_nsec,
-                  after.st_ctimespec.tv_sec == before.st_ctimespec.tv_sec,
-                  after.st_ctimespec.tv_nsec == before.st_ctimespec.tv_nsec
-            else { throw Failure.integrity }
-            return FileIdentity(path: relative, bytes: count, sha256: hex(Data(hasher.finalize())))
-        }
-
-        private func validRelativePath(_ path: String) -> Bool {
-            !path.isEmpty && path.utf8.count <= 1_024 && !path.hasPrefix("/") && !path.contains("\0") &&
-                path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
-        }
-
-        private func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
     }
 }
