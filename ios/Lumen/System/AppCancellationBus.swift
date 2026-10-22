@@ -6,6 +6,7 @@ nonisolated enum AppCancellationCategory: String, CaseIterable, Sendable {
     case voiceRecognition
     case tts
     case modelLoad
+    case modelMaintenance
     case diagnostics
     case memoryMaintenance
     case ragIndexing
@@ -15,7 +16,7 @@ nonisolated enum AppCancellationCategory: String, CaseIterable, Sendable {
 
     var isSceneSensitive: Bool {
         switch self {
-        case .chatGeneration, .voiceRecognition, .tts, .modelLoad, .diagnostics,
+        case .chatGeneration, .voiceRecognition, .tts, .modelLoad, .modelMaintenance, .diagnostics,
              .memoryMaintenance, .ragIndexing, .triggerScan, .persistenceFlush, .backgroundWork:
             return true
         }
@@ -30,7 +31,9 @@ nonisolated final class AppCancellationBus: @unchecked Sendable {
     private var cancellationRequestedReason: String?
     private let logger = Logger(subsystem: "ai.lumen.app", category: "cancellation")
 
-    private init() {}
+    // An isolated bus can be injected into an operation owner without changing
+    // the production shared bus or another subsystem's registrations.
+    init() {}
 
     @discardableResult
     func register(_ task: Task<Void, Never>, category: AppCancellationCategory) -> UUID {

@@ -27,6 +27,8 @@ for source in \
   ios/Lumen/Services/LLM/CoreAITextEmbeddingModelStore.swift \
   ios/Lumen/Services/LLM/CoreAI/CoreAITextEmbeddingPolicy.swift \
   ios/Lumen/System/AppCancellationBus.swift \
+  ios/Lumen/System/ModelSettingsOperationOwner.swift \
+  ios/Lumen/Views/CoreAIGemmaSettingsSection.swift \
   ios/LumenTests/Support/CoreAIPackageIOHarnessSupport.swift; do
   cp "$ROOT_DIR/$source" "$PACKAGE_DIR/Sources/Lumen/"
 done
@@ -35,7 +37,8 @@ for test in \
   CoreAIGemmaModelStoreTests.swift \
   CoreAITextEmbeddingModelStoreTests.swift \
   CoreAIModelStoreRecoveryTests.swift \
-  CoreAIModelReplacementLifecycleTests.swift; do
+  CoreAIModelReplacementLifecycleTests.swift \
+  ModelSettingsOperationOwnerTests.swift; do
   cp "$ROOT_DIR/ios/LumenTests/$test" "$PACKAGE_DIR/Tests/LumenTests/"
 done
 cat > "$PACKAGE_DIR/Package.swift" <<'SWIFT'
@@ -56,4 +59,4 @@ SWIFT
 
 swift test --package-path "$PACKAGE_DIR" -c release \
   -Xswiftc -DCOREAI_PACKAGE_IO_MEMORY_TESTS \
-  --filter 'CoreAI(LocalPackageIO|GemmaModelStore|TextEmbeddingModelStore|ModelStoreRecovery|ModelReplacementLifecycle)Tests'
+  --filter '(CoreAI(LocalPackageIO|GemmaModelStore|TextEmbeddingModelStore|ModelStoreRecovery|ModelReplacementLifecycle)|ModelSettingsOperationOwner)Tests'

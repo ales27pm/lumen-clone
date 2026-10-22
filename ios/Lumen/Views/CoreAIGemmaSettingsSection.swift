@@ -1,20 +1,23 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
 struct CoreAIGemmaSettingsSection: View {
     var onConfigurationChanged: () -> Void = {}
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("coreai.gemma.enabled") private var isEnabled = true
     @State private var isConfigured = CoreAIGemmaModelStore.isConfigured
-    @State private var isImporting = false
+    @State private var operationOwner = ModelSettingsOperationOwner()
     @State private var showImporter = false
     @State private var errorMessage: String?
+    @State private var configurationWasNotified = true
 
     var body: some View {
         Section {
             Toggle("Use Gemma by default", isOn: Binding(get: { isEnabled }, set: { enabled in
                 perform { try await CoreAIGemmaModelStore.setEnabled(enabled) }
             }))
-            .disabled(isImporting)
+            .disabled(operationOwner.isBusy)
             .accessibilityIdentifier("settings.coreai.enabled")
             LabeledContent("Assistant", value: isEnabled ? "Gemma 4 E2B · Core AI" : "llama.cpp")
             if isEnabled {
@@ -30,18 +33,22 @@ struct CoreAIGemmaSettingsSection: View {
                 showImporter = true
             } label: {
                 HStack {
-                    Label(isImporting ? "Importing and checking files…" : "Import Gemma model folder", systemImage: "folder")
+                    Label(operationOwner.isBusy ? "Importing and checking files…" : "Import Gemma model folder", systemImage: "folder")
                     Spacer()
-                    if isImporting { ProgressView() }
+                    if operationOwner.isBusy { ProgressView() }
                 }
             }
-            .disabled(isImporting)
+            .disabled(operationOwner.isBusy)
             .accessibilityIdentifier("settings.coreai.import")
+            if operationOwner.isBusy {
+                Button("Cancel current Gemma operation", role: .cancel) { operationOwner.cancel() }
+                    .accessibilityIdentifier("settings.coreai.cancel")
+            }
             if isConfigured {
                 Button("Remove local Gemma model", role: .destructive) {
                     perform { try await CoreAIGemmaModelStore.remove() }
                 }
-                .disabled(isImporting)
+                .disabled(operationOwner.isBusy)
                 .accessibilityIdentifier("settings.coreai.remove")
             }
         } header: {
@@ -49,7 +56,14 @@ struct CoreAIGemmaSettingsSection: View {
         } footer: {
             Text("Requires iOS 27.1 and a complete Gemma 4 E2B Core AI text export with an 8K or 32K context, PLE weights and local tokenizer. Select a fully downloaded local folder in Files. Lumen copies and verifies it on this device; importing does not download a model. Allow space for a second copy during replacement. Imported hashes detect later changes; they do not certify the model’s publisher.")
         }
+        .onAppear { updateActivity() }
+        .onDisappear { operationOwner.deactivate() }
+        .onChange(of: scenePhase) { _, _ in updateActivity() }
+        .onChange(of: operationOwner.isBusy) { _, busy in
+            if !busy, operationOwner.isActive { refreshConfiguration() }
+        }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
+            guard operationOwner.isActive else { return }
             switch result {
             case .success(let urls):
                 guard let directory = urls.first else { return }
@@ -65,20 +79,32 @@ struct CoreAIGemmaSettingsSection: View {
         }
     }
 
-    private func perform(_ operation: @escaping @Sendable () async throws -> Void) {
-        guard !isImporting else { return }
-        isImporting = true
-        Task { @MainActor in
-            defer {
-                isEnabled = CoreAIGemmaModelStore.isEnabled
-                isConfigured = CoreAIGemmaModelStore.isConfigured
-                isImporting = false
-                onConfigurationChanged()
-            }
-            do { try await operation() }
-            catch is CancellationError { }
-            catch let error as CoreAIGemmaModelStore.Failure { errorMessage = error.localizedDescription }
-            catch { errorMessage = "The model is busy or unavailable. Stop the current conversation and try again." }
+    private func updateActivity() {
+        guard scenePhase == .active else { operationOwner.deactivate(); return }
+        operationOwner.activate()
+        if !operationOwner.isBusy { refreshConfiguration() }
+    }
+
+    private func refreshConfiguration() {
+        isEnabled = CoreAIGemmaModelStore.isEnabled
+        isConfigured = CoreAIGemmaModelStore.isConfigured
+        if !configurationWasNotified {
+            configurationWasNotified = true
+            onConfigurationChanged()
         }
+    }
+
+    private func perform(_ operation: @escaping @Sendable () async throws -> Void) {
+        guard operationOwner.start(operation: { try await operation() }, completion: { result in
+            refreshConfiguration()
+            switch result {
+            case .success: break
+            case .failure(is CancellationError): break
+            case .failure(let error as CoreAIGemmaModelStore.Failure): errorMessage = error.localizedDescription
+            case .failure: errorMessage = "The model is busy or unavailable. Stop the current conversation and try again."
+            }
+        }) != nil else { return }
+        configurationWasNotified = false
+        errorMessage = nil
     }
 }

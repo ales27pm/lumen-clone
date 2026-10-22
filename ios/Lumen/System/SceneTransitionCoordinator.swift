@@ -15,6 +15,7 @@ final class SceneTransitionCoordinator {
     private init() {}
 
     func handleScenePhaseChange(_ phase: ScenePhase) {
+        if phase == .background { AppCancellationBus.shared.cancel(.modelMaintenance) }
         guard phase != currentPhase else { return }
         measure("scenePhase.\(String(describing: phase))") {
             currentPhase = phase
@@ -44,6 +45,7 @@ final class SceneTransitionCoordinator {
     }
 
     func handleDidEnterBackground() {
+        AppCancellationBus.shared.cancel(.modelMaintenance)
         guard currentPhase != .background else { return }
         measure("didEnterBackground") {
             currentPhase = .background

@@ -1,5 +1,6 @@
 #if COREAI_PACKAGE_IO_MEMORY_TESTS
 import Foundation
+import SwiftUI
 
 // Standalone filesystem-test collaborators only. This file is inactive in the
 // Xcode app/test targets. The runner compiles the unchanged production stores,
@@ -42,5 +43,11 @@ struct EmbeddingRequest: Sendable, Equatable {
     let text: String
     let purpose: EmbeddingPurpose
     let dimensions: Int?
+}
+
+// The real Gemma settings view also compiles in the standalone Mac target;
+// styling is the only view collaborator replaced here. No view flow is run.
+enum Theme {
+    static let textSecondary = Color.secondary
 }
 #endif
