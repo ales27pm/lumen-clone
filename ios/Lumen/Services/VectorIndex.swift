@@ -18,8 +18,8 @@ nonisolated struct RAGEmbeddingIndexMetadata: Sendable, Equatable {
 /// In-memory, pre-normalized Float32 vector index with Accelerate-accelerated search.
 ///
 /// Design:
-/// - Embeddings are stored on disk as `[Double]` on the SwiftData models (unchanged for
-///   backwards compatibility). At first search we load them into a contiguous Float32
+/// - Embeddings are stored on disk as `[Double]` on the SwiftData models. At first
+///   search we load them into a contiguous Float32
 ///   matrix laid out row-major so a single `vDSP_mmul` computes every cosine score
 ///   in one BLAS call.
 /// - Embeddings from `AppLlamaService` are already L2-normalized, so `dot == cosine`.
@@ -64,14 +64,17 @@ final class RAGVectorIndex {
         dimension: Int
     ) -> VectorIndexLoadResult {
         let stagingPrefix = RAGChunk.replacementStagingSourceTypePrefix
-        let descriptor = FetchDescriptor<RAGChunk>(
+        var descriptor = FetchDescriptor<RAGChunk>(
             predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
         )
+        descriptor.includePendingChanges = false
+        let readContext = ModelContext(context.container)
+        readContext.autosaveEnabled = false
         return ensureLoaded(
             formatVersion: formatVersion,
             modelIdentifier: modelIdentifier,
             dimension: dimension,
-            fetch: { try context.fetch(descriptor) }
+            fetch: { try readContext.fetch(descriptor) }
         )
     }
 
@@ -101,6 +104,10 @@ final class RAGVectorIndex {
         dimension requiredDimension: Int?,
         fetch: () throws -> [RAGChunk]
     ) -> VectorIndexLoadResult {
+        guard EmbeddingIndexLifecycle.semanticReadsAllowed else {
+            invalidate()
+            return VectorIndexLoadResult(loadedCount: 0, mode: "unavailable", diagnostic: "embedding_index_reset_pending")
+        }
         if loaded, loadedFormatVersion != formatVersion || loadedModelIdentifier != modelIdentifier || (requiredDimension != nil && dim != requiredDimension) {
             invalidate()
         }
@@ -144,7 +151,7 @@ final class RAGVectorIndex {
         modelIdentifier: String,
         dimension: Int
     ) -> Bool {
-        guard loaded else { return false }
+        guard EmbeddingIndexLifecycle.semanticReadsAllowed, loaded else { return false }
         guard loadedFormatVersion == formatVersion,
               loadedModelIdentifier == modelIdentifier,
               dim == dimension,
@@ -204,7 +211,7 @@ final class RAGVectorIndex {
         allowedBuckets: Set<String>? = nil,
         minScore: Float = 0.0
     ) -> [(id: PersistentIdentifier, score: Float)] {
-        guard loaded, !ids.isEmpty, dim > 0, query.count == dim, topK > 0 else { return [] }
+        guard EmbeddingIndexLifecycle.semanticReadsAllowed, loaded, !ids.isEmpty, dim > 0, query.count == dim, topK > 0 else { return [] }
         let q = VectorMath.toFloat32Normalized(query)
         let rows = ids.count
         var scores = [Float](repeating: 0, count: rows)
@@ -287,7 +294,11 @@ final class MemoryVectorIndex {
 
     @discardableResult
     func ensureLoaded(context: ModelContext, metadata: RAGEmbeddingIndexMetadata) -> VectorIndexLoadResult {
-        ensureLoaded(metadata: metadata, fetch: { try context.fetch(FetchDescriptor<MemoryItem>()) })
+        let readContext = ModelContext(context.container)
+        readContext.autosaveEnabled = false
+        var descriptor = FetchDescriptor<MemoryItem>()
+        descriptor.includePendingChanges = false
+        return ensureLoaded(metadata: metadata, fetch: { try readContext.fetch(descriptor) })
     }
 
     @discardableResult
@@ -302,6 +313,10 @@ final class MemoryVectorIndex {
         metadata: RAGEmbeddingIndexMetadata?,
         fetch: () throws -> [MemoryItem]
     ) -> VectorIndexLoadResult {
+        guard EmbeddingIndexLifecycle.semanticReadsAllowed else {
+            invalidate()
+            return VectorIndexLoadResult(loadedCount: 0, mode: "unavailable", diagnostic: "embedding_index_reset_pending")
+        }
         if loaded, loadedMetadata != metadata { invalidate() }
         guard !loaded else {
             return VectorIndexLoadResult(loadedCount: ids.count, mode: "already_loaded", diagnostic: hasStaleEmbeddings ? "memory_reindex_required" : nil)
@@ -341,7 +356,7 @@ final class MemoryVectorIndex {
 
     @discardableResult
     func append(id: PersistentIdentifier, isPinned: Bool, vector: [Double], metadata: RAGEmbeddingIndexMetadata) -> Bool {
-        guard loaded, loadedMetadata == metadata, dim == metadata.dimension,
+        guard EmbeddingIndexLifecycle.semanticReadsAllowed, loaded, loadedMetadata == metadata, dim == metadata.dimension,
               !vector.isEmpty, vector.count == metadata.dimension, vector.allSatisfy(\.isFinite) else { return false }
         if ids.contains(id) { return true }
         append(id: id, isPinned: isPinned, vector: vector, expectedDim: dim)
@@ -382,7 +397,7 @@ final class MemoryVectorIndex {
         topK: Int,
         pinBonus: Float = 0.15
     ) -> [(id: PersistentIdentifier, score: Float)] {
-        guard loaded, !ids.isEmpty, dim > 0, query.count == dim, topK > 0 else { return [] }
+        guard EmbeddingIndexLifecycle.semanticReadsAllowed, loaded, !ids.isEmpty, dim > 0, query.count == dim, topK > 0 else { return [] }
         let q = VectorMath.toFloat32Normalized(query)
         let rows = ids.count
         var scores = [Float](repeating: 0, count: rows)

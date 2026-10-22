@@ -7,8 +7,8 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "baseCommit": "d980fac27802072819baa085c29d3b3e6e2c491e",
-    "workingTreeDigest": "2e0cf1c84ac5d23bc87322f56ccff9b0e1ae7338d6dbddea821045e4dc27669f",
+    "baseCommit": "6f0cbcd030ef3114483d04b1a3570161f514d579",
+    "workingTreeDigest": "8d82cc675e20f8bc77d402486c70d583502568a5f791505f06408c1d9396a048",
     "dirtyState": true,
     "files": [
       {
@@ -21,7 +21,7 @@
       },
       {
         "path": "ios/Lumen/Models/MemoryItem.swift",
-        "sha256": "0645c735e5c32185ea342df5048bddcd4965471f167b1c9f6d16a942358eb019"
+        "sha256": "6748f98c08011d3bda77222f6c021f13642d794be1aa1a90ac2d73100ae2654d"
       },
       {
         "path": "ios/Lumen/Models/ToolDefinition.swift",
@@ -41,7 +41,7 @@
       },
       {
         "path": "ios/Lumen/Services/MemoryStore.swift",
-        "sha256": "8a3e4e4e9ec805866bc9b0ca11c5b8e9eabbc0d099d211239c9a727de5e89e96"
+        "sha256": "08f47107228393fb004d0a3e44b8b0578ad26332c783e5e5f8542d4b555c4c48"
       },
       {
         "path": "ios/Lumen/Services/MimicryProfile.swift",

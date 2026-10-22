@@ -3,12 +3,27 @@ import SwiftData
 
 @MainActor
 final class RAGIndexer {
-    func indexText(source: RAGSource, title: String, text: String, metadata: [String:String], context: ModelContext) async throws -> Int {
+    func indexText(
+        source: RAGSource,
+        title: String,
+        text: String,
+        metadata: [String:String],
+        context: ModelContext,
+        embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult = { request in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: request.text, purpose: request.purpose, dimensions: request.dimensions)
+        }
+    ) async throws -> Int {
+        guard let writeEpoch = EmbeddingIndexLifecycle.captureWrite() else {
+            throw RAGIndexingError.embeddingIndexReset
+        }
         let type = RAGSourceType(rawValue: source.type) ?? .note
         let chunks = ChunkingStrategy.chunk(text, type: .plain)
         var pending: [RAGChunk] = []
         var activeEmbeddingMetadata: RAGEmbeddingIndexMetadata?
         for (i,c) in chunks.enumerated() {
+            guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                throw RAGIndexingError.embeddingIndexReset
+            }
             let embeddingResult: EmbeddingRuntimeResult
             do {
                 let embeddingText = SemanticEmbeddingText.documentBody(
@@ -17,11 +32,18 @@ final class RAGIndexer {
                     sourceType: type.rawValue,
                     chunkIndex: i
                 )
-                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText, purpose: .retrievalDocument(title: title))
+                embeddingResult = try await embed(EmbeddingRequest(text: embeddingText, purpose: .retrievalDocument(title: title)))
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
+                guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                    throw RAGIndexingError.embeddingIndexReset
+                }
                 throw RAGIndexingError.embeddingFailed
+            }
+            try Task.checkCancellation()
+            guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                throw RAGIndexingError.embeddingIndexReset
             }
             let embedding = embeddingResult.vector
             guard !embedding.isEmpty else { throw RAGIndexingError.emptyEmbedding }
@@ -51,6 +73,10 @@ final class RAGIndexer {
                 embeddingDimension: embeddingMetadata.dimension
             )
             pending.append(chunk)
+        }
+        try Task.checkCancellation()
+        guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+            throw RAGIndexingError.embeddingIndexReset
         }
         for chunk in pending {
             context.insert(chunk)
@@ -97,5 +123,6 @@ enum RAGIndexingError: Error, Sendable, Equatable {
     case embeddingFailed
     case emptyEmbedding
     case embeddingIdentityChanged
+    case embeddingIndexReset
     case vectorIndexUnavailable
 }

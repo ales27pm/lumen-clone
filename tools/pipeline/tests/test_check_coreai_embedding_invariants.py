@@ -152,3 +152,27 @@ def test_commented_availability_gate_cannot_satisfy_selected_provider_check(sour
     assert anchor in text
     target.write_text(text.replace(anchor, "/* guard coreAIEmbedding.isAvailable else */ guard true else", 1))
     assert any("compute and availability" in error for error in GATE.check(source))
+
+
+@pytest.mark.parametrize("file,scope,before,after,expected", (
+    ("Services/MemoryStore.swift", "rebuildPageDescriptor", "descriptor.fetchLimit = min(32, max(1, limit)) + 1", "descriptor.fetchLimit = nil", "reads must be bounded"),
+    ("Services/MemoryStore.swift", "rebuildPageDescriptor", "item.id > afterID", "true", "stable database keyset"),
+    ("Services/MemoryStore.swift", "rebuildPageDescriptor", "descriptor.includePendingChanges = false", "descriptor.includePendingChanges = true", "exclude unbounded pending"),
+    ("Services/MemoryStore.swift", "rememberResult", "EmbeddingIndexLifecycle.permitsWrite(writeGeneration)", "true", "writes must reject results"),
+    ("Services/EmbeddingIndexLifecycle.swift", "permitsWrite", "!resetPending && captured == generation", "true", "current generation"),
+    ("Services/EmbeddingIndexLifecycle.swift", "beginReset", "generation = UUID()", "", "invalidate in-flight writers"),
+    ("Services/RAGEmbeddingRebuilder.swift", "rebuildBatch", "result.modelIdentifier == metadata.modelIdentifier", "true", "exact embedding space identity"),
+))
+def test_fresh_index_boundaries_fail_closed(source, file, scope, before, after, expected):
+    target = source / "ios/Lumen" / file
+    text = target.read_text()
+    body = GATE.function(text, scope)
+    assert before in body
+    target.write_text(text.replace(body, body.replace(before, after, 1), 1))
+    assert any(expected in failure for failure in GATE.check(source)), GATE.check(source)
+
+
+def test_vector_reset_cannot_delete_source_rows_or_model_files(source):
+    target = source / "ios/Lumen/Services/EmbeddingVectorReset.swift"
+    target.write_text(target.read_text() + "\nfunc unsafeReset() { context.delete(sourceRow) }\n")
+    assert any("preserve sources" in failure for failure in GATE.check(source))

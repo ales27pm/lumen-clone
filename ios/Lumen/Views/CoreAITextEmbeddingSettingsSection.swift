@@ -16,7 +16,8 @@ struct CoreAITextEmbeddingSettingsSection: View {
     @State private var showImporter = false
     @State private var errorMessage: String?
     @State private var maintenanceMessage: String?
-    @State private var rebuildCursor: MemoryStore.ReembeddingCursor?
+    @State private var rebuild: EmbeddingSourceRebuild?
+    @State private var confirmFreshIndex = false
     @State private var work: Task<Void, Never>?
 
     var body: some View {
@@ -48,12 +49,24 @@ struct CoreAITextEmbeddingSettingsSection: View {
             .disabled(isBusy)
             .accessibilityIdentifier("settings.coreaiEmbedding.import")
             Group {
-                Text("Existing memories remain searchable by text. Semantic search uses only vectors from the selected embedding space. Rebuild older memories in bounded batches; documents are rebuilt when their sources are indexed again.")
+                Text("Start a fresh semantic index from saved memory and document text. This clears vectors and app embedding indexes first, then rebuilds in bounded pages. Source contents and model files are preserved.")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
-                Button(rebuildCursor == nil ? "Rebuild up to 16 memory embeddings" : "Continue rebuilding up to 16 memory embeddings") { rebuildMemories() }
+                Button("Start a fresh embedding index", role: .destructive) { confirmFreshIndex = true }
                     .disabled(isBusy || (isSelected && !isConfigured))
-                    .accessibilityIdentifier("settings.coreaiEmbedding.rebuildMemories")
+                    .accessibilityIdentifier("settings.coreaiEmbedding.freshIndex")
+                if let rebuild, rebuild.phase != .complete {
+                    Button(rebuild.phase == .reset ? "Continue clearing vectors (up to 32 records)" : "Rebuild next source batch (up to 16 records)") {
+                        advanceRebuild(startFresh: false)
+                    }
+                    .disabled(isBusy)
+                    .accessibilityIdentifier("settings.coreaiEmbedding.rebuildSources")
+                }
+                if EmbeddingIndexLifecycle.resetPending {
+                    Text("Vector reset is incomplete. Semantic search and embedding writes are paused. Continue clearing vectors, or start a fresh index to resume after reopening settings.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
             if let maintenanceMessage {
                 Text(maintenanceMessage).font(.caption).foregroundStyle(Theme.textSecondary)
@@ -86,6 +99,12 @@ struct CoreAITextEmbeddingSettingsSection: View {
                 errorMessage = "The folder could not be opened. Choose a fully downloaded local folder."
             }
         }
+        .confirmationDialog("Start a fresh embedding index?", isPresented: $confirmFreshIndex, titleVisibility: .visible) {
+            Button("Prepare model and clear vectors", role: .destructive) { advanceRebuild(startFresh: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saved memories, document text, conversations and model files are kept. Existing vectors are discarded. Rebuild from source text with the next batch actions.")
+        }
         .alert("Text embedding model", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: { Text(errorMessage ?? "") }
@@ -99,7 +118,7 @@ struct CoreAITextEmbeddingSettingsSection: View {
     private func perform(_ operation: @escaping @Sendable () async throws -> Void) {
         guard !isBusy else { return }
         isBusy = true
-        rebuildCursor = nil
+        rebuild = nil
         work = Task { @MainActor in
             defer { isBusy = false; work = nil; onConfigurationChanged() }
             do { try await operation() }
@@ -111,56 +130,52 @@ struct CoreAITextEmbeddingSettingsSection: View {
         }
     }
 
-    private func rebuildMemories() {
+    private func advanceRebuild(startFresh: Bool) {
         guard !isBusy else { return }
         isBusy = true
-        maintenanceMessage = "Preparing the selected text model for this memory batch…"
+        maintenanceMessage = "Preparing and verifying the selected text model…"
         work = Task { @MainActor in
             defer { isBusy = false; work = nil; onConfigurationChanged() }
             do {
-                let metadata: RAGEmbeddingIndexMetadata
-                if CoreAITextEmbeddingModelStore.isSelected {
-                    try await CoreAITextEmbeddingService.shared.prepare()
-                    try Task.checkCancellation()
-                    guard let loaded = await CoreAITextEmbeddingService.shared.loadedMetadata() else {
-                        throw CoreAITextEmbeddingError.notPrepared
+                let metadata = try await preparedMetadata()
+                try Task.checkCancellation()
+                if startFresh {
+                    guard !modelContext.hasChanges else {
+                        maintenanceMessage = "Save pending edits before starting a fresh index. No vector reset was started."
+                        return
                     }
-                    metadata = loaded
-                } else {
-                    let stored = try modelContext.fetch(FetchDescriptor<StoredModel>())
-                    guard await ModelLoader.ensureEmbedLoaded(appState: appState, stored: stored, intent: .userChat) else {
-                        throw LocalRuntimeError.unavailable("Selected local embedding model is not prepared")
-                    }
-                    try Task.checkCancellation()
-                    // This probe is part of the explicit foreground rebuild, never
-                    // a passive availability check or an implicit model selection.
-                    let probe = try await AssistantKernel.runEmbeddingWithIdentity(
-                        text: "Memory index readiness", purpose: .retrievalQuery
-                    )
-                    metadata = RAGEmbeddingIndexMetadata(
-                        formatVersion: probe.formatVersion, modelIdentifier: probe.modelIdentifier, dimension: probe.vector.count
-                    )
+                    rebuild = EmbeddingSourceRebuild(container: modelContext.container, prepared: metadata)
                 }
-                if let cursor = rebuildCursor, cursor.metadata != metadata {
-                    rebuildCursor = nil
-                }
-                let result = await MemoryStore.reembedStaleEmbeddings(
-                    context: modelContext, matching: metadata, limit: 16, after: rebuildCursor
-                )
-                rebuildCursor = result.nextCursor
-                let progress = "Rebuilt \(result.rebuilt) of \(result.attempted) memories; skipped \(result.skipped); \(result.remaining) remain."
-                maintenanceMessage = progress
-                let skippedInputsOnly = result.skipped > 0 && result.diagnostic == "memory_inputs_skipped:\(result.skipped)"
-                if result.diagnostic != nil && !skippedInputsOnly {
-                    maintenanceMessage = progress + " The batch stopped. Saved memories are preserved."
-                } else if result.nextCursor == nil && result.remaining > 0 {
-                    maintenanceMessage = progress + " Scan complete. Skipped memories are preserved without replacement vectors."
-                }
+                guard let rebuild else { return }
+                await rebuild.advance(matching: metadata)
+                maintenanceMessage = rebuild.message
             } catch is CancellationError {
-                maintenanceMessage = "Memory rebuilding cancelled. Saved memories are preserved."
+                maintenanceMessage = "Paused. Source contents are preserved. Continue the current phase when ready."
             } catch {
-                errorMessage = "Memory embeddings could not be rebuilt. Check the selected local model and available device resources."
+                errorMessage = "The selected embedding model could not be prepared. Check its local files and available device resources."
             }
         }
+    }
+
+    @MainActor private func preparedMetadata() async throws -> RAGEmbeddingIndexMetadata {
+        if CoreAITextEmbeddingModelStore.isSelected {
+            try await CoreAITextEmbeddingService.shared.prepare()
+            try Task.checkCancellation()
+            guard let loaded = await CoreAITextEmbeddingService.shared.loadedMetadata() else {
+                throw CoreAITextEmbeddingError.notPrepared
+            }
+            return loaded
+        }
+        let stored = try modelContext.fetch(FetchDescriptor<StoredModel>())
+        guard await ModelLoader.ensureEmbedLoaded(appState: appState, stored: stored, intent: .userChat) else {
+            throw LocalRuntimeError.unavailable("Selected local embedding model is not prepared")
+        }
+        try Task.checkCancellation()
+        let probe = try await AssistantKernel.runEmbeddingWithIdentity(
+            text: "Source index readiness", purpose: .retrievalQuery
+        )
+        return RAGEmbeddingIndexMetadata(
+            formatVersion: probe.formatVersion, modelIdentifier: probe.modelIdentifier, dimension: probe.vector.count
+        )
     }
 }

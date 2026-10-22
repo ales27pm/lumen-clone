@@ -537,7 +537,7 @@ Follow-up planner/schema parity files:
 - Default foreground text path: Core AI Gemma through `CoreAIGemmaRuntimeAdapter` and the existing kernel; requires an imported local bundle and iOS 27.2. Apple compilation, executed XCTest, physical inference and ANE execution remain unverified for this integration; see `docs/COREAI_GEMMA.md`.
 - Disabling Gemma selects SwiftLlama/AppLlamaService through `LlamaRuntimeAdapter.live(...)`; embedding ownership remains separate.
 - FoundationModels: excluded from Release routing until a real generation implementation exists.
-- Optional Core AI text embeddings: pinned local EmbeddingGemma 2 text package, default 256d, independent opt-in selection, no automatic load/fallback, identity-safe memory/RAG and bounded memory rebuilding. GGUF embeddings remain the default. Native compilation, store upgrade execution, numeric/retrieval/device qualification remain outstanding; see `docs/COREAI_TEXT_EMBEDDINGS.md`.
+- Optional Core AI text embeddings: pinned local EmbeddingGemma 2 text package, default 256d, independent opt-in selection, no automatic load/fallback, identity-safe memory/RAG and explicit fresh-index maintenance. Bounded reset pages clear derived vectors and caches before bounded source-based reconstruction; no old parallel index or vector conversion is retained. GGUF embeddings remain the default. Native compilation/XCTest, SQLite pagination and numeric/retrieval/device qualification remain outstanding; see `docs/COREAI_TEXT_EMBEDDINGS.md` and `docs/EMBEDDING_INDEX_REBUILD.md`.
 - CoreML embeddings: excluded from Release routing until real embedding extraction exists.
 - Deterministic runtime: DEBUG diagnostics only.
 - Mock backend: no default factory registration path.

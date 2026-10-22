@@ -8,7 +8,7 @@ final class MemoryItem {
     var source: String = "manual"
     var createdAt: Date = Date()
     var embedding: [Double] = []
-    // Nil metadata denotes a legacy vector with unknown embedding space.
+    // Nil metadata denotes the absence of a valid derived embedding.
     var embeddingFormatVersion: Int? = nil
     var embeddingModelIdentifier: String? = nil
     var embeddingDimension: Int? = nil

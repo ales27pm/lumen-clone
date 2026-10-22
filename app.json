@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Lumen",
+    "slug": "lumen-clone",
+    "owner": "ales27",
+    "version": "1.0.0",
+    "platforms": [
+      "ios"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.27pm.lumenclone",
+      "appleTeamId": "52T7P32J34",
+      "buildNumber": "20261022022504"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1b2304fb-7f12-401b-813c-9a331d8b265d"
+      }
+    }
+  }
+}

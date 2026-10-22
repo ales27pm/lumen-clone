@@ -60,10 +60,12 @@ enum RAGStore {
 
     private final class CorpusReplacementWriteAuthorization {
         let budget: DiskWriteBudget
+        let writeEpoch: UUID
         var cleanupReservations: [DiskWriteBudgetReservation] = []
 
-        init(budget: DiskWriteBudget) {
+        init(budget: DiskWriteBudget, writeEpoch: UUID) {
             self.budget = budget
+            self.writeEpoch = writeEpoch
         }
 
         func releaseCleanupReservations() {
@@ -336,6 +338,10 @@ enum RAGStore {
         authorization: CorpusReplacementWriteAuthorization,
         save: ((ModelContext, String, String) throws -> Void)?
     ) -> CorpusReplacementStageResult {
+        guard EmbeddingIndexLifecycle.permitsWrite(authorization.writeEpoch) else {
+            pending.removeAll(keepingCapacity: true)
+            return .failed("embedding_index_reset")
+        }
         guard !pending.isEmpty else { return .staged(0) }
         let expectedMetadata = pending[0].metadata
         guard pending.allSatisfy({ $0.metadata == expectedMetadata }) else {
@@ -463,6 +469,9 @@ enum RAGStore {
         authorization: CorpusReplacementWriteAuthorization,
         save: ((ModelContext, String, String) throws -> Void)? = nil
     ) -> CorpusReplacementCommitResult {
+        guard EmbeddingIndexLifecycle.permitsWrite(authorization.writeEpoch) else {
+            return .failed("embedding_index_reset")
+        }
         guard !Task.isCancelled else { return .cancelled }
         guard !shouldDegradeRAGWork() else { return .cpuWatchdogDegraded }
         guard ResourceBudgetGate.allowsMaintenance(reason: maintenanceReason) else {
@@ -573,8 +582,13 @@ enum RAGStore {
         operation: String,
         scope: String = "RAGChunk",
         pending: inout [PendingVector],
-        save: ((ModelContext, String, String) throws -> Void)? = nil
+        save: ((ModelContext, String, String) throws -> Void)? = nil,
+        writeEpoch: UUID? = nil
     ) -> PersistAndAppendResult? {
+        guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch ?? EmbeddingIndexLifecycle.captureWrite()) else {
+            pending.removeAll(keepingCapacity: true)
+            return nil
+        }
         let persistedCount = pending.count
         guard persistedCount > 0 else {
             return PersistAndAppendResult(persistedCount: 0, indexState: .appended)
@@ -708,6 +722,7 @@ enum RAGStore {
             || diagnostic == "maintenance_budget_denied"
             || diagnostic == "cpu_watchdog_degraded"
             || diagnostic == "embedding_identity_changed_during_index"
+            || diagnostic == "embedding_index_reset"
             || diagnostic.hasPrefix("cleanup_deferred:disk_write_budget_denied")
             || diagnostic.hasPrefix("replacement_staging_")
     }
@@ -723,8 +738,14 @@ enum RAGStore {
         diagnostic: String,
         pending: inout [PendingVector],
         previouslyPersistedCount: Int = 0,
-        save: ((ModelContext, String, String) throws -> Void)? = nil
+        save: ((ModelContext, String, String) throws -> Void)? = nil,
+        writeEpoch: UUID? = nil
     ) -> IndexResult {
+        let epoch = writeEpoch ?? EmbeddingIndexLifecycle.captureWrite()
+        guard EmbeddingIndexLifecycle.permitsWrite(epoch) else {
+            pending.removeAll(keepingCapacity: true)
+            return IndexResult(indexedCount: previouslyPersistedCount, mode: .skipped, diagnostic: "embedding_index_reset")
+        }
         guard !pending.isEmpty else {
             return IndexResult(
                 indexedCount: previouslyPersistedCount,
@@ -736,7 +757,8 @@ enum RAGStore {
             context: context,
             operation: operation,
             pending: &pending,
-            save: save
+            save: save,
+            writeEpoch: epoch
         ) else {
             let persistenceDiagnostic = pending.isEmpty ? ";persist_failed" : ";persistence_deferred"
             return IndexResult(
@@ -761,8 +783,14 @@ enum RAGStore {
         context: ModelContext,
         identityChangeOperation: String,
         previouslyPersistedCount: Int = 0,
-        save: ((ModelContext, String, String) throws -> Void)? = nil
+        save: ((ModelContext, String, String) throws -> Void)? = nil,
+        writeEpoch: UUID? = nil
     ) -> IndexResult? {
+        let epoch = writeEpoch ?? EmbeddingIndexLifecycle.captureWrite()
+        guard EmbeddingIndexLifecycle.permitsWrite(epoch) else {
+            pending.removeAll(keepingCapacity: true)
+            return IndexResult(indexedCount: previouslyPersistedCount, mode: .skipped, diagnostic: "embedding_index_reset")
+        }
         if let active, active != metadata {
             let result = persistPendingVectorsForEarlyExit(
                 context: context,
@@ -770,7 +798,8 @@ enum RAGStore {
                 diagnostic: "embedding_identity_changed_during_index",
                 pending: &pending,
                 previouslyPersistedCount: previouslyPersistedCount,
-                save: save
+                save: save,
+                writeEpoch: epoch
             )
             RAGVectorIndex.shared.invalidate()
             return result
@@ -1038,7 +1067,11 @@ enum RAGStore {
         let descriptor = FetchDescriptor<RAGChunk>(
             predicate: #Predicate<RAGChunk> { !$0.sourceType.starts(with: stagingPrefix) }
         )
-        guard let chunks = try? context.fetch(descriptor) else { return false }
+        // Reset/rebuild owns a separate writing context. Do not inspect vector
+        // metadata cached by a presentation context before that durable reset.
+        let readContext = ModelContext(context.container)
+        readContext.autosaveEnabled = false
+        guard let chunks = try? readContext.fetch(descriptor) else { return false }
         return chunks.contains {
             !$0.isReplacementStaging && !$0.embedding.isEmpty && (
                 $0.embeddingFormatVersion != formatVersion
@@ -1192,6 +1225,9 @@ enum RAGStore {
         save: ((ModelContext, String, String) throws -> Void)? = nil,
         writeBudget: DiskWriteBudget = .shared
     ) async -> IndexResult {
+        guard let writeEpoch = EmbeddingIndexLifecycle.captureWrite() else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+        }
         let imports = importedFilesResult ?? FileStore.importedFilesWithDiagnostics()
         if imports.mode == "failed" {
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: imports.diagnostic ?? "imports_list_failed")
@@ -1232,7 +1268,7 @@ enum RAGStore {
         }
 
         let stagingID = UUID()
-        let writeAuthorization = CorpusReplacementWriteAuthorization(budget: writeBudget)
+        let writeAuthorization = CorpusReplacementWriteAuthorization(budget: writeBudget, writeEpoch: writeEpoch)
         defer { writeAuthorization.releaseCleanupReservations() }
         switch cleanupOrphanedReplacementStaging(
             context: context,
@@ -1261,6 +1297,7 @@ enum RAGStore {
                 url: url,
                 pending: &filePending,
                 activeEmbeddingMetadata: &activeEmbeddingMetadata,
+                writeEpoch: writeEpoch,
                 embed: embed,
                 flush: { batch in
                     let result = persistReplacementStage(
@@ -1455,9 +1492,13 @@ enum RAGStore {
         url: URL,
         pending: inout [PendingVector],
         activeEmbeddingMetadata: inout RAGEmbeddingIndexMetadata?,
+        writeEpoch: UUID,
         embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult,
         flush: ((inout [PendingVector]) -> CorpusReplacementStageResult)? = nil
     ) async -> IndexResult {
+        guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+        }
         guard !Task.isCancelled else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cancelled")
         }
@@ -1477,6 +1518,9 @@ enum RAGStore {
         }
         var indexedCount = 0
         for (index, piece) in pieces.enumerated() {
+            guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+            }
             if Task.isCancelled {
                 return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cancelled")
             }
@@ -1501,9 +1545,15 @@ enum RAGStore {
                 // cancelling this caller. Stop the entire replacement explicitly.
                 return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cancelled")
             } catch {
+                guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                    return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+                }
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexImportedFiles.stage source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 return IndexResult(indexedCount: 0, mode: .failed, diagnostic: diagnostic)
+            }
+            guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
             }
             guard !Task.isCancelled else {
                 return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "cancelled")
@@ -1563,6 +1613,9 @@ enum RAGStore {
         },
         save: ((ModelContext, String, String) throws -> Void)? = nil
     ) async -> IndexResult {
+        guard let writeEpoch = EmbeddingIndexLifecycle.captureWrite() else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+        }
         let name = url.lastPathComponent
         let extracted = extractFileTextWithDiagnostics(url: url)
         guard extracted.mode != .failed, let text = extracted.text, let type = extracted.sourceType else {
@@ -1598,6 +1651,10 @@ enum RAGStore {
                 )
                 embeddingResult = try await embed(EmbeddingRequest(text: embeddingText, purpose: .retrievalDocument(title: name)))
             } catch {
+                guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                    pendingVectors.removeAll(keepingCapacity: true)
+                    return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+                }
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 return persistPendingVectorsForEarlyExit(
@@ -1606,8 +1663,13 @@ enum RAGStore {
                     diagnostic: diagnostic,
                     pending: &pendingVectors,
                     previouslyPersistedCount: persistedCount,
-                    save: save
+                    save: save,
+                    writeEpoch: writeEpoch
                 )
+            }
+            guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                pendingVectors.removeAll(keepingCapacity: true)
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
             }
             let emb = embeddingResult.vector
             guard !emb.isEmpty else {
@@ -1618,7 +1680,8 @@ enum RAGStore {
                     diagnostic: "embedding_empty",
                     pending: &pendingVectors,
                     previouslyPersistedCount: persistedCount,
-                    save: save
+                    save: save,
+                    writeEpoch: writeEpoch
                 )
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
@@ -1629,7 +1692,8 @@ enum RAGStore {
                 context: context,
                 identityChangeOperation: "indexFile.embeddingIdentityChanged",
                 previouslyPersistedCount: persistedCount,
-                save: save
+                save: save,
+                writeEpoch: writeEpoch
             ) {
                 return earlyExit
             }
@@ -1646,7 +1710,7 @@ enum RAGStore {
             )
             pendingVectors.append(PendingVector(chunk: chunk, bucket: type.rawValue, vector: emb, metadata: embeddingMetadata))
             if i % 8 == 7 {
-                guard let batchResult = persistAndAppendVectors(context: context, operation: "indexFile.batch", pending: &pendingVectors, save: save) else {
+                guard let batchResult = persistAndAppendVectors(context: context, operation: "indexFile.batch", pending: &pendingVectors, save: save, writeEpoch: writeEpoch) else {
                     logger.error("rag_index_partial_failure op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count + 1, privacy: .public)")
                     return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "persist_failed")
                 }
@@ -1657,7 +1721,7 @@ enum RAGStore {
             }
             count += 1
         }
-        guard let finalResult = persistAndAppendVectors(context: context, operation: "indexFile.complete", pending: &pendingVectors, save: save) else {
+        guard let finalResult = persistAndAppendVectors(context: context, operation: "indexFile.complete", pending: &pendingVectors, save: save, writeEpoch: writeEpoch) else {
             logger.error("rag_index_partial_failure op=indexFile source_hash=\(Self.sourceLogID(name), privacy: .public) persisted=\(persistedCount, privacy: .public) attempted=\(count, privacy: .public)")
             return IndexResult(indexedCount: persistedCount, mode: persistedCount > 0 ? .partial : .failed, diagnostic: "persist_failed")
         }
@@ -1773,6 +1837,9 @@ enum RAGStore {
         save: ((ModelContext, String, String) throws -> Void)? = nil,
         writeBudget: DiskWriteBudget = .shared
     ) async -> IndexResult {
+        guard let writeEpoch = EmbeddingIndexLifecycle.captureWrite() else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+        }
         let snapshot: PhotoLibrarySnapshot
         if let photoLibrarySnapshot {
             snapshot = photoLibrarySnapshot
@@ -1793,6 +1860,9 @@ enum RAGStore {
             var assets: [PHAsset] = []
             fetch.enumerateObjects { asset, _, _ in assets.append(asset) }
             snapshot = PhotoLibrarySnapshot(authorizationStatus: status, assets: assets)
+        }
+        guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
         }
         let status = snapshot.authorizationStatus
         guard status == .authorized || status == .limited else {
@@ -1835,7 +1905,7 @@ enum RAGStore {
         }
 
         let stagingID = UUID()
-        let writeAuthorization = CorpusReplacementWriteAuthorization(budget: writeBudget)
+        let writeAuthorization = CorpusReplacementWriteAuthorization(budget: writeBudget, writeEpoch: writeEpoch)
         defer { writeAuthorization.releaseCleanupReservations() }
         switch cleanupOrphanedReplacementStaging(
             context: context,
@@ -1960,6 +2030,14 @@ enum RAGStore {
                 )
                 return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cancelled", cleanup: cleanup))
             } catch {
+                guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                    let cleanup = discardReplacementStaging(
+                        context: context, operation: "indexPhotos.discard", stagingID: stagingID,
+                        sourceTypes: replacementSourceTypes, stagedCount: stagedCount,
+                        authorization: writeAuthorization, save: save
+                    )
+                    return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("embedding_index_reset", cleanup: cleanup))
+                }
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexPhotos source=\(month, privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 let cleanup = discardReplacementStaging(
@@ -1984,6 +2062,14 @@ enum RAGStore {
                     save: save
                 )
                 return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("cancelled", cleanup: cleanup))
+            }
+            guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                let cleanup = discardReplacementStaging(
+                    context: context, operation: "indexPhotos.discard", stagingID: stagingID,
+                    sourceTypes: replacementSourceTypes, stagedCount: stagedCount,
+                    authorization: writeAuthorization, save: save
+                )
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: diagnosticAppendingCleanup("embedding_index_reset", cleanup: cleanup))
             }
             let emb = embeddingResult.vector
             guard !emb.isEmpty else {
@@ -2159,7 +2245,17 @@ enum RAGStore {
         await indexNoteWithDiagnostics(title: title, body: body, context: context).indexedCount
     }
 
-    static func indexNoteWithDiagnostics(title: String, body: String, context: ModelContext) async -> IndexResult {
+    static func indexNoteWithDiagnostics(
+        title: String,
+        body: String,
+        context: ModelContext,
+        embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult = { request in
+            try await AssistantKernel.runEmbeddingWithIdentity(text: request.text, purpose: request.purpose, dimensions: request.dimensions)
+        }
+    ) async -> IndexResult {
+        guard let writeEpoch = EmbeddingIndexLifecycle.captureWrite() else {
+            return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+        }
         let pieces = chunkText(body)
         guard !pieces.isEmpty else {
             return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "empty_text")
@@ -2184,16 +2280,25 @@ enum RAGStore {
                     sourceType: RAGSourceType.note.rawValue,
                     chunkIndex: i
                 )
-                embeddingResult = try await AssistantKernel.runEmbeddingWithIdentity(text: embeddingText, purpose: .retrievalDocument(title: title))
+                embeddingResult = try await embed(EmbeddingRequest(text: embeddingText, purpose: .retrievalDocument(title: title)))
             } catch {
+                guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                    pendingVectors.removeAll(keepingCapacity: true)
+                    return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
+                }
                 let diagnostic = "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
                 logger.error("rag_embedding_failed op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) diagnostic=\(diagnostic, privacy: .public) error_code=\(RuntimeMetricErrorSanitizer.code(for: error), privacy: .public)")
                 return persistPendingVectorsForEarlyExit(
                     context: context,
                     operation: "indexNote.embeddingFailure",
                     diagnostic: diagnostic,
-                    pending: &pendingVectors
+                    pending: &pendingVectors,
+                    writeEpoch: writeEpoch
                 )
+            }
+            guard EmbeddingIndexLifecycle.permitsWrite(writeEpoch) else {
+                pendingVectors.removeAll(keepingCapacity: true)
+                return IndexResult(indexedCount: 0, mode: .skipped, diagnostic: "embedding_index_reset")
             }
             let emb = embeddingResult.vector
             guard !emb.isEmpty else {
@@ -2202,7 +2307,8 @@ enum RAGStore {
                     context: context,
                     operation: "indexNote.emptyEmbedding",
                     diagnostic: "embedding_empty",
-                    pending: &pendingVectors
+                    pending: &pendingVectors,
+                    writeEpoch: writeEpoch
                 )
             }
             let embeddingMetadata = embeddingMetadata(for: embeddingResult)
@@ -2211,7 +2317,8 @@ enum RAGStore {
                 active: &activeEmbeddingMetadata,
                 pending: &pendingVectors,
                 context: context,
-                identityChangeOperation: "indexNote.embeddingIdentityChanged"
+                identityChangeOperation: "indexNote.embeddingIdentityChanged",
+                writeEpoch: writeEpoch
             ) {
                 return earlyExit
             }
@@ -2229,7 +2336,7 @@ enum RAGStore {
             pendingVectors.append(PendingVector(chunk: chunk, bucket: RAGSourceType.note.rawValue, vector: emb, metadata: embeddingMetadata))
             count += 1
         }
-        guard let persistResult = persistAndAppendVectors(context: context, operation: "indexNote.complete", pending: &pendingVectors) else {
+        guard let persistResult = persistAndAppendVectors(context: context, operation: "indexNote.complete", pending: &pendingVectors, writeEpoch: writeEpoch) else {
             logger.error("rag_index_partial_failure op=indexNote source_hash=\(Self.sourceLogID(title), privacy: .public) persisted=0 attempted=\(count, privacy: .public)")
             return IndexResult(indexedCount: 0, mode: .failed, diagnostic: "persist_failed")
         }

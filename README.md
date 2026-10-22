@@ -12,7 +12,9 @@ In Gemma mode, one generative assistant handles chat and tools; embeddings remai
 separate for local memory retrieval. Optional [Core AI text embeddings](docs/COREAI_TEXT_EMBEDDINGS.md)
 use a pinned local EmbeddingGemma 2 package for memory/RAG. Import and select it
 explicitly in Settings or Models; the existing GGUF embedding backend remains the
-default. Apple compilation and device qualification are outstanding.
+default. The [fresh-index workflow](docs/EMBEDDING_INDEX_REBUILD.md) clears derived
+vectors and rebuilds from retained source text in bounded pages, without an old
+parallel index. Apple compilation and device qualification are outstanding.
 
 ## Repository Layout
 

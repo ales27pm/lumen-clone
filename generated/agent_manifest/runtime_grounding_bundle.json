@@ -2,15 +2,15 @@
   "artifactKind": "agent_grounding_runtime_bundle",
   "codebaseHome": {
     "languageCounts": {
-      "json": 25,
-      "markdown": 102,
+      "json": 27,
+      "markdown": 104,
       "mixed": 1,
       "plist": 3,
-      "python": 185,
+      "python": 187,
       "resolved": 1,
       "shell": 17,
-      "swift": 535,
-      "text": 5,
+      "swift": 552,
+      "text": 7,
       "toml": 1,
       "xcode_project": 1,
       "xml": 1,
@@ -27,7 +27,7 @@
       "Assets.xcassets/LumenMark.imageset": 1,
       "Assets.xcassets/LumenVerticalLogo.imageset": 1,
       "Assets.xcassets/LumenWordmarkLockup.imageset": 1,
-      "Assistant": 31,
+      "Assistant": 32,
       "Background": 7,
       "Brand": 2,
       "CarPlay": 3,
@@ -41,12 +41,13 @@
       "Resources": 1,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
       "Scripts": 2,
-      "Services": 67,
+      "Services": 68,
       "Services/AgentGrounding": 14,
       "Services/Diagnostics": 2,
       "Services/IntentClassification": 5,
-      "Services/LLM": 23,
-      "Services/LLM/CoreAI": 2,
+      "Services/LLM": 25,
+      "Services/LLM/CoreAI": 4,
+      "Services/LLM/CoreAI/EmbeddingGemma2Tokenizer": 5,
       "Services/LLM/GGUF": 7,
       "Services/LLM/Models": 9,
       "Services/LLM/Policy": 9,
@@ -57,23 +58,24 @@
       "System": 17,
       "Tools": 15,
       "Tools/Builtin": 12,
-      "Views": 36,
+      "Views": 37,
       "Voice": 8,
       "app": 6,
       "datasets": 1,
-      "docs": 62,
+      "docs": 63,
       "docs/stabilization": 1,
       "evals": 1,
       "ios": 2,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 180,
+      "ios/LumenTests": 188,
+      "ios/LumenTests/Fixtures": 2,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 10,
       "scripts": 25,
-      "tools": 17,
+      "tools": 18,
       "tools/fine_tuning/unsloth": 54,
       "tools/hf_artifacts": 2,
       "tools/hf_zerogpu": 2,
@@ -84,10 +86,10 @@
       "tools/lumen_manifest_crawler/scripts": 1,
       "tools/lumen_manifest_crawler/tests": 40,
       "tools/pipeline": 8,
-      "tools/pipeline/tests": 15,
+      "tools/pipeline/tests": 16,
       "tools/security": 1
     },
-    "recordCount": 880,
+    "recordCount": 905,
     "selectedFiles": [
       {
         "imports": [],
@@ -838,6 +840,33 @@
           "availabilityOverride",
           "preferenceOverride",
           "generateHandler"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
+        "path": "ios/Lumen/Assistant/CoreAITextEmbeddingRuntimeAdapter.swift",
+        "responsibility": "A separate sentence-vector runtime; never a second generative assistant.",
+        "sha256": "4b52f97a5342b41462cfe8f14fd8305fefb954d7854711d41dd686b09704644e",
+        "symbols": [
+          "CoreAITextEmbeddingRuntimeAdapter",
+          "embed",
+          "embedWithIdentity",
+          "handleMemoryPressure",
+          "kind",
+          "availabilityOverride",
+          "preferenceOverride",
+          "embedHandler",
+          "disabled",
+          "isPreferred",
+          "isAvailable",
+          "unavailableReason",
+          "result",
+          "dimension",
+          "norm"
         ]
       },
       {
@@ -2182,31 +2211,6 @@
           "age",
           "d"
         ]
-      },
-      {
-        "imports": [],
-        "language": "markdown",
-        "module": "RAG",
-        "path": "ios/Lumen/RAG/AGENTS.md",
-        "responsibility": "AGENTS.md",
-        "sha256": "94e8d7faa60581a4f07f58f971c8663b51c0bcd2ea90886377742f834b5e1a95",
-        "symbols": [
-          "AGENTS.md",
-          "Scope",
-          "Role In The System",
-          "Key Files And Entry Points",
-          "Public Interfaces",
-          "Internal Structure",
-          "Incoming Dependencies",
-          "Outgoing Dependencies",
-          "Data And Control Flow",
-          "Local Invariants",
-          "Coordinated Changes",
-          "Safe Editing Rules",
-          "Validation",
-          "Common Failure Modes",
-          "Parent And Child Guidance"
-        ]
       }
     ]
   },
@@ -2216,14 +2220,14 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "d980fac27802072819baa085c29d3b3e6e2c491e",
+  "manifestCommit": "6f0cbcd030ef3114483d04b1a3570161f514d579",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "ddf6764a86a8b8d33528b7bb77c4bb95bb20bd8a1237578d08ab2f794a6e081d",
-    "promptUTF8ByteCount": 25933,
+    "promptSHA256": "e222b0cdd5c0a0c77f5a77e0b79b09de1a8d434e39d4a53f6f3da991ef78b372",
+    "promptUTF8ByteCount": 25811,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
   "schemaVersion": "1.0.0",
@@ -2234,8 +2238,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "d980fac27802072819baa085c29d3b3e6e2c491e",
+    "baseCommit": "6f0cbcd030ef3114483d04b1a3570161f514d579",
     "dirtyState": true,
-    "workingTreeDigest": "2e0cf1c84ac5d23bc87322f56ccff9b0e1ae7338d6dbddea821045e4dc27669f"
+    "workingTreeDigest": "8d82cc675e20f8bc77d402486c70d583502568a5f791505f06408c1d9396a048"
   }
 }

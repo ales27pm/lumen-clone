@@ -3,7 +3,7 @@
 
 Checks safety boundaries and immutable artifact identity. This deliberately does
 not claim to type-check Swift, evaluate arbitrary control flow, or qualify ANE
-execution. Runtime and existing-store tests remain separate acceptance layers.
+execution. Runtime, fresh-index rebuild and device tests remain separate acceptance layers.
 """
 from __future__ import annotations
 
@@ -33,6 +33,10 @@ REQUIRED_FILES = (
     BASE + "Services/MemoryStore.swift",
     BASE + "Services/RAGStore.swift",
     BASE + "Services/VectorIndex.swift",
+    BASE + "Services/EmbeddingVectorReset.swift",
+    BASE + "Services/EmbeddingIndexLifecycle.swift",
+    BASE + "Services/EmbeddingSourceRebuild.swift",
+    BASE + "Services/RAGEmbeddingRebuilder.swift",
     BASE + "Services/ModelLoader.swift",
     BASE + "Memory/MemoryCaptureQueue.swift",
     BASE + "RAG/RAGIndexer.swift",
@@ -219,24 +223,47 @@ def check(root: Path) -> list[str]:
     require(function(memory, "recallWithDiagnostics"), r"formatVersion:\s*queryEmbedding\.formatVersion.*?modelIdentifier:\s*queryEmbedding\.modelIdentifier.*?dimension:\s*queryVec\.count", "memory query must carry actual provider identity/format/dimension")
     require(function(memory, "rememberResult"), r"embeddingFormatVersion:\s*embeddingResult\.formatVersion.*?embeddingModelIdentifier:\s*embeddingResult\.modelIdentifier.*?embeddingDimension:\s*embedding\.count", "memory writes must persist actual provider identity/format/dimension")
     require(code_only(function(memory, "recallWithDiagnostics")), r"lexicalRecallResult.*?results\.append\(contentsOf:\s*backfill\.items\)", "unknown or stale memories must retain lexical recall")
-    rebuilding = code_only(function(memory, "reembedStaleEmbeddings"))
+    rebuilding = code_only(function(memory, "rebuildEmbeddings"))
     inference_call = re.search(r"\bawait\s+embed\s*\(", rebuilding)
     before_inference = rebuilding[:inference_call.start()] if inference_call else ""
     after_inference = rebuilding[inference_call.end():] if inference_call else ""
+    before_fetch = rebuilding.split("context.fetch(", 1)[0]
+    require(before_fetch, r"scenePhase\s*==\s*\.active", "memory reembedding requires an explicit foreground operation before reading a source page")
     for boundary in (before_inference, after_inference):
         require(boundary, r"scenePhase\s*==\s*\.active", "memory reembedding requires an explicit foreground operation before and after inference")
     for field in ("modelIdentifier", "formatVersion"):
         require(rebuilding, r"embeddingResult\." + field + r"\s*==\s*metadata\." + field, "memory reembedding must stop on changed provider identity")
     require(rebuilding, r"embeddingResult\.vector\.count\s*==\s*metadata\.dimension", "memory reembedding must retain the selected projection dimension")
+    page = code_only(function(memory, "rebuildPageDescriptor"))
+    require(page, r"fetchLimit\s*=\s*min\(32,\s*max\(1,\s*limit\)\)\s*\+\s*1", "memory rebuild reads must be bounded with one lookahead")
+    require(page, r"item\.createdAt\s*>\s*afterDate.*?item\.id\s*>\s*afterID", "memory rebuild must use stable database keyset pagination")
+    require(page, r"includePendingChanges\s*=\s*false", "memory rebuild page must exclude unbounded pending inserts")
+    if re.search(r"fetchCount\s*\(|\.sorted\s*\{|\.filter\s*\{", rebuilding):
+        failures.append("memory rebuild must not materialize or count the whole collection")
+    for operation in ("rememberResult", "rebuildEmbeddings"):
+        body = code_only(function(memory, operation))
+        require(body, r"EmbeddingIndexLifecycle\.captureWrite\(\).*?await\s+embed.*?EmbeddingIndexLifecycle\.permitsWrite", "memory writes must reject results from before a vector reset")
+    lifecycle = sources[BASE + "Services/EmbeddingIndexLifecycle.swift"]
+    require(code_only(function(lifecycle, "permitsWrite")), r"!resetPending\s*&&\s*captured\s*==\s*generation", "vector writers require current generation and completed reset")
+    require(code_only(function(lifecycle, "beginReset")), r"generation\s*=\s*UUID\(\).*?UserDefaults\.standard\.set\(true.*?invalidateCaches\(\)", "reset must invalidate in-flight writers and persist its pending state before clearing")
+    reset = code_only(sources[BASE + "Services/EmbeddingVectorReset.swift"])
+    for descriptor in ("memoryDescriptor", "ragDescriptor"):
+        require(code_only(function(sources[BASE + "Services/EmbeddingVectorReset.swift"], descriptor)), r"fetchLimit\s*=.*?\+\s*1", "vector reset reads require bounded pages with one lookahead")
+    if re.search(r"\b(?:FileManager|removeItem|deleteAllData|AIModelCache)\b|context\.delete\s*\(", reset):
+        failures.append("vector reset must preserve sources, model files and Apple caches")
+    rag_rebuild = code_only(function(sources[BASE + "Services/RAGEmbeddingRebuilder.swift"], "rebuildBatch"))
+    require(rag_rebuild, r"EmbeddingIndexLifecycle\.captureWrite\(\).*?await\s+embed.*?EmbeddingIndexLifecycle\.permitsWrite", "RAG source rebuild must reject results from before a reset")
+    require(rag_rebuild, r"result\.modelIdentifier\s*==\s*metadata\.modelIdentifier.*?result\.formatVersion\s*==\s*metadata\.formatVersion.*?result\.vector\.count\s*==\s*metadata\.dimension", "RAG source rebuild must retain exact embedding space identity")
     item = sources[BASE + "Models/MemoryItem.swift"]
     for field, kind in (("embeddingFormatVersion", "Int"), ("embeddingModelIdentifier", "String"), ("embeddingDimension", "Int")):
-        require(code_only(item), r"var\s+" + field + r"\s*:\s*" + kind + r"\?\s*=\s*nil", "legacy memory embedding metadata must remain optional and unknown")
+        require(code_only(item), r"var\s+" + field + r"\s*:\s*" + kind + r"\?\s*=\s*nil", "unindexed memory embedding metadata must remain optional and unknown")
     index = sources[BASE + "Services/VectorIndex.swift"]
     matches = code_only(function(index, "matches"))
     for field, value in (("embeddingFormatVersion", "formatVersion"), ("embeddingModelIdentifier", "modelIdentifier"), ("embeddingDimension", "dimension")):
         require(matches, r"item\." + field + r"\s*==\s*metadata\." + value, "memory semantic index must reject incompatible identity/format/dimension")
     require(matches, r"item\.embedding\.count\s*==\s*metadata\.dimension", "memory semantic index must validate actual vector dimensions")
     require(code_only(index), r"loadedMetadata\s*!=\s*metadata", "memory vector cache must invalidate when embedding identity changes")
+    require(code_only(index), r"guard\s+EmbeddingIndexLifecycle\.semanticReadsAllowed", "semantic indexes must remain unavailable during a partial reset")
     readiness = function(sources[BASE + "Assistant/SemanticEmbeddingText.swift"], "isLoaded")
     require(code_only(readiness), r"CoreAITextEmbeddingModelStore\.isSelected.*?CoreAITextEmbeddingService\.shared\.isLoaded", "embedding readiness must use the selected provider without a probe")
     if re.search(r"\b(?:prepare|embed|runEmbedding|runEmbeddingWithIdentity)\s*\(", code_only(readiness)):
@@ -250,4 +277,4 @@ if __name__ == "__main__":
         print(f"FAIL: {error}")
     if errors:
         raise SystemExit(1)
-    print("Core AI text embedding source invariants passed (not compile, migration, or device evidence).")
+    print("Core AI text embedding source invariants passed (not compile, native rebuild, or device evidence).")

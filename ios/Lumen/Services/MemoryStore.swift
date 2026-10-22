@@ -8,6 +8,7 @@ enum MemoryStore {
 
     enum PersistenceFailure: Error {
         case diskWriteDeferred
+        case embeddingIndexReset
     }
 
     private static func persist(
@@ -30,11 +31,12 @@ enum MemoryStore {
         }
     }
 
-    /// Editing source text makes its existing vector stale immediately. Preserve
-    /// the vector until an explicit successful rebuild replaces it.
+    /// Source edits immediately discard the derived vector. Only the source is
+    /// retained until an explicit successful rebuild produces its new vector.
     static func updateContent(_ content: String, for item: MemoryItem) {
         guard item.modelContext != nil, !item.isDeleted, item.content != content else { return }
         item.content = content
+        item.embedding = []
         item.embeddingFormatVersion = nil
         item.embeddingModelIdentifier = nil
         item.embeddingDimension = nil
@@ -311,6 +313,9 @@ enum MemoryStore {
         guard !trimmed.isEmpty else {
             return RememberResult(mode: "skipped", diagnostic: "empty_content")
         }
+        guard let writeGeneration = EmbeddingIndexLifecycle.captureWrite() else {
+            throw PersistenceFailure.embeddingIndexReset
+        }
         do {
             let existing = try context.fetch(FetchDescriptor<MemoryItem>())
             if existing.contains(where: { $0.content.caseInsensitiveCompare(trimmed) == .orderedSame }) {
@@ -337,6 +342,9 @@ enum MemoryStore {
             throw error
         }
         try Task.checkCancellation()
+        guard EmbeddingIndexLifecycle.permitsWrite(writeGeneration) else {
+            throw PersistenceFailure.embeddingIndexReset
+        }
         let embedding = embeddingResult.vector
         guard !embedding.isEmpty, embedding.allSatisfy(\.isFinite),
               !embeddingResult.modelIdentifier.isEmpty,
@@ -377,29 +385,54 @@ enum MemoryStore {
         return RememberResult(mode: "stored", diagnostic: nil)
     }
 
-    struct ReembeddingCursor: Sendable, Equatable {
+    struct RebuildCursor: Sendable, Equatable {
         let createdAt: Date
         let id: UUID
         let metadata: RAGEmbeddingIndexMetadata
+        let generation: UUID
     }
 
-    struct ReembeddingResult: Sendable, Equatable {
+    struct RebuildResult: Sendable, Equatable {
+        /// Source rows read, including at most one lookahead row.
+        let scanned: Int
         let attempted: Int
         let rebuilt: Int
         let skipped: Int
-        let remaining: Int
+        let hasMore: Bool
         let mode: String
         let diagnostic: String?
-        let nextCursor: ReembeddingCursor?
+        let nextCursor: RebuildCursor?
     }
 
-    /// Preserves source records and legacy vectors until each replacement saves.
-    /// The caller supplies metadata from its already prepared selected provider.
-    static func reembedStaleEmbeddings(
+    /// Keyset pagination keeps the database read and ordering bounded as well as
+    /// inference. UUID breaks equal-date ties without relying on mutable vectors.
+    static func rebuildPageDescriptor(after cursor: RebuildCursor?, limit: Int) -> FetchDescriptor<MemoryItem> {
+        let predicate: Predicate<MemoryItem>?
+        if let cursor {
+            let afterDate = cursor.createdAt
+            let afterID = cursor.id
+            predicate = #Predicate<MemoryItem> { item in
+                item.createdAt > afterDate || (item.createdAt == afterDate && item.id > afterID)
+            }
+        } else {
+            predicate = nil
+        }
+        var descriptor = FetchDescriptor<MemoryItem>(predicate: predicate, sortBy: [
+            SortDescriptor(\MemoryItem.createdAt), SortDescriptor(\MemoryItem.id)
+        ])
+        descriptor.fetchLimit = min(32, max(1, limit)) + 1
+        descriptor.includePendingChanges = false
+        return descriptor
+    }
+
+    /// Re-encodes source records into the prepared provider's new space. The
+    /// explicit reset operation clears vector data before the first page; this
+    /// builder never uses existing vectors to select, encode, or skip a source.
+    static func rebuildEmbeddings(
         context: ModelContext,
         matching metadata: RAGEmbeddingIndexMetadata,
         limit: Int = 16,
-        after cursor: ReembeddingCursor? = nil,
+        after cursor: RebuildCursor? = nil,
         embed: (EmbeddingRequest) async throws -> EmbeddingRuntimeResult = { request in
             try await AssistantKernel.runEmbeddingWithIdentity(
                 text: request.text, purpose: request.purpose, dimensions: request.dimensions
@@ -407,48 +440,66 @@ enum MemoryStore {
         },
         save: ((ModelContext) throws -> Void)? = nil,
         writeBudget: DiskWriteBudget = .shared
-    ) async -> ReembeddingResult {
-        let initialCursor = cursor?.metadata == metadata ? cursor : nil
-        let items: [MemoryItem]
-        do {
-            items = try context.fetch(FetchDescriptor<MemoryItem>())
-        } catch {
-            return ReembeddingResult(attempted: 0, rebuilt: 0, skipped: 0, remaining: 0, mode: "failed", diagnostic: "memory_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))", nextCursor: initialCursor)
-        }
-        let stale = items.filter { !MemoryVectorIndex.matches($0, metadata: metadata) }
-            .sorted { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
+    ) async -> RebuildResult {
+        let writeGeneration = EmbeddingIndexLifecycle.captureWrite()
+        var scanned = 0
         var attempted = 0
         var rebuilt = 0
         var skipped = 0
-        var completedCursor = initialCursor
-        func result(_ mode: String, _ diagnostic: String?, finished: Bool = false) -> ReembeddingResult {
+        var completed = 0
+        var completedCursor = cursor
+        var fetched: [MemoryItem] = []
+        func result(_ mode: String, _ diagnostic: String?, finished: Bool = false) -> RebuildResult {
             let skippedDiagnostic = skipped > 0 ? "memory_inputs_skipped:\(skipped)" : nil
             let combined = diagnostic.map { combinedDiagnostic(primary: $0, secondary: skippedDiagnostic) } ?? skippedDiagnostic
-            return ReembeddingResult(attempted: attempted, rebuilt: rebuilt, skipped: skipped, remaining: stale.count - rebuilt, mode: mode, diagnostic: combined, nextCursor: finished ? nil : completedCursor)
+            return RebuildResult(scanned: scanned, attempted: attempted, rebuilt: rebuilt, skipped: skipped,
+                hasMore: !finished && (fetched.isEmpty || completed < fetched.count), mode: mode, diagnostic: combined,
+                nextCursor: finished ? nil : completedCursor)
         }
         guard metadata.formatVersion > 0, metadata.dimension > 0, !metadata.modelIdentifier.isEmpty,
               metadata.modelIdentifier != RAGEmbeddingMetadata.unidentifiedModelIdentifier else {
             return result("failed", "embedding_identity_invalid", finished: true)
         }
-        let candidates = stale.filter { item in
-            guard let initialCursor else { return true }
-            return item.createdAt > initialCursor.createdAt
-                || (item.createdAt == initialCursor.createdAt && item.id.uuidString > initialCursor.id.uuidString)
+        guard cursor == nil || cursor?.metadata == metadata else {
+            return result("failed", "embedding_identity_changed_during_reindex", finished: true)
         }
-        for item in candidates.prefix(min(32, max(1, limit))) {
+        guard let writeGeneration, EmbeddingIndexLifecycle.permitsWrite(writeGeneration),
+              cursor == nil || cursor?.generation == writeGeneration else {
+            return result("failed", "embedding_index_reset")
+        }
+        guard !Task.isCancelled else { return result("cancelled", "cancelled") }
+        guard ResourceBudgetGate.diagnosticSnapshot().scenePhase == .active,
+              ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.rebuild") == nil else {
+            return result("skipped", "foreground_embedding_budget_required")
+        }
+        guard !context.hasChanges else { return result("failed", "embedding_rebuild_unsaved_changes") }
+        let pageLimit = min(32, max(1, limit))
+        do {
+            fetched = try context.fetch(rebuildPageDescriptor(after: cursor, limit: pageLimit))
+            scanned = fetched.count
+        } catch {
+            // Unknown progress must remain retryable without an exact full-store count.
+            return RebuildResult(scanned: 0, attempted: 0, rebuilt: 0, skipped: 0, hasMore: true, mode: "failed",
+                diagnostic: "memory_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))", nextCursor: cursor)
+        }
+        for item in fetched.prefix(pageLimit) {
             guard !Task.isCancelled else { return result("cancelled", "cancelled") }
+            guard EmbeddingIndexLifecycle.permitsWrite(writeGeneration) else {
+                return result(rebuilt > 0 ? "partial" : "failed", "embedding_index_reset")
+            }
             guard item.modelContext === context, !item.isDeleted else {
                 return result(rebuilt > 0 ? "partial" : "failed", "memory_deleted_during_reindex")
             }
             guard ResourceBudgetGate.diagnosticSnapshot().scenePhase == .active,
-                  ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.reembed") == nil else {
+                  ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.rebuild") == nil else {
                 return result(rebuilt > 0 ? "partial" : "skipped", "foreground_embedding_budget_required")
             }
             let content = item.content
             let kind = item.memoryKind
+            let kindName = item.kind
             let source = item.source
             let topic = item.topic
-            let itemCursor = ReembeddingCursor(createdAt: item.createdAt, id: item.id, metadata: metadata)
+            let itemCursor = RebuildCursor(createdAt: item.createdAt, id: item.id, metadata: metadata, generation: writeGeneration)
             let embeddingResult: EmbeddingRuntimeResult
             attempted += 1
             do {
@@ -460,24 +511,41 @@ enum MemoryStore {
                 return result("cancelled", "cancelled")
             } catch let error as CoreAITextEmbeddingError where error == .invalidRequest || error == .inputTooLong {
                 guard !Task.isCancelled else { return result("cancelled", "cancelled") }
+                guard EmbeddingIndexLifecycle.permitsWrite(writeGeneration) else {
+                    return result(rebuilt > 0 ? "partial" : "failed", "embedding_index_reset")
+                }
                 guard ResourceBudgetGate.diagnosticSnapshot().scenePhase == .active,
-                      ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.reembed") == nil else {
+                      ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.rebuild") == nil else {
                     return result(rebuilt > 0 ? "partial" : "skipped", "foreground_embedding_budget_required")
                 }
-                // A single oversized legacy record must not block later records.
-                // Keep its source/vector intact and advance only this explicit pass.
+                guard item.modelContext === context, !item.isDeleted else {
+                    return result(rebuilt > 0 ? "partial" : "failed", "memory_deleted_during_reindex")
+                }
+                guard item.content == content, item.kind == kindName, item.source == source, item.topic == topic,
+                      item.id == itemCursor.id, item.createdAt == itemCursor.createdAt else {
+                    return result(rebuilt > 0 ? "partial" : "failed", "memory_changed_during_reindex")
+                }
+                if let diagnostic = persistedRebuildSourceDiagnostic(context: context, id: itemCursor.id,
+                    createdAt: itemCursor.createdAt, content: content, kind: kindName, source: source, topic: topic) {
+                    return result(rebuilt > 0 ? "partial" : "failed", diagnostic)
+                }
+                // An unencodable source must not block the following page.
                 skipped += 1
+                completed += 1
                 completedCursor = itemCursor
                 continue
             } catch {
                 return result(rebuilt > 0 ? "partial" : "failed", "embedding_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
             }
             guard !Task.isCancelled else { return result("cancelled", "cancelled") }
+            guard EmbeddingIndexLifecycle.permitsWrite(writeGeneration) else {
+                return result(rebuilt > 0 ? "partial" : "failed", "embedding_index_reset")
+            }
             guard item.modelContext === context, !item.isDeleted else {
                 return result(rebuilt > 0 ? "partial" : "failed", "memory_deleted_during_reindex")
             }
             guard ResourceBudgetGate.diagnosticSnapshot().scenePhase == .active,
-                  ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.reembed") == nil else {
+                  ResourceBudgetGate.budgetDenialReason(policy: .embedding, reason: "memory.rebuild") == nil else {
                 return result(rebuilt > 0 ? "partial" : "skipped", "foreground_embedding_budget_required")
             }
             guard embeddingResult.modelIdentifier == metadata.modelIdentifier,
@@ -486,9 +554,15 @@ enum MemoryStore {
                   embeddingResult.vector.allSatisfy(\.isFinite) else {
                 return result(rebuilt > 0 ? "partial" : "failed", "embedding_identity_changed_during_reindex")
             }
-            guard item.content == content, item.memoryKind == kind, item.source == source, item.topic == topic else {
+            guard item.content == content, item.kind == kindName, item.source == source, item.topic == topic,
+                  item.id == itemCursor.id, item.createdAt == itemCursor.createdAt else {
                 return result(rebuilt > 0 ? "partial" : "failed", "memory_changed_during_reindex")
             }
+            if let diagnostic = persistedRebuildSourceDiagnostic(context: context, id: itemCursor.id,
+                createdAt: itemCursor.createdAt, content: content, kind: kindName, source: source, topic: topic) {
+                return result(rebuilt > 0 ? "partial" : "failed", diagnostic)
+            }
+            guard !context.hasChanges else { return result(rebuilt > 0 ? "partial" : "failed", "embedding_rebuild_unsaved_changes") }
             guard let reservation = writeBudget.reserveWrite(bytes: 64 * 1024, category: .memory) else {
                 return result(rebuilt > 0 ? "partial" : "skipped", "disk_write_budget_denied")
             }
@@ -506,10 +580,39 @@ enum MemoryStore {
                 return result(rebuilt > 0 ? "partial" : "failed", "persist_failed:\(RuntimeMetricErrorSanitizer.code(for: error))")
             }
             rebuilt += 1
+            completed += 1
             completedCursor = itemCursor
             MemoryVectorIndex.shared.invalidate()
         }
-        return result(stale.count > rebuilt ? "partial" : "rebuilt", nil, finished: attempted == candidates.count)
+        let finished = fetched.count <= pageLimit
+        return result(finished && skipped == 0 ? "rebuilt" : "partial", nil, finished: finished)
+    }
+
+    /// A separate writer can change/delete a source while inference is suspended.
+    /// Read that one persisted row through a fresh context instead of trusting the
+    /// rebuild context's registered object, and never save that read-only context.
+    private static func persistedRebuildSourceDiagnostic(
+        context: ModelContext, id: UUID, createdAt: Date, content: String,
+        kind: String, source: String, topic: String?
+    ) -> String? {
+        let readContext = ModelContext(context.container)
+        readContext.autosaveEnabled = false
+        let sourceID = id
+        var descriptor = FetchDescriptor<MemoryItem>(predicate: #Predicate { $0.id == sourceID })
+        descriptor.fetchLimit = 1
+        descriptor.includePendingChanges = false
+        do {
+            guard let persisted = try readContext.fetch(descriptor).first else {
+                return "memory_deleted_during_reindex"
+            }
+            guard persisted.createdAt == createdAt, persisted.content == content,
+                  persisted.kind == kind, persisted.source == source, persisted.topic == topic else {
+                return "memory_changed_during_reindex"
+            }
+            return nil
+        } catch {
+            return "memory_source_fetch_failed:\(RuntimeMetricErrorSanitizer.code(for: error))"
+        }
     }
 
     @discardableResult

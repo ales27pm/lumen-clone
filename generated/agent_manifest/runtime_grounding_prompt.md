@@ -2,29 +2,29 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `d980fac27802072819baa085c29d3b3e6e2c491e`
-- Working-tree digest: `2e0cf1c84ac5d23bc87322f56ccff9b0e1ae7338d6dbddea821045e4dc27669f`
+- Base commit: `6f0cbcd030ef3114483d04b1a3570161f514d579`
+- Working-tree digest: `8d82cc675e20f8bc77d402486c70d583502568a5f791505f06408c1d9396a048`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `880`
+- Codebase-home records: `905`
 
 ## Top Modules
-- `ios/LumenTests`: 180 files
-- `Services`: 67 files
-- `docs`: 62 files
+- `ios/LumenTests`: 188 files
+- `Services`: 68 files
+- `docs`: 63 files
 - `tools/fine_tuning/unsloth`: 54 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 48 files
 - `tools/lumen_manifest_crawler/tests`: 40 files
-- `Views`: 36 files
-- `Assistant`: 31 files
+- `Views`: 37 files
+- `Assistant`: 32 files
+- `Services/LLM`: 25 files
 - `scripts`: 25 files
-- `Services/LLM`: 23 files
 - `Diagnostics`: 21 files
+- `tools`: 18 files
 - `System`: 17 files
-- `tools`: 17 files
 - `Models`: 16 files
+- `tools/pipeline/tests`: 16 files
 - `Tools`: 15 files
-- `tools/pipeline/tests`: 15 files
 - `Services/AgentGrounding`: 14 files
 - `Services/Tools`: 14 files
 - `Tools/Builtin`: 12 files
@@ -63,6 +63,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/ContextBudgetAllocator.swift` (Assistant): `ios/Lumen/Assistant/ContextBudgetAllocator.swift` owns ContextBudgetAllocator behavior and defines: ContextBudgetTokenSections, ContextBudgetSections, ContextPolicyProfile, ContextBudgetPlan, ContextBudgetAllocator, all Symbols: ContextBudgetTokenSections, ContextBudgetSections, ContextPolicyProfile, ContextBudgetPlan, ContextBudgetAllocator, allocate, profile, estimateTokens.
 - `ios/Lumen/Assistant/ContextQueryRewriter.swift` (Assistant): `ios/Lumen/Assistant/ContextQueryRewriter.swift` owns ContextQueryRewriter behavior and defines: ContextQueryRewriteResult, ContextQueryRewriter, rewrite, addTerms, normalized, salientTerms, bounded, query, addedTerms, e Symbols: ContextQueryRewriteResult, ContextQueryRewriter, rewrite, addTerms, normalized, salientTerms, bounded, query.
 - `ios/Lumen/Assistant/CoreAIGemmaRuntimeAdapter.swift` (Assistant): Adapts the single Core AI owner to the existing kernel. The model only emits text; structured decisions still cross the kernel's schema and approval gates. Symbols: CoreAIGemmaRuntimeAdapter, generate, prepareStructuredRuntime, structuredPromptPreflight, streamStructured, handleMemoryPressure, requireAvailable, liveContextCapacity.
+- `ios/Lumen/Assistant/CoreAITextEmbeddingRuntimeAdapter.swift` (Assistant): A separate sentence-vector runtime; never a second generative assistant. Symbols: CoreAITextEmbeddingRuntimeAdapter, embed, embedWithIdentity, handleMemoryPressure, kind, availabilityOverride, preferenceOverride, embedHandler.
 - `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` (Assistant): `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` owns HeadlessAgentKernelRunner behavior and defines: HeadlessAgentRunResult, Status, IssueCategory, HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, complet Symbols: HeadlessAgentRunResult, Status, IssueCategory, HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, completed, deferred, blocked.
 - `ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift` (Assistant): Explicit Agent Kernel compatibility boundary for legacy agent services. Symbols: LegacyAgentCompatibilityBridge, AgentEvent, runLegacyAgentService, runSlotAgentKernelCompatibility, runSlotAgentCompatibility, task, agentKernelEvent.
 - `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` (Assistant): `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, forceLegacyRuntimeForTesting, usesUnifiedAssistant, modelContext, conversationID, t Symbols: LegacyAgentRunOptions, GroundingMode, forceLegacyRuntimeForTesting, usesUnifiedAssistant, modelContext, conversationID, turnID, scenarioID.
@@ -94,4 +95,3 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/Tools/LocationTools.swift` (Services/Tools): Retrieves a textual description of the current location. - Returns: A string describing the current location. Symbols: LocationTools, currentLocation, openDirections, directionsURL, searchNearby, localSearchFailureMessage, trimmed, url.
 - `ios/Lumen/Services/Tools/MemoryTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MemoryTools.swift` owns MemoryTools behavior and defines: MemoryTools, RAGIndexExecution, save, recall, ragSearch, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos, ragIndexPhotosExecution, Symbols: MemoryTools, RAGIndexExecution, save, recall, ragSearch, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos.
 - `ios/Lumen/Services/Tools/MotionTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MotionTools.swift` owns MotionTools behavior and defines: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end, start, ped. Symbols: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end.
-- `ios/Lumen/Services/Tools/PhotosTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/PhotosTools.swift` owns PhotosTools behavior and defines: PhotosTools, searchPhotos, captureImage, formatAssetDate, assetPayloadJSON, assetPayloadDictionary, mediaSubtypeNames, jsonString, previ Symbols: PhotosTools, searchPhotos, captureImage, formatAssetDate, assetPayloadJSON, assetPayloadDictionary, mediaSubtypeNames, jsonString.
