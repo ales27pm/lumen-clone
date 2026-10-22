@@ -2,34 +2,34 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `6f0cbcd030ef3114483d04b1a3570161f514d579`
-- Working-tree digest: `8d82cc675e20f8bc77d402486c70d583502568a5f791505f06408c1d9396a048`
+- Base commit: `d055b593e0466cf11abbb4639d34c319b78ebe24`
+- Working-tree digest: `6fd3172632e7d6e3fb1449c35772b51d8b5f104d6178ff0fa5620c1a424b0a2e`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `905`
+- Codebase-home records: `921`
 
 ## Top Modules
-- `ios/LumenTests`: 188 files
-- `Services`: 68 files
-- `docs`: 63 files
+- `ios/LumenTests`: 192 files
+- `Services`: 72 files
+- `docs`: 64 files
 - `tools/fine_tuning/unsloth`: 54 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 48 files
 - `tools/lumen_manifest_crawler/tests`: 40 files
 - `Views`: 37 files
 - `Assistant`: 32 files
+- `scripts`: 27 files
 - `Services/LLM`: 25 files
-- `scripts`: 25 files
 - `Diagnostics`: 21 files
 - `tools`: 18 files
 - `System`: 17 files
+- `tools/pipeline/tests`: 17 files
 - `Models`: 16 files
-- `tools/pipeline/tests`: 16 files
 - `Tools`: 15 files
 - `Services/AgentGrounding`: 14 files
 - `Services/Tools`: 14 files
+- `repo`: 14 files
 - `Tools/Builtin`: 12 files
 - `RAG`: 10 files
-- `repo`: 10 files
 - `AppIntents`: 9 files
 - `Memory`: 9 files
 - `Services/LLM/Models`: 9 files

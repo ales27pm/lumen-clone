@@ -1,0 +1,22 @@
+build:
+  name: Lumen native TestFlight
+  steps:
+    - eas/checkout
+    - run:
+        name: Verify source, pinned dependencies and Apple SDK
+        command: bash scripts/eas-native-ios.sh --preflight
+    - eas/resolve_apple_team_id_from_credentials:
+        id: signing
+    - run:
+        name: Archive, export and verify native Lumen
+        command: bash scripts/eas-native-ios.sh
+    - eas/upload_artifact:
+        inputs:
+          type: application-archive
+          path: build/eas-export/Lumen.ipa
+    - eas/upload_artifact:
+        name: Upload release evidence
+        if: ${ always() }
+        inputs:
+          type: build-artifact
+          path: build/eas-evidence

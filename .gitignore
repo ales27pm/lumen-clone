@@ -22,6 +22,11 @@ generated/fine_tuning/checkpoints/
 models/
 .rork
 build/
+# The native EAS workflow is source; other EAS/build files remain local.
+/.eas/*
+!/.eas/build/
+/.eas/build/*
+!/.eas/build/ios-testflight.yml
 ios/Lumen/Assets.xcassets/
 !ios/Lumen/Assets.xcassets/
 !ios/Lumen/Assets.xcassets/AppIcon.appiconset/

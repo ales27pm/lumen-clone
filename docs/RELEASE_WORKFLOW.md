@@ -2,6 +2,72 @@
 
 Use this runbook only when a release upload is explicitly requested. Validation and upload evidence must remain separate: compile/archive/export success is not the same as App Store Connect accepting the IPA.
 
+## Native EAS TestFlight lane
+
+`eas.json` now defines separate `testflight` build and submit profiles for the
+existing native app. The linked EAS project is `@ales27/lumen-clone`
+(`1b2304fb-7f12-401b-813c-9a331d8b265d`); the submit destination is the existing
+App Store Connect app `6775079037`. The native bundle remains
+`com.27pm.lumenclone`, team `52T7P32J34`, scheme `Lumen`, configuration `Release`,
+with iOS 27.2 as its minimum. EAS runs Xcode on its macOS builder; this adds no
+React Native, Expo runtime, JavaScript bundle, CocoaPods or prebuild step.
+
+Commit the reviewed source and generated scope, resolve and review the complete
+Swift package lock, check the current App Store Connect build number, and commit
+the newly allocated native build number before dispatch. `cli.requireCommit`
+keeps the uploaded shallow clone Git-clean. Do not exclude `.git` or tracked
+release inputs with `.easignore`. The dependency-free npm lock serves the EAS
+CLI's metadata requirement; native dependencies remain in `Package.resolved`.
+
+The custom workflow `.eas/build/ios-testflight.yml` first runs
+`bash scripts/eas-native-ios.sh --preflight`. This verifies the exact source
+revision, source hashes, all direct package pins, Xcode/SDK versions, and an
+ARM64 iOS 27.2 compiler import of the CoreAI types used by Lumen. The named image
+is `macos-tahoe-26.6-xcode-27.1`; actual runner capability is checked before
+archiving. These checks do not compile Lumen or execute XCTest.
+
+The EAS credentials resolver installs the supplied certificate and provisioning
+profile without editing the Xcode project. The wrapper selects exactly one
+installed, unexpired App Store profile/certificate pair for Lumen's identity and
+capabilities, then passes manual signing overrides to
+`archive_lumen_stable.sh`. It preserves the native lane's source-provenance,
+resource, privacy, entitlement and dSYM checks. Export uses the committed
+version/build number and cannot upload or silently renumber the app. No App
+Store Connect API key is required merely to archive/export with installed
+signing credentials.
+
+`EXPO_NO_CAPABILITY_SYNC=1` preserves the existing Apple Developer capability
+configuration. The EAS capability mapper does not represent every native Lumen
+capability and must not disable existing portal entries while preparing
+credentials. This flag does not relax profile or signed-artifact validation;
+an incompatible profile still fails the release.
+
+Build and submit are separate operations:
+
+```bash
+npx --yes eas-cli@25.1.1 build --platform ios --profile testflight --non-interactive --no-wait
+```
+
+Record the returned immutable build ID. After that exact build finishes,
+download and independently inspect its IPA and `build/eas-evidence` artifacts.
+Then submit that ID:
+
+```bash
+npx --yes eas-cli@25.1.1 submit --platform ios --profile testflight --id <EXACT_BUILD_ID> --non-interactive
+```
+
+`build/eas-evidence/candidate.json` binds source hashes and the full commit.
+`artifact.json` binds the validated IPA SHA256, original dSYM hashes and their
+exported `Lumen.dSYMs.zip`; toolchain and archive/export/validation logs are
+alongside them. Signing context stays outside this uploaded evidence directory.
+On failure, retain the build ID and partial evidence; inspect any exported IPA
+before starting another cloud build. The wrapper never submits a binary.
+
+An EAS `FINISHED` build and successful submission are separate from Apple
+`VALID` processing and the exact TestFlight build's internal group availability.
+Monitor those states independently. None establishes physical-iPhone model
+execution, embedding parity, search quality, latency or Neural Engine placement.
+
 ## Preflight
 
 1. Check the worktree and preserve unrelated changes.

@@ -1,0 +1,34 @@
+{
+  "cli": {
+    "version": "25.1.1",
+    "requireCommit": true,
+    "appVersionSource": "local"
+  },
+  "build": {
+    "testflight": {
+      "distribution": "store",
+      "environment": "production",
+      "credentialsSource": "remote",
+      "autoIncrement": false,
+      "env": {
+        "EXPO_NO_CAPABILITY_SYNC": "1"
+      },
+      "ios": {
+        "scheme": "Lumen",
+        "buildConfiguration": "Release",
+        "resourceClass": "medium",
+        "image": "macos-tahoe-26.6-xcode-27.1",
+        "config": "ios-testflight.yml",
+        "applicationArchivePath": "build/eas-export/Lumen.ipa"
+      }
+    }
+  },
+  "submit": {
+    "testflight": {
+      "ios": {
+        "ascAppId": "6775079037",
+        "appleTeamId": "52T7P32J34"
+      }
+    }
+  }
+}
