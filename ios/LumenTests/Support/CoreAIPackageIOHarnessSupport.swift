@@ -10,6 +10,7 @@ actor CoreAIGemmaService {
     static let shared = CoreAIGemmaService()
     func beginModelReplacement() async throws {}
     func endModelReplacement() async {}
+    func cancelAndWait() async {}
 }
 
 actor CoreAITextEmbeddingService {
@@ -18,6 +19,7 @@ actor CoreAITextEmbeddingService {
         shouldBegin()
     }
     func endModelReplacement() async {}
+    func cancelAndWait() async {}
     func isLoaded() -> Bool { false }
 }
 

@@ -45,6 +45,54 @@ struct CoreAIModelStoreRecoveryTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.owned.path))
     }
 
+    @Test func identitySizeAdmissionDoesNotCreateOwnedStorage() throws {
+        let fixture = try Fixture(.gemma)
+        defer { fixture.remove() }
+        try fixture.addLongNamedFiles(count: 3_000)
+        let paths = try CoreAILocalPackageIO().inventory(fixture.source)
+        // The path strings alone exceed the JSON identity cap. The entry count
+        // and every individual path remain admissible to the package reader.
+        #expect(paths.count == 3_008)
+        #expect(paths.reduce(0) { $0 + $1.utf8.count } > 1_024 * 1_024)
+        #expect(throws: CoreAILocalPackageIO.Failure.invalidPackage) { try fixture.install() }
+        #expect(!FileManager.default.fileExists(atPath: fixture.owned.path))
+    }
+
+    @Test func oversizedIdentityPreservesActivePointerAndInterruptedArtifacts() throws {
+        let fixture = try Fixture(.gemma)
+        defer { fixture.remove() }
+        try fixture.install()
+        let active = try fixture.installedRoot()
+        let pointer = fixture.owned.appendingPathComponent("active.json")
+        let previousPointer = try Data(contentsOf: pointer)
+        let staging = try fixture.interruptedDirectory(staged: true)
+        let unpublished = try fixture.interruptedDirectory(staged: false)
+        try fixture.addLongNamedFiles(count: 3_000)
+        #expect(throws: CoreAILocalPackageIO.Failure.invalidPackage) { try fixture.install() }
+        #expect(try Data(contentsOf: pointer) == previousPointer)
+        #expect(try fixture.installedRoot() == active)
+        // Admission must finish before recovery can delete either artifact.
+        #expect(FileManager.default.fileExists(atPath: staging.path))
+        #expect(FileManager.default.fileExists(atPath: unpublished.path))
+    }
+
+    @Test func largeAdmissibleIdentityPublishesActualHashes() throws {
+        let fixture = try Fixture(.gemma)
+        defer { fixture.remove() }
+        try fixture.addLongNamedFiles(count: 1_700)
+        try fixture.install()
+        let installed = try fixture.installedRoot()
+        let data = try Data(contentsOf: fixture.owned.appendingPathComponent("active.json"))
+        #expect(data.count > 900_000)
+        #expect(data.count <= 1_024 * 1_024)
+        let identity = try JSONDecoder().decode(CoreAIGemmaModelStore.Identity.self, from: data)
+        #expect(identity.files.count == 1_708)
+        let file = try #require(identity.files.first { $0.path.hasSuffix("/file-0.bin") })
+        // SHA-256 of the single literal byte 0x78 ('x'), independently known.
+        #expect(file.sha256 == "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881")
+        #expect(try Data(contentsOf: installed.appendingPathComponent(file.path)) == Data([0x78]))
+    }
+
     @Test func interruptedImportsAreRecoveredByBothStoresAndActiveSurvivesFailedReplacement() throws {
         for kind in [Kind.gemma, .embedding] {
             let fixture = try Fixture(kind)
@@ -252,6 +300,14 @@ struct CoreAIModelStoreRecoveryTests {
             try expectedFiles.map { file in
                 let data = try Data(contentsOf: source.appendingPathComponent(file.path))
                 return .init(path: file.path, bytes: Int64(data.count), sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+            }
+        }
+        func addLongNamedFiles(count: Int) throws {
+            let prefix = String(repeating: "a", count: 240) + "/" + String(repeating: "b", count: 240)
+            let folder = source.appendingPathComponent(prefix)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            for index in 0..<count {
+                try Data([0x78]).write(to: folder.appendingPathComponent("file-\(index).bin"))
             }
         }
         func install() throws {
