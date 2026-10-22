@@ -9,7 +9,7 @@
       "python": 190,
       "resolved": 1,
       "shell": 19,
-      "swift": 566,
+      "swift": 567,
       "text": 7,
       "toml": 1,
       "xcode_project": 1,
@@ -69,7 +69,7 @@
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 195,
+      "ios/LumenTests": 196,
       "ios/LumenTests/Fixtures": 2,
       "ios/LumenTests/Support": 1,
       "ios/LumenUITests": 2,
@@ -90,7 +90,7 @@
       "tools/pipeline/tests": 18,
       "tools/security": 1
     },
-    "recordCount": 929,
+    "recordCount": 930,
     "selectedFiles": [
       {
         "imports": [],
@@ -2221,13 +2221,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "e795decc5c9ca499b86d3f31665a16a55b78555d",
+  "manifestCommit": "8ccfd89f757cccc1e8bc9b9420163b5e176fbb63",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "9ae157d572f5f669daf20604329ac3199f3daa2c2658645c32a9019cd575ab77",
+    "promptSHA256": "9083fda55b394db66fe7e287ad607e467d2475a50b150cde34cc36da196bdf30",
     "promptUTF8ByteCount": 25811,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2239,8 +2239,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "e795decc5c9ca499b86d3f31665a16a55b78555d",
+    "baseCommit": "8ccfd89f757cccc1e8bc9b9420163b5e176fbb63",
     "dirtyState": false,
-    "workingTreeDigest": "1c3a08dae06ef5ec81a1c3152fb2367643d8d6507f310a3adf27ae9fdfb7eb59"
+    "workingTreeDigest": "7f8fa9d76a1438867a82a5b393ddcbc2b2e30843529cccccf43b75ec0413b123"
   }
 }
