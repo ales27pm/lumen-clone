@@ -155,17 +155,174 @@ def _signing_evidence(
 
 
 def test_ios_signing_capabilities_accepts_sanitized_app_store_profile(tmp_path: Path):
-    development = {
+    app_store = {
         "com.apple.developer.healthkit": True,
+        "com.apple.security.hardened-process": True,
+        "com.apple.security.hardened-process.checked-allocations": True,
+        "com.apple.security.hardened-process.enhanced-security-version": 1,
+        "com.apple.security.hardened-process.enhanced-security-version-string": "1",
+    }
+    development = {
+        **app_store,
         "com.apple.developer.kernel.increased-debugging-memory-limit": True,
         "com.apple.security.hardened-process.checked-allocations.soft-mode": True,
     }
-    app_store = {"com.apple.developer.healthkit": True}
 
     result = _run_validator(tmp_path, development, app_store)
 
     assert result.returncode == 0
     assert "App Store entitlements match development entitlements after removing" in result.stderr
+
+
+def _rejected_hardened_process_policy(module) -> dict:
+    # The six-key shape that reached Transporter and was rejected with 91155.
+    return {
+        module.HARDENED_PROCESS: True,
+        module.HARDENED_PROCESS + ".checked-allocations": True,
+        module.HARDENED_PROCESS + ".dyld-ro": True,
+        module.ENHANCED_SECURITY_VERSION: 1,
+        module.HARDENED_PROCESS + ".hardened-heap": True,
+        module.HARDENED_PROCESS + ".platform-restrictions": 2,
+    }
+
+
+def test_hardened_process_policy_rejects_the_actual_91155_shape():
+    module = _load_validator_module()
+    failures = module.validate_hardened_process_contract(
+        _rejected_hardened_process_policy(module), "RejectedLumen.app"
+    )
+
+    assert len(failures) == 1
+    assert module.ENHANCED_SECURITY_VERSION_STRING in failures[0]
+    assert "91155" in failures[0]
+
+
+@pytest.mark.parametrize("value", [1, True, "", "0", "-1", "01", "latest", "1.0", []])
+def test_hardened_process_policy_requires_a_valid_string_version(value):
+    module = _load_validator_module()
+    policy = {module.HARDENED_PROCESS: True, module.ENHANCED_SECURITY_VERSION_STRING: value}
+
+    failures = module.validate_hardened_process_contract(policy, "SignedLumen.app")
+
+    assert any("must be a positive version string" in failure for failure in failures)
+
+
+@pytest.mark.parametrize("modern", ["2", "*"])
+def test_hardened_process_policy_rejects_drift_from_pinned_legacy_version(modern: str):
+    module = _load_validator_module()
+    policy = _rejected_hardened_process_policy(module)
+    policy[module.ENHANCED_SECURITY_VERSION_STRING] = modern
+
+    failures = module.validate_hardened_process_contract(policy, "SignedLumen.app")
+
+    assert any("must match the pinned legacy" in failure for failure in failures)
+
+
+@pytest.mark.parametrize("legacy", [True, 0, "0", "*", "1.0"])
+def test_hardened_process_policy_rejects_invalid_legacy_version(legacy):
+    module = _load_validator_module()
+    policy = {
+        module.HARDENED_PROCESS: True,
+        module.ENHANCED_SECURITY_VERSION: legacy,
+        module.ENHANCED_SECURITY_VERSION_STRING: "1",
+    }
+
+    failures = module.validate_hardened_process_contract(policy, "SignedLumen.app")
+
+    assert any("must be a positive version" in failure for failure in failures)
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_hardened_process_policy_accepts_matching_explicit_versions(version: int):
+    module = _load_validator_module()
+    policy = _rejected_hardened_process_policy(module)
+    policy[module.ENHANCED_SECURITY_VERSION] = version
+    policy[module.ENHANCED_SECURITY_VERSION_STRING] = str(version)
+
+    assert module.validate_hardened_process_contract(policy, "SignedLumen.app") == []
+
+
+def test_hardened_process_policy_accepts_documented_modern_default_without_a_legacy_pin():
+    module = _load_validator_module()
+    policy = {module.HARDENED_PROCESS: True, module.ENHANCED_SECURITY_VERSION_STRING: "*"}
+
+    assert module.validate_hardened_process_contract(policy, "SignedLumen.app") == []
+    assert module.validate_hardened_process_contract({"com.apple.developer.healthkit": True}, "Other.app") == []
+
+
+@pytest.mark.parametrize("root_value", [None, False, 1])
+def test_hardened_process_subkeys_require_true_root_entitlement(root_value):
+    module = _load_validator_module()
+    policy = {module.ENHANCED_SECURITY_VERSION_STRING: "1"}
+    if root_value is not None:
+        policy[module.HARDENED_PROCESS] = root_value
+
+    failures = module.validate_hardened_process_contract(policy, "SignedLumen.app")
+
+    assert any("=true" in failure for failure in failures)
+
+
+@pytest.mark.parametrize("name", ["Lumen.entitlements", "LumenAppStore.entitlements"])
+def test_checked_in_entitlements_preserve_pinned_security_policy(name: str):
+    module = _load_validator_module()
+    path = ROOT / "ios/Lumen" / name
+    policy = module.read_plist(path)
+
+    assert policy[module.ENHANCED_SECURITY_VERSION_STRING] == "1"
+    for key, value in _rejected_hardened_process_policy(module).items():
+        assert type(policy[key]) is type(value)
+        assert policy[key] == value
+    assert module.validate_entitlements(path) == []
+
+
+def test_app_store_signing_requires_version_in_signed_payload_despite_profile_wildcard():
+    module = _load_validator_module()
+    evidence = _signing_evidence(
+        module,
+        authority="Apple Distribution: Test (TEAM123456)",
+        get_task_allow=False,
+        beta_reports_active=True,
+        provisioned_devices=False,
+    )
+    policy = _rejected_hardened_process_policy(module)
+    evidence.signed_entitlements.update(policy)
+    evidence.profile["Entitlements"].update(policy)
+    evidence.profile["Entitlements"][module.ENHANCED_SECURITY_VERSION_STRING] = "*"
+
+    failures = module.validate_signing_evidence(evidence, "app-store", "SignedLumen.app")
+
+    assert len(failures) == 1
+    assert "91155" in failures[0]
+    evidence.signed_entitlements[module.ENHANCED_SECURITY_VERSION_STRING] = "1"
+    assert module.validate_signing_evidence(evidence, "app-store", "SignedLumen.app") == []
+
+
+@pytest.mark.parametrize("modern_present", [False, True])
+def test_sanitization_cannot_bypass_hardened_process_dependencies(tmp_path: Path, modern_present: bool):
+    module = _load_validator_module()
+    policy = _rejected_hardened_process_policy(module)
+    if modern_present:
+        policy[module.ENHANCED_SECURITY_VERSION_STRING] = "1"
+    development = {**policy, "com.apple.developer.kernel.increased-debugging-memory-limit": True}
+    development_path = _write_plist(tmp_path / "Development.entitlements", development)
+    store_path = _write_plist(tmp_path / "Store.entitlements", policy)
+    sanitized_path = tmp_path / "Sanitized.entitlements"
+
+    result = subprocess.run(
+        [
+            sys.executable, str(SCRIPT), "--project-file", str(_write_project(tmp_path)),
+            "--entitlements", str(development_path), "--app-store-entitlements", str(store_path),
+            "--sanitized-entitlements-output", str(sanitized_path), "--allow-sanitized-output",
+        ],
+        text=True, capture_output=True, check=False,
+    )
+
+    assert "com.apple.developer.kernel.increased-debugging-memory-limit" not in module.read_plist(sanitized_path)
+    if modern_present:
+        assert result.returncode == 0, result.stderr
+    else:
+        assert result.returncode == 1
+        assert "91155" in result.stderr
 
 
 def test_ios_signing_capabilities_rejects_app_store_profile_drift(tmp_path: Path):

@@ -55,6 +55,20 @@ capability and must not disable existing portal entries while preparing
 credentials. This flag does not relax profile or signed-artifact validation;
 an incompatible profile still fails the release.
 
+When hardened-process protections are enabled, both entitlement files and the
+signed app must include
+`com.apple.security.hardened-process.enhanced-security-version-string` with a
+string value consistent with the existing security policy. Lumen retains level
+`1`; it does not disable hardening or turn on additional guard-object policy as
+a release repair. Apple's [entitlement documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.hardened-process.enhanced-security-version-string)
+describes the required string key. The first upload of build `20261022022504`
+was rejected with error `91155` because this companion key was missing, despite
+successful compilation, signing and local checks. Keep that upload's terminal
+failure record and use a new build number for the corrected binary. Check the
+actual embedded profile's grant before replacing credentials: the existing
+Lumen profile already grants this key with a wildcard, so adding the signed
+entitlement does not require a new certificate or provisioning profile.
+
 Build and submit are separate operations:
 
 ```bash

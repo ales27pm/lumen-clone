@@ -62,6 +62,9 @@ BUILD_SETTING_REFERENCE = re.compile(r"\$\(([^)]+)\)|\$\{([^}]+)\}")
 SIGNING_STAGES = {"archive", "app-store"}
 APPLE_DEVELOPMENT_AUTHORITY = "Apple Development"
 APPLE_DISTRIBUTION_AUTHORITY = "Apple Distribution"
+HARDENED_PROCESS = "com.apple.security.hardened-process"
+ENHANCED_SECURITY_VERSION = HARDENED_PROCESS + ".enhanced-security-version"
+ENHANCED_SECURITY_VERSION_STRING = ENHANCED_SECURITY_VERSION + "-string"
 
 
 @dataclass(frozen=True)
@@ -144,10 +147,46 @@ def sanitized_entitlement_message(key: str) -> str | None:
 
 def validate_entitlements(path: Path) -> list[str]:
     entitlements = read_plist(path)
-    failures: list[str] = []
+    failures = validate_hardened_process_contract(entitlements, str(path))
     for key in entitlements:
         if message := disallowed_entitlement_message(key):
             failures.append(f"{path}: disallowed entitlement '{key}'. {message}")
+    return failures
+
+
+def validate_hardened_process_contract(entitlements: dict[str, Any], source: str) -> list[str]:
+    """Enforce Apple's Enhanced Security dependencies before Transporter error 91155.
+
+    This validates selected app policy, never provisioning-profile wildcard grants.
+    https://developer.apple.com/documentation/xcode/enabling-enhanced-security-for-your-app
+    """
+    if not any(key == HARDENED_PROCESS or key.startswith(HARDENED_PROCESS + ".") for key in entitlements):
+        return []
+    failures: list[str] = []
+    if entitlements.get(HARDENED_PROCESS) is not True:
+        failures.append(f"{source}: hardened-process entitlements require '{HARDENED_PROCESS}'=true")
+    version = entitlements.get(ENHANCED_SECURITY_VERSION_STRING)
+    if ENHANCED_SECURITY_VERSION_STRING not in entitlements:
+        failures.append(
+            f"{source}: hardened-process entitlements require '{ENHANCED_SECURITY_VERSION_STRING}' "
+            "(App Store Connect validation error 91155)"
+        )
+    elif not isinstance(version, str) or not (version == "*" or re.fullmatch(r"[1-9][0-9]*", version)):
+        failures.append(f"{source}: '{ENHANCED_SECURITY_VERSION_STRING}' must be a positive version string or '*'")
+    if ENHANCED_SECURITY_VERSION in entitlements:
+        legacy = entitlements[ENHANCED_SECURITY_VERSION]
+        if type(legacy) is int and legacy > 0:
+            legacy_version = str(legacy)
+        elif isinstance(legacy, str) and re.fullmatch(r"[1-9][0-9]*", legacy):
+            legacy_version = legacy
+        else:
+            legacy_version = None
+            failures.append(f"{source}: '{ENHANCED_SECURITY_VERSION}' must be a positive version")
+        if legacy_version is not None and ENHANCED_SECURITY_VERSION_STRING in entitlements and version != legacy_version:
+            failures.append(
+                f"{source}: '{ENHANCED_SECURITY_VERSION_STRING}' must match the pinned legacy "
+                f"'{ENHANCED_SECURITY_VERSION}' policy"
+            )
     return failures
 
 
@@ -514,7 +553,7 @@ def validate_signing_evidence(
     if signing_stage not in SIGNING_STAGES:
         raise ValueError(f"unsupported signing stage: {signing_stage}")
 
-    failures: list[str] = []
+    failures = validate_hardened_process_contract(evidence.signed_entitlements, source)
     authority_kind = _authority_kind(evidence.authorities)
     if evidence.signature_marker.lower() == "adhoc":
         failures.append(f"{source}: ad-hoc code signatures are not release signing evidence")
@@ -809,11 +848,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.signing_stage is not None and not args.signed_app_path:
         parser.error("--signing-stage requires --signed-app-path")
 
-    entitlement_failures = [
-        failure
-        for entitlement_path in entitlements_to_validate(args.entitlements, root)
-        for failure in validate_entitlements(entitlement_path)
-    ]
+    entitlement_paths = entitlements_to_validate(args.entitlements, root)
     removed: list[str] = []
     if args.sanitized_entitlements_output:
         removed = sanitize_entitlements_file(args.entitlements, args.sanitized_entitlements_output)
@@ -824,6 +859,17 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
+    # Sanitization may remove only its established incompatible keys. All other
+    # dependencies still apply to the effective primary plist and sibling files.
+    if args.allow_sanitized_output and args.sanitized_entitlements_output:
+        entitlement_paths = [
+            args.sanitized_entitlements_output if path.resolve() == args.entitlements.resolve() else path
+            for path in entitlement_paths
+        ]
+    entitlement_failures = [
+        failure for path in entitlement_paths for failure in validate_entitlements(path)
+    ]
+
     failures = [
         *validate_project_settings(args.project_file),
         *validate_app_sources(root),
@@ -832,7 +878,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.skip_app_store_profile_comparison
             else validate_app_store_entitlements_match(args.entitlements, args.app_store_entitlements)
         ),
-        *([] if args.allow_sanitized_output and args.sanitized_entitlements_output else entitlement_failures),
+        *entitlement_failures,
     ]
     for signed_app_path in args.signed_app_path:
         if not signed_app_path.exists():
