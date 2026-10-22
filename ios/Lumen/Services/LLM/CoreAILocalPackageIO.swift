@@ -51,7 +51,7 @@ nonisolated struct CoreAILocalPackageIO: Sendable {
             guard lstat(url.path, &status) == 0, status.st_flags & UInt32(SF_DATALESS) == 0 else {
                 throw Failure.localDirectory
             }
-            #if canImport(FileProvider)
+            #if canImport(FileProvider) && os(iOS)
             guard !FileManager.default.fileExists(atPath: NSFileProviderManager.placeholderURL(for: url).path) else {
                 throw Failure.localDirectory
             }
