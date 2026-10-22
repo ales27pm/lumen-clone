@@ -6,10 +6,10 @@
       "markdown": 105,
       "mixed": 1,
       "plist": 3,
-      "python": 189,
+      "python": 190,
       "resolved": 1,
       "shell": 19,
-      "swift": 561,
+      "swift": 566,
       "text": 7,
       "toml": 1,
       "xcode_project": 1,
@@ -45,7 +45,7 @@
       "Services/AgentGrounding": 14,
       "Services/Diagnostics": 2,
       "Services/IntentClassification": 5,
-      "Services/LLM": 25,
+      "Services/LLM": 26,
       "Services/LLM/CoreAI": 4,
       "Services/LLM/CoreAI/EmbeddingGemma2Tokenizer": 5,
       "Services/LLM/GGUF": 7,
@@ -55,7 +55,7 @@
       "Services/SelfModel": 2,
       "Services/Tools": 14,
       "State": 3,
-      "System": 17,
+      "System": 18,
       "Tools": 15,
       "Tools/Builtin": 12,
       "Views": 37,
@@ -69,8 +69,9 @@
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 193,
+      "ios/LumenTests": 195,
       "ios/LumenTests/Fixtures": 2,
+      "ios/LumenTests/Support": 1,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 14,
@@ -86,10 +87,10 @@
       "tools/lumen_manifest_crawler/scripts": 1,
       "tools/lumen_manifest_crawler/tests": 40,
       "tools/pipeline": 8,
-      "tools/pipeline/tests": 17,
+      "tools/pipeline/tests": 18,
       "tools/security": 1
     },
-    "recordCount": 923,
+    "recordCount": 929,
     "selectedFiles": [
       {
         "imports": [],
@@ -2220,13 +2221,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "08f1b3413f9e4457ff327a415ac1f2a6ca8fd23a",
+  "manifestCommit": "e795decc5c9ca499b86d3f31665a16a55b78555d",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "231176b94516e7c28085457a87dfe24218af8bd35685872176fc8fa5e6424e1f",
+    "promptSHA256": "9ae157d572f5f669daf20604329ac3199f3daa2c2658645c32a9019cd575ab77",
     "promptUTF8ByteCount": 25811,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2238,8 +2239,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "08f1b3413f9e4457ff327a415ac1f2a6ca8fd23a",
-    "dirtyState": true,
-    "workingTreeDigest": "19dd28c10b03b6fd40377ff6a9cc24b0fb5eabb37ecce5c43128bccca92cb795"
+    "baseCommit": "e795decc5c9ca499b86d3f31665a16a55b78555d",
+    "dirtyState": false,
+    "workingTreeDigest": "1c3a08dae06ef5ec81a1c3152fb2367643d8d6507f310a3adf27ae9fdfb7eb59"
   }
 }
