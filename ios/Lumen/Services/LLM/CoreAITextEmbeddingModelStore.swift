@@ -185,13 +185,16 @@ nonisolated enum CoreAITextEmbeddingModelStore {
         /// Synthetic file identities are a narrow deterministic storage-test seam.
         /// All production callers use the immutable published inventory above.
         let expectedFiles: [FileIdentity]
-        init(directory: URL, expectedFiles: [FileIdentity] = CoreAITextEmbeddingModelStore.pinnedFiles) {
+        private let maximumPackageBytes: Int64
+        init(directory: URL, expectedFiles: [FileIdentity] = CoreAITextEmbeddingModelStore.pinnedFiles,
+             maximumPackageBytes: Int64 = 2 * 1_024 * 1_024 * 1_024) {
             self.directory = directory
             self.expectedFiles = expectedFiles
+            self.maximumPackageBytes = min(max(0, maximumPackageBytes), 2 * 1_024 * 1_024 * 1_024)
         }
 
         private static let maximumIdentityBytes = 256 * 1_024
-        private let io = CoreAILocalPackageIO(maximumPackageBytes: 2 * 1_024 * 1_024 * 1_024)
+        private var io: CoreAILocalPackageIO { .init(maximumPackageBytes: maximumPackageBytes) }
         private var identityURL: URL { directory.appendingPathComponent("active.json") }
         var isConfigured: Bool { FileManager.default.fileExists(atPath: identityURL.path) }
 
@@ -214,9 +217,12 @@ nonisolated enum CoreAITextEmbeddingModelStore {
             let root = directory.appendingPathComponent(identity.installation, isDirectory: true)
                 .appendingPathComponent("bundle", isDirectory: true)
             guard try io.inventory(root) == identity.files.map(\.path) else { throw Failure.integrity }
+            var verifiedBytes: Int64 = 0
             for expected in identity.files {
                 try Task.checkCancellation()
-                guard try io.digest(relative: expected.path, descriptor: descriptor) == expected else { throw Failure.integrity }
+                guard try io.digest(relative: expected.path, descriptor: descriptor, expectedBytes: expected.bytes,
+                                    maximumBytes: maximumPackageBytes - verifiedBytes) == expected else { throw Failure.integrity }
+                verifiedBytes += expected.bytes
             }
             let configuration = try readConfiguration(descriptor: descriptor)
             try verifyMainHash(descriptor: descriptor, files: identity.files)
@@ -238,8 +244,16 @@ nonisolated enum CoreAITextEmbeddingModelStore {
             guard payloadPaths == expectedFiles.map(\.path), expectedFiles.map(\.path) == CoreAITextEmbeddingModelStore.pinnedFiles.map(\.path)
             else { throw Failure.invalidPackage }
             let sourceConfiguration = try readConfiguration(descriptor: sourceDescriptor)
+            var sourceBytes: Int64 = 0
+            for expected in expectedFiles {
+                let bytes = try io.fileSize(relative: expected.path, descriptor: sourceDescriptor)
+                guard bytes == expected.bytes else { throw Failure.integrity }
+                guard bytes <= maximumPackageBytes - sourceBytes else { throw Failure.invalidPackage }
+                sourceBytes += bytes
+            }
             let manager = FileManager.default
             try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try CoreAIModelInstallationRecovery.cleanup(directory: directory, activeInstallation: (try? readIdentity())?.installation)
             var root = directory
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
@@ -260,10 +274,10 @@ nonisolated enum CoreAITextEmbeddingModelStore {
                 try Task.checkCancellation()
                 let output = bundle.appendingPathComponent(expected.path)
                 try manager.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let actual = try io.digest(relative: expected.path, descriptor: sourceDescriptor, copyTo: output)
+                let actual = try io.digest(relative: expected.path, descriptor: sourceDescriptor, copyTo: output,
+                                           expectedBytes: expected.bytes, maximumBytes: maximumPackageBytes - total)
                 guard actual == expected else { throw Failure.integrity }
                 total += actual.bytes
-                guard total <= io.maximumPackageBytes else { throw Failure.invalidPackage }
                 copied.append(actual)
             }
             guard try io.inventory(source) == paths else { throw Failure.integrity }

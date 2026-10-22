@@ -6,6 +6,56 @@ import XCTest
 final class CoreAIModelReplacementLifecycleTests: XCTestCase {
     private enum Failure: Error, Equatable { case admission, operation }
 
+    func testGemmaAlreadyCancelledMutationDoesNotAdmitOrCommit() async {
+        var calls: [String] = []
+        let task = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await CoreAIGemmaModelStore.withModelReplacement(
+                begin: { calls.append("begin") }, end: { calls.append("end") }
+            ) { calls.append("commit") }
+        }
+        do { try await task.value; XCTFail("Cancellation must propagate") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertTrue(calls.isEmpty)
+    }
+
+    func testGemmaCancellationDuringDrainReleasesGateWithoutCommitting() async {
+        var calls: [String] = []
+        let task = Task { @MainActor in
+            try await CoreAIGemmaModelStore.withModelReplacement(
+                begin: { calls.append("begin"); withUnsafeCurrentTask { $0?.cancel() } },
+                end: { calls.append("end") }
+            ) { calls.append("commit") }
+        }
+        do { try await task.value; XCTFail("Cancellation must propagate") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(calls, ["begin", "end"])
+    }
+
+    func testGemmaAdmissionFailureDoesNotReleaseSomeoneElsesGate() async {
+        var ended = false
+        do {
+            try await CoreAIGemmaModelStore.withModelReplacement(
+                begin: { throw Failure.admission }, end: { ended = true }
+            ) { XCTFail("No mutation may be admitted") }
+            XCTFail("Admission must fail")
+        } catch { XCTAssertEqual(error as? Failure, .admission) }
+        XCTAssertFalse(ended)
+    }
+
+    func testGemmaCommittedOperationCompletesCleanupDespiteLateCancellation() async throws {
+        var ended = false
+        let task = Task { @MainActor in
+            try await CoreAIGemmaModelStore.withModelReplacement(begin: {}, end: { ended = true }) {
+                withUnsafeCurrentTask { $0?.cancel() }
+                return "committed"
+            }
+        }
+        let result = try await task.value
+        XCTAssertEqual(result, "committed")
+        XCTAssertTrue(ended)
+    }
+
     func testAlreadyCancelledMutationDoesNotAdmitOrCommit() async {
         var calls: [String] = []
         let task = Task { @MainActor in
