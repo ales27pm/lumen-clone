@@ -137,12 +137,21 @@ nonisolated struct CoreAILocalPackageIO: Sendable {
         defer { try? destination?.close() }
         var hasher = SHA256()
         var count: Int64 = 0
-        while let data = try input.read(upToCount: 1_024 * 1_024), !data.isEmpty {
-            try Task.checkCancellation()
-            count += Int64(data.count)
-            guard count <= before.st_size else { throw Failure.integrity }
-            hasher.update(data: data)
-            try destination?.write(contentsOf: data)
+        while true {
+            // Foundation may autorelease read buffers or bridged write data.
+            // Drain those temporaries per chunk, including on errors/cancellation,
+            // rather than retaining a model-sized payload in the worker's pool.
+            let hasData = try autoreleasepool {
+                try Task.checkCancellation()
+                guard let data = try input.read(upToCount: 1_024 * 1_024), !data.isEmpty else { return false }
+                try Task.checkCancellation()
+                count += Int64(data.count)
+                guard count <= before.st_size else { throw Failure.integrity }
+                hasher.update(data: data)
+                try destination?.write(contentsOf: data)
+                return true
+            }
+            if !hasData { break }
         }
         try destination?.synchronize()
         var after = stat()
