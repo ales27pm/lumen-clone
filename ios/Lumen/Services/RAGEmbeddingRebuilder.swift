@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 /// Rebuilds the persisted source text (including notes and extracted photo text)
 /// without deleting or reimporting source rows or constructing a parallel index.
