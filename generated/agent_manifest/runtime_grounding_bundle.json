@@ -8,8 +8,8 @@
       "plist": 3,
       "python": 189,
       "resolved": 1,
-      "shell": 18,
-      "swift": 560,
+      "shell": 19,
+      "swift": 561,
       "text": 7,
       "toml": 1,
       "xcode_project": 1,
@@ -69,12 +69,12 @@
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 192,
+      "ios/LumenTests": 193,
       "ios/LumenTests/Fixtures": 2,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 14,
-      "scripts": 27,
+      "scripts": 28,
       "tools": 18,
       "tools/fine_tuning/unsloth": 54,
       "tools/hf_artifacts": 2,
@@ -89,7 +89,7 @@
       "tools/pipeline/tests": 17,
       "tools/security": 1
     },
-    "recordCount": 921,
+    "recordCount": 923,
     "selectedFiles": [
       {
         "imports": [],
@@ -2220,13 +2220,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "558e8d79ec706ee69e23dc05b1da8af39f977f92",
+  "manifestCommit": "08f1b3413f9e4457ff327a415ac1f2a6ca8fd23a",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "fbc6ed84d3b444f3f9962e464aef3709cca1e4072f02eeed3492bd64210980aa",
+    "promptSHA256": "231176b94516e7c28085457a87dfe24218af8bd35685872176fc8fa5e6424e1f",
     "promptUTF8ByteCount": 25811,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2238,8 +2238,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "558e8d79ec706ee69e23dc05b1da8af39f977f92",
+    "baseCommit": "08f1b3413f9e4457ff327a415ac1f2a6ca8fd23a",
     "dirtyState": true,
-    "workingTreeDigest": "db1956fb32f090cdab0c8d9cfff26f2142dff417eb6cfda3978f5d8241692929"
+    "workingTreeDigest": "19dd28c10b03b6fd40377ff6a9cc24b0fb5eabb37ecce5c43128bccca92cb795"
   }
 }
