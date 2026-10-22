@@ -199,6 +199,9 @@ enum ModelLoader {
     }
 
     static func cancelActiveLoads() {
+        // CoreAI integrity scans run synchronously on their inference actors.
+        // Cancel their registered tasks directly before queuing actor drainage.
+        AppCancellationBus.shared.cancel(.modelLoad)
         advanceChatLoadEpoch()
         advanceEmbedLoadEpoch()
         if let pending = chatLoadTask {

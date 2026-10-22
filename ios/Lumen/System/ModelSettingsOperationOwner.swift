@@ -1,6 +1,17 @@
 import Foundation
 import Observation
 
+/// Presentation invalidation outlives any one settings appearance. A cancelled
+/// operation may already have crossed its store's atomic publication boundary.
+@MainActor
+@Observable
+final class ModelSettingsConfigurationState {
+    static let shared = ModelSettingsConfigurationState()
+    private(set) var revision = UUID()
+
+    func operationDidDrain() { revision = UUID() }
+}
+
 /// Owns a settings mutation until its service has drained its workers. Views may
 /// detach immediately, but cancellation never admits overlapping replacement work
 /// or delivers an old result to a later appearance of the same settings section.
@@ -9,16 +20,22 @@ import Observation
 final class ModelSettingsOperationOwner {
     private(set) var isBusy = false
     @ObservationIgnored private let cancellationBus: AppCancellationBus
+    @ObservationIgnored private let configurationState: ModelSettingsConfigurationState
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var registration: UUID?
     @ObservationIgnored private var operationID: UUID?
     @ObservationIgnored private var appearanceID: UUID?
 
-    init(cancellationBus: AppCancellationBus = .shared) {
+    init(
+        cancellationBus: AppCancellationBus = .shared,
+        configurationState: ModelSettingsConfigurationState? = nil
+    ) {
         self.cancellationBus = cancellationBus
+        self.configurationState = configurationState ?? .shared
     }
 
     var isActive: Bool { appearanceID != nil }
+    var configurationRevision: UUID { configurationState.revision }
 
     func activate() {
         if appearanceID == nil { appearanceID = UUID() }
@@ -62,6 +79,10 @@ final class ModelSettingsOperationOwner {
             task = nil
             operationID = nil
             isBusy = false
+            // Publish even if this appearance no longer receives its terminal
+            // result. A newly created section must refresh after the old worker
+            // drains, including a commit that finished during cancellation.
+            configurationState.operationDidDrain()
             if self.appearanceID == appearanceID { completion(result) }
         }
         task = work

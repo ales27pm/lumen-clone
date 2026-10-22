@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 @testable import Lumen
 
@@ -18,12 +19,15 @@ struct ModelSettingsOperationOwnerTests {
 
     @Test func successfulCompletionClearsOwnershipBeforeDelivery() async throws {
         let bus = AppCancellationBus()
-        let owner = ModelSettingsOperationOwner(cancellationBus: bus)
+        let configuration = ModelSettingsConfigurationState()
+        let owner = ModelSettingsOperationOwner(cancellationBus: bus, configurationState: configuration)
+        let previousRevision = configuration.revision
         owner.activate()
         var received: Int?
         let work = try #require(owner.start(operation: { 42 }, completion: { result in
             #expect(!owner.isBusy)
             #expect(bus.activeRegistrationCount(category: .modelMaintenance) == 0)
+            #expect(configuration.revision != previousRevision)
             received = try? result.get()
         }))
         #expect(owner.isBusy)
@@ -55,6 +59,91 @@ struct ModelSettingsOperationOwnerTests {
         await worker.release()
         await work.value
         #expect(cancelled)
+        #expect(!owner.isBusy)
+        #expect(bus.activeRegistrationCount(category: .modelMaintenance) == 0)
+    }
+
+    @Test func recreatedPresentationSeesARevisionAfterCancelledOldWorkerPublishes() async throws {
+        let bus = AppCancellationBus()
+        let configuration = ModelSettingsConfigurationState()
+        let oldOwner = ModelSettingsOperationOwner(cancellationBus: bus, configurationState: configuration)
+        let worker = SuspendedWorker()
+        var authoritative = "old package"
+        var obsoleteCompletions = 0
+        oldOwner.activate()
+        let old = try #require(oldOwner.start(operation: {
+            await worker.run()
+            // The store may have crossed its last cancellation check before
+            // finishing its synchronous atomic publication.
+            authoritative = "new package"
+        }, completion: { _ in obsoleteCompletions += 1 }))
+        await worker.waitUntilStarted()
+        oldOwner.deactivate()
+
+        // Navigation replaces the section, rather than reactivating oldOwner.
+        let currentOwner = ModelSettingsOperationOwner(cancellationBus: bus, configurationState: configuration)
+        currentOwner.activate()
+        let snapshotRevision = currentOwner.configurationRevision
+        var presented = authoritative
+        let revisionChanges = AsyncStream<Bool>.makeStream()
+        withObservationTracking {
+            _ = currentOwner.configurationRevision
+        } onChange: {
+            revisionChanges.continuation.yield(true)
+        }
+        #expect(!currentOwner.isBusy)
+        #expect(oldOwner.isBusy)
+        #expect(configuration.revision == snapshotRevision)
+
+        await worker.release()
+        await old.value
+        revisionChanges.continuation.finish()
+        var changes = revisionChanges.stream.makeAsyncIterator()
+        #expect(await changes.next() == true)
+        #expect(obsoleteCompletions == 0)
+        #expect(old.isCancelled)
+        #expect(currentOwner.configurationRevision != snapshotRevision)
+        #expect(currentOwner.configurationRevision == oldOwner.configurationRevision)
+        if currentOwner.configurationRevision != snapshotRevision { presented = authoritative }
+        #expect(presented == "new package")
+        #expect(!oldOwner.isBusy)
+        #expect(bus.activeRegistrationCount(category: .modelMaintenance) == 0)
+    }
+
+    @Test func failureInvalidatesConfigurationBeforeItsCurrentCompletion() async throws {
+        let bus = AppCancellationBus()
+        let configuration = ModelSettingsConfigurationState()
+        let owner = ModelSettingsOperationOwner(cancellationBus: bus, configurationState: configuration)
+        let previousRevision = configuration.revision
+        owner.activate()
+        var receivedFailure = false
+        let work = try #require(owner.start(operation: { throw SyntheticFailure.expected }, completion: { result in
+            #expect(configuration.revision != previousRevision)
+            if case .failure(let error) = result { receivedFailure = error is SyntheticFailure }
+        }))
+        #expect(configuration.revision == previousRevision)
+        await work.value
+        #expect(receivedFailure)
+    }
+
+    @Test func cancellationBeforeExecutionStillInvalidatesConfigurationAfterDrain() async throws {
+        let bus = AppCancellationBus()
+        let configuration = ModelSettingsConfigurationState()
+        let owner = ModelSettingsOperationOwner(cancellationBus: bus, configurationState: configuration)
+        let previousRevision = configuration.revision
+        owner.activate()
+        var operationRan = false
+        var receivedCancellation = false
+        let work = try #require(owner.start(operation: { operationRan = true }, completion: { result in
+            #expect(configuration.revision != previousRevision)
+            if case .failure(let error) = result { receivedCancellation = error is CancellationError }
+        }))
+        owner.cancel()
+        #expect(configuration.revision == previousRevision)
+        #expect(owner.isBusy)
+        await work.value
+        #expect(!operationRan)
+        #expect(receivedCancellation)
         #expect(!owner.isBusy)
         #expect(bus.activeRegistrationCount(category: .modelMaintenance) == 0)
     }

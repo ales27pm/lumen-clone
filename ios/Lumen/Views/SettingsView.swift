@@ -1,7 +1,9 @@
+import Foundation
 import SwiftUI
 import SwiftData
 import UIKit
 
+@MainActor
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
@@ -15,15 +17,24 @@ struct SettingsView: View {
     @State private var selectedModelFamily = LumenModelFamily.persistedSelected
     @State private var isSwitchingModelFamily = false
     @State private var modelSetupError: String?
+    private let modelConfigurationState = ModelSettingsConfigurationState.shared
+
+    private struct GemmaContextRequest: Equatable {
+        let configurationRevision: UUID
+        let usesGemma: Bool
+    }
+
+    private var gemmaContextRequest: GemmaContextRequest {
+        GemmaContextRequest(configurationRevision: modelConfigurationState.revision, usesGemma: usesGemma)
+    }
 
     var body: some View {
         @Bindable var state = appState
+        let contextRequest = gemmaContextRequest
 
         NavigationStack {
             Form {
-                CoreAIGemmaSettingsSection(onConfigurationChanged: {
-                    Task { await refreshGemmaContext() }
-                })
+                CoreAIGemmaSettingsSection()
 
                 CoreAITextEmbeddingSettingsSection()
 
@@ -226,7 +237,7 @@ struct SettingsView: View {
                 selectedModelFamily = LumenModelFamily.persistedSelected
                 await refreshParseFailureSummary()
             }
-            .task(id: usesGemma) { await refreshGemmaContext() }
+            .task(id: contextRequest) { await refreshGemmaContext(matching: contextRequest) }
             .alert("Run checks", isPresented: $showDeveloperAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
@@ -265,12 +276,19 @@ struct SettingsView: View {
     }
     #endif
 
-    private func refreshGemmaContext() async {
+    private func refreshGemmaContext(matching request: GemmaContextRequest) async {
+        guard !Task.isCancelled, request == gemmaContextRequest else { return }
         gemmaContextLength = nil
         gemmaContextIssue = nil
-        guard usesGemma else { return }
-        do { gemmaContextLength = try await CoreAIGemmaModelStore.configuredContextLength() }
-        catch { gemmaContextIssue = "Import a complete Gemma model or check its configuration in Local Gemma." }
+        guard request.usesGemma else { return }
+        do {
+            let length = try await CoreAIGemmaModelStore.configuredContextLength()
+            guard !Task.isCancelled, request == gemmaContextRequest else { return }
+            gemmaContextLength = length
+        } catch {
+            guard !Task.isCancelled, request == gemmaContextRequest else { return }
+            gemmaContextIssue = "Import a complete Gemma model or check its configuration in Local Gemma."
+        }
     }
 
     private var currentVoiceName: String {

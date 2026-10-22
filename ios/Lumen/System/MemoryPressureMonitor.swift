@@ -61,6 +61,7 @@ final class MemoryPressureMonitor {
         // Stop file copies/rebuilds before awaiting model unloads, including a
         // new operation admitted between coalesced warning notifications.
         AppCancellationBus.shared.cancel(.modelMaintenance)
+        AppCancellationBus.shared.cancel(.modelLoad)
         if let lastWarningAt, now.timeIntervalSince(lastWarningAt) < Self.duplicateWarningCoalescingInterval {
             return
         }

@@ -44,6 +44,58 @@ final class ScenePhaseCancellationTests: XCTestCase {
         XCTAssertFalse(ResourceBudgetGate.shouldCancelForScenePhase(.background))
     }
 
+    func testCancelActiveLoadsImmediatelyCancelsRegisteredCoreAILoadsWithoutLegacyPendingTasks() async {
+        let gemmaGate = PendingModelLoadGate()
+        let embeddingGate = PendingModelLoadGate()
+        let gemma = Task { await gemmaGate.wait() }
+        let embeddings = Task { await embeddingGate.wait() }
+        // CoreAI registers its child task directly; it does not populate the
+        // legacy ModelLoader pending-task fields.
+        AppCancellationBus.shared.registerCancellation({ gemma.cancel() }, category: .modelLoad)
+        AppCancellationBus.shared.registerCancellation({ embeddings.cancel() }, category: .modelLoad)
+        XCTAssertFalse(ModelLoader.hasActiveChatLoadTaskForTesting)
+        XCTAssertFalse(ModelLoader.hasActiveEmbeddingLoadTaskForTesting)
+        XCTAssertFalse(gemma.isCancelled)
+        XCTAssertFalse(embeddings.isCancelled)
+
+        ModelLoader.cancelActiveLoads()
+
+        // This assertion must hold before yielding to any queued actor method.
+        XCTAssertTrue(gemma.isCancelled)
+        XCTAssertTrue(embeddings.isCancelled)
+        XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .modelLoad), 0)
+        await gemmaGate.release()
+        await embeddingGate.release()
+        await gemma.value
+        await embeddings.value
+    }
+
+    func testCoalescedMemoryWarningImmediatelyCancelsNewLoadAndMaintenanceRegistrations() async {
+        let monitor = MemoryPressureMonitor(notificationCenter: NotificationCenter())
+        let firstWarningAt = Date()
+        monitor.recordWarningForTesting(count: 1, at: firstWarningAt)
+        let loadGate = PendingModelLoadGate()
+        let maintenanceGate = PendingModelLoadGate()
+        let load = Task { await loadGate.wait() }
+        let maintenance = Task { await maintenanceGate.wait() }
+        AppCancellationBus.shared.registerCancellation({ load.cancel() }, category: .modelLoad)
+        AppCancellationBus.shared.registerCancellation({ maintenance.cancel() }, category: .modelMaintenance)
+
+        // The coalesced path returns before scheduling any runtime unload. New
+        // registrations must still observe this second warning immediately.
+        await monitor.handleWarning(now: firstWarningAt.addingTimeInterval(0.1))
+
+        XCTAssertTrue(load.isCancelled)
+        XCTAssertTrue(maintenance.isCancelled)
+        XCTAssertEqual(monitor.warningCount, 1)
+        XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .modelLoad), 0)
+        XCTAssertEqual(AppCancellationBus.shared.activeRegistrationCount(category: .modelMaintenance), 0)
+        await loadGate.release()
+        await maintenanceGate.release()
+        await load.value
+        await maintenance.value
+    }
+
     func testBackgroundScenePhaseCancelsPendingChatAndEmbeddingLoads() async {
         let chatCancelled = expectation(description: "chat load observed cancellation")
         let embeddingCancelled = expectation(description: "embedding load observed cancellation")

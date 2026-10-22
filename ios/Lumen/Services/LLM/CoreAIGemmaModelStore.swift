@@ -155,12 +155,23 @@ nonisolated enum CoreAIGemmaModelStore {
             let paths = try io.inventory(source)
             let metadata = try readMetadata(descriptor: sourceDescriptor)
             try validateRequiredFiles(metadata: metadata, paths: Set(paths))
+            let installation = UUID().uuidString.lowercased()
             var sourceBytes: Int64 = 0
+            var plannedFiles: [FileIdentity] = []
+            // Hex digests always encode to the same 64 ASCII bytes. These zeros
+            // are used only to measure the identity, never persisted or trusted.
+            let measuredDigest = String(repeating: "0", count: 64)
             for path in paths {
                 let bytes = try io.fileSize(relative: path, descriptor: sourceDescriptor)
                 guard bytes <= maximumPackageBytes - sourceBytes else { throw Failure.invalidPackage }
                 sourceBytes += bytes
+                plannedFiles.append(FileIdentity(path: path, bytes: bytes, sha256: measuredDigest))
             }
+            let projectedIdentity = Identity(version: 1, installation: installation,
+                                             contextLength: metadata.language.max_context_length, files: plannedFiles)
+            let projectedIdentityBytes = try autoreleasepool { try JSONEncoder().encode(projectedIdentity).count }
+            try Task.checkCancellation()
+            guard projectedIdentityBytes <= Self.maximumIdentityBytes else { throw Failure.invalidPackage }
             let manager = FileManager.default
             try manager.createDirectory(at: directory, withIntermediateDirectories: true)
             try CoreAIModelInstallationRecovery.cleanup(directory: directory, activeInstallation: (try? readIdentity())?.installation)
@@ -168,7 +179,6 @@ nonisolated enum CoreAIGemmaModelStore {
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
             try root.setResourceValues(values)
-            let installation = UUID().uuidString.lowercased()
             let stage = directory.appendingPathComponent(".import-" + installation, isDirectory: true)
             let destination = directory.appendingPathComponent(installation, isDirectory: true)
             let bundle = stage.appendingPathComponent("bundle", isDirectory: true)
@@ -180,12 +190,12 @@ nonisolated enum CoreAIGemmaModelStore {
             try manager.createDirectory(at: bundle, withIntermediateDirectories: true)
             var files: [FileIdentity] = []
             var total: Int64 = 0
-            for path in paths {
+            for expected in plannedFiles {
                 try Task.checkCancellation()
-                let output = bundle.appendingPathComponent(path)
+                let output = bundle.appendingPathComponent(expected.path)
                 try manager.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let file = try io.digest(relative: path, descriptor: sourceDescriptor, copyTo: output,
-                                         maximumBytes: maximumPackageBytes - total)
+                let file = try io.digest(relative: expected.path, descriptor: sourceDescriptor, copyTo: output,
+                                         expectedBytes: expected.bytes, maximumBytes: maximumPackageBytes - total)
                 total += file.bytes
                 files.append(file)
             }

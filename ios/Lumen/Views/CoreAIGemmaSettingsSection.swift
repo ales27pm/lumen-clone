@@ -62,6 +62,9 @@ struct CoreAIGemmaSettingsSection: View {
         .onChange(of: operationOwner.isBusy) { _, busy in
             if !busy, operationOwner.isActive { refreshConfiguration() }
         }
+        .onChange(of: operationOwner.configurationRevision) { _, _ in
+            if operationOwner.isActive, !operationOwner.isBusy { refreshConfiguration() }
+        }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
             guard operationOwner.isActive else { return }
             switch result {

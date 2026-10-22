@@ -100,6 +100,9 @@ struct CoreAITextEmbeddingSettingsSection: View {
         .onChange(of: operationOwner.isBusy) { _, busy in
             if !busy, operationOwner.isActive { refreshConfiguration() }
         }
+        .onChange(of: operationOwner.configurationRevision) { _, _ in
+            if operationOwner.isActive, !isBusy { refreshConfiguration() }
+        }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
             guard operationOwner.isActive else { return }
             switch result {
@@ -140,9 +143,12 @@ struct CoreAITextEmbeddingSettingsSection: View {
     @MainActor private func refreshMetadata() async {
         guard !Task.isCancelled, operationOwner.isActive, !isBusy else { return }
         let requestID = metadataRefreshID
+        let configurationRevision = operationOwner.configurationRevision
         let configured = CoreAITextEmbeddingModelStore.isConfigured
         let refreshedSummary = try? await CoreAITextEmbeddingModelStore.configurationSummary()
-        guard !Task.isCancelled, requestID == metadataRefreshID, operationOwner.isActive, !isBusy else { return }
+        guard !Task.isCancelled, requestID == metadataRefreshID,
+              configurationRevision == operationOwner.configurationRevision,
+              operationOwner.isActive, !isBusy else { return }
         isConfigured = configured
         summary = refreshedSummary
     }
@@ -159,7 +165,8 @@ struct CoreAITextEmbeddingSettingsSection: View {
         }) != nil else { return }
         configurationWasNotified = false
         errorMessage = nil
-        rebuild = nil
+        // Failed or cancelled configuration work does not discard a source
+        // rebuild cursor. Its metadata check rejects a changed embedding space.
     }
 
     private func advanceRebuild(startFresh: Bool) {
