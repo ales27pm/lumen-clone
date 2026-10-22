@@ -50,6 +50,8 @@ The importer copies the package into owned Application Support storage and strea
 
 `main.hash` contains the 32 binary bytes of the `main.mlirb` SHA256. The graph's reported size/hash was checked against both the pinned published inventory and Hugging Face LFS metadata during implementation; **model weights were not downloaded or executed for this work**. The importer verifies actual local graph bytes before use. Metadata, notices, tokenizer source and public test fixture bytes were independently read and checked. A re-export with different graph bytes is a different artifact and is deliberately rejected.
 
+The shared [package safeguards](COREAI_GEMMA.md) apply to this encoder too: bounded progressive inventory, pinned sizes and aggregate quota checked before copying, chunk-scoped memory, cancellable settings operations, and recovery of interrupted installations before a new import. Recovery preserves the active installation, source text, source model folders and Apple caches. The standalone native regression command documented there exercises both real stores with synthetic temporary packages; it does not qualify this encoder on iPhone.
+
 ## Inference and text contract
 
 `CoreAITextEmbeddingService.shared` owns one independent encoder, tokenizer and function set behind its actor. Explicit foreground preparation verifies the package and constructs `AIModel(contentsOf:options:)`, requesting `.neuralEngine` as a preference. All seven functions are loaded during preparation; no inference probe or prewarm is run. `embed(_:)` requires an already prepared model, so indexing, memory maintenance, background work and metadata discovery cannot load it accidentally.

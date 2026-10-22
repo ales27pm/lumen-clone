@@ -109,7 +109,10 @@ def test_new_background_prepare_caller_is_rejected(source):
     ("Services/LLM/CoreAI/CoreAITextEmbeddingPolicy.swift", GATE.REVISION, "0" * 40, "revision must remain immutable"),
     ("Services/LLM/CoreAITextEmbeddingModelStore.swift", "payloadPaths == expectedFiles.map(\\.path)", "true", "reject extra multimodal"),
     ("Services/LLM/CoreAITextEmbeddingModelStore.swift", "io.inventory(root) == identity.files.map(\\.path)", "true", "inventory must be verified"),
-    ("Services/LLM/CoreAITextEmbeddingModelStore.swift", "try io.digest(relative: expected.path, descriptor: descriptor) == expected", "true", "hashes must be verified"),
+    ("Services/LLM/CoreAITextEmbeddingModelStore.swift",
+     "try io.digest(relative: expected.path, descriptor: descriptor, expectedBytes: expected.bytes,\n"
+     "                                    maximumBytes: maximumPackageBytes - verifiedBytes) == expected",
+     "true", "hashes must be verified"),
     ("Services/LLM/CoreAITextEmbeddingModelStore.swift", "identity.files == expectedFiles", "true", "identity must match the immutable inventory"),
     ("Services/LLM/CoreAILocalPackageIO.swift", "guard url.isFileURL else", "guard true else", "reject non-file URLs"),
     ("Services/LLM/CoreAILocalPackageIO.swift", "values.isUbiquitousItem != true", "true", "reject cloud-backed resources"),

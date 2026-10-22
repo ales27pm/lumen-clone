@@ -59,4 +59,5 @@ SWIFT
 
 swift test --package-path "$PACKAGE_DIR" -c release \
   -Xswiftc -DCOREAI_PACKAGE_IO_MEMORY_TESTS \
+  -Xswiftc -enable-upcoming-feature -Xswiftc MemberImportVisibility \
   --filter '(CoreAI(LocalPackageIO|GemmaModelStore|TextEmbeddingModelStore|ModelStoreRecovery|ModelReplacementLifecycle)|ModelSettingsOperationOwner)Tests'
