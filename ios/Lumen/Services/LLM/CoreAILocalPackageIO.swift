@@ -37,42 +37,96 @@ nonisolated struct CoreAILocalPackageIO: Sendable {
     }
 
     func inventory(_ root: URL) throws -> [String] {
+        try Task.checkCancellation()
+        let descriptor = try openDirectory(root)
+        defer { close(descriptor) }
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
                                        .isReadableKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
                                        .ubiquitousItemIsDownloadingKey]
-        var pending = [root]
+        try autoreleasepool { try validateInventoryEntry(root, keys: keys) }
+        var pending = [""]
         var result: [String] = []
-        var visited = 0
-        while let url = pending.popLast() {
+        // Admit entries before allocating their paths or fetching Foundation
+        // metadata. The pending directory paths and result paths share this cap.
+        var visited = 1
+        while let relativeDirectory = pending.popLast() {
             try Task.checkCancellation()
-            visited += 1
-            guard visited <= maximumEntries else { throw Failure.invalidPackage }
-            var status = stat()
-            guard lstat(url.path, &status) == 0, status.st_flags & UInt32(SF_DATALESS) == 0 else {
+            let directory = try openInventoryDirectory(relativeDirectory, descriptor: descriptor)
+            guard let stream = fdopendir(directory) else {
+                close(directory)
                 throw Failure.localDirectory
             }
-            #if canImport(FileProvider) && os(iOS)
-            guard !FileManager.default.fileExists(atPath: NSFileProviderManager.placeholderURL(for: url).path) else {
-                throw Failure.localDirectory
-            }
-            #endif
-            let values = try url.resourceValues(forKeys: keys)
-            guard values.isSymbolicLink == false, values.isReadable == true,
-                  values.ubiquitousItemIsDownloading != true,
-                  values.isUbiquitousItem != true,
-                  values.ubiquitousItemDownloadingStatus == nil || values.ubiquitousItemDownloadingStatus == .current ||
-                    values.ubiquitousItemDownloadingStatus == .downloaded
-            else { throw Failure.localDirectory }
-            if values.isDirectory == true {
-                pending.append(contentsOf: try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: Array(keys)))
-            } else {
-                guard values.isRegularFile == true, url.path.hasPrefix(root.path + "/") else { throw Failure.localDirectory }
-                let relative = String(url.path.dropFirst(root.path.count + 1))
-                guard validRelativePath(relative) else { throw Failure.localDirectory }
-                result.append(relative)
+            defer { closedir(stream) }
+            while true {
+                let hasEntry = try autoreleasepool {
+                    try Task.checkCancellation()
+                    errno = 0
+                    guard let entry = readdir(stream) else {
+                        guard errno == 0 else { throw Failure.localDirectory }
+                        return false
+                    }
+                    if entry.pointee.d_name.0 == 46 &&
+                        (entry.pointee.d_name.1 == 0 || (entry.pointee.d_name.1 == 46 && entry.pointee.d_name.2 == 0)) {
+                        return true
+                    }
+                    guard visited < maximumEntries else { throw Failure.invalidPackage }
+                    visited += 1
+                    let capacity = MemoryLayout.size(ofValue: entry.pointee.d_name)
+                    let name = withUnsafePointer(to: &entry.pointee.d_name) { pointer in
+                        pointer.withMemoryRebound(to: CChar.self, capacity: capacity) { String(validatingUTF8: $0) }
+                    }
+                    guard let name else { throw Failure.localDirectory }
+                    let relative = relativeDirectory.isEmpty ? name : relativeDirectory + "/" + name
+                    guard validRelativePath(relative) else { throw Failure.localDirectory }
+                    var status = stat()
+                    guard fstatat(dirfd(stream), name, &status, AT_SYMLINK_NOFOLLOW) == 0,
+                          status.st_flags & UInt32(SF_DATALESS) == 0 else { throw Failure.localDirectory }
+                    let kind = UInt32(status.st_mode) & UInt32(S_IFMT)
+                    guard kind == UInt32(S_IFDIR) || kind == UInt32(S_IFREG) else { throw Failure.localDirectory }
+                    try validateInventoryEntry(root.appendingPathComponent(relative), keys: keys)
+                    if kind == UInt32(S_IFDIR) { pending.append(relative) }
+                    else { result.append(relative) }
+                    return true
+                }
+                if !hasEntry { break }
             }
         }
         return result.sorted()
+    }
+
+    private func validateInventoryEntry(_ url: URL, keys: Set<URLResourceKey>) throws {
+        #if canImport(FileProvider) && os(iOS)
+        guard !FileManager.default.fileExists(atPath: NSFileProviderManager.placeholderURL(for: url).path) else {
+            throw Failure.localDirectory
+        }
+        #endif
+        let values = try url.resourceValues(forKeys: keys)
+        guard values.isSymbolicLink == false, values.isReadable == true,
+              values.isDirectory == true || values.isRegularFile == true,
+              values.ubiquitousItemIsDownloading != true, values.isUbiquitousItem != true,
+              values.ubiquitousItemDownloadingStatus == nil || values.ubiquitousItemDownloadingStatus == .current ||
+                values.ubiquitousItemDownloadingStatus == .downloaded
+        else { throw Failure.localDirectory }
+    }
+
+    private func openInventoryDirectory(_ relative: String, descriptor: Int32) throws -> Int32 {
+        var current = dup(descriptor)
+        guard current >= 0 else { throw Failure.localDirectory }
+        do {
+            for component in relative.split(separator: "/") {
+                try Task.checkCancellation()
+                let next = openat(current, String(component), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                guard next >= 0 else { throw Failure.localDirectory }
+                close(current)
+                current = next
+            }
+            var status = stat()
+            guard fstat(current, &status) == 0, status.st_flags & UInt32(SF_DATALESS) == 0 else { throw Failure.localDirectory }
+            return current
+        } catch {
+            close(current)
+            throw error
+        }
     }
 
     func openDirectory(_ url: URL) throws -> Int32 {
@@ -122,12 +176,29 @@ nonisolated struct CoreAILocalPackageIO: Sendable {
         return data
     }
 
-    func digest(relative: String, descriptor: Int32, copyTo output: URL? = nil) throws -> FileIdentity {
+    func fileSize(relative: String, descriptor: Int32) throws -> Int64 {
+        try Task.checkCancellation()
+        let file = try openFile(relative, descriptor: descriptor)
+        defer { close(file) }
+        var information = stat()
+        guard fstat(file, &information) == 0, information.st_size >= 0,
+              information.st_size <= maximumPackageBytes else { throw Failure.integrity }
+        return information.st_size
+    }
+
+    func digest(relative: String, descriptor: Int32, copyTo output: URL? = nil,
+                expectedBytes: Int64? = nil, maximumBytes: Int64? = nil) throws -> FileIdentity {
+        try Task.checkCancellation()
         let file = try openFile(relative, descriptor: descriptor)
         let input = FileHandle(fileDescriptor: file, closeOnDealloc: true)
         defer { try? input.close() }
         var before = stat()
         guard fstat(file, &before) == 0 else { throw Failure.integrity }
+        if let expectedBytes, before.st_size != expectedBytes { throw Failure.integrity }
+        guard before.st_size >= 0, before.st_size <= maximumPackageBytes else { throw Failure.invalidPackage }
+        if let maximumBytes {
+            guard maximumBytes >= 0, before.st_size <= maximumBytes else { throw Failure.invalidPackage }
+        }
         let destination: FileHandle?
         if let output {
             guard FileManager.default.createFile(atPath: output.path, contents: nil,

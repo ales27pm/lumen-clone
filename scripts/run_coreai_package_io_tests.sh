@@ -15,6 +15,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lumen-coreai-package-io.XXXXXX")"
 trap 'rm -rf "$PACKAGE_DIR"' EXIT
 mkdir -p "$PACKAGE_DIR/Sources/Lumen" "$PACKAGE_DIR/Tests/LumenTests"
+# Foundation may canonicalize /var into /private/var when enumerating on macOS.
+# Give all fixtures a canonical root so an alias cannot masquerade as a path
+# containment failure in either historical or current implementations.
+mkdir -p "$PACKAGE_DIR/fixtures"
+export TMPDIR="$(cd "$PACKAGE_DIR/fixtures" && pwd -P)/"
 for source in \
   ios/Lumen/Services/LLM/CoreAILocalPackageIO.swift \
   ios/Lumen/Services/LLM/CoreAIGemmaModelStore.swift \
