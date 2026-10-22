@@ -20,8 +20,8 @@ def check(root: pathlib.Path) -> list[str]:
 
     project = read("ios/Lumen.xcodeproj/project.pbxproj")
     targets = re.findall(r"IPHONEOS_DEPLOYMENT_TARGET\s*=\s*([^;]+);", project)
-    if not targets or any(value.strip() != "27.2" for value in targets):
-        failures.append("Core AI app and test deployment targets must be iOS 27.2")
+    if not targets or any(value.strip() != "27.1" for value in targets):
+        failures.append("Core AI app and test deployment targets must be iOS 27.1")
     for repository, revision, product in (
         ("apple/coreai-models", "9db747612f972001279f02adb04d3ef982310d0e", "CoreAILM"),
         ("huggingface/swift-transformers", "eed7264ac5e4ec5dfa6165c6e5c5577364344fe4", "Tokenizers"),
@@ -45,7 +45,8 @@ def check(root: pathlib.Path) -> list[str]:
 
     service = read("ios/Lumen/Services/LLM/CoreAI/CoreAIGemmaService.swift")
     for required in (
-        "!targetEnvironment(simulator)", "CoreAIRunner(bundle:",
+        "!targetEnvironment(simulator)", "if #available(iOS 27.1, *) { return true }",
+        "CoreAIRunner(bundle:",
         "AutoTokenizer.from(modelFolder:", "CoreAIGemmaModelStore.configuredURL()",
         "withTaskCancellationHandler", "suspendForCoreAI()", "engine.reset(to: 0)",
         "DiskWriteBudget.shared.beginGeneration()", "ResourceBudgetGate.allowsForegroundModelLoad",

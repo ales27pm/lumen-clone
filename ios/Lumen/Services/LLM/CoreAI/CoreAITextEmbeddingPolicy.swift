@@ -7,7 +7,7 @@ nonisolated enum CoreAITextEmbeddingError: Error, LocalizedError, Equatable, Sen
 
     var errorDescription: String? {
         switch self {
-        case .unsupported: return "CoreAI text embeddings require a supported physical device running iOS 27.2 or later."
+        case .unsupported: return "CoreAI text embeddings require a supported physical device running iOS 27.1 or later."
         case .busy: return "The text embedding model is busy. Retry after the current operation finishes."
         case .notPrepared: return "Prepare the selected text embedding model before using it."
         case .notSelected: return "CoreAI text embeddings are not selected."

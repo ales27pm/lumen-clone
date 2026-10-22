@@ -822,7 +822,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/CoreAIGemmaRuntimeAdapter.swift",
         "responsibility": "Adapts the single Core AI owner to the existing kernel. The model only emits text; structured decisions still cross the kernel's schema and approval gates.",
-        "sha256": "14179f64ceca18bf53903447941480ff3f72fa0794885732a2b7a305f404c05a",
+        "sha256": "baa91b5e8b443797f8261ee0a477b1658af09ddc4b7deb58671cbb57bfe2b063",
         "symbols": [
           "CoreAIGemmaRuntimeAdapter",
           "generate",
@@ -850,7 +850,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/CoreAITextEmbeddingRuntimeAdapter.swift",
         "responsibility": "A separate sentence-vector runtime; never a second generative assistant.",
-        "sha256": "4b52f97a5342b41462cfe8f14fd8305fefb954d7854711d41dd686b09704644e",
+        "sha256": "9a72cd9d800784b84f7e292d79fa37740f8ad85342012731d2959cb4f3cadc5b",
         "symbols": [
           "CoreAITextEmbeddingRuntimeAdapter",
           "embed",
@@ -2220,13 +2220,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "d055b593e0466cf11abbb4639d34c319b78ebe24",
+  "manifestCommit": "e705941c935f37823b0576a811556cda2806be3a",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "d3fb3dd760a81ef965e0e3dbf66aed033241e4cb0e38bb8f2acc2ab9b44a5db8",
+    "promptSHA256": "08e590f22b159fa1da3478678b92d1c2bc7e28d5bd7ace8c459cbf19503af71f",
     "promptUTF8ByteCount": 25811,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2238,8 +2238,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "d055b593e0466cf11abbb4639d34c319b78ebe24",
+    "baseCommit": "e705941c935f37823b0576a811556cda2806be3a",
     "dirtyState": true,
-    "workingTreeDigest": "6fd3172632e7d6e3fb1449c35772b51d8b5f104d6178ff0fa5620c1a424b0a2e"
+    "workingTreeDigest": "a1361b35bf59abd34fa578b76026e13d11f0620c7dd0c1c202c962e282c2c591"
   }
 }

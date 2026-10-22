@@ -10,7 +10,7 @@ actor CoreAITextEmbeddingService {
 
     nonisolated static var isSupported: Bool {
         #if os(iOS) && !targetEnvironment(simulator) && canImport(CoreAI)
-        if #available(iOS 27.2, *) { return true }
+        if #available(iOS 27.1, *) { return true }
         #endif
         return false
     }

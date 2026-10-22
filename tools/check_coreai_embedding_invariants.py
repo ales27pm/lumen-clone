@@ -150,6 +150,7 @@ def check(root: Path) -> list[str]:
         failures.append("selected CoreAI embeddings must not silently select another provider")
 
     service, store, policy = (sources[path] for path in (SERVICE, STORE, POLICY))
+    require(code_only(service), r"if\s+#available\(iOS\s+27\.1,\s*\*\)\s*\{\s*return\s+true\s*\}", "embedding availability must match the iOS 27.1 deployment contract")
     replacement = code_only(function(store, "withModelReplacement"))
     require(replacement, r"try\s+Task\.checkCancellation\(\).*?try\s+await\s+begin\(\).*?do\s*\{\s*try\s+Task\.checkCancellation\(\).*?try\s+await\s+operation\(\)", "model replacement must check cancellation before admission and after draining")
     require(code_only(function(store, "restoreSelection")), r"beginModelReplacement\(if:\s*\{\s*selectionState\.snapshot\s*==\s*expected", "provider rollback must compare exact selection revision under the replacement gate")

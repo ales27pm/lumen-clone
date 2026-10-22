@@ -403,7 +403,7 @@ enum ModelLoader {
             guard intent == .userChat || intent == .userVoice,
                   canStartModelLoad(intent: intent) else { return false }
             guard CoreAIGemmaService.isSupported else {
-                coreAIChatLoadFailure = "Core AI Gemma requires a supported physical device running iOS 27.2 or later."
+                coreAIChatLoadFailure = "Core AI Gemma requires a supported physical device running iOS 27.1 or later."
                 return false
             }
             guard CoreAIGemmaModelStore.isConfigured else { return false }

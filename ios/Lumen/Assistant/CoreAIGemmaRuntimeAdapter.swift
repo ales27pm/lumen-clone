@@ -38,7 +38,7 @@ struct CoreAIGemmaRuntimeAdapter: LocalTextGenerationRuntime {
 
     var unavailableReason: String? {
         if isAvailable { return nil }
-        if !CoreAIGemmaService.isSupported { return "Core AI Gemma requires the linked runtime and iOS 27.2 or later." }
+        if !CoreAIGemmaService.isSupported { return "Core AI Gemma requires the linked runtime and iOS 27.1 or later." }
         return "Import a complete Core AI Gemma model folder in Settings."
     }
 

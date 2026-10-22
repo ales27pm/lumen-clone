@@ -95,6 +95,7 @@ def test_new_background_prepare_caller_is_rejected(source):
 
 
 @pytest.mark.parametrize("file,before,after,expected", (
+    ("Services/LLM/CoreAI/CoreAITextEmbeddingService.swift", "if #available(iOS 27.1, *)", "if #available(iOS 27.2, *)", "availability must match"),
     ("Assistant/AssistantRuntimeRouter.swift", "return .init(runtime: .unavailable, reason: decision.denialReason", "return .init(runtime: .llama, reason: decision.denialReason", "must not silently select another provider"),
     ("Assistant/AssistantRuntimeRouter.swift", "guard coreAIEmbedding.isAvailable else", "guard true else", "compute and availability"),
     ("Services/ModelLoader.swift", "guard !Task.isCancelled, intent == .userChat || intent == .userVoice", "guard !Task.isCancelled, intent == .background || intent == .userVoice", "explicit foreground chat or voice"),

@@ -4,7 +4,7 @@ This is the current Release-facing status for Agent Kernel ownership. Historical
 
 The offline Cortex five-field route and `actionStep` qualification payload is not the shipped response wire. Release Agent Kernel turns retain the current constrained `action` or `final` JSON contract, and native runtime code remains responsible for routing, clarification, canonical manifest validation, approval, and persistence; offline adapter scores do not prove new artifacts are wired into iOS.
 
-The iOS 27.2 Core AI Gemma integration adds an inference adapter to this same kernel. Structured turns use runtime-specific preparation/tokenizer preflight and the existing validation/approval loop. Gemma errors terminate before semantic tool repairs. This source integration still needs Apple compilation, executed XCTest and physical-device qualification; see `COREAI_GEMMA.md`.
+The iOS 27.1 Core AI Gemma integration adds an inference adapter to this same kernel. Structured turns use runtime-specific preparation/tokenizer preflight and the existing validation/approval loop. Gemma errors terminate before semantic tool repairs. This source integration still needs Apple compilation, executed XCTest and physical-device qualification; see `COREAI_GEMMA.md`.
 
 ## Release Surface
 

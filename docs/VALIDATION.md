@@ -1,6 +1,6 @@
 # Lumen Validation
 
-Core AI Gemma now requires the iOS 27.2 deployment target. The Linux integration host cannot compile Apple frameworks or execute XCTest. See `COREAI_GEMMA.md` for the focused regression suites, local bundle requirements, and separate physical-device/ANE validation boundaries.
+Core AI Gemma now requires the iOS 27.1 deployment target. The Linux integration host cannot compile Apple frameworks or execute XCTest. See `COREAI_GEMMA.md` for the focused regression suites, local bundle requirements, and separate physical-device/ANE validation boundaries.
 
 Single-model mode adds `CoreAIGemmaSingleModelTests`, `CoreAIGemmaPresentationPolicyTests`, and `GemmaMemoryEmbeddingPolicyTests`: verify all foreground generation uses Gemma, tools-off cannot execute actions, background work cannot select another model, legacy model controls are hidden, and selected local embeddings remain separate. These XCTest suites require Apple execution. Core AI text embeddings are now independently selectable after importing the pinned EmbeddingGemma 2 text package; they are not enabled by default or device-qualified.
 

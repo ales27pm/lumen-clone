@@ -8,6 +8,7 @@ import hashlib
 import json
 import plistlib
 import re
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -95,8 +96,8 @@ def candidate(root: Path, expected_revision: str | None = None) -> dict[str, Any
     if BUNDLE not in identifiers or exact_setting(text, "DEVELOPMENT_TEAM") != TEAM:
         raise ValueError("native app/team identity differs from the established Lumen release")
     deployment = exact_setting(text, "IPHONEOS_DEPLOYMENT_TARGET")
-    if deployment != "27.2":
-        raise ValueError("native EAS lane must preserve the iOS 27.2 deployment target")
+    if deployment != "27.1":
+        raise ValueError("native EAS lane requires the authorized iOS 27.1 deployment target")
     validate_lock(text, json.loads((root / RESOLVED).read_text(encoding="utf-8")))
     app = json.loads((root / "app.json").read_text(encoding="utf-8"))["expo"]
     if app.get("extra", {}).get("eas", {}).get("projectId") != EAS_PROJECT:
@@ -114,12 +115,19 @@ def candidate(root: Path, expected_revision: str | None = None) -> dict[str, Any
     }
 
 
-def validate_toolchain(xcode: str, sdk: str) -> None:
+def validate_toolchain(xcode: str, sdk: str, deployment_target: str) -> None:
     match = re.search(r"\bXcode (\d+)(?:\.(\d+))?", xcode)
     if match is None or int(match.group(1)) < 27:
         raise ValueError("native CoreAI build requires Xcode 27 or newer")
     if not re.fullmatch(r"\d+(?:\.\d+){0,2}", sdk.strip()) or int(sdk.split(".")[0]) < 27:
         raise ValueError("native CoreAI build requires an iOS 27 SDK or newer")
+    if not re.fullmatch(r"\d+(?:\.\d+){0,2}", deployment_target):
+        raise ValueError("candidate deployment target is not a numeric iOS version")
+    def numeric_version(value: str) -> tuple[int, ...]:
+        parts = tuple(int(part) for part in value.strip().split("."))
+        return parts + (0,) * (3 - len(parts))
+    if numeric_version(sdk) < numeric_version(deployment_target):
+        raise ValueError(f"iOS SDK {sdk.strip()} cannot archive the required iOS {deployment_target} deployment target")
 
 
 def valid_identities(output: str) -> set[str]:
@@ -213,6 +221,67 @@ def export_options(signing_context: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def signing_xcconfig(signing_context: dict[str, str]) -> str:
+    """Expand credentials for Lumen only, leaving SwiftPM resource targets empty."""
+    profile, certificate = signing_context["profileUUID"], signing_context["certificateSHA1"]
+    if (
+        not re.fullmatch(r"[A-Fa-f0-9-]{36}", profile)
+        or not re.fullmatch(r"[A-F0-9]{40}", certificate)
+        or signing_context.get("teamIdentifier") != TEAM
+        or signing_context.get("bundleIdentifier") != BUNDLE
+    ):
+        raise ValueError("invalid runtime signing context for the scoped Xcode configuration")
+    return "\n".join((
+        "// Private runtime signing overrides. No project file is modified.",
+        f"LUMEN_PROFILE_Lumen = {profile}",
+        f"LUMEN_CERTIFICATE_Lumen = {certificate}",
+        f"LUMEN_TEAM_Lumen = {TEAM}",
+        "PROVISIONING_PROFILE_SPECIFIER = $(LUMEN_PROFILE_$(TARGET_NAME))",
+        "PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = $(LUMEN_PROFILE_$(TARGET_NAME))",
+        "CODE_SIGN_IDENTITY = $(LUMEN_CERTIFICATE_$(TARGET_NAME))",
+        "CODE_SIGN_IDENTITY[sdk=iphoneos*] = $(LUMEN_CERTIFICATE_$(TARGET_NAME))",
+        "DEVELOPMENT_TEAM = $(LUMEN_TEAM_$(TARGET_NAME))",
+        "",
+    ))
+
+
+def collect_recovery(ipa: Path, archive: Path, evidence: Path) -> None:
+    """Retain failed-gate outputs as unverified evidence, never a success receipt."""
+    symbols = sorted(path for path in (archive / "dSYMs").rglob("*") if path.is_file())
+    if not ipa.is_file() and not symbols:
+        return
+    recovery = evidence / "recovery"
+    recovery.mkdir(parents=True, exist_ok=True)
+    files: dict[str, dict[str, Any]] = {}
+    if ipa.is_file():
+        target = recovery / "Lumen.unverified.ipa"
+        shutil.copyfile(ipa, target)
+        target.chmod(0o600)
+        files[target.name] = {"sha256": digest(target), "bytes": target.stat().st_size}
+    if symbols:
+        target = recovery / "Lumen.original-dSYMs.unverified.zip"
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zipped:
+            for path in symbols:
+                zipped.write(path, path.relative_to(archive).as_posix())
+        target.chmod(0o600)
+        files[target.name] = {"sha256": digest(target), "bytes": target.stat().st_size}
+    source_revision = None
+    candidate_path = evidence / "candidate.json"
+    if candidate_path.is_file():
+        try:
+            candidate_revision = json.loads(candidate_path.read_text(encoding="utf-8")).get("sourceRevision", "")
+            if isinstance(candidate_revision, str) and FULL_REVISION.fullmatch(candidate_revision):
+                source_revision = candidate_revision
+        except (ValueError, OSError):
+            pass
+    write_json(recovery / "recovery.json", {
+        "schemaVersion": 1, "status": "unverified-recovery-not-for-submission", "files": files,
+        "candidateSourceRevision": source_revision,
+        "dSYMFiles": {path.relative_to(archive).as_posix(): digest(path) for path in symbols},
+        "evidenceBoundary": "Partial outputs retained after failed release gates; independently validate before reuse.",
+    })
+
+
 def verify_info(info: dict[str, Any], source: dict[str, Any]) -> None:
     expected = {
         "CFBundleIdentifier": source["bundleIdentifier"], "CFBundleVersion": source["buildNumber"],
@@ -253,7 +322,7 @@ def artifact_receipt(root: Path, source: dict[str, Any], ipa: Path, archive: Pat
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("candidate", "field", "toolchain", "signing", "export-options", "artifact-receipt"))
+    parser.add_argument("operation", choices=("candidate", "field", "toolchain", "signing", "export-options", "signing-xcconfig", "artifact-receipt", "collect-recovery"))
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--output", type=Path)
     parser.add_argument("--input", type=Path)
@@ -261,6 +330,7 @@ def main() -> int:
     parser.add_argument("--expected-revision")
     parser.add_argument("--xcode", type=Path)
     parser.add_argument("--sdk")
+    parser.add_argument("--deployment-target")
     parser.add_argument("--ipa", type=Path)
     parser.add_argument("--archive", type=Path)
     args = parser.parse_args()
@@ -273,14 +343,19 @@ def main() -> int:
                 raise ValueError("requested context field is not a single string")
             print(value)
         elif args.operation == "toolchain":
-            validate_toolchain(args.xcode.read_text(), args.sdk)
+            validate_toolchain(args.xcode.read_text(), args.sdk, args.deployment_target)
         elif args.operation == "signing":
             write_json(args.output, installed_signing(args.root))
         elif args.operation == "export-options":
             args.output.write_bytes(plistlib.dumps(export_options(json.loads(args.input.read_text()))))
             args.output.chmod(0o600)
+        elif args.operation == "signing-xcconfig":
+            args.output.write_text(signing_xcconfig(json.loads(args.input.read_text())), encoding="utf-8")
+            args.output.chmod(0o600)
         elif args.operation == "artifact-receipt":
             artifact_receipt(args.root, json.loads(args.input.read_text()), args.ipa, args.archive, args.output)
+        elif args.operation == "collect-recovery":
+            collect_recovery(args.ipa, args.archive, args.output)
     except (ValueError, KeyError, OSError, TypeError, json.JSONDecodeError, plistlib.InvalidFileException, zipfile.BadZipFile) as error:
         print(f"error: native EAS preflight/verification failed: {error}", file=sys.stderr)
         return 1

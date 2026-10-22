@@ -139,14 +139,28 @@ def test_export_options_preserve_version_and_use_runtime_credentials():
     assert options["manageAppVersionAndBuildNumber"] is False
 
 
+def test_scoped_xcconfig_rejects_a_signing_context_that_could_inject_settings():
+    value = choose(profile())
+    value["profileUUID"] += "\nCODE_SIGNING_ALLOWED = NO"
+    with pytest.raises(ValueError, match="invalid runtime signing context"):
+        support.signing_xcconfig(value)
+
+
 @pytest.mark.parametrize("xcode,sdk", (("Xcode 26.3", "26.3"), ("Xcode 27.1", "26.9"), ("unavailable", "27.1"), ("Xcode 27.1", "unexpected sdk")))
 def test_toolchain_preflight_rejects_unsupported_or_unparseable_sdk(xcode, sdk):
     with pytest.raises(ValueError):
-        support.validate_toolchain(xcode, sdk)
+        support.validate_toolchain(xcode, sdk, "27.1")
 
 
-def test_toolchain_does_not_lower_the_27_2_runtime_requirement_to_the_build_sdk():
-    support.validate_toolchain("Xcode 27.1\nBuild version 27A9275", "27.1")
+@pytest.mark.parametrize("target,sdk", (("27.1", "27.0"), ("27.1", "27.0.99"), ("27.2", "27.1")))
+def test_toolchain_rejects_sdk_older_than_the_actual_candidate_target(target, sdk):
+    with pytest.raises(ValueError, match="cannot archive the required iOS"):
+        support.validate_toolchain("Xcode 27.1\nBuild version 27A9275", sdk, target)
+
+
+@pytest.mark.parametrize("sdk", ("27.1", "27.1.1", "27.2", "27.10", "28.0"))
+def test_toolchain_accepts_numeric_sdk_at_or_above_candidate_target(sdk):
+    support.validate_toolchain("Xcode 27.1\nBuild version fixture", sdk, "27.1")
 
 
 def test_package_lock_matches_all_four_direct_reviewed_dependencies():
@@ -187,7 +201,7 @@ def candidate_repo(tmp_path):
 
 def test_candidate_requires_clean_committed_release_inputs_and_exact_revision(candidate_repo):
     result = support.candidate(candidate_repo)
-    assert result["deploymentTarget"] == "27.2"
+    assert result["deploymentTarget"] == "27.1"
     assert support.PROJECT.as_posix() in result["sourceSHA256"]
     assert support.RESOLVED.as_posix() in result["sourceSHA256"]
     with pytest.raises(ValueError, match="requested full commit"):
@@ -203,7 +217,7 @@ def test_exported_info_cannot_be_attributed_to_another_candidate(candidate_repo,
     info = {
         "CFBundleIdentifier": source["bundleIdentifier"], "CFBundleVersion": source["buildNumber"],
         "CFBundleShortVersionString": source["marketingVersion"], "LumenGitSHA": source["sourceRevision"],
-        "LumenBuildScheme": "Lumen", "LumenBuildConfiguration": "Release", "MinimumOSVersion": "27.2",
+        "LumenBuildScheme": "Lumen", "LumenBuildConfiguration": "Release", "MinimumOSVersion": "27.1",
     }
     support.verify_info(info, source)
     info[field] = "wrong candidate"
@@ -216,7 +230,7 @@ def test_artifact_receipt_binds_the_exact_ipa_and_original_symbol_bytes(candidat
     info = {
         "CFBundleIdentifier": source["bundleIdentifier"], "CFBundleVersion": source["buildNumber"],
         "CFBundleShortVersionString": source["marketingVersion"], "LumenGitSHA": source["sourceRevision"],
-        "LumenBuildScheme": "Lumen", "LumenBuildConfiguration": "Release", "MinimumOSVersion": "27.2",
+        "LumenBuildScheme": "Lumen", "LumenBuildConfiguration": "Release", "MinimumOSVersion": "27.1",
     }
     ipa = tmp_path / "Lumen.ipa"
     with zipfile.ZipFile(ipa, "w") as package:
@@ -245,28 +259,116 @@ def _executable(path, text):
     path.chmod(0o755)
 
 
-@pytest.mark.parametrize("typecheck_exit", (0, 43))
-def test_preflight_runs_no_archive_and_preserves_failed_compiler_exit(candidate_repo, tmp_path, typecheck_exit):
+def _executor_tools(tmp_path):
     tools = tmp_path / "tools"
     tools.mkdir()
     _executable(tools / "uname", "#!/bin/sh\nprintf 'Darwin\\n'\n")
     _executable(tools / "xcodebuild", "#!/bin/sh\n[ \"$1\" = -version ] || exit 97\nprintf 'Xcode 27.1\\nBuild version fixture\\n'\n")
     _executable(tools / "xcrun", """#!/bin/sh
 if [ "$1" = swiftc ] && [ "$2" = --version ]; then printf 'Swift fixture\\n'; exit 0; fi
-if [ "$3" = --show-sdk-version ]; then printf '27.1\\n'; exit 0; fi
+if [ "$3" = --show-sdk-version ]; then printf '%s\\n' "$FIXTURE_SDK_VERSION"; exit 0; fi
 if [ "$3" = --show-sdk-path ]; then printf '/fixture-sdk\\n'; exit 0; fi
 if [ "$3" = swiftc ] && [ "$4" = -typecheck ]; then exit "$FIXTURE_TYPECHECK_EXIT"; fi
 exit 98
 """)
-    env = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"], "FIXTURE_TYPECHECK_EXIT": str(typecheck_exit)}
+    return tools
+
+
+@pytest.mark.parametrize("sdk,typecheck_exit", (("27.1", 0), ("27.1", 43), ("27.0", 0)))
+def test_preflight_runs_no_archive_and_preserves_sdk_or_compiler_failure(candidate_repo, tmp_path, sdk, typecheck_exit):
+    tools = _executor_tools(tmp_path)
+    env = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"], "FIXTURE_TYPECHECK_EXIT": str(typecheck_exit), "FIXTURE_SDK_VERSION": sdk}
     env.pop("EAS_BUILD_GIT_COMMIT_HASH", None)
     env.pop("LUMEN_GIT_SHA", None)
     result = subprocess.run(["bash", "scripts/eas-native-ios.sh", "--preflight"], cwd=candidate_repo, env=env, capture_output=True, text=True, check=False)
-    assert (result.returncode == 0) is (typecheck_exit == 0), result.stdout + result.stderr
+    assert (result.returncode == 0) is (sdk == "27.1" and typecheck_exit == 0), result.stdout + result.stderr
     assert not (candidate_repo / "build/eas-archive").exists()
     assert not (candidate_repo / "build/eas-private/signing.json").exists()
-    assert (candidate_repo / "build/eas-evidence/coreai-sdk-typecheck.log").exists()
-    assert (candidate_repo / "build/eas-evidence/source-preflight.log").exists() is (typecheck_exit == 0)
+    assert (candidate_repo / "build/eas-evidence/coreai-sdk-typecheck.log").exists() is (sdk == "27.1")
+    assert (candidate_repo / "build/eas-evidence/source-preflight.log").exists() is (sdk == "27.1" and typecheck_exit == 0)
+
+
+def test_archive_receives_private_scoped_config_and_no_global_profile(candidate_repo, tmp_path):
+    tools = _executor_tools(tmp_path)
+    _executable(tools / "security", "#!/bin/sh\nexit 99\n")
+    _executable(tools / "python3", f"""#!{sys.executable}
+import json, os, pathlib, sys
+if len(sys.argv) > 2 and sys.argv[2] == 'signing':
+    pathlib.Path(sys.argv[sys.argv.index('--output') + 1]).write_text(os.environ['FIXTURE_SIGNING_JSON'])
+else:
+    os.execv({sys.executable!r}, [{sys.executable!r}, *sys.argv[1:]])
+""")
+    (candidate_repo / "scripts/archive_lumen_stable.sh").write_text("""#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "--preflight-release-provenance" ]]; then exit 0; fi
+python3 - <<'PY'
+import json, os
+from pathlib import Path
+keys = ['XCODE_XCCONFIG_FILE', 'LUMEN_IOS_CODE_SIGN_STYLE', 'LUMEN_IOS_CODE_SIGN_IDENTITY', 'LUMEN_IOS_DEVELOPMENT_TEAM', 'LUMEN_IOS_PROVISIONING_PROFILE_SPECIFIER']
+Path('build/eas-evidence/archive-environment.json').write_text(json.dumps({key:os.environ.get(key) for key in keys}))
+PY
+exit 67
+""")
+    subprocess.run(["git", "-C", str(candidate_repo), "add", "scripts/archive_lumen_stable.sh"], check=True)
+    subprocess.run(["git", "-C", str(candidate_repo), "-c", "user.name=Release Test", "-c", "user.email=release@example.invalid", "commit", "-qm", "archive executor fixture"], check=True)
+    env = {
+        **os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
+        "FIXTURE_TYPECHECK_EXIT": "0", "FIXTURE_SDK_VERSION": "27.1", "FIXTURE_SIGNING_JSON": json.dumps(choose(profile())),
+    }
+    env.pop("EAS_BUILD_GIT_COMMIT_HASH", None)
+    env.pop("LUMEN_GIT_SHA", None)
+    before = subprocess.check_output(["git", "-C", str(candidate_repo), "rev-parse", "HEAD"], text=True)
+    result = subprocess.run(["bash", "scripts/eas-native-ios.sh"], cwd=candidate_repo, env=env, capture_output=True, text=True, check=False)
+    assert result.returncode != 0  # The deliberately failed archive cannot become a successful release.
+    signing_env = json.loads((candidate_repo / "build/eas-evidence/archive-environment.json").read_text())
+    assert all(value == "" for key, value in signing_env.items() if key != "XCODE_XCCONFIG_FILE")
+    scoped = Path(signing_env["XCODE_XCCONFIG_FILE"])
+    assert scoped == candidate_repo / "build/eas-private/Signing.xcconfig"
+    assert scoped.read_text() == support.signing_xcconfig(choose(profile()))
+    assert not (candidate_repo / "build/eas-evidence/artifact.json").exists()
+    assert subprocess.check_output(["git", "-C", str(candidate_repo), "status", "--porcelain"], text=True) == ""
+    assert subprocess.check_output(["git", "-C", str(candidate_repo), "rev-parse", "HEAD"], text=True) == before
+
+
+def test_failed_gate_recovery_keeps_ipa_and_original_symbols_without_success_receipt(candidate_repo):
+    evidence = candidate_repo / "build/eas-evidence"
+    source = support.candidate(candidate_repo)
+    support.write_json(evidence / "candidate.json", source)
+    ipa = candidate_repo / "build/eas-export/Lumen.ipa"
+    ipa.parent.mkdir(parents=True)
+    ipa.write_bytes(b"unverified exported IPA fixture")
+    dwarf = candidate_repo / "build/eas-archive/Lumen.xcarchive/dSYMs/Lumen.app.dSYM/Contents/Resources/DWARF/Lumen"
+    dwarf.parent.mkdir(parents=True)
+    dwarf.write_bytes(b"original symbol fixture")
+    result = subprocess.run(["bash", "scripts/eas-native-ios.sh", "--collect-recovery"], cwd=candidate_repo, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert not (evidence / "artifact.json").exists()
+    receipt = json.loads((evidence / "recovery/recovery.json").read_text())
+    assert receipt["status"] == "unverified-recovery-not-for-submission"
+    assert receipt["candidateSourceRevision"] == source["sourceRevision"]
+    recovered = evidence / "recovery/Lumen.unverified.ipa"
+    assert recovered.read_bytes() == ipa.read_bytes()
+    assert receipt["files"][recovered.name]["sha256"] == hashlib.sha256(ipa.read_bytes()).hexdigest()
+    symbols = evidence / "recovery/Lumen.original-dSYMs.unverified.zip"
+    assert receipt["files"][symbols.name]["sha256"] == hashlib.sha256(symbols.read_bytes()).hexdigest()
+    with zipfile.ZipFile(symbols) as archived:
+        member = "dSYMs/Lumen.app.dSYM/Contents/Resources/DWARF/Lumen"
+        assert archived.read(member) == dwarf.read_bytes()
+        assert receipt["dSYMFiles"][member] == hashlib.sha256(dwarf.read_bytes()).hexdigest()
+
+
+def test_transport_failure_recovery_does_not_drop_an_already_verified_ipa(tmp_path):
+    ipa = tmp_path / "export/Lumen.ipa"
+    ipa.parent.mkdir()
+    ipa.write_bytes(b"already verified artifact fixture")
+    evidence = tmp_path / "evidence"
+    support.write_json(evidence / "artifact.json", {
+        "status": "verified-ipa-not-submitted", "ipaSHA256": hashlib.sha256(ipa.read_bytes()).hexdigest(),
+    })
+    original_receipt = (evidence / "artifact.json").read_bytes()
+    support.collect_recovery(ipa, tmp_path / "archive/Lumen.xcarchive", evidence)
+    assert (evidence / "recovery/Lumen.unverified.ipa").read_bytes() == ipa.read_bytes()
+    assert (evidence / "artifact.json").read_bytes() == original_receipt
 
 
 def test_linux_executor_fails_before_generating_or_mutating_outputs(tmp_path):

@@ -2,7 +2,7 @@
 
 The optional CoreAI embedding provider runs **EmbeddingGemma 2's text encoder** separately from the one Gemma chat generator. Embedding creates sentence retrieval vectors; it does not store memories, generate replies, invoke tools, or create a principal/sub-agent model fleet. The existing GGUF embedding provider remains the default. Selecting CoreAI is explicit and fails closed when unsupported, unprepared, missing, or corrupt; it does not fall back to vectors from another embedding space.
 
-This implementation targets physical iOS devices on **iOS 27.2 or later**, preserving Lumen's deployment target. Apple's generic [AIModel](https://developer.apple.com/documentation/coreai/aimodel), [InferenceFunction](https://developer.apple.com/documentation/coreai/inferencefunction), and [NDArray](https://developer.apple.com/documentation/coreai/ndarray) APIs are documented on iOS from 27.0. Their availability establishes the API boundary, not this export's device compatibility or Neural Engine placement.
+This implementation targets physical iOS devices on **iOS 27.1 or later**, preserving Lumen's deployment target. Apple's generic [AIModel](https://developer.apple.com/documentation/coreai/aimodel), [InferenceFunction](https://developer.apple.com/documentation/coreai/inferencefunction), and [NDArray](https://developer.apple.com/documentation/coreai/ndarray) APIs are documented on iOS from 27.0. Their availability establishes the API boundary, not this export's device compatibility or Neural Engine placement.
 
 ## Immutable sources and integration choice
 

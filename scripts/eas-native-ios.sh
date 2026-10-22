@@ -7,9 +7,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SUPPORT="$SCRIPT_DIR/eas_native_ios_support.py"
 MODE="${1:-build}"
 case "$MODE" in
-  build|--preflight) ;;
-  *) printf 'Usage: bash scripts/eas-native-ios.sh [--preflight]\n' >&2; exit 2 ;;
+  build|--preflight|--collect-recovery) ;;
+  *) printf 'Usage: bash scripts/eas-native-ios.sh [--preflight|--collect-recovery]\n' >&2; exit 2 ;;
 esac
+if [[ "$MODE" == "--collect-recovery" ]]; then
+  python3 "$SUPPORT" collect-recovery \
+    --ipa "$REPO_ROOT/build/eas-export/Lumen.ipa" \
+    --archive "$REPO_ROOT/build/eas-archive/Lumen.xcarchive" \
+    --output "$REPO_ROOT/build/eas-evidence"
+  exit 0
+fi
 [[ "$(uname -s)" == "Darwin" ]] || { printf 'error: native EAS iOS work requires macOS.\n' >&2; exit 1; }
 for required in git python3 xcodebuild xcrun; do
   command -v "$required" >/dev/null || { printf 'error: missing Apple executor tool: %s\n' "$required" >&2; exit 1; }
@@ -38,18 +45,18 @@ if [[ -n "$expected_revision" ]]; then
   candidate_args+=(--expected-revision "$expected_revision")
 fi
 python3 "$SUPPORT" "${candidate_args[@]}"
+field() { python3 "$SUPPORT" field --input "$1" --key "$2"; }
+DEPLOYMENT_TARGET="$(field "$EVIDENCE/candidate.json" deploymentTarget)"
 xcodebuild -version > "$EVIDENCE/xcode-version.txt"
 xcrun swiftc --version > "$EVIDENCE/swift-version.txt"
 SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
 SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
 printf '%s\n' "$SDK_VERSION" > "$EVIDENCE/iphoneos-sdk-version.txt"
-python3 "$SUPPORT" toolchain --xcode "$EVIDENCE/xcode-version.txt" --sdk "$SDK_VERSION"
+python3 "$SUPPORT" toolchain --xcode "$EVIDENCE/xcode-version.txt" --sdk "$SDK_VERSION" --deployment-target "$DEPLOYMENT_TARGET"
 
-field() { python3 "$SUPPORT" field --input "$1" --key "$2"; }
 SOURCE_SHA="$(field "$EVIDENCE/candidate.json" sourceRevision)"
 BUILD_NUMBER="$(field "$EVIDENCE/candidate.json" buildNumber)"
 MARKETING_VERSION="$(field "$EVIDENCE/candidate.json" marketingVersion)"
-DEPLOYMENT_TARGET="$(field "$EVIDENCE/candidate.json" deploymentTarget)"
 cat > "$PRIVATE/CoreAIImport.swift" <<'SWIFT'
 import CoreAI
 import SwiftData
@@ -68,10 +75,8 @@ fi
 command -v security >/dev/null || { printf 'error: macOS signing tools unavailable.\n' >&2; exit 1; }
 [[ ! -e "$ARCHIVE" && ! -e "$EXPORT" ]] || { printf 'error: prior archive/export exists; inspect and reuse that artifact before starting another build.\n' >&2; exit 1; }
 python3 "$SUPPORT" signing --root "$REPO_ROOT" --output "$PRIVATE/signing.json"
-CERTIFICATE_SHA1="$(field "$PRIVATE/signing.json" certificateSHA1)"
-PROFILE_UUID="$(field "$PRIVATE/signing.json" profileUUID)"
-TEAM_ID="$(field "$PRIVATE/signing.json" teamIdentifier)"
 python3 "$SUPPORT" export-options --input "$PRIVATE/signing.json" --output "$PRIVATE/ExportOptions.plist"
+python3 "$SUPPORT" signing-xcconfig --input "$PRIVATE/signing.json" --output "$PRIVATE/Signing.xcconfig"
 
 run_logged "$EVIDENCE/archive.log" env \
   "LUMEN_ARCHIVE_PATH=$ARCHIVE" \
@@ -81,10 +86,9 @@ run_logged "$EVIDENCE/archive.log" env \
   "LUMEN_IOS_MARKETING_VERSION=$MARKETING_VERSION" \
   "LUMEN_GIT_SHA=$SOURCE_SHA" LUMEN_BUILD_SCHEME=Lumen \
   LUMEN_ALLOW_DIRTY_RELEASE_DIAGNOSTIC=0 \
-  LUMEN_IOS_CODE_SIGN_STYLE=Manual \
-  "LUMEN_IOS_CODE_SIGN_IDENTITY=$CERTIFICATE_SHA1" \
-  "LUMEN_IOS_DEVELOPMENT_TEAM=$TEAM_ID" \
-  "LUMEN_IOS_PROVISIONING_PROFILE_SPECIFIER=$PROFILE_UUID" \
+  "XCODE_XCCONFIG_FILE=$PRIVATE/Signing.xcconfig" \
+  LUMEN_IOS_CODE_SIGN_STYLE= LUMEN_IOS_CODE_SIGN_IDENTITY= \
+  LUMEN_IOS_DEVELOPMENT_TEAM= LUMEN_IOS_PROVISIONING_PROFILE_SPECIFIER= \
   LUMEN_IOS_CLEAR_PROVISIONING_PROFILE_SPECIFIER=0 \
   LUMEN_IOS_ALLOW_PROVISIONING_UPDATES=0 \
   LUMEN_IOS_AUTHENTICATION_KEY_PATH= LUMEN_IOS_AUTHENTICATION_KEY_ID= LUMEN_IOS_AUTHENTICATION_KEY_ISSUER_ID= \

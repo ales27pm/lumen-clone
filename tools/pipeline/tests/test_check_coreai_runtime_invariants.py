@@ -32,9 +32,10 @@ def test_current_wiring_satisfies_static_contract(source):
 
 
 @pytest.mark.parametrize("file,before,after,expected", (
-    (FILES[0], "27.2;", "18.0;", "deployment"),
+    (FILES[0], "27.1;", "18.0;", "deployment"),
     (FILES[0], "9db747612f972001279f02adb04d3ef982310d0e", "0" * 40, "immutable"),
     (FILES[0], "productRef = C0A100000000000000000011", "productRef = DEADBEEFDEADBEEFDEADBEEF", "linked"),
+    (FILES[1], "if #available(iOS 27.1, *)", "if #available(iOS 27.2, *)", "lifecycle"),
     (FILES[1], "AutoTokenizer.from(modelFolder:", "AutoTokenizer.from(pretrained:", "entirely local"),
     (FILES[2], "if generation.preventsToolExecution {", "if false {", "runtime errors"),
     (FILES[3], "let kernel = AssistantKernel.shared", "let kernel = AppLlamaService.shared.stream(request)", "Plain chat"),

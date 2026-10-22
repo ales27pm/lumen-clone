@@ -86,7 +86,7 @@ struct CoreAITextEmbeddingSettingsSection: View {
         } header: {
             Text("Local text embeddings")
         } footer: {
-            Text("Requires iOS 27.2 on a supported device. Import the pinned EverPaper EmbeddingGemma 2 text package with model/config.json, local tokenizer, LICENSE, NOTICE and attribution. Vision and audio assets are excluded. Lumen copies and verifies every file locally. Importing does not select or load the model. Leave space for a second copy when replacing it. Selecting Core AI never sends text to a server or silently falls back to GGUF. iPhone performance and Neural Engine placement require device qualification.")
+            Text("Requires iOS 27.1 on a supported device. Import the pinned EverPaper EmbeddingGemma 2 text package with model/config.json, local tokenizer, LICENSE, NOTICE and attribution. Vision and audio assets are excluded. Lumen copies and verifies every file locally. Importing does not select or load the model. Leave space for a second copy when replacing it. Selecting Core AI never sends text to a server or silently falls back to GGUF. iPhone performance and Neural Engine placement require device qualification.")
         }
         .task { await refreshMetadata() }
         .onDisappear { work?.cancel() }

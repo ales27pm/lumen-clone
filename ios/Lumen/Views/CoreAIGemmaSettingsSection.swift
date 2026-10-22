@@ -47,7 +47,7 @@ struct CoreAIGemmaSettingsSection: View {
         } header: {
             Text("Local Gemma")
         } footer: {
-            Text("Requires iOS 27.2 and a complete Gemma 4 E2B Core AI text export with an 8K or 32K context, PLE weights and local tokenizer. Select a fully downloaded local folder in Files. Lumen copies and verifies it on this device; importing does not download a model. Allow space for a second copy during replacement. Imported hashes detect later changes; they do not certify the model’s publisher.")
+            Text("Requires iOS 27.1 and a complete Gemma 4 E2B Core AI text export with an 8K or 32K context, PLE weights and local tokenizer. Select a fully downloaded local folder in Files. Lumen copies and verifies it on this device; importing does not download a model. Allow space for a second copy during replacement. Imported hashes detect later changes; they do not certify the model’s publisher.")
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.folder], allowsMultipleSelection: false) { result in
             switch result {

@@ -14,6 +14,10 @@ build:
         inputs:
           type: application-archive
           path: build/eas-export/Lumen.ipa
+    - run:
+        name: Preserve unverified partial outputs after failed gates
+        if: ${ failure() }
+        command: bash scripts/eas-native-ios.sh --collect-recovery
     - eas/upload_artifact:
         name: Upload release evidence
         if: ${ always() }

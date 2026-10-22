@@ -31,7 +31,7 @@ nonisolated enum CoreAIGemmaError: Error, LocalizedError, Sendable, Equatable {
     var errorDescription: String? {
         switch self {
         case .unsupported:
-            return "Core AI Gemma requires a supported physical device running iOS 27.2 or later."
+            return "Core AI Gemma requires a supported physical device running iOS 27.1 or later."
         case .busy:
             return "A Core AI operation is already in progress. Wait for its cancellation to complete."
         case .invalidModel:

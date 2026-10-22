@@ -25,7 +25,7 @@ struct CoreAITextEmbeddingRuntimeAdapter: LocalEmbeddingRuntime {
     var unavailableReason: String? {
         if !isPreferred { return "Core AI text embeddings are not selected." }
         if isAvailable { return nil }
-        if !CoreAITextEmbeddingService.isSupported { return "Core AI text embeddings require a supported physical device with iOS 27.2 or later." }
+        if !CoreAITextEmbeddingService.isSupported { return "Core AI text embeddings require a supported physical device with iOS 27.1 or later." }
         return "Import the pinned local EmbeddingGemma 2 text package in Settings."
     }
 
