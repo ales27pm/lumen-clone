@@ -6,6 +6,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SUPPORT="$SCRIPT_DIR/eas_native_ios_support.py"
 MODE="${1:-build}"
+DISTRIBUTION="${LUMEN_EAS_DISTRIBUTION:-store}"
+case "$DISTRIBUTION" in
+  store) CONFIGURATION=Release; SIGNING_STAGE=app-store; OPTIMIZATION=-Osize ;;
+  internal) CONFIGURATION=Debug; SIGNING_STAGE=archive; OPTIMIZATION=-Onone ;;
+  *) printf 'error: expected LUMEN_EAS_DISTRIBUTION=store or internal.\n' >&2; exit 2 ;;
+esac
 case "$MODE" in
   build|--preflight|--collect-recovery) ;;
   *) printf 'Usage: bash scripts/eas-native-ios.sh [--preflight|--collect-recovery]\n' >&2; exit 2 ;;
@@ -40,7 +46,7 @@ run_logged() {
 }
 
 expected_revision="${EAS_BUILD_GIT_COMMIT_HASH:-${LUMEN_GIT_SHA:-}}"
-candidate_args=(candidate --root "$REPO_ROOT" --output "$EVIDENCE/candidate.json")
+candidate_args=(candidate --root "$REPO_ROOT" --distribution "$DISTRIBUTION" --output "$EVIDENCE/candidate.json")
 if [[ -n "$expected_revision" ]]; then
   candidate_args+=(--expected-revision "$expected_revision")
 fi
@@ -66,7 +72,8 @@ run_logged "$EVIDENCE/coreai-sdk-typecheck.log" \
   xcrun --sdk iphoneos swiftc -typecheck -sdk "$SDK_PATH" \
   -target "arm64-apple-ios$DEPLOYMENT_TARGET" \
   -module-cache-path "$PRIVATE/module-cache" "$PRIVATE/CoreAIImport.swift"
-bash "$SCRIPT_DIR/archive_lumen_stable.sh" --preflight-release-provenance > "$EVIDENCE/source-preflight.log"
+env "LUMEN_IOS_CONFIGURATION=$CONFIGURATION" "LUMEN_IOS_DISTRIBUTION=$DISTRIBUTION" \
+  bash "$SCRIPT_DIR/archive_lumen_stable.sh" --preflight-release-provenance > "$EVIDENCE/source-preflight.log"
 printf 'Native source and CoreAI SDK preflight passed for %s.\n' "$SOURCE_SHA"
 if [[ "$MODE" == "--preflight" ]]; then
   exit 0
@@ -74,14 +81,15 @@ fi
 
 command -v security >/dev/null || { printf 'error: macOS signing tools unavailable.\n' >&2; exit 1; }
 [[ ! -e "$ARCHIVE" && ! -e "$EXPORT" ]] || { printf 'error: prior archive/export exists; inspect and reuse that artifact before starting another build.\n' >&2; exit 1; }
-python3 "$SUPPORT" signing --root "$REPO_ROOT" --output "$PRIVATE/signing.json"
-python3 "$SUPPORT" export-options --input "$PRIVATE/signing.json" --output "$PRIVATE/ExportOptions.plist"
-python3 "$SUPPORT" signing-xcconfig --input "$PRIVATE/signing.json" --output "$PRIVATE/Signing.xcconfig"
+python3 "$SUPPORT" signing --root "$REPO_ROOT" --distribution "$DISTRIBUTION" --output "$PRIVATE/signing.json"
+python3 "$SUPPORT" export-options --distribution "$DISTRIBUTION" --input "$PRIVATE/signing.json" --output "$PRIVATE/ExportOptions.plist"
+python3 "$SUPPORT" signing-xcconfig --distribution "$DISTRIBUTION" --input "$PRIVATE/signing.json" --output "$PRIVATE/Signing.xcconfig"
 
 run_logged "$EVIDENCE/archive.log" env \
   "LUMEN_ARCHIVE_PATH=$ARCHIVE" \
   LUMEN_IOS_PROJECT_PATH=ios/Lumen.xcodeproj \
-  LUMEN_IOS_SCHEME=Lumen LUMEN_IOS_CONFIGURATION=Release \
+  LUMEN_IOS_SCHEME=Lumen "LUMEN_IOS_CONFIGURATION=$CONFIGURATION" \
+  "LUMEN_IOS_DISTRIBUTION=$DISTRIBUTION" "LUMEN_SWIFT_OPTIMIZATION_LEVEL=$OPTIMIZATION" \
   "LUMEN_IOS_CURRENT_PROJECT_VERSION=$BUILD_NUMBER" \
   "LUMEN_IOS_MARKETING_VERSION=$MARKETING_VERSION" \
   "LUMEN_GIT_SHA=$SOURCE_SHA" LUMEN_BUILD_SCHEME=Lumen \
@@ -111,14 +119,22 @@ cp "$EXPORT/Packaging.log" "$EVIDENCE/Packaging.log"
 run_logged "$EVIDENCE/ipa-validation.log" python3 "$SCRIPT_DIR/check_built_app_info_plist.py" "$IPA" \
   --expected-bundle-identifier com.27pm.lumenclone \
   --expected-bundle-version "$BUILD_NUMBER" --expected-marketing-version "$MARKETING_VERSION" \
-  --expected-build-configuration Release --require-dsym-archive "$ARCHIVE"
+  --expected-build-configuration "$CONFIGURATION" --require-dsym-archive "$ARCHIVE"
 run_logged "$EVIDENCE/ipa-signing-validation.log" python3 "$SCRIPT_DIR/validate_ios_signing_capabilities.py" \
   --project-file "$REPO_ROOT/ios/Lumen.xcodeproj/project.pbxproj" \
   --entitlements "$REPO_ROOT/ios/Lumen/Lumen.entitlements" \
   --app-store-entitlements "$REPO_ROOT/ios/Lumen/LumenAppStore.entitlements" \
-  --signing-stage app-store --signed-app-path "$IPA"
-python3 "$SUPPORT" candidate --root "$REPO_ROOT" --expected-revision "$SOURCE_SHA" --output "$EVIDENCE/candidate-after.json"
+  --signing-stage "$SIGNING_STAGE" --signed-app-path "$IPA"
+if [[ "$DISTRIBUTION" == internal ]]; then
+  run_logged "$EVIDENCE/ipa-internal-signing-validation.log" python3 "$SUPPORT" internal-signing \
+    --distribution internal --input "$PRIVATE/signing.json" --ipa "$IPA"
+fi
+python3 "$SUPPORT" candidate --root "$REPO_ROOT" --distribution "$DISTRIBUTION" --expected-revision "$SOURCE_SHA" --output "$EVIDENCE/candidate-after.json"
 cmp "$EVIDENCE/candidate.json" "$EVIDENCE/candidate-after.json"
 python3 "$SUPPORT" artifact-receipt --root "$REPO_ROOT" --input "$EVIDENCE/candidate.json" \
   --ipa "$IPA" --archive "$ARCHIVE" --output "$EVIDENCE/artifact.json"
-printf 'Verified IPA ready for separate EAS submission: version %s (%s), source %s.\n' "$MARKETING_VERSION" "$BUILD_NUMBER" "$SOURCE_SHA"
+if [[ "$DISTRIBUTION" == store ]]; then
+  printf 'Verified IPA ready for separate EAS submission: version %s (%s), source %s.\n' "$MARKETING_VERSION" "$BUILD_NUMBER" "$SOURCE_SHA"
+else
+  printf 'Verified internal Debug IPA ready for registered devices: version %s (%s), source %s. No store submission.\n' "$MARKETING_VERSION" "$BUILD_NUMBER" "$SOURCE_SHA"
+fi

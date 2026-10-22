@@ -30,6 +30,49 @@ CERTIFICATE = b"public certificate DER fixture"
 CERTIFICATE_SHA1 = hashlib.sha1(CERTIFICATE).hexdigest().upper()
 
 
+def test_development_profile_is_native_internal_debug_with_a_separate_workflow():
+    config = json.loads((ROOT / "eas.json").read_text())
+    development = config["build"]["development"]
+    assert development["distribution"] == "internal"
+    assert development["developmentClient"] is False
+    assert development["credentialsSource"] == "remote"
+    assert development["env"]["LUMEN_EAS_DISTRIBUTION"] == "internal"
+    assert development["env"]["EXPO_NO_CAPABILITY_SYNC"] == "1"
+    assert development["ios"]["buildConfiguration"] == "Debug"
+    assert development["ios"]["simulator"] is False
+    assert development["ios"]["config"] == "ios-development.yml"
+    assert "development" not in config["submit"]
+    assert config["build"]["testflight"]["distribution"] == "store"
+    assert config["build"]["testflight"]["ios"]["buildConfiguration"] == "Release"
+    workflow = (ROOT / ".eas/build/ios-development.yml").read_text()
+    assert "eas/resolve_apple_team_id_from_credentials" in workflow
+    assert "bash scripts/eas-native-ios.sh --preflight" in workflow
+    assert "--collect-recovery" in workflow
+    assert "eas/submit" not in workflow
+
+
+def test_internal_archive_preserves_clean_provenance_and_distribution_symbol_checks(candidate_repo):
+    env = {**os.environ, "LUMEN_IOS_CONFIGURATION": "Debug", "LUMEN_IOS_DISTRIBUTION": "internal"}
+    command = ["bash", "scripts/archive_lumen_stable.sh", "--preflight-release-provenance"]
+    result = subprocess.run(command, cwd=candidate_repo, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    (candidate_repo / "scripts/untracked.sh").write_text("fixture")
+    result = subprocess.run(command, cwd=candidate_repo, env=env, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "dirty" in result.stderr
+    source = (ROOT / "scripts/archive_lumen_stable.sh").read_text()
+    assert source.count("if requires_distribution_symbols; then") == 2
+    assert 'SOURCE_ENTITLEMENTS_PATH="$REPO_ROOT/ios/Lumen/LumenAppStore.entitlements"' in source
+
+
+@pytest.mark.parametrize("distribution,configuration", (("internal", "Release"), ("store", "Debug"), ("guess", "Release")))
+def test_archive_preflight_rejects_mismatched_distribution_and_configuration(candidate_repo, distribution, configuration):
+    env = {**os.environ, "LUMEN_IOS_CONFIGURATION": configuration, "LUMEN_IOS_DISTRIBUTION": distribution}
+    result = subprocess.run(["bash", "scripts/archive_lumen_stable.sh", "--preflight-release-provenance"], cwd=candidate_repo, env=env, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert not (candidate_repo / "build").exists()
+
+
 def profile() -> dict:
     return {
         "UUID": UUID,
@@ -55,13 +98,117 @@ EXPECTED = {
 }
 
 
-def choose(*profiles: dict, identities: set[str] | None = None) -> dict:
+def choose(*profiles: dict, identities: set[str] | None = None, distribution: str = "store") -> dict:
     return support.profile_choice(
         [(Path(f"{i}.mobileprovision"), value) for i, value in enumerate(profiles)],
         identities if identities is not None else {CERTIFICATE_SHA1},
         EXPECTED,
         now=datetime(2026, 10, 21, tzinfo=timezone.utc),
+        distribution=distribution,
     )
+
+
+def internal_profile() -> dict:
+    value = profile()
+    value["ProvisionedDevices"] = ["F" * 40]
+    value["Entitlements"].pop("beta-reports-active")
+    return value
+
+
+def test_internal_profile_selection_and_export_are_distinct_from_store():
+    value = internal_profile()
+    context = choose(value, distribution="internal")
+    assert context["distribution"] == "internal"
+    options = support.export_options(context, "internal")
+    assert options["method"] == "release-testing"
+    assert options["uploadSymbols"] is False
+    assert options["destination"] == "export"
+    assert options["manageAppVersionAndBuildNumber"] is False
+    with pytest.raises(ValueError, match="expected one authorized"):
+        choose(value)
+    with pytest.raises(ValueError, match="expected one authorized"):
+        choose(profile(), distribution="internal")
+    with pytest.raises(ValueError, match="distribution"):
+        support.export_options(context)
+    with pytest.raises(ValueError, match="invalid runtime signing context"):
+        support.signing_xcconfig(context)
+
+
+@pytest.mark.parametrize("mutation", ("empty", "not_list", "invalid", "duplicate", "enterprise", "development", "beta", "certificate", "capability"))
+def test_internal_profile_rejects_ineligible_signing_and_device_lists(mutation):
+    value = internal_profile()
+    if mutation == "empty":
+        value["ProvisionedDevices"] = []
+    elif mutation == "not_list":
+        value["ProvisionedDevices"] = "F" * 40
+    elif mutation == "invalid":
+        value["ProvisionedDevices"] = [{}]
+    elif mutation == "duplicate":
+        value["ProvisionedDevices"] *= 2
+    elif mutation == "enterprise":
+        value["ProvisionsAllDevices"] = True
+    elif mutation == "development":
+        value["Entitlements"]["get-task-allow"] = True
+    elif mutation == "beta":
+        value["Entitlements"]["beta-reports-active"] = True
+    elif mutation == "certificate":
+        value["DeveloperCertificates"] = [b"unavailable certificate"]
+    elif mutation == "capability":
+        del value["Entitlements"]["com.apple.developer.healthkit"]
+    with pytest.raises(ValueError, match="expected one authorized"):
+        choose(value, distribution="internal")
+
+
+def test_internal_debug_settings_are_target_scoped_and_keep_other_targets_inherited():
+    settings = support.signing_xcconfig(choose(internal_profile(), distribution="internal"), "internal")
+    assert "LUMEN_SIGNING_STYLE_Lumen = Manual" in settings
+    assert "CODE_SIGN_STYLE = $(LUMEN_SIGNING_STYLE_$(TARGET_NAME):default=$(inherited))" in settings
+    assert "LUMEN_DSYM_Lumen = dwarf-with-dsym" in settings
+    assert "DEBUG_INFORMATION_FORMAT = $(LUMEN_DSYM_$(TARGET_NAME):default=$(inherited))" in settings
+    assert "ENABLE_DEBUG_DYLIB = $(LUMEN_DEBUG_DYLIB_$(TARGET_NAME):default=$(inherited))" in settings
+    assert "LUMEN_DEBUG_DYLIB_Lumen = NO" in settings
+    assert "DEBUG_INFORMATION_FORMAT" not in support.signing_xcconfig(choose(profile()))
+
+
+def internal_evidence():
+    return support.signing.SignedArtifactEvidence(
+        bundle_identifier=support.BUNDLE, signature_identifier=support.BUNDLE,
+        signature_team_identifier=support.TEAM, signature_marker="signed",
+        authorities=("Apple Distribution: Fixture",), leaf_signing_certificate=CERTIFICATE,
+        signed_entitlements={"get-task-allow": False}, profile=internal_profile(),
+    )
+
+
+@pytest.mark.parametrize("mutation", (None, "no_devices", "signed_debuggable", "profile_debuggable", "development", "profile", "certificate", "enterprise", "signed_beta", "profile_beta", "team"))
+def test_final_internal_signature_requires_the_selected_ad_hoc_profile(mutation):
+    from dataclasses import replace
+    evidence = internal_evidence()
+    context = choose(internal_profile(), distribution="internal")
+    if mutation == "no_devices":
+        evidence.profile.pop("ProvisionedDevices")
+    elif mutation == "signed_debuggable":
+        evidence.signed_entitlements["get-task-allow"] = True
+    elif mutation == "profile_debuggable":
+        evidence.profile["Entitlements"]["get-task-allow"] = True
+    elif mutation == "development":
+        evidence = replace(evidence, authorities=("Apple Development: Fixture",))
+    elif mutation == "profile":
+        evidence.profile["UUID"] = "different-profile"
+    elif mutation == "certificate":
+        evidence = replace(evidence, leaf_signing_certificate=b"different certificate")
+    elif mutation == "enterprise":
+        evidence.profile["ProvisionsAllDevices"] = True
+    elif mutation == "signed_beta":
+        evidence.signed_entitlements["beta-reports-active"] = True
+    elif mutation == "profile_beta":
+        evidence.profile["Entitlements"]["beta-reports-active"] = True
+    elif mutation == "team":
+        evidence = replace(evidence, signature_team_identifier="OTHERTEAM")
+    if mutation is None:
+        support.validate_internal_evidence(evidence, context)
+    else:
+        with pytest.raises(ValueError):
+            support.validate_internal_evidence(evidence, context)
 
 
 def test_profile_selection_uses_actual_certificate_and_resolves_entitlement_prefix():
@@ -202,6 +349,11 @@ def candidate_repo(tmp_path):
 def test_candidate_requires_clean_committed_release_inputs_and_exact_revision(candidate_repo):
     result = support.candidate(candidate_repo)
     assert result["deploymentTarget"] == "27.1"
+    assert (result["configuration"], result["distribution"]) == ("Release", "store")
+    internal = support.candidate(candidate_repo, distribution="internal")
+    assert (internal["configuration"], internal["distribution"]) == ("Debug", "internal")
+    with pytest.raises(ValueError, match="unsupported native distribution"):
+        support.candidate(candidate_repo, distribution="guess")
     assert support.PROJECT.as_posix() in result["sourceSHA256"]
     assert support.RESOLVED.as_posix() in result["sourceSHA256"]
     with pytest.raises(ValueError, match="requested full commit"):
@@ -225,12 +377,13 @@ def test_exported_info_cannot_be_attributed_to_another_candidate(candidate_repo,
         support.verify_info(info, source)
 
 
-def test_artifact_receipt_binds_the_exact_ipa_and_original_symbol_bytes(candidate_repo, tmp_path):
-    source = support.candidate(candidate_repo)
+@pytest.mark.parametrize("distribution", ("store", "internal"))
+def test_artifact_receipt_binds_the_exact_ipa_and_original_symbol_bytes(candidate_repo, tmp_path, distribution):
+    source = support.candidate(candidate_repo, distribution=distribution)
     info = {
         "CFBundleIdentifier": source["bundleIdentifier"], "CFBundleVersion": source["buildNumber"],
         "CFBundleShortVersionString": source["marketingVersion"], "LumenGitSHA": source["sourceRevision"],
-        "LumenBuildScheme": "Lumen", "LumenBuildConfiguration": "Release", "MinimumOSVersion": "27.1",
+        "LumenBuildScheme": "Lumen", "LumenBuildConfiguration": source["configuration"], "MinimumOSVersion": "27.1",
     }
     ipa = tmp_path / "Lumen.ipa"
     with zipfile.ZipFile(ipa, "w") as package:
@@ -249,6 +402,8 @@ def test_artifact_receipt_binds_the_exact_ipa_and_original_symbol_bytes(candidat
     assert receipt["ipaSHA256"] == hashlib.sha256(ipa.read_bytes()).hexdigest()
     assert receipt["symbolsSHA256"] == hashlib.sha256((output.parent / "Lumen.dSYMs.zip").read_bytes()).hexdigest()
     assert receipt["status"] == "verified-ipa-not-submitted"
+    assert receipt["configuration"] == source["configuration"]
+    assert receipt["distribution"] == distribution
     with zipfile.ZipFile(output.parent / "Lumen.dSYMs.zip") as symbols:
         assert symbols.read(dwarf.relative_to(archive).as_posix()) == dwarf.read_bytes()
     assert "profileUUID" not in receipt and "certificateSHA1" not in receipt
@@ -274,21 +429,27 @@ exit 98
     return tools
 
 
+@pytest.mark.parametrize("distribution", ("store", "internal"))
 @pytest.mark.parametrize("sdk,typecheck_exit", (("27.1", 0), ("27.1", 43), ("27.0", 0)))
-def test_preflight_runs_no_archive_and_preserves_sdk_or_compiler_failure(candidate_repo, tmp_path, sdk, typecheck_exit):
+def test_preflight_runs_no_archive_and_preserves_sdk_or_compiler_failure(candidate_repo, tmp_path, sdk, typecheck_exit, distribution):
     tools = _executor_tools(tmp_path)
     env = {**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"], "FIXTURE_TYPECHECK_EXIT": str(typecheck_exit), "FIXTURE_SDK_VERSION": sdk}
     env.pop("EAS_BUILD_GIT_COMMIT_HASH", None)
     env.pop("LUMEN_GIT_SHA", None)
+    env["LUMEN_EAS_DISTRIBUTION"] = distribution
     result = subprocess.run(["bash", "scripts/eas-native-ios.sh", "--preflight"], cwd=candidate_repo, env=env, capture_output=True, text=True, check=False)
     assert (result.returncode == 0) is (sdk == "27.1" and typecheck_exit == 0), result.stdout + result.stderr
     assert not (candidate_repo / "build/eas-archive").exists()
     assert not (candidate_repo / "build/eas-private/signing.json").exists()
     assert (candidate_repo / "build/eas-evidence/coreai-sdk-typecheck.log").exists() is (sdk == "27.1")
     assert (candidate_repo / "build/eas-evidence/source-preflight.log").exists() is (sdk == "27.1" and typecheck_exit == 0)
+    source = json.loads((candidate_repo / "build/eas-evidence/candidate.json").read_text())
+    assert source["distribution"] == distribution
+    assert source["configuration"] == ("Debug" if distribution == "internal" else "Release")
 
 
-def test_archive_receives_private_scoped_config_and_no_global_profile(candidate_repo, tmp_path):
+@pytest.mark.parametrize("distribution", ("store", "internal"))
+def test_archive_receives_private_scoped_config_and_no_global_profile(candidate_repo, tmp_path, distribution):
     tools = _executor_tools(tmp_path)
     _executable(tools / "security", "#!/bin/sh\nexit 99\n")
     _executable(tools / "python3", f"""#!{sys.executable}
@@ -304,16 +465,18 @@ if [[ "${1:-}" == "--preflight-release-provenance" ]]; then exit 0; fi
 python3 - <<'PY'
 import json, os
 from pathlib import Path
-keys = ['XCODE_XCCONFIG_FILE', 'LUMEN_IOS_CODE_SIGN_STYLE', 'LUMEN_IOS_CODE_SIGN_IDENTITY', 'LUMEN_IOS_DEVELOPMENT_TEAM', 'LUMEN_IOS_PROVISIONING_PROFILE_SPECIFIER']
+keys = ['XCODE_XCCONFIG_FILE', 'LUMEN_IOS_CODE_SIGN_STYLE', 'LUMEN_IOS_CODE_SIGN_IDENTITY', 'LUMEN_IOS_DEVELOPMENT_TEAM', 'LUMEN_IOS_PROVISIONING_PROFILE_SPECIFIER', 'LUMEN_IOS_CONFIGURATION', 'LUMEN_IOS_DISTRIBUTION', 'LUMEN_SWIFT_OPTIMIZATION_LEVEL']
 Path('build/eas-evidence/archive-environment.json').write_text(json.dumps({key:os.environ.get(key) for key in keys}))
 PY
 exit 67
 """)
     subprocess.run(["git", "-C", str(candidate_repo), "add", "scripts/archive_lumen_stable.sh"], check=True)
     subprocess.run(["git", "-C", str(candidate_repo), "-c", "user.name=Release Test", "-c", "user.email=release@example.invalid", "commit", "-qm", "archive executor fixture"], check=True)
+    signing_context = choose(internal_profile(), distribution="internal") if distribution == "internal" else choose(profile())
     env = {
         **os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"],
-        "FIXTURE_TYPECHECK_EXIT": "0", "FIXTURE_SDK_VERSION": "27.1", "FIXTURE_SIGNING_JSON": json.dumps(choose(profile())),
+        "FIXTURE_TYPECHECK_EXIT": "0", "FIXTURE_SDK_VERSION": "27.1", "FIXTURE_SIGNING_JSON": json.dumps(signing_context),
+        "LUMEN_EAS_DISTRIBUTION": distribution,
     }
     env.pop("EAS_BUILD_GIT_COMMIT_HASH", None)
     env.pop("LUMEN_GIT_SHA", None)
@@ -321,10 +484,13 @@ exit 67
     result = subprocess.run(["bash", "scripts/eas-native-ios.sh"], cwd=candidate_repo, env=env, capture_output=True, text=True, check=False)
     assert result.returncode != 0  # The deliberately failed archive cannot become a successful release.
     signing_env = json.loads((candidate_repo / "build/eas-evidence/archive-environment.json").read_text())
-    assert all(value == "" for key, value in signing_env.items() if key != "XCODE_XCCONFIG_FILE")
+    assert all(signing_env[key] == "" for key in ("LUMEN_IOS_CODE_SIGN_STYLE", "LUMEN_IOS_CODE_SIGN_IDENTITY", "LUMEN_IOS_DEVELOPMENT_TEAM", "LUMEN_IOS_PROVISIONING_PROFILE_SPECIFIER"))
+    assert signing_env["LUMEN_IOS_DISTRIBUTION"] == distribution
+    assert signing_env["LUMEN_IOS_CONFIGURATION"] == ("Debug" if distribution == "internal" else "Release")
+    assert signing_env["LUMEN_SWIFT_OPTIMIZATION_LEVEL"] == ("-Onone" if distribution == "internal" else "-Osize")
     scoped = Path(signing_env["XCODE_XCCONFIG_FILE"])
     assert scoped == candidate_repo / "build/eas-private/Signing.xcconfig"
-    assert scoped.read_text() == support.signing_xcconfig(choose(profile()))
+    assert scoped.read_text() == support.signing_xcconfig(signing_context, distribution)
     assert not (candidate_repo / "build/eas-evidence/artifact.json").exists()
     assert subprocess.check_output(["git", "-C", str(candidate_repo), "status", "--porcelain"], text=True) == ""
     assert subprocess.check_output(["git", "-C", str(candidate_repo), "rev-parse", "HEAD"], text=True) == before

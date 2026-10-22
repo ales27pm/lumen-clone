@@ -20,6 +20,7 @@ if [[ "$PROJECT_PATH" != /* ]]; then
 fi
 SCHEME="${LUMEN_IOS_SCHEME:-Lumen}"
 CONFIGURATION="${LUMEN_IOS_CONFIGURATION:-Release}"
+NATIVE_DISTRIBUTION="${LUMEN_IOS_DISTRIBUTION:-}"
 SWIFT_OPTIMIZATION_LEVEL_VALUE="${LUMEN_SWIFT_OPTIMIZATION_LEVEL:--Osize}"
 CURRENT_PROJECT_VERSION_VALUE="${LUMEN_IOS_CURRENT_PROJECT_VERSION:-}"
 MARKETING_VERSION_VALUE="${LUMEN_IOS_MARKETING_VERSION:-}"
@@ -65,6 +66,19 @@ is_release_configuration() {
   esac
 }
 
+requires_distribution_symbols() {
+  is_release_configuration "$CONFIGURATION" || [[ "$NATIVE_DISTRIBUTION" == internal ]]
+}
+
+validate_native_distribution() {
+  case "$NATIVE_DISTRIBUTION" in
+    "") ;;
+    store) is_release_configuration "$CONFIGURATION" || fail "Store distribution requires Release configuration." ;;
+    internal) [[ "$CONFIGURATION" == Debug ]] || fail "Internal distribution requires Debug configuration." ;;
+    *) fail "Unsupported LUMEN_IOS_DISTRIBUTION; expected store or internal." ;;
+  esac
+}
+
 release_scope_changes_at() {
   local repo_root="$1"
   git -C "$repo_root" status --porcelain=v1 --untracked-files=all -- "${RELEASE_SCOPE_PATHS[@]}"
@@ -101,7 +115,7 @@ compute_release_provenance() {
   COMPUTED_RELEASE_PROVENANCE="production-clean:$full_commit"
   COMPUTED_DIAGNOSTIC_RELEASE=0
 
-  if is_release_configuration "$configuration"; then
+  if is_release_configuration "$configuration" || [[ "$NATIVE_DISTRIBUTION" == internal ]]; then
     if ! changes="$(release_scope_changes_at "$repo_root")"; then
       printf 'Could not inspect release-scope Git state in %s.\n' "$repo_root" >&2
       return 1
@@ -155,7 +169,7 @@ assert_release_provenance_still_valid() {
   [[ "$current_commit" == "$RELEASE_GIT_COMMIT" ]] \
     || fail "Git HEAD changed during archive: expected $RELEASE_GIT_COMMIT, found $current_commit."
 
-  if is_release_configuration "$CONFIGURATION" && [[ "$DIAGNOSTIC_RELEASE" != "1" ]]; then
+  if { is_release_configuration "$CONFIGURATION" || [[ "$NATIVE_DISTRIBUTION" == internal ]]; } && [[ "$DIAGNOSTIC_RELEASE" != "1" ]]; then
     changes="$(release_scope_changes_at "$REPO_ROOT")" \
       || fail "Could not re-check release-scope Git state after archive."
     if [[ -n "$changes" ]]; then
@@ -384,6 +398,7 @@ if [[ "${1:-}" == "--self-check-reviewed-package-resolution" ]]; then
 fi
 
 if [[ "${1:-}" == "--preflight-release-provenance" ]]; then
+  validate_native_distribution
   prepare_release_provenance
   printf 'LUMEN_GIT_SHA=%s\n' "$LUMEN_GIT_SHA_VALUE"
   printf 'LUMEN_BUILD_SCHEME=%s\n' "$LUMEN_BUILD_SCHEME_VALUE"
@@ -543,6 +558,11 @@ expected_signing_identity_patterns() {
     return 0
   fi
 
+  if [[ "$NATIVE_DISTRIBUTION" == internal ]]; then
+    printf '%s\n' "Apple Distribution"
+    return 0
+  fi
+
   case "$CONFIGURATION" in
     Release|AppStore|App\ Store)
       printf '%s\n' "iOS Distribution"
@@ -596,6 +616,7 @@ command -v xcodebuild >/dev/null 2>&1 || fail "xcodebuild not found. Select Xcod
 command -v python3 >/dev/null 2>&1 || fail "python3 not found. Install Xcode Command Line Tools or Python 3."
 [[ -f "$PROJECT_FILE" ]] || fail "Missing project file: $PROJECT_FILE"
 [[ -e "$PROJECT_PATH" ]] || fail "Project/workspace path not found: $PROJECT_PATH"
+validate_native_distribution
 [[ "$PROJECT_PATH" == *.xcworkspace || "$PROJECT_PATH" == *.xcodeproj ]] || fail "Project path must be .xcworkspace or .xcodeproj: $PROJECT_PATH"
 case "$CONFIGURATION" in
   Release|AppStore|App\ Store)
@@ -688,9 +709,13 @@ fi
 
 bold "Lumen stable iOS archive"
 info "Validating and sanitizing iOS signing capabilities"
+SOURCE_ENTITLEMENTS_PATH="$REPO_ROOT/ios/Lumen/Lumen.entitlements"
+if [[ "$NATIVE_DISTRIBUTION" == internal ]]; then
+  SOURCE_ENTITLEMENTS_PATH="$REPO_ROOT/ios/Lumen/LumenAppStore.entitlements"
+fi
 python3 "$REPO_ROOT/scripts/validate_ios_signing_capabilities.py" \
   --project-file "$PROJECT_FILE" \
-  --entitlements "$REPO_ROOT/ios/Lumen/Lumen.entitlements" \
+  --entitlements "$SOURCE_ENTITLEMENTS_PATH" \
   --sanitized-entitlements-output "$SANITIZED_ENTITLEMENTS_PATH" \
   --allow-sanitized-output
 SIGNING_BUILD_SETTINGS+=("CODE_SIGN_ENTITLEMENTS=$SANITIZED_ENTITLEMENTS_PATH")
@@ -760,7 +785,7 @@ validate_archive_signing_arguments "${ARCHIVE_COMMAND[@]}" \
   || fail "Refusing to run an archive command that disables signing identity selection."
 run_logged "$LOG_PATH" "${ARCHIVE_COMMAND[@]}"
 
-if is_release_configuration "$CONFIGURATION"; then
+if requires_distribution_symbols; then
   info "Installing the official hash-pinned MSAL release dSYM"
   MSAL_DSYM_INSTALL=(
     python3 "$REPO_ROOT/scripts/install_msal_release_dsym.py"
@@ -781,7 +806,7 @@ INFO_PLIST_CHECK=(python3 "$REPO_ROOT/scripts/check_built_app_info_plist.py" "$A
 if [[ -n "$CURRENT_PROJECT_VERSION_VALUE" ]]; then
   INFO_PLIST_CHECK+=(--expected-bundle-version "$CURRENT_PROJECT_VERSION_VALUE")
 fi
-if is_release_configuration "$CONFIGURATION"; then
+if requires_distribution_symbols; then
   INFO_PLIST_CHECK+=(--require-dsym-archive "$ARCHIVE_PATH")
 fi
 "${INFO_PLIST_CHECK[@]}"

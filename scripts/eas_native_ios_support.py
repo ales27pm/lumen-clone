@@ -26,6 +26,24 @@ BUNDLE = "com.27pm.lumenclone"
 TEAM = "52T7P32J34"
 EAS_PROJECT = "1b2304fb-7f12-401b-813c-9a331d8b265d"
 FULL_REVISION = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")
+LANES = {"store": ("Release", "app-store-connect"), "internal": ("Debug", "release-testing")}
+
+
+def lane(distribution: str) -> tuple[str, str]:
+    if distribution not in LANES:
+        raise ValueError("unsupported native distribution; expected store or internal")
+    return LANES[distribution]
+
+
+def internal_devices(profile: dict[str, Any]) -> list[str]:
+    devices = profile.get("ProvisionedDevices")
+    if (
+        not isinstance(devices, list) or not devices
+        or any(not isinstance(value, str) or not value.strip() for value in devices)
+        or len(set(devices)) != len(devices)
+    ):
+        raise ValueError("internal ad hoc profile requires nonempty unique registered devices")
+    return devices
 
 
 def run(*args: str, cwd: Path | None = None) -> str:
@@ -85,7 +103,8 @@ def validate_lock(project: str, resolved: dict[str, Any]) -> None:
             raise ValueError(f"Swift package lock does not match the reviewed {identity} requirement")
 
 
-def candidate(root: Path, expected_revision: str | None = None) -> dict[str, Any]:
+def candidate(root: Path, expected_revision: str | None = None, distribution: str = "store") -> dict[str, Any]:
+    configuration, _ = lane(distribution)
     revision = run("git", "rev-parse", "--verify", "HEAD^{commit}", cwd=root).strip()
     if not FULL_REVISION.fullmatch(revision) or (expected_revision and revision != expected_revision):
         raise ValueError("candidate revision does not match the requested full commit")
@@ -110,7 +129,8 @@ def candidate(root: Path, expected_revision: str | None = None) -> dict[str, Any
     return {
         "schemaVersion": 1, "sourceRevision": revision, "bundleIdentifier": BUNDLE,
         "teamIdentifier": TEAM, "easProjectId": EAS_PROJECT, "scheme": "Lumen",
-        "configuration": "Release", "marketingVersion": exact_setting(text, "MARKETING_VERSION"),
+        "configuration": configuration, "distribution": distribution,
+        "marketingVersion": exact_setting(text, "MARKETING_VERSION"),
         "buildNumber": build, "deploymentTarget": deployment, "sourceSHA256": inventory,
     }
 
@@ -141,8 +161,9 @@ def valid_identities(output: str) -> set[str]:
 
 def profile_choice(
     profiles: list[tuple[Path, dict[str, Any]]], identities: set[str], expected_entitlements: dict[str, Any],
-    *, now: datetime | None = None,
+    *, now: datetime | None = None, distribution: str = "store",
 ) -> dict[str, str]:
+    lane(distribution)
     now = now or datetime.now(timezone.utc)
     matches: dict[tuple[str, str, str], dict[str, str]] = {}
     for path, profile in profiles:
@@ -159,12 +180,21 @@ def profile_choice(
             or entitlements.get("com.apple.developer.team-identifier") != TEAM
             or prefix not in profile.get("ApplicationIdentifierPrefix", [])
             or not isinstance(expires, datetime) or expires <= now
-            or "ProvisionedDevices" in profile or profile.get("ProvisionsAllDevices") is True
+            or profile.get("ProvisionsAllDevices") is True
             or entitlements.get("get-task-allow") is not False
-            or entitlements.get("beta-reports-active") is not True
             or not re.fullmatch(r"[A-Fa-f0-9-]{36}", str(profile.get("UUID", "")))
         ):
             continue
+        if distribution == "store":
+            if "ProvisionedDevices" in profile or entitlements.get("beta-reports-active") is not True:
+                continue
+        else:
+            try:
+                internal_devices(profile)
+            except ValueError:
+                continue
+            if entitlements.get("beta-reports-active") is True:
+                continue
         expected = signing.resolve_expected_build_settings(expected_entitlements, {
             "AppIdentifierPrefix": prefix + ".", "TeamIdentifierPrefix": TEAM + ".",
             "DEVELOPMENT_TEAM": TEAM, "PRODUCT_BUNDLE_IDENTIFIER": BUNDLE,
@@ -185,13 +215,15 @@ def profile_choice(
             matches[(profile["UUID"], fingerprint, canonical)] = {
                 "profileUUID": profile["UUID"], "certificateSHA1": fingerprint,
                 "profilePath": str(path), "teamIdentifier": TEAM, "bundleIdentifier": BUNDLE,
+                "distribution": distribution,
             }
     if len(matches) != 1:
-        raise ValueError(f"expected one authorized installed App Store profile/certificate pair; found {len(matches)}")
+        label = "App Store" if distribution == "store" else "internal ad hoc"
+        raise ValueError(f"expected one authorized installed {label} profile/certificate pair; found {len(matches)}")
     return next(iter(matches.values()))
 
 
-def installed_signing(root: Path) -> dict[str, str]:
+def installed_signing(root: Path, distribution: str = "store") -> dict[str, str]:
     profiles: list[tuple[Path, dict[str, Any]]] = []
     for directory in (
         Path.home() / "Library/MobileDevice/Provisioning Profiles",
@@ -209,29 +241,34 @@ def installed_signing(root: Path) -> dict[str, str]:
                 profiles.append((path, value))
     identities = valid_identities(run("security", "find-identity", "-v", "-p", "codesigning"))
     with (root / "ios/Lumen/LumenAppStore.entitlements").open("rb") as handle:
-        return profile_choice(profiles, identities, plistlib.load(handle))
+        return profile_choice(profiles, identities, plistlib.load(handle), distribution=distribution)
 
 
-def export_options(signing_context: dict[str, str]) -> dict[str, Any]:
+def export_options(signing_context: dict[str, str], distribution: str = "store") -> dict[str, Any]:
+    _, method = lane(distribution)
+    if signing_context.get("distribution") != distribution:
+        raise ValueError("signing context distribution does not match the requested lane")
     return {
-        "method": "app-store-connect", "destination": "export", "signingStyle": "manual",
+        "method": method, "destination": "export", "signingStyle": "manual",
         "teamID": TEAM, "signingCertificate": signing_context["certificateSHA1"],
         "provisioningProfiles": {BUNDLE: signing_context["profileUUID"]},
-        "manageAppVersionAndBuildNumber": False, "stripSwiftSymbols": True, "uploadSymbols": True,
+        "manageAppVersionAndBuildNumber": False, "stripSwiftSymbols": True, "uploadSymbols": distribution == "store",
     }
 
 
-def signing_xcconfig(signing_context: dict[str, str]) -> str:
+def signing_xcconfig(signing_context: dict[str, str], distribution: str = "store") -> str:
     """Expand credentials for Lumen only, leaving SwiftPM resource targets empty."""
+    lane(distribution)
     profile, certificate = signing_context["profileUUID"], signing_context["certificateSHA1"]
     if (
         not re.fullmatch(r"[A-Fa-f0-9-]{36}", profile)
         or not re.fullmatch(r"[A-F0-9]{40}", certificate)
         or signing_context.get("teamIdentifier") != TEAM
         or signing_context.get("bundleIdentifier") != BUNDLE
+        or signing_context.get("distribution") != distribution
     ):
         raise ValueError("invalid runtime signing context for the scoped Xcode configuration")
-    return "\n".join((
+    settings = [
         "// Private runtime signing overrides. No project file is modified.",
         f"LUMEN_PROFILE_Lumen = {profile}",
         f"LUMEN_CERTIFICATE_Lumen = {certificate}",
@@ -241,8 +278,39 @@ def signing_xcconfig(signing_context: dict[str, str]) -> str:
         "CODE_SIGN_IDENTITY = $(LUMEN_CERTIFICATE_$(TARGET_NAME))",
         "CODE_SIGN_IDENTITY[sdk=iphoneos*] = $(LUMEN_CERTIFICATE_$(TARGET_NAME))",
         "DEVELOPMENT_TEAM = $(LUMEN_TEAM_$(TARGET_NAME))",
-        "",
-    ))
+    ]
+    if distribution == "internal":
+        settings.extend((
+            "LUMEN_SIGNING_STYLE_Lumen = Manual",
+            "CODE_SIGN_STYLE = $(LUMEN_SIGNING_STYLE_$(TARGET_NAME):default=$(inherited))",
+            "LUMEN_DSYM_Lumen = dwarf-with-dsym",
+            "DEBUG_INFORMATION_FORMAT = $(LUMEN_DSYM_$(TARGET_NAME):default=$(inherited))",
+            "LUMEN_DEBUG_DYLIB_Lumen = NO",
+            "ENABLE_DEBUG_DYLIB = $(LUMEN_DEBUG_DYLIB_$(TARGET_NAME):default=$(inherited))",
+        ))
+    return "\n".join((*settings, ""))
+
+
+def validate_internal_evidence(evidence: signing.SignedArtifactEvidence, context: dict[str, str]) -> None:
+    if (
+        context.get("distribution") != "internal"
+        or evidence.bundle_identifier != BUNDLE or evidence.signature_team_identifier != TEAM
+        or signing._authority_kind(evidence.authorities) != "distribution"
+        or evidence.profile.get("UUID") != context.get("profileUUID")
+        or hashlib.sha1(evidence.leaf_signing_certificate).hexdigest().upper() != context.get("certificateSHA1")
+        or evidence.profile.get("ProvisionsAllDevices") is True
+        or evidence.signed_entitlements.get("get-task-allow") is not False
+        or evidence.profile.get("Entitlements", {}).get("get-task-allow") is not False
+        or evidence.signed_entitlements.get("beta-reports-active") is True
+        or evidence.profile.get("Entitlements", {}).get("beta-reports-active") is True
+    ):
+        raise ValueError("exported IPA is not the selected internal ad hoc distribution signature/profile")
+    internal_devices(evidence.profile)
+
+
+def validate_internal_ipa(ipa: Path, context: dict[str, str]) -> None:
+    with signing.resolved_signed_app_path(ipa) as app:
+        validate_internal_evidence(signing.read_signed_artifact_evidence(app), context)
 
 
 def collect_recovery(ipa: Path, archive: Path, evidence: Path) -> None:
@@ -313,6 +381,7 @@ def artifact_receipt(root: Path, source: dict[str, Any], ipa: Path, archive: Pat
     write_json(output, {
         "schemaVersion": 1, "status": "verified-ipa-not-submitted", "sourceRevision": source["sourceRevision"],
         "bundleIdentifier": source["bundleIdentifier"], "marketingVersion": source["marketingVersion"],
+        "configuration": source["configuration"], "distribution": source["distribution"],
         "buildNumber": source["buildNumber"], "minimumOSVersion": source["deploymentTarget"],
         "ipaSHA256": digest(ipa), "ipaBytes": ipa.stat().st_size, "symbolsSHA256": digest(symbol_zip),
         "dSYMFiles": {path.relative_to(archive).as_posix(): digest(path) for path in symbols},
@@ -322,7 +391,8 @@ def artifact_receipt(root: Path, source: dict[str, Any], ipa: Path, archive: Pat
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("candidate", "field", "toolchain", "signing", "export-options", "signing-xcconfig", "artifact-receipt", "collect-recovery"))
+    parser.add_argument("operation", choices=("candidate", "field", "toolchain", "signing", "export-options", "signing-xcconfig", "internal-signing", "artifact-receipt", "collect-recovery"))
+    parser.add_argument("--distribution", choices=tuple(LANES), default="store")
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--output", type=Path)
     parser.add_argument("--input", type=Path)
@@ -336,7 +406,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.operation == "candidate":
-            write_json(args.output, candidate(args.root, args.expected_revision))
+            write_json(args.output, candidate(args.root, args.expected_revision, args.distribution))
         elif args.operation == "field":
             value = json.loads(args.input.read_text())[args.key]
             if not isinstance(value, str) or "\n" in value:
@@ -345,13 +415,17 @@ def main() -> int:
         elif args.operation == "toolchain":
             validate_toolchain(args.xcode.read_text(), args.sdk, args.deployment_target)
         elif args.operation == "signing":
-            write_json(args.output, installed_signing(args.root))
+            write_json(args.output, installed_signing(args.root, args.distribution))
         elif args.operation == "export-options":
-            args.output.write_bytes(plistlib.dumps(export_options(json.loads(args.input.read_text()))))
+            args.output.write_bytes(plistlib.dumps(export_options(json.loads(args.input.read_text()), args.distribution)))
             args.output.chmod(0o600)
         elif args.operation == "signing-xcconfig":
-            args.output.write_text(signing_xcconfig(json.loads(args.input.read_text())), encoding="utf-8")
+            args.output.write_text(signing_xcconfig(json.loads(args.input.read_text()), args.distribution), encoding="utf-8")
             args.output.chmod(0o600)
+        elif args.operation == "internal-signing":
+            if args.distribution != "internal":
+                raise ValueError("internal signing validation requires the internal distribution lane")
+            validate_internal_ipa(args.ipa, json.loads(args.input.read_text()))
         elif args.operation == "artifact-receipt":
             artifact_receipt(args.root, json.loads(args.input.read_text()), args.ipa, args.archive, args.output)
         elif args.operation == "collect-recovery":

@@ -1,0 +1,26 @@
+build:
+  name: Lumen native development
+  steps:
+    - eas/checkout
+    - run:
+        name: Verify source, pinned dependencies and Apple SDK
+        command: bash scripts/eas-native-ios.sh --preflight
+    - eas/resolve_apple_team_id_from_credentials:
+        id: signing
+    - run:
+        name: Archive, export and verify internal Debug Lumen
+        command: bash scripts/eas-native-ios.sh
+    - eas/upload_artifact:
+        inputs:
+          type: application-archive
+          path: build/eas-export/Lumen.ipa
+    - run:
+        name: Preserve unverified partial outputs after failed gates
+        if: ${ failure() }
+        command: bash scripts/eas-native-ios.sh --collect-recovery
+    - eas/upload_artifact:
+        name: Upload internal build evidence
+        if: ${ always() }
+        inputs:
+          type: build-artifact
+          path: build/eas-evidence

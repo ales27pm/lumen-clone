@@ -27,6 +27,7 @@ build/
 !/.eas/build/
 /.eas/build/*
 !/.eas/build/ios-testflight.yml
+!/.eas/build/ios-development.yml
 ios/Lumen/Assets.xcassets/
 !ios/Lumen/Assets.xcassets/
 !ios/Lumen/Assets.xcassets/AppIcon.appiconset/

@@ -5,6 +5,26 @@
     "appVersionSource": "local"
   },
   "build": {
+    "development": {
+      "distribution": "internal",
+      "environment": "development",
+      "developmentClient": false,
+      "credentialsSource": "remote",
+      "autoIncrement": false,
+      "env": {
+        "EXPO_NO_CAPABILITY_SYNC": "1",
+        "LUMEN_EAS_DISTRIBUTION": "internal"
+      },
+      "ios": {
+        "scheme": "Lumen",
+        "buildConfiguration": "Debug",
+        "simulator": false,
+        "resourceClass": "medium",
+        "image": "macos-tahoe-26.6-xcode-27.1",
+        "config": "ios-development.yml",
+        "applicationArchivePath": "build/eas-export/Lumen.ipa"
+      }
+    },
     "testflight": {
       "distribution": "store",
       "environment": "production",

@@ -1,6 +1,41 @@
 # Lumen Release Workflow
 
-Use this runbook only when a release upload is explicitly requested. Validation and upload evidence must remain separate: compile/archive/export success is not the same as App Store Connect accepting the IPA.
+Use the selected lane only when its build or upload is explicitly requested. Validation and upload evidence must remain separate: compile/archive/export success is not the same as App Store Connect accepting the IPA.
+
+## Native EAS development build for iPhone
+
+The `development` build profile produces a native SwiftUI `Debug` build for
+registered iPhone devices using EAS internal distribution. Lumen does not use
+React Native, `expo-dev-client`, Metro, or `expo start`; its npm metadata only
+configures the EAS CLI. Keep `ios.simulator` false for this device profile.
+
+The profile retains the existing bundle, team, scheme, pinned dependencies and
+iOS 27.1 minimum. It uses a separate custom workflow with explicit internal
+Debug settings. Signing uses an Apple Distribution certificate and an unexpired
+ad hoc profile that contains registered devices and authorizes every required
+capability. `get-task-allow` remains false for this distribution method: this
+build enables Debug code, but is not a debugger-attachable Apple Development
+signature. The scoped configuration uses the sanitized distribution
+entitlements and emits original dSYMs; TestFlight's Store/Release checks remain
+separate and unchanged.
+
+Prepare signing with the existing EAS credentials service and reuse shared
+certificates. Verify the resolved `development` configuration, source archive,
+registered-device coverage and source revision before dispatch. Do not create a
+cloud build until the operator has confirmed it when a preparation-only flow
+was requested.
+
+```bash
+npx --yes eas-cli@25.1.1 credentials:configure-build --platform ios --profile development
+npx --yes eas-cli@25.1.1 build --platform ios --profile development --non-interactive --freeze-credentials --no-wait
+```
+
+Record the exact returned build ID. After completion, inspect that build's IPA,
+embedded ad hoc profile, signed entitlements, Debug configuration, source SHA,
+version and original symbols. Share its EAS installation page for the registered
+iPhone; no App Store Connect or TestFlight submission belongs to this lane.
+A finished cloud build does not establish successful installation or CoreAI
+execution on the device.
 
 ## Native EAS TestFlight lane
 
