@@ -138,10 +138,11 @@ struct CoreAITextEmbeddingSettingsSection: View {
     }
 
     @MainActor private func refreshMetadata() async {
-        guard operationOwner.isActive, !isBusy else { return }
+        guard !Task.isCancelled, operationOwner.isActive, !isBusy else { return }
+        let requestID = metadataRefreshID
         let configured = CoreAITextEmbeddingModelStore.isConfigured
         let refreshedSummary = try? await CoreAITextEmbeddingModelStore.configurationSummary()
-        guard !Task.isCancelled, operationOwner.isActive, !isBusy else { return }
+        guard !Task.isCancelled, requestID == metadataRefreshID, operationOwner.isActive, !isBusy else { return }
         isConfigured = configured
         summary = refreshedSummary
     }

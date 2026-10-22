@@ -28,3 +28,11 @@ def test_memory_and_background_cancellation_precede_coalescing_or_suspension():
     for function in ("handleScenePhaseChange", "handleDidEnterBackground"):
         body = scene.split(f"func {function}(", 1)[1].split("\n    }", 1)[0]
         assert body.index("AppCancellationBus.shared.cancel(.modelMaintenance)") < body.index("guard ")
+
+
+def test_embedding_metadata_discards_a_superseded_snapshot_after_await():
+    source = (ROOT / "ios/Lumen/Views/CoreAITextEmbeddingSettingsSection.swift").read_text()
+    refresh = source.split("private func refreshMetadata()", 1)[1].split("\n    }", 1)[0]
+    assert refresh.index("let requestID = metadataRefreshID") < refresh.index("await ")
+    assert refresh.index("await ") < refresh.index("requestID == metadataRefreshID")
+    assert refresh.index("requestID == metadataRefreshID") < refresh.index("isConfigured = configured")
