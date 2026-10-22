@@ -168,6 +168,31 @@ struct CoreAIModelStoreRecoveryTests {
         #expect(FileManager.default.fileExists(atPath: staged.path))
     }
 
+    @Test func recoveryHandlesDeepInterruptedPackagesWithBoundedDescriptors() throws {
+        let fixture = try Fixture(.gemma)
+        defer { fixture.remove() }
+        let staged = try fixture.interruptedDirectory(staged: true)
+        // Greater than the usual Darwin soft descriptor limit; the installer
+        // accepts paths this deep within its 1024-byte relative-path bound.
+        let io = CoreAILocalPackageIO()
+        let descriptor = try io.openDirectory(staged)
+        var current = dup(descriptor)
+        close(descriptor)
+        #expect(current >= 0)
+        do {
+            for _ in 0..<300 {
+                guard mkdirat(current, "d", 0o700) == 0 else { throw CoreAILocalPackageIO.Failure.storage }
+                let next = openat(current, "d", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                guard next >= 0 else { throw CoreAILocalPackageIO.Failure.storage }
+                close(current)
+                current = next
+            }
+            close(current)
+        } catch { close(current); throw error }
+        try CoreAIModelInstallationRecovery.cleanup(directory: fixture.owned, activeInstallation: nil)
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+    }
+
     private enum Kind: Sendable, Equatable { case gemma, embedding }
 
     private struct Fixture: Sendable {

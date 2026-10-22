@@ -70,27 +70,60 @@ nonisolated enum CoreAIModelInstallationRecovery {
     }
 
     private static func removeDirectory(_ name: String, parent: Int32, remaining: inout Int) throws {
-        try Task.checkCancellation()
         guard remaining > 0 else { throw CoreAILocalPackageIO.Failure.invalidPackage }
         remaining -= 1
-        let directory = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-        guard directory >= 0 else { throw CoreAILocalPackageIO.Failure.storage }
-        defer { close(directory) }
-        for child in try directoryNames(directory) {
+        // Reopen each parent from the anchored root instead of holding one file
+        // descriptor per depth. A valid package can have hundreds of components.
+        var pending: [(path: [String], remove: Bool)] = [([name], false)]
+        while let item = pending.popLast() {
             try Task.checkCancellation()
-            guard remaining > 0 else { throw CoreAILocalPackageIO.Failure.invalidPackage }
-            var status = stat()
-            guard fstatat(directory, child, &status, AT_SYMLINK_NOFOLLOW) == 0 else {
-                throw CoreAILocalPackageIO.Failure.storage
+            guard item.path.reduce(0, { $0 + $1.utf8.count + 1 }) <= 2_048 else {
+                throw CoreAILocalPackageIO.Failure.invalidPackage
             }
-            if status.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) {
-                try removeDirectory(child, parent: directory, remaining: &remaining)
-            } else {
-                remaining -= 1
-                guard unlinkat(directory, child, 0) == 0 else { throw CoreAILocalPackageIO.Failure.storage }
+            try autoreleasepool {
+                let ancestor = try openParent(of: item.path, root: parent)
+                defer { close(ancestor) }
+                let leaf = item.path[item.path.count - 1]
+                if item.remove {
+                    guard unlinkat(ancestor, leaf, AT_REMOVEDIR) == 0 else { throw CoreAILocalPackageIO.Failure.storage }
+                    return
+                }
+                var status = stat()
+                guard fstatat(ancestor, leaf, &status, AT_SYMLINK_NOFOLLOW) == 0 else {
+                    throw CoreAILocalPackageIO.Failure.storage
+                }
+                guard status.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) else {
+                    guard unlinkat(ancestor, leaf, 0) == 0 else { throw CoreAILocalPackageIO.Failure.storage }
+                    return
+                }
+                let directory = openat(ancestor, leaf, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                guard directory >= 0 else { throw CoreAILocalPackageIO.Failure.storage }
+                let children: [String]
+                do { children = try directoryNames(directory); close(directory) }
+                catch { close(directory); throw error }
+                guard children.count <= remaining else { throw CoreAILocalPackageIO.Failure.invalidPackage }
+                remaining -= children.count
+                pending.append((item.path, true))
+                for child in children.reversed() { pending.append((item.path + [child], false)) }
             }
         }
-        try Task.checkCancellation()
-        guard unlinkat(parent, name, AT_REMOVEDIR) == 0 else { throw CoreAILocalPackageIO.Failure.storage }
+    }
+
+    private static func openParent(of components: [String], root: Int32) throws -> Int32 {
+        var parent = dup(root)
+        guard parent >= 0 else { throw CoreAILocalPackageIO.Failure.storage }
+        do {
+            for component in components.dropLast() {
+                try Task.checkCancellation()
+                let next = openat(parent, component, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+                guard next >= 0 else { throw CoreAILocalPackageIO.Failure.storage }
+                close(parent)
+                parent = next
+            }
+            return parent
+        } catch {
+            close(parent)
+            throw error
+        }
     }
 }
