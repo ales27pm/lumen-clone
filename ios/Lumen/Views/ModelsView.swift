@@ -1,6 +1,8 @@
+import Foundation
 import SwiftUI
 import SwiftData
 
+@MainActor
 struct ModelsView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
@@ -17,6 +19,7 @@ struct ModelsView: View {
     @State private var isRepairingSelectedFamily = false
     @State private var modelOperationError: String?
     @State private var runtimeController = ModelRuntimeController()
+    private let modelConfigurationState = ModelSettingsConfigurationState.shared
 
     var body: some View {
         NavigationStack {
@@ -139,6 +142,7 @@ struct ModelsView: View {
             }
             .task(id: usesCoreAIEmbeddings) { await refreshLoaded() }
             .task(id: usesGemma) { await refreshLoaded() }
+            .task(id: modelConfigurationState.revision) { await refreshLoaded() }
             .task(id: appState.activeChatModelID) { await refreshLoaded() }
             .task(id: appState.activeEmbeddingModelID) { await refreshLoaded() }
             .task(id: appState.runtime.modelAutoloadState) { await refreshLoaded() }
@@ -184,9 +188,7 @@ struct ModelsView: View {
                 .font(.caption).foregroundStyle(Theme.textSecondary)
             NavigationLink("Manage text embeddings") {
                 Form {
-                    CoreAITextEmbeddingSettingsSection(onConfigurationChanged: {
-                        Task { await refreshLoaded() }
-                    })
+                    CoreAITextEmbeddingSettingsSection()
                 }
                 .navigationTitle("Text embeddings")
             }
@@ -381,9 +383,21 @@ struct ModelsView: View {
     }
 
     private func refreshLoaded() async {
-        isGemmaLoaded = await CoreAIGemmaService.shared.isLoaded()
-        isCoreAIEmbeddingLoaded = await CoreAITextEmbeddingService.shared.isLoaded()
+        guard !Task.isCancelled else { return }
+        let configurationRevision = modelConfigurationState.revision
+        let gemmaSelected = usesGemma
+        let coreAIEmbeddingsSelected = usesCoreAIEmbeddings
+        let chatModelID = appState.activeChatModelID
+        let embeddingModelID = appState.activeEmbeddingModelID
+        let gemmaLoaded = await CoreAIGemmaService.shared.isLoaded()
+        let coreAIEmbeddingLoaded = await CoreAITextEmbeddingService.shared.isLoaded()
         guard let set = await runtimeController.refreshLoadedPaths() else { return }
+        guard !Task.isCancelled, configurationRevision == modelConfigurationState.revision,
+              gemmaSelected == usesGemma, coreAIEmbeddingsSelected == usesCoreAIEmbeddings,
+              chatModelID == appState.activeChatModelID,
+              embeddingModelID == appState.activeEmbeddingModelID else { return }
+        isGemmaLoaded = gemmaLoaded
+        isCoreAIEmbeddingLoaded = coreAIEmbeddingLoaded
         loadedPaths = set
         if usesCoreAIEmbeddings {
             embeddingReadiness = isCoreAIEmbeddingLoaded ? "ready" : (CoreAITextEmbeddingModelStore.isConfigured ? "not_checked" : "selected_model_missing")

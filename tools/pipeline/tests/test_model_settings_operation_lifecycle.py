@@ -68,3 +68,42 @@ def test_parent_context_metadata_uses_a_versioned_view_task_for_success_and_fail
     failure = refresh.split("} catch", 1)[1]
     assert success.index("request == gemmaContextRequest") < success.index("gemmaContextLength = length")
     assert failure.index("request == gemmaContextRequest") < failure.index("gemmaContextIssue =")
+
+
+def test_models_view_refreshes_from_shared_revision_without_a_child_callback_task():
+    source = (ROOT / "ios/Lumen/Views/ModelsView.swift").read_text()
+    assert "@MainActor\nstruct ModelsView: View" in source
+    assert ".task(id: modelConfigurationState.revision) { await refreshLoaded() }" in source
+    assert "CoreAITextEmbeddingSettingsSection()" in source
+    assert "CoreAITextEmbeddingSettingsSection(onConfigurationChanged:" not in source
+    refresh = source.split("private func refreshLoaded()", 1)[1].split("private func load(", 1)[0]
+    assert refresh.index("let configurationRevision = modelConfigurationState.revision") < refresh.index("await ")
+    assert refresh.index("await runtimeController.refreshLoadedPaths()") < refresh.index("configurationRevision == modelConfigurationState.revision")
+    for guard in (
+        "gemmaSelected == usesGemma",
+        "coreAIEmbeddingsSelected == usesCoreAIEmbeddings",
+        "chatModelID == appState.activeChatModelID",
+        "embeddingModelID == appState.activeEmbeddingModelID",
+    ):
+        assert refresh.index(guard) < refresh.index("isGemmaLoaded = gemmaLoaded")
+    assert refresh.index("configurationRevision == modelConfigurationState.revision") < refresh.index("isCoreAIEmbeddingLoaded = coreAIEmbeddingLoaded")
+
+
+def test_chat_home_revalidates_provisioning_after_shared_revision_and_rejects_stale_results():
+    source = (ROOT / "ios/Lumen/Views/ChatHomeView.swift").read_text()
+    assert "@MainActor\nstruct ChatHomeView: View" in source
+    assert "let validationKey = provisioningValidationKey" in source
+    assert ".task(id: validationKey)" in source
+    assert "await refreshProvisioningPresentation(matching: validationKey)" in source
+    key = source.split("private var provisioningValidationKey:", 1)[1].split("private func refreshProvisioningPresentation(", 1)[0]
+    assert "modelConfigurationState.revision.uuidString" in key
+    refresh = source.split("private func refreshProvisioningPresentation(", 1)[1].split("\nstruct EmptyChatPlaceholder:", 1)[0]
+    assert refresh.count("!Task.isCancelled, validationKey == provisioningValidationKey") == 2
+    validation = refresh.split("let valid = await", 1)[1]
+    for guard in (
+        "validationKey == provisioningValidationKey, !usesGemma",
+        "chatModelID == appState.activeChatModelID",
+        "embeddingModelID == appState.activeEmbeddingModelID",
+    ):
+        assert validation.index(guard) < validation.index("ModelProvisioningReceipt.invalidate()")
+        assert validation.index(guard) < validation.index("showingOnboarding = !valid")

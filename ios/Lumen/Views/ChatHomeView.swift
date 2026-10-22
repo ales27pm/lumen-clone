@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import Foundation
 
+@MainActor
 struct ChatHomeView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
@@ -16,8 +17,10 @@ struct ChatHomeView: View {
     @State private var showingOnboarding = false
     @State private var pendingDrafts: [UUID: String] = [:]
     @State private var conversationPersistenceError: String?
+    private let modelConfigurationState = ModelSettingsConfigurationState.shared
 
     var body: some View {
+        let validationKey = provisioningValidationKey
         NavigationStack {
             ZStack {
                 AppBackground()
@@ -83,8 +86,8 @@ struct ChatHomeView: View {
                 createConversation()
             }
         }
-        .task(id: provisioningValidationKey) {
-            await refreshProvisioningPresentation()
+        .task(id: validationKey) {
+            await refreshProvisioningPresentation(matching: validationKey)
         }
         .alert("Conversation not saved", isPresented: Binding(
             get: { conversationPersistenceError != nil },
@@ -156,6 +159,7 @@ struct ChatHomeView: View {
             .sorted()
             .joined(separator: "\n")
         return [
+            modelConfigurationState.revision.uuidString,
             usesGemma ? "coreai-gemma" : "llama",
             usesGemma && CoreAIGemmaModelStore.isConfigured ? "gemma-imported" : "gemma-not-imported",
             provisioningReceiptData?.base64EncodedString() ?? "none",
@@ -165,7 +169,8 @@ struct ChatHomeView: View {
         ].joined(separator: "\n")
     }
 
-    private func refreshProvisioningPresentation() async {
+    private func refreshProvisioningPresentation(matching validationKey: String) async {
+        guard !Task.isCancelled, validationKey == provisioningValidationKey else { return }
         guard !LumenLaunchArguments.isUITesting else {
             showingOnboarding = false
             return
@@ -178,11 +183,15 @@ struct ChatHomeView: View {
         case .deferred:
             showingOnboarding = false
         case .completed:
+            let chatModelID = appState.activeChatModelID
+            let embeddingModelID = appState.activeEmbeddingModelID
             let valid = await ModelLaunchBootstrap.isProvisionedSelectionValid(
                 appState: appState,
                 context: modelContext
             )
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, validationKey == provisioningValidationKey, !usesGemma,
+                  chatModelID == appState.activeChatModelID,
+                  embeddingModelID == appState.activeEmbeddingModelID else { return }
             if !valid {
                 ModelProvisioningReceipt.invalidate()
             }
