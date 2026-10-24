@@ -45,13 +45,12 @@ extension GenerateRequest {
         if preservesRawStructuredAgentOutput {
             return self
         }
+        let callerPrompt = hostSelfModel?.removing(from: systemPrompt) ?? systemPrompt
+        let groundedPrompt = AgentGroundingPromptComposer.composeSystemPrompt(for: slot, fallbackSystemPrompt: callerPrompt)
         return GenerateRequest(
             id: id,
             sessionID: sessionID,
-            systemPrompt: AgentGroundingPromptComposer.composeSystemPrompt(
-                for: slot,
-                fallbackSystemPrompt: systemPrompt
-            ),
+            systemPrompt: hostSelfModel?.injecting(into: groundedPrompt) ?? groundedPrompt,
             history: history,
             userMessage: userMessage,
             temperature: temperature,
@@ -66,7 +65,8 @@ extension GenerateRequest {
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,
             reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters,
-            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation
+            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation,
+            hostSelfModel: hostSelfModel
         )
     }
 }

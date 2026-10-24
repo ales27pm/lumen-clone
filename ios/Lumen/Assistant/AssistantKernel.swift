@@ -174,7 +174,26 @@ final class AssistantKernel {
         return await takeCompletedStructuredLlamaTrace(requestID: requestID)
     }
 
-    func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?) async -> AssistantGroundingContext {
+    func prepareHostSelfModel(turn: AssistantTurnContext, selection: AssistantRuntimeRouter.Selection, tools: [SecureToolDefinition], activeSlot: LumenModelSlot? = nil) -> HostSelfModelContext {
+        HostSelfModelContext(snapshot: SelfModelSnapshotBuilder.build(
+            turn: turn,
+            budget: ContextBudgetAllocator.allocate(for: turn),
+            selectedRuntime: selection,
+            tools: tools,
+            activeSlot: activeSlot
+        ))
+    }
+
+    func prepareTextSelfModel(turn: AssistantTurnContext) async -> (selection: AssistantRuntimeRouter.Selection, context: HostSelfModelContext) {
+        let toolContext = ToolExecutionContext(isForeground: turn.isForeground, appState: nil, modelContext: nil, permissionRegistry: .shared, metricsStore: metricsStore)
+        let allowedIDs = Set(turn.allowedToolIDs)
+        let tools = await toolRegistry.availableDefinitions(context: toolContext, source: turn.isForeground ? .modelProposed : .backgroundTrigger)
+            .filter { allowedIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
+        let selection = router.selection(for: turn)
+        return (selection, prepareHostSelfModel(turn: turn, selection: selection, tools: tools))
+    }
+
+    func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?, hostSelfModel: HostSelfModelContext? = nil) async -> AssistantGroundingContext {
         guard let modelContext else { return .empty }
         let budget = ContextBudgetAllocator.allocate(for: turn)
         let contextQuery = ContextQueryRewriter.rewrite(userInput: turn.input, history: turn.history, relevantMemories: turn.relevantMemories)
@@ -182,30 +201,24 @@ final class AssistantKernel {
         let rag = await ragEngine.buildContext(query: contextQuery.query, budget: budget.charSections.rag, context: modelContext)
         let tctx = ToolExecutionContext(isForeground: turn.isForeground, appState: nil, modelContext: modelContext, permissionRegistry: .shared, metricsStore: metricsStore)
         let defs = await toolRegistry.availableDefinitions(context: tctx, source: turn.isForeground ? .modelProposed : .backgroundTrigger)
-        let runtimeSelection = router.selection(for: turn)
-        let selfModelSnapshot = SelfModelSnapshotBuilder.build(
-            turn: turn,
-            budget: budget,
-            selectedRuntime: runtimeSelection,
-            tools: defs
-        )
-        let selfModelSection = SelfModelContextProvider.section(for: selfModelSnapshot, budget: budget)
+        // This is discovery before backend assembly, not an inclusion receipt.
+        let selfModelChars = hostSelfModel?.block.count ?? 0
         return .init(
             memoryCount: mem.selected.count,
             ragCount: rag.selected.count,
             toolCount: defs.count,
-            estimatedChars: mem.totalChars + rag.totalChars + selfModelSection.estimatedChars,
-            estimatedTokens: ContextBudgetAllocator.estimateTokens(forCharacterCount: mem.totalChars + selfModelSection.estimatedChars) + rag.totalTokens,
+            estimatedChars: mem.totalChars + rag.totalChars + selfModelChars,
+            estimatedTokens: ContextBudgetAllocator.estimateTokens(forCharacterCount: mem.totalChars + selfModelChars) + rag.totalTokens,
             contextProfile: budget.profile.rawValue,
             maxInputTokens: budget.maxInputTokens,
             ragConfidence: rag.confidence,
             memoryTierCounts: mem.tierCounts,
             contextQueryExpanded: contextQuery.expansionApplied,
-            selfModelIncluded: true,
-            selfModelSchemaVersion: selfModelSnapshot.schemaVersion,
-            selfModelEstimatedChars: selfModelSection.estimatedChars,
-            selfModelSourceIDs: selfModelSection.sourceIDs,
-            selfModelMode: selfModelSnapshot.app.mode
+            selfModelIncluded: false,
+            selfModelSchemaVersion: hostSelfModel?.snapshot.schemaVersion,
+            selfModelEstimatedChars: selfModelChars,
+            selfModelSourceIDs: [],
+            selfModelMode: hostSelfModel?.snapshot.app.mode
         )
     }
 
@@ -216,19 +229,23 @@ final class AssistantKernel {
         default:
             break
         }
-        let selection = router.selection(for: context)
+        let prepared = await prepareTextSelfModel(turn: context)
+        let hostSelfModel = prepared.context
+        // Use the same immutable selection that produced the host snapshot.
+        let selection = prepared.selection
         guard selection.runtime != .coreML else { throw KernelError.unsupportedRuntimeForTextTurn(.coreML) }
         let decision = ComputePolicy.decide(for: context)
         let request = TextGenerationRequest(
             prompt: context.input,
-            systemPrompt: context.systemPrompt,
+            systemPrompt: hostSelfModel.injecting(into: context.systemPrompt),
             history: context.history,
             temperature: context.temperature,
             topP: context.topP,
             repetitionPenalty: context.repetitionPenalty,
             maxTokens: min(context.maxTokens, decision.maxTokens),
             relevantMemories: context.relevantMemories,
-            attachments: context.attachments
+            attachments: context.attachments,
+            hostSelfModel: hostSelfModel
         )
         let start = Date()
         if selection.runtime == .deterministicFallback {
@@ -303,7 +320,8 @@ final class AssistantKernel {
         selection: AssistantRuntimeRouter.Selection,
         output: String,
         latencyMs: Int,
-        parseError: String?
+        parseError: String?,
+        selfModel: AgentBehaviorTrace.SelfModelDecisionSummary? = nil
     ) {
         guard selection.runtime != .deterministicFallback,
               selection.runtime != .unavailable,
@@ -363,7 +381,8 @@ final class AssistantKernel {
             firstChunkReceived: !trimmedOutput.isEmpty,
             textChunkCount: trimmedOutput.isEmpty ? 0 : 1,
             finalChunkReceived: true,
-            streamTerminationReason: parseError == nil ? "stop" : "error"
+            streamTerminationReason: parseError == nil ? "stop" : "error",
+            selfModel: selfModel
         )
     }
 

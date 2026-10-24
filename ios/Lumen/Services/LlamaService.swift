@@ -24,6 +24,7 @@ nonisolated struct GenerateRequest: Sendable {
     let reasoningCaptureEnabled: Bool
     let reasoningTraceBudgetCharacters: Int
     let allowsMemoryPressureContinuation: Bool
+    let hostSelfModel: HostSelfModelContext?
 
     init(
         id: UUID = UUID(),
@@ -43,7 +44,8 @@ nonisolated struct GenerateRequest: Sendable {
         developerTraceModeEnabled: Bool = false,
         reasoningCaptureEnabled: Bool = false,
         reasoningTraceBudgetCharacters: Int = 16_384,
-        allowsMemoryPressureContinuation: Bool = false
+        allowsMemoryPressureContinuation: Bool = false,
+        hostSelfModel: HostSelfModelContext? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -63,6 +65,7 @@ nonisolated struct GenerateRequest: Sendable {
         self.reasoningCaptureEnabled = developerTraceModeEnabled && reasoningCaptureEnabled
         self.reasoningTraceBudgetCharacters = max(0, reasoningTraceBudgetCharacters)
         self.allowsMemoryPressureContinuation = allowsMemoryPressureContinuation
+        self.hostSelfModel = hostSelfModel
     }
 
     init(
@@ -83,7 +86,8 @@ nonisolated struct GenerateRequest: Sendable {
         developerTraceModeEnabled: Bool = false,
         reasoningCaptureEnabled: Bool = false,
         reasoningTraceBudgetCharacters: Int = 16_384,
-        allowsMemoryPressureContinuation: Bool = false
+        allowsMemoryPressureContinuation: Bool = false,
+        hostSelfModel: HostSelfModelContext? = nil
     ) {
         self.init(
             id: id,
@@ -103,7 +107,8 @@ nonisolated struct GenerateRequest: Sendable {
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,
             reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters,
-            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation
+            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation,
+            hostSelfModel: hostSelfModel
         )
     }
 
@@ -127,7 +132,8 @@ nonisolated struct GenerateRequest: Sendable {
             developerTraceModeEnabled: developerTraceModeEnabled,
             reasoningCaptureEnabled: reasoningCaptureEnabled,
             reasoningTraceBudgetCharacters: reasoningTraceBudgetCharacters,
-            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation
+            allowsMemoryPressureContinuation: allowsMemoryPressureContinuation,
+            hostSelfModel: hostSelfModel
         )
     }
 
@@ -1933,7 +1939,8 @@ final actor AppLlamaService {
                         firstChunkReceived: firstChunkReceived,
                         textChunkCount: textChunkCount,
                         finalChunkReceived: finalChunkReceived,
-                        streamTerminationReason: streamTerminationReason
+                        streamTerminationReason: streamTerminationReason,
+                        renderedPrompt: promptBuild.assembly.systemPrompt
                     )
                 } catch is CancellationError {
                     let cancelReason = cancellationToken.reason ?? AppCancellationBus.shared.lastCancellationReason ?? "task-cancelled"
@@ -2278,7 +2285,8 @@ final actor AppLlamaService {
         firstChunkReceived: Bool? = nil,
         textChunkCount: Int? = nil,
         finalChunkReceived: Bool? = nil,
-        streamTerminationReason: String? = nil
+        streamTerminationReason: String? = nil,
+        renderedPrompt: String? = nil
     ) async {
         let adapterMetadata = currentAdapterTraceMetadata(slot: slot)
         let parsed = AgentTurnParser.parse(output)
@@ -2333,8 +2341,8 @@ final actor AppLlamaService {
             textChunkCount: textChunkCount,
             finalChunkReceived: finalChunkReceived,
             streamTerminationReason: streamTerminationReason,
-            selfModel: AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
-                request.userMessage,
+            selfModel: request.hostSelfModel?.summary(
+                inRenderedPrompt: renderedPrompt ?? "",
                 selectedToolID: selectedToolID,
                 requiresApproval: nil,
                 approvalMode: nil
@@ -2527,7 +2535,8 @@ final actor AppLlamaService {
             attachments: req.attachments,
             budget: budget,
             attachmentNormalization: req.modelName == "agent-json" ? .agentRouting : .preserveRaw,
-            latencyClass: latencySelection.latencyClass
+            latencyClass: latencySelection.latencyClass,
+            hostSelfModel: req.hostSelfModel
         )
         let useQwenDirective = currentChatModelLooksLikeQwen3(slot: slot)
         let requireFinalAnswerOnly = !req.responseFormat.requiresRawStructuredOutput

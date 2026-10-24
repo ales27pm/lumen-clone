@@ -2,21 +2,21 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `7fbea2fbc7823b14383a06674eba931326d644c1`
-- Working-tree digest: `36707b5325fd9977286cffc6d4e03d757163dc499835ef79b1d6c3f4c6e37a67`
+- Base commit: `be31e8f558ca0aea2ab332eb08a9bc99f8070eda`
+- Working-tree digest: `449b02645d2074774889a8b7344fb4c19c923a2e1de1e65aecc108b8760fcf1c`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `930`
+- Codebase-home records: `932`
 
 ## Top Modules
-- `ios/LumenTests`: 196 files
+- `ios/LumenTests`: 197 files
 - `Services`: 72 files
 - `docs`: 64 files
 - `tools/fine_tuning/unsloth`: 54 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 48 files
 - `tools/lumen_manifest_crawler/tests`: 40 files
 - `Views`: 37 files
-- `Assistant`: 32 files
+- `Assistant`: 33 files
 - `scripts`: 28 files
 - `Services/LLM`: 26 files
 - `Diagnostics`: 21 files
@@ -65,6 +65,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/CoreAIGemmaRuntimeAdapter.swift` (Assistant): Adapts the single Core AI owner to the existing kernel. The model only emits text; structured decisions still cross the kernel's schema and approval gates. Symbols: CoreAIGemmaRuntimeAdapter, generate, prepareStructuredRuntime, structuredPromptPreflight, streamStructured, handleMemoryPressure, requireAvailable, liveContextCapacity.
 - `ios/Lumen/Assistant/CoreAITextEmbeddingRuntimeAdapter.swift` (Assistant): A separate sentence-vector runtime; never a second generative assistant. Symbols: CoreAITextEmbeddingRuntimeAdapter, embed, embedWithIdentity, handleMemoryPressure, kind, availabilityOverride, preferenceOverride, embedHandler.
 - `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` (Assistant): `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` owns HeadlessAgentKernelRunner behavior and defines: HeadlessAgentRunResult, Status, IssueCategory, HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, complet Symbols: HeadlessAgentRunResult, Status, IssueCategory, HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, completed, deferred, blocked.
+- `ios/Lumen/Assistant/HostSelfModelContext.swift` (Assistant): Created only from host-owned runtime state. Prompt text is never decoded as this value or used to establish its provenance. Symbols: HostSelfModelContext, injecting, removing, summary, maximumBlockCharacters, begin, end, snapshot.
 - `ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift` (Assistant): Explicit Agent Kernel compatibility boundary for legacy agent services. Symbols: LegacyAgentCompatibilityBridge, AgentEvent, runLegacyAgentService, runSlotAgentKernelCompatibility, runSlotAgentCompatibility, task, agentKernelEvent.
 - `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` (Assistant): `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, forceLegacyRuntimeForTesting, usesUnifiedAssistant, modelContext, conversationID, t Symbols: LegacyAgentRunOptions, GroundingMode, forceLegacyRuntimeForTesting, usesUnifiedAssistant, modelContext, conversationID, turnID, scenarioID.
 - `ios/Lumen/Assistant/LegacyGroundingBridge.swift` (Assistant): Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and d Symbols: LegacyGroundingBundle, LegacyGroundingBridge, build, tierSummary, grounding, budgetPlan, sections, renderedPromptContext.
@@ -74,11 +75,11 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/LegacyGroundingResult.swift` (Assistant): `ios/Lumen/Assistant/LegacyGroundingResult.swift` owns LegacyGroundingResult behavior and defines: LegacyGroundingResult, systemPrompt, userMessage, grounding, sections, bridgedTools, degradedReasons, metricsSummary, tru Symbols: LegacyGroundingResult, systemPrompt, userMessage, grounding, sections, bridgedTools, degradedReasons, metricsSummary.
 - `ios/Lumen/Assistant/LegacyPromptAssembler.swift` (Assistant): `ios/Lumen/Assistant/LegacyPromptAssembler.swift` owns LegacyPromptAssembler behavior and defines: LegacyPromptAssembled, LegacyPromptAssembler, assemble, titled, sectionCaps, isMemorySection, isSourceSection, isToolSect Symbols: LegacyPromptAssembled, LegacyPromptAssembler, assemble, titled, sectionCaps, isMemorySection, isSourceSection, isToolSection.
 - `ios/Lumen/Assistant/LegacyPromptInjectionPolicy.swift` (Assistant): `ios/Lumen/Assistant/LegacyPromptInjectionPolicy.swift` owns LegacyPromptInjectionPolicy behavior and defines: LegacyPromptInjectionPolicy, memoryMax, ragMax, toolMax, runtimeMax, allowSensitiveSections, backgroundSafeTo Symbols: LegacyPromptInjectionPolicy, memoryMax, ragMax, toolMax, runtimeMax, allowSensitiveSections, backgroundSafeToolsOnly, foregroundChat.
-- `ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` (Assistant): `ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, Symbols: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, budgetPlan.
+- `ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` (Assistant): `ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, Symbols: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, groundingAfterAssembly.
 - `ios/Lumen/Assistant/PromptGroundingIdempotencyGuard.swift` (Assistant): `ios/Lumen/Assistant/PromptGroundingIdempotencyGuard.swift` owns PromptGroundingIdempotencyGuard behavior and defines: PromptGroundingIdempotencyGuard, sectionOccurrenceCounts, containsGrounding, stripExistingGrounding,  Symbols: PromptGroundingIdempotencyGuard, sectionOccurrenceCounts, containsGrounding, stripExistingGrounding, marker, sectionHeaders, out, range.
 - `ios/Lumen/Assistant/PromptGroundingRenderer.swift` (Assistant): `ios/Lumen/Assistant/PromptGroundingRenderer.swift` owns PromptGroundingRenderer behavior and defines: PromptGroundingRenderer, render, renderForPrompt, renderedMemories, memLines, renderedRAG, ragLines, renderedTools, c Symbols: PromptGroundingRenderer, render, renderForPrompt, renderedMemories, memLines, renderedRAG, ragLines, renderedTools.
 - `ios/Lumen/Assistant/PromptGroundingSection.swift` (Assistant): `ios/Lumen/Assistant/PromptGroundingSection.swift` owns PromptGroundingSection behavior and defines: GroundingPrivacyLevel, PromptGroundingSection, title, content, estimatedChars, sourceIDs, privacyLevel. Symbols: GroundingPrivacyLevel, PromptGroundingSection, title, content, estimatedChars, sourceIDs, privacyLevel.
-- `ios/Lumen/Assistant/SelfModelContextProvider.swift` (Assistant): `ios/Lumen/Assistant/SelfModelContextProvider.swift` owns SelfModelContextProvider behavior and defines: SelfModelContextProvider, section, render, maxChars, sourceIDs, compactLines, sectionTitle, foregroundMaxChars, bac Symbols: SelfModelContextProvider, section, render, maxChars, sourceIDs, compactLines, sectionTitle, foregroundMaxChars.
+- `ios/Lumen/Assistant/SelfModelContextProvider.swift` (Assistant): Facts are atomic: dropping a whole field is safer than turning a truncated tool ID, policy, revision, or JSON value into an apparent complete claim. Symbols: SelfModelContextProvider, section, render, maxChars, sourceIDs, requiredLines, optionalLines, sectionTitle.
 - `ios/Lumen/Assistant/SemanticEmbeddingText.swift` (Assistant): CoreAI receives the complete normalized body and rejects token overflow. Preserve the earlier character bound only for the legacy embedding profile. Symbols: SemanticEmbeddingText, RAGEmbeddingMetadata, SemanticEmbeddingReadiness, queryBody, documentBody, memoryDocumentBody, query, document.
 - `ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` (Assistant): `ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, Structure Symbols: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run.
 - `ios/Lumen/Services/AgentEventContinuationYield.swift` (Services): `ios/Lumen/Services/AgentEventContinuationYield.swift` is static Lumen source for the `Services` module.
@@ -94,4 +95,3 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/Tools/LocationProbe.swift` (Services/Tools): One-shot location fetch with a per-call delegate — no shared singleton state. Symbols: LocationProbe, LocationCoordinateFailure, LocationCoordinateProbeResult, LocationAuthorizationAction, SingleShotLocationDelegate, SingleShotDescriptionDelegate, currentCoordinate, currentCoordinateResult.
 - `ios/Lumen/Services/Tools/LocationTools.swift` (Services/Tools): Retrieves a textual description of the current location. - Returns: A string describing the current location. Symbols: LocationTools, currentLocation, openDirections, directionsURL, searchNearby, localSearchFailureMessage, trimmed, url.
 - `ios/Lumen/Services/Tools/MemoryTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MemoryTools.swift` owns MemoryTools behavior and defines: MemoryTools, RAGIndexExecution, save, recall, ragSearch, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos, ragIndexPhotosExecution, Symbols: MemoryTools, RAGIndexExecution, save, recall, ragSearch, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos.
-- `ios/Lumen/Services/Tools/MotionTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MotionTools.swift` owns MotionTools behavior and defines: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end, start, ped. Symbols: MotionTools, motionActivity, pedometerData, activitySegments, shared, pedometer, activityManager, end.

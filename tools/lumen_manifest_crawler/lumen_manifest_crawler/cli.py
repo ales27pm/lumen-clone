@@ -16,7 +16,7 @@ from lumen_manifest_crawler.crawler import generate_manifest
 from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
 from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
-from lumen_manifest_crawler.dataset.self_model_eval import load_jsonl, score_self_model_eval_answers
+from lumen_manifest_crawler.dataset.self_model_eval import load_jsonl, load_snapshot, score_self_model_eval_answers
 from lumen_manifest_crawler.developer_framework import (
     FrameworkEnvironment,
     UBUNTU_TRAINING_JOB_IDS,
@@ -314,11 +314,16 @@ def improve_loop(
 def score_self_model_eval(
     eval_records: Path = typer.Option(Path("generated/agent_manifest/dataset/self_model_eval.jsonl"), "--eval-records", help="Generated self-model eval JSONL."),
     answers: Path = typer.Option(..., "--answers", help="Model answer JSONL keyed by eval id, scenario id, or metadata name."),
+    snapshot: Optional[Path] = typer.Option(None, "--snapshot", "--runtime-snapshot", exists=True, dir_okay=False, help="Evaluator-supplied SelfModelSnapshot JSON; model answer snapshots are not trusted."),
     output: Optional[Path] = typer.Option(None, "--output", help="Optional JSON report path."),
     fail_on_validation: bool = typer.Option(False, "--fail-on-validation/--no-fail-on-validation", help="Exit non-zero when any scenario is missing or failed."),
 ) -> None:
-    """Score exported answers against self-model eval expectations."""
-    report = score_self_model_eval_answers(load_jsonl(eval_records), load_jsonl(answers))
+    """Check structured claims; free text and live execution are not certified."""
+    try:
+        snapshot_value = load_snapshot(snapshot) if snapshot else None
+    except ValueError as error:
+        raise typer.BadParameter(str(error), param_hint="--snapshot") from error
+    report = score_self_model_eval_answers(load_jsonl(eval_records), load_jsonl(answers), snapshot=snapshot_value)
     payload = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)

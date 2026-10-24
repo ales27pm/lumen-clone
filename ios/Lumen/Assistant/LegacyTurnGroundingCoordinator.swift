@@ -58,6 +58,10 @@ final class LegacyTurnGroundingCoordinator {
             let rendered = await Task.detached(priority: .userInitiated) {
                 PromptGroundingRenderer.renderForPrompt(sections, maxChars: 3200)
             }.value
+            let selfModelSection = sections.first { $0.title == SelfModelContextProvider.sectionTitle }
+            let selfModelChars = selfModelSection.map { section in
+                !section.content.isEmpty && rendered.contains("[\(section.title)]\n\(section.content)") ? section.content.count : 0
+            } ?? 0
             let grounding = AssistantGroundingContext(
                 memoryCount: bundle.grounding.memoryCount,
                 ragCount: bundle.grounding.ragCount,
@@ -69,11 +73,11 @@ final class LegacyTurnGroundingCoordinator {
                 ragConfidence: bundle.grounding.ragConfidence,
                 memoryTierCounts: bundle.grounding.memoryTierCounts,
                 contextQueryExpanded: bundle.grounding.contextQueryExpanded,
-                selfModelIncluded: bundle.grounding.selfModelIncluded,
-                selfModelSchemaVersion: bundle.grounding.selfModelSchemaVersion,
-                selfModelEstimatedChars: bundle.grounding.selfModelEstimatedChars,
-                selfModelSourceIDs: bundle.grounding.selfModelSourceIDs,
-                selfModelMode: bundle.grounding.selfModelMode
+                selfModelIncluded: selfModelChars > 0,
+                selfModelSchemaVersion: selfModelChars > 0 ? bundle.grounding.selfModelSchemaVersion : nil,
+                selfModelEstimatedChars: selfModelChars,
+                selfModelSourceIDs: selfModelChars > 0 ? bundle.grounding.selfModelSourceIDs : [],
+                selfModelMode: selfModelChars > 0 ? bundle.grounding.selfModelMode : nil
             )
             roleAwareBundle = .init(grounding: grounding, budgetPlan: bundle.budgetPlan, sections: sections, renderedPromptContext: rendered, secureTools: bundle.secureTools, metricsSummary: bundle.metricsSummary)
         }
@@ -149,7 +153,29 @@ final class LegacyTurnGroundingCoordinator {
         let tools = output.legacyTools.isEmpty ? request.externalAvailableTools : output.legacyTools
         AgentGroundingInstrumentation.mark("after LegacyTurnGroundingCoordinator.prepareGroundedRequest", metrics: .init(sectionCount: sections.count, toolCount: tools.count, memoryCount: output.grounding.memoryCount, promptChars: assembled.estimatedChars), elapsedMs: AgentGroundingInstrumentation.elapsedMs(since: requestStart))
         PersistentRuntimeDiagnosticsObserver.shared.emit(.init(kind: .groundingCost, values: ["elapsedMs": String(Int(AgentGroundingInstrumentation.elapsedMs(since: requestStart))), "sectionCount": String(sections.count), "promptChars": String(assembled.estimatedChars), "toolCount": String(tools.count), "memoryCount": String(output.grounding.memoryCount), "source": "coordinator"]))
-        return .init(systemPrompt: assembled.systemPrompt, userMessage: assembled.userMessage, grounding: output.grounding, sections: sections, bridgedTools: tools, degradedReasons: degraded, metricsSummary: output.metricsSummary, truncationOccurred: assembled.truncationOccurred)
+        let grounding = Self.groundingAfterAssembly(output.grounding, assembled: assembled)
+        return .init(systemPrompt: assembled.systemPrompt, userMessage: assembled.userMessage, grounding: grounding, sections: sections, bridgedTools: tools, degradedReasons: degraded, metricsSummary: output.metricsSummary, truncationOccurred: assembled.truncationOccurred)
+    }
+
+    static func groundingAfterAssembly(_ grounding: AssistantGroundingContext, assembled: LegacyPromptAssembled) -> AssistantGroundingContext {
+        let included = assembled.selfModelSectionChars > 0
+        return .init(
+            memoryCount: grounding.memoryCount,
+            ragCount: grounding.ragCount,
+            toolCount: grounding.toolCount,
+            estimatedChars: assembled.estimatedChars,
+            estimatedTokens: assembled.estimatedTokens,
+            contextProfile: grounding.contextProfile,
+            maxInputTokens: grounding.maxInputTokens,
+            ragConfidence: grounding.ragConfidence,
+            memoryTierCounts: grounding.memoryTierCounts,
+            contextQueryExpanded: grounding.contextQueryExpanded,
+            selfModelIncluded: included,
+            selfModelSchemaVersion: included ? grounding.selfModelSchemaVersion : nil,
+            selfModelEstimatedChars: assembled.selfModelSectionChars,
+            selfModelSourceIDs: included ? grounding.selfModelSourceIDs : [],
+            selfModelMode: included ? grounding.selfModelMode : nil
+        )
     }
 
     private static func budgetPlan(for request: LegacyGroundingRequest) -> ContextBudgetPlan {

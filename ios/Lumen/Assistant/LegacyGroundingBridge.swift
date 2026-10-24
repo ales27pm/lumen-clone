@@ -58,6 +58,8 @@ final class LegacyGroundingBridge {
             PromptGroundingRenderer.renderForPrompt(sections, maxChars: maxChars)
         }.value
         try cancellationToken?.checkCancellation()
+        let selfModelIncluded = !selfModelSection.content.isEmpty
+            && rendered.contains("[\(selfModelSection.title)]\n\(selfModelSection.content)")
         let grounding = AssistantGroundingContext(
             memoryCount: mem.selected.count,
             ragCount: rag.selected.count,
@@ -69,11 +71,11 @@ final class LegacyGroundingBridge {
             ragConfidence: rag.confidence,
             memoryTierCounts: mem.tierCounts,
             contextQueryExpanded: contextQuery.expansionApplied,
-            selfModelIncluded: true,
-            selfModelSchemaVersion: selfModelSnapshot.schemaVersion,
-            selfModelEstimatedChars: selfModelSection.estimatedChars,
-            selfModelSourceIDs: selfModelSection.sourceIDs,
-            selfModelMode: selfModelSnapshot.app.mode
+            selfModelIncluded: selfModelIncluded,
+            selfModelSchemaVersion: selfModelIncluded ? selfModelSnapshot.schemaVersion : nil,
+            selfModelEstimatedChars: selfModelIncluded ? selfModelSection.content.count : 0,
+            selfModelSourceIDs: selfModelIncluded ? selfModelSection.sourceIDs : [],
+            selfModelMode: selfModelIncluded ? selfModelSnapshot.app.mode : nil
         )
         try? await metricsStore.appendMetric(.init(timestamp: Date(), runtimeName: "grounding", taskKind: "\(turn.task)", modelIDHash: nil, policySummary: "profile=\(budget.profile.rawValue),m=\(mem.selected.count),r=\(rag.selected.count),t=\(tools.count),selfModel=\(selfModelSnapshot.schemaVersion),memTiers=\(Self.tierSummary(mem.tierCounts)),queryExpanded=\(contextQuery.expansionApplied),queryTerms=\(contextQuery.addedTerms.count)", latencyMs: nil, success: true, errorCode: nil, thermalState: .from(processThermalState: turn.thermalState), lowPowerMode: turn.lowPowerMode, memoryWarningCount: 0))
         return .init(grounding: grounding, budgetPlan: budget, sections: sections, renderedPromptContext: rendered, secureTools: tools, metricsSummary: "ok")

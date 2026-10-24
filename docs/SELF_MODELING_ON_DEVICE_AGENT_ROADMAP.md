@@ -36,7 +36,7 @@ The first implementation pass should bind to existing source rather than creatin
 | Fleet contract | `ios/Lumen/Services/ModelFleet.swift` | Slot names, fleet contract version, accepted runtime path kinds, and per-slot contracts. |
 | Tool policy | `ios/Lumen/Tools/ToolRegistry.swift`, `ios/Lumen/Tools/SecureToolDefinition.swift`, `ios/Lumen/Tools/ToolApprovalPolicy.swift` | Policy-filtered tools, approval requirements, background safety, and permission-denial reasons. |
 | Runtime evidence export | `ios/Lumen/Services/AgentGrounding/InAppDatasetPackageExporter.swift`, `ios/Lumen/Services/Diagnostics/EvidenceLayerExporter.swift` | `exportPolicy.sourceLayer`, live-E2E ownership, deterministic-static-scenario flags, privacy text, and trace limits. |
-| Generated fleet self-knowledge | `generated/agent_manifest/fleet_system_prompts.json`, `generated/agent_manifest/fine_tuning/adapter_runtime_manifest.json` | Existing slot/source-map/training records that can seed self-model cards and evals. |
+| Generated fleet self-knowledge | `generated/agent_manifest/fleet_system_prompts.json`, `generated/fine_tuning/adapter_runtime_manifest.json` | Existing slot/source-map/training records that can seed self-model cards and evals. |
 
 ## Implementation checkpoint
 
@@ -45,15 +45,15 @@ Current static/source-verified progress:
 | Milestone item | Status | Evidence |
 |---|---|---|
 | Bounded `SelfModelSnapshot` contract | Implemented in source | `ios/Lumen/Services/SelfModel/SelfModelSnapshot.swift`; covered by `ios/LumenTests/SelfModelSnapshotTests.swift`. |
-| Foreground/background self-model context block | Implemented in source | `ios/Lumen/Assistant/SelfModelContextProvider.swift`; injected by `AssistantKernel`, `LegacyGroundingBridge`, and `LegacyPromptAssembler`; background filtering covered by `SelfModelSnapshotTests`. |
-| Prompt assembly preserves self-model block | Implemented in source | `LegacyPromptAssembler` emits `[SELF MODEL]` inside the runtime budget; covered by `LegacyPromptAssemblerIdempotencyTests`. |
+| Foreground/background self-model context block | Source integration; Apple execution pending | The kernel passes a host-built context to text and structured action/final requests independently of diagnostics. `SelfModelContextProvider` emits complete fields or omits the block when its minimum contract cannot fit. |
+| Prompt assembly preserves self-model block | Source integration; Apple execution pending | Host context is budgeted separately from caller text. Legacy assembly includes the complete self-model only when the remaining runtime budget permits, otherwise omits it; it never cuts a field mid-value. Verified trace inclusion is derived from trusted context and final prompt presence, not an arbitrary `[SELF MODEL]` header. High-level text diagnostics without a post-assembly receipt do not attest inclusion. |
 | Manifest self-model cards | Generated | `generated/agent_manifest/self_model_cards.jsonl` and `generated/agent_manifest/dataset/self_model_cards.jsonl` contain the required card taxonomy. |
-| Self-model SFT/eval artifacts | Generated | `generated/agent_manifest/dataset/self_model_sft.jsonl` and `generated/agent_manifest/dataset/self_model_eval.jsonl`; current static eval family has 24 scenarios. |
+| Self-model SFT/eval artifacts | Generated | `generated/agent_manifest/dataset/self_model_sft.jsonl` and `generated/agent_manifest/dataset/self_model_eval.jsonl`; current static eval family has 25 scenarios. |
 | Improve-loop self-model scenario queue | Generated | `generated/agent_improvement_loop/testflight_scenarios.jsonl` includes `sourceFamily: self_model_eval` scenarios in the bounded TestFlight queue. |
 | Improve-loop repair ingestion | Implemented in crawler tests | `tools/lumen_manifest_crawler/tests/test_self_model_dataset.py` proves self-model runtime failures become `runtime_audit_repairs` and reach REM fine-tuning. |
-| Runtime trace/export self-model decisions | Implemented in source | `AgentBehaviorTrace.SelfModelDecisionSummary` and `InAppDatasetTraceExport.selfModel` export schema/mode/source-layer/tool/approval summary without full snapshot payload. |
-| Runtime self-improvement maintenance loop | Implemented in source | `SelfImprovementLoop` runs app-launch/background local maintenance with actor-isolated coordination, cooldown/circuit-breaker state, bounded `SelfModelSnapshot` generation off the UI actor, redacted metrics, zero-token background policy, and no opportunistic model loading. |
-| Self-model eval answer scoring | Implemented as static harness | `lumen_manifest_crawler score-self-model-eval --answers <answers.jsonl>` scores exported answers against `self_model_eval` expectations for unknown tools, approval bypass, evidence honesty, privacy, and repair-sample behavior. |
+| Runtime trace/export self-model decisions | Implemented in source | `AgentBehaviorTrace.SelfModelDecisionSummary` and `InAppDatasetTraceExport.selfModel` export host-derived schema/mode/source-layer/tool/approval metadata without the full snapshot. User-authored self-model headers are not provenance. |
+| Runtime self-improvement maintenance loop | Implemented in source | `SelfImprovementLoop` runs app-launch/background local maintenance with actor-isolated coordination, cooldown/circuit-breaker state, bounded `SelfModelSnapshot` generation under explicit actor ownership, redacted metrics, zero-token background policy, and no opportunistic model loading. |
+| Self-model eval answer scoring | Implemented as static harness | `lumen_manifest_crawler score-self-model-eval --answers <answers.jsonl> --snapshot <snapshot.json>` checks typed claims against evaluator-supplied state and scenario expectations. Its policy version explicitly excludes free-text semantic validation. |
 | Self-model score-report ingestion | Implemented in crawler tests | `self_model_eval_score.v1` reports are ingested as non-live runtime audit input and failed/missing scenarios become `runtime_audit_repairs` for REM/improve-loop training. |
 
 Still open before calling the feature useful:
@@ -139,67 +139,14 @@ The key object is a **SelfModelSnapshot**: a small, deterministic, serializable 
 
 ## Proposed data contract
 
-Create a compact JSON contract like this. The example is a projection of existing runtime types; implementers should generate these values from Swift structures instead of copying literal arrays from this document.
+The authoritative Codable contract is `ios/Lumen/Services/SelfModel/SelfModelSnapshot.swift`, schema **0.2.0**. Do not copy literal runtime/tool arrays from a documentation example. This revision distinguishes unknown, available, and unavailable capability observations; an absent observation must not become a negative capability claim.
 
-```json
-{
-  "schemaVersion": "0.1.0",
-  "generatedAt": "2026-06-29T00:00:00Z",
-  "app": {
-    "name": "Lumen",
-    "buildNumber": "unknown",
-    "shortVersion": "unknown",
-    "platform": "ios",
-    "mode": "foreground"
-  },
-  "agent": {
-    "logicalIdentity": "lumen",
-    "activeSlot": "cortex",
-    "availableSlots": ["cortex", "executor", "embedding", "mimicry", "mouth", "rem"],
-    "manifestCommit": "unknown",
-    "fleetContractVersion": "2026.05.03-adapter-first"
-  },
-  "runtime": {
-    "selectedRuntimePathKind": "llamaGGUF",
-    "availableBackendKinds": ["llama"],
-    "embeddingAvailable": true,
-    "thermalState": "nominal",
-    "powerState": "battery_or_unknown",
-    "networkState": "unknown"
-  },
-  "contextBudget": {
-    "profile": "tool",
-    "maxInputTokens": 1536,
-    "sections": {
-      "system": 245,
-      "history": 307,
-      "memories": 153,
-      "rag": 184,
-      "tools": 522,
-      "runtime": 125
-    }
-  },
-  "tools": {
-    "available": ["device.status", "memory.search", "rag.search.secure"],
-    "requiresApproval": ["calendar.create", "open.url"],
-    "backgroundSafe": ["device.status", "memory.search", "rag.search.secure"]
-  },
-  "evidence": {
-    "manifestFreshness": "bundled",
-    "runtimeAuditPresent": false,
-    "exportPolicy": {
-      "sourceLayer": "e2eTestReport",
-      "ownsLiveE2EScenarios": true,
-      "includesDeterministicStaticScenarios": false
-    }
-  },
-  "policy": {
-    "mustNotInventToolIDs": true,
-    "mustNotBypassApproval": true,
-    "mustCiteRuntimeSourceWhenClaimingRuntimeState": true
-  }
-}
-```
+- `agent.declaredSlots` is a catalogue. `agent.availableSlots` is not populated merely because a case exists in the enum.
+- `runtime.selectedRuntime` identifies the route selected for this turn, not successful model loading or execution.
+- `runtime.embeddingAvailable` is nullable and is supplied independently of the generative route; `embeddingReadiness` preserves unknown state.
+- `tools.available` is a policy-filtered definition set, not a promise of permission or successful execution. Execution remains checked by the registry.
+- `app.sourceRevision` comes only from validated build metadata. An unknown manifest revision or freshness remains unknown.
+- Version 0.1 payloads decode conservatively; old catalogue/readiness inferences are not promoted into observed capability evidence.
 
 ### Swift source-of-truth mapping
 
@@ -211,7 +158,7 @@ Create a compact JSON contract like this. The example is a projection of existin
 | `generatedAt` | snapshot builder clock | ISO-8601 timestamp generated when the snapshot is assembled. |
 | `app.name`, `app.shortVersion`, `app.buildNumber` | same bundle fields used by `InAppDatasetAppInfo` | Reuse the existing app metadata shape where possible. |
 | `app.mode` | `AssistantTurnContext.isForeground` | Encode only `foreground` or `background`; do not infer from prompt text. |
-| `agent.activeSlot`, `agent.availableSlots` | `LumenModelSlot.rawValue` and `LumenModelSlot.allCases` | Slot names must be generated from the enum, not duplicated literals. |
+| `agent.activeSlot`, `agent.declaredSlots`, `agent.availableSlots` | Current runtime contract and explicit readiness observations | Core AI uses the unified `assistant` identity. Enum cases describe the fleet catalogue, not installed or ready slots. |
 | `agent.fleetContractVersion` | `LumenModelSlotContract.fleetContractVersion` | Allows the model to detect stale slot contracts. |
 | `runtime.selectedRuntimePathKind` | `LumenRuntimePathKind.rawValue` via runtime selection/fleet mapping | Use `unknown` when runtime selection cannot prove the active path. |
 | `runtime.selectedRuntime` | `AssistantRuntimeRouter.Selection.runtime` | Report the runtime selected for this turn and include the router reason in diagnostics, not as user-visible proof. |
@@ -237,7 +184,7 @@ Rules:
 - Required v0.1 fields: `schemaVersion`, `generatedAt`, `app`, `agent`, `runtime`, `contextBudget`, `tools`, `evidence`, and `policy`.
 - Unknown fields must be ignored by older app builds and older adapters.
 - Unknown enum/string values must be preserved as strings and treated as `unknown`, not coerced into a nearby known value.
-- Missing optional fields must degrade to `unknown`, `false`, or an empty array depending on the field semantics.
+- Missing capability observations degrade to `unknown`, not `false`. An empty observed list must remain distinguishable from an unobserved catalogue.
 - Models must not treat a newer snapshot as proof of newer capability. They can only use capability/tool/runtime fields that are present and policy-filtered in the current snapshot.
 - Dataset generators should record the snapshot `schemaVersion` beside each SFT, retrieval, and repair sample so training/eval can filter incompatible records.
 
@@ -257,11 +204,11 @@ Invocation path:
 
 1. `AssistantTurnContext` is built with task kind, foreground/background state, power/thermal state, memories, attachments, and generation settings.
 2. `ContextBudgetAllocator.allocate(for:)` selects the profile and token sections.
-3. `AssistantKernel.buildGroundingContext(...)` already retrieves memory, RAG, and policy-filtered tool definitions; `SelfModelContextProvider` should be invoked from the same turn-preparation path so the self-model block uses the same budget/profile/tool source.
-4. `SelfModelSnapshotBuilder` gathers deterministic app/runtime/tool/evidence state and returns bounded JSON.
-5. `SelfModelContextProvider` renders a compact self-model prompt block inside the `runtime` budget section.
-6. `runTextTurn(...)` or the slot-agent path receives that block as part of the system/grounding context, while `SecureToolRegistry` and `ToolApprovalPolicy` still enforce actual execution.
-7. Runtime traces include the snapshot schema version, selected slot, selected evidence cards, selected tools, and refusal/approval state for improve-loop ingestion.
+3. The kernel constructs host self-model context from the selected runtime and tools actually visible to the request; diagnostics do not control whether the model receives it. Memory/RAG diagnostics remain a separate concern.
+4. `SelfModelSnapshotBuilder` gathers app/runtime/tool/evidence state into a typed snapshot, preserving unknown observations.
+5. `HostSelfModelContext` bounds the kernel block to 400 characters, and `PromptAssembler` reserves the complete block inside the existing system cap. The legacy path uses `SelfModelContextProvider.section` and the remaining `runtime` budget instead; either path may omit the whole block when it cannot fit.
+6. Text and structured action/final generations receive the bounded host block as system context. Its typed provenance travels with the generation request; `SecureToolRegistry` and `ToolApprovalPolicy` still enforce actual execution.
+7. Traces attach host-derived schema, slot and evidence identifiers only after an assembly receipt confirms inclusion. Diagnostics without that receipt do not attest injection. Tool decisions retain the existing refusal/approval metadata for improve-loop ingestion.
 
 ## Training strategy
 
@@ -402,7 +349,7 @@ Suggested scenarios:
 - "Why did you refuse this tool call?"
 - "What evidence supports your claim?"
 
-Current generated coverage expands this list to 24 static self-model scenarios in `generated/agent_manifest/dataset/self_model_eval.jsonl` and queues them for TestFlight/runtime audit in `generated/agent_improvement_loop/testflight_scenarios.jsonl`.
+Current generated coverage expands this list to 25 static self-model scenarios in `generated/agent_manifest/dataset/self_model_eval.jsonl` and queues them for TestFlight/runtime audit in `generated/agent_improvement_loop/testflight_scenarios.jsonl`.
 
 ### 5. Add safety tests - partially implemented
 
@@ -416,7 +363,7 @@ Add tests for:
 - redaction of private payloads: raw prompt exclusion covered by `SelfModelSnapshotTests`; export privacy still needs fresh runtime package validation;
 - legacy bridge cannot leak unsafe metadata: self-model block injection is covered; unsafe metadata leakage still needs broader export/privacy validation.
 
-The static answer scorer is not a substitute for model execution. It is a deterministic gate for exported answer records, so local-model and TestFlight runs can fail the build when answers invent tools, bypass approval, claim live runtime proof from static evidence, accept raw private training payloads, or omit repair-sample guidance. Its `self_model_eval_score.v1` report is now an improve-loop input: failed or missing scenarios are normalized as non-live runtime audit failures and compiled into self-model repair records.
+The static answer scorer is not a substitute for model execution or a semantic judge of arbitrary prose. Answer exports must carry typed claims; factual checks use a snapshot supplied separately by the evaluator. Missing ground truth, missing claims, unsupported expectations and inconsistent types fail explicitly. Runtime-specific handler expectations distinguish the unified Core AI assistant from the legacy fleet. Regression tests include false backend claims, negation and French text, but free-text meanings are not certified by a passing claims report. Its `self_model_eval_score.v1` report is now an improve-loop input: failed or missing scenarios are normalized as non-live runtime audit failures and compiled into self-model repair records.
 
 ## Expected product impact
 
@@ -462,3 +409,9 @@ Acceptance criteria:
 - no private raw payloads are stored in committed artifacts.
 
 This is the practical bridge from "model trained on its own host application and environment" to a shippable on-device AI advantage.
+
+## First-slice evidence boundary
+
+This source correction covers host-context injection/provenance, truthful capability representation, bounded rendering and deterministic self-model evaluation. It does not add a pre-action prediction ledger, calibration, perturbation/ablation harness, self-training or automatic source modification. Those remain later experiments.
+
+The separate `self_model_eval` bank is a conformity/regression input. It is not automatically included in adapter qualification and must not inherit a contamination or generalization claim from another evaluation bank. Fresh model-backed and Apple build/device evidence remain required.

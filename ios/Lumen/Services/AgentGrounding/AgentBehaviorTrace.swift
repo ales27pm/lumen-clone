@@ -12,24 +12,25 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
         let requiresApproval: Bool?
         let approvalMode: String?
 
-        static func fromPrompt(
-            _ prompt: String,
+        static func fromHost(
+            snapshot: SelfModelSnapshot,
+            included: Bool,
             selectedToolID: String?,
             requiresApproval: Bool?,
             approvalMode: String?
-        ) -> SelfModelDecisionSummary? {
-            guard let block = Self.selfModelBlock(in: prompt) else { return nil }
-            let schemaVersion = Self.value(for: "schemaVersion", in: block)
-            let mode = Self.value(for: "mode", in: block) ?? Self.jsonStringValue(for: "mode", in: block)
-            let activeSlot = Self.value(for: "activeSlot", in: block) ?? Self.jsonStringValue(for: "activeSlot", in: block)
-            let sourceLayer = Self.value(for: "sourceLayer", in: block) ?? Self.jsonStringValue(for: "sourceLayer", in: block)
-            let sourceIDs = [
-                schemaVersion.map { "selfModelSnapshot/\($0)" },
-                activeSlot.map { "slot/\($0)" },
-                sourceLayer.map { "evidence/\($0)" }
-            ].compactMap(\.self)
+        ) -> SelfModelDecisionSummary {
+            let schemaVersion = included ? snapshot.schemaVersion : nil
+            let mode = included ? snapshot.app.mode : nil
+            let activeSlot = included ? snapshot.agent.activeSlot : nil
+            let sourceLayer = included ? snapshot.evidence.exportPolicy.sourceLayer : nil
+            let sourceIDs = included ? [
+                "selfModelSnapshot/\(snapshot.schemaVersion)",
+                "slot/\(snapshot.agent.activeSlot)",
+                "runtime/\(snapshot.runtime.selectedRuntime)",
+                "evidence/\(snapshot.evidence.exportPolicy.sourceLayer)"
+            ] : []
             return .init(
-                included: true,
+                included: included,
                 schemaVersion: schemaVersion,
                 mode: mode,
                 activeSlot: activeSlot,
@@ -67,33 +68,14 @@ nonisolated struct AgentBehaviorTrace: Codable, Sendable, Identifiable, Hashable
             )
         }
 
-        private static func selfModelBlock(in prompt: String) -> String? {
-            guard let range = prompt.range(of: "[SELF MODEL]") else { return nil }
-            let tail = prompt[range.upperBound...]
-            if let nextHeader = tail.range(of: "\n[") {
-                return String(tail[..<nextHeader.lowerBound])
-            }
-            return String(tail)
+        func withDecision(selectedToolID: String?, requiresApproval: Bool?, approvalMode: String?) -> SelfModelDecisionSummary {
+            .init(included: included, schemaVersion: schemaVersion, mode: mode, activeSlot: activeSlot,
+                  sourceIDs: sourceIDs, runtimeEvidenceSourceLayer: runtimeEvidenceSourceLayer,
+                  selectedToolID: selectedToolID.map(ToolRouteGuard.canonicalToolID),
+                  requiresApproval: requiresApproval, approvalMode: approvalMode)
         }
 
-        private static func value(for key: String, in block: String) -> String? {
-            for line in block.split(whereSeparator: \.isNewline) {
-                let prefix = "\(key)="
-                guard line.hasPrefix(prefix) else { continue }
-                let value = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
-                return value.isEmpty ? nil : value
-            }
-            return nil
-        }
 
-        private static func jsonStringValue(for key: String, in block: String) -> String? {
-            let pattern = #""# + NSRegularExpression.escapedPattern(for: key) + #"":"([^"]+)""#
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-            let range = NSRange(block.startIndex..<block.endIndex, in: block)
-            guard let match = regex.firstMatch(in: block, range: range), match.numberOfRanges > 1 else { return nil }
-            guard let valueRange = Range(match.range(at: 1), in: block) else { return nil }
-            return String(block[valueRange])
-        }
     }
 
     enum Event: String, Codable, Sendable {

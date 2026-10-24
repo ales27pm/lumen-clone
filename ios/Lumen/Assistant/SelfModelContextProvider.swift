@@ -31,9 +31,25 @@ nonisolated enum SelfModelContextProvider {
             return json
         }
 
-        let compact = compactLines(for: snapshot).joined(separator: "\n")
-        guard compact.count > boundedMax else { return compact }
-        return String(compact.prefix(boundedMax))
+        // Facts are atomic: dropping a whole field is safer than turning a truncated
+        // tool ID, policy, revision, or JSON value into an apparent complete claim.
+        let required = requiredLines(for: snapshot)
+        let optional = optionalLines(for: snapshot)
+        let omissionReserve = "\nomittedFields=999".count
+        var lines = required
+        var used = required.joined(separator: "\n").count
+        guard used + omissionReserve <= boundedMax else { return "" }
+        var omitted = 0
+        for line in optional {
+            if used + 1 + line.count + omissionReserve <= boundedMax {
+                lines.append(line)
+                used += 1 + line.count
+            } else {
+                omitted += 1
+            }
+        }
+        lines.append("omittedFields=\(omitted)")
+        return lines.joined(separator: "\n")
     }
 
     private static func maxChars(for snapshot: SelfModelSnapshot, budget: ContextBudgetPlan) -> Int {
@@ -50,24 +66,49 @@ nonisolated enum SelfModelContextProvider {
         ]
     }
 
-    private static func compactLines(for snapshot: SelfModelSnapshot) -> [String] {
+    private static func requiredLines(for snapshot: SelfModelSnapshot) -> [String] {
         [
             "schemaVersion=\(snapshot.schemaVersion)",
+            "identity=\(snapshot.agent.logicalIdentity)",
             "mode=\(snapshot.app.mode)",
             "activeSlot=\(snapshot.agent.activeSlot)",
-            "availableSlots=\(snapshot.agent.availableSlots.joined(separator: ","))",
-            "fleetContractVersion=\(snapshot.agent.fleetContractVersion)",
+            "slotAvailability=\(snapshot.agent.slotAvailability.rawValue)",
             "selectedRuntime=\(snapshot.runtime.selectedRuntime)",
+            "runtimeReadiness=\(snapshot.runtime.readiness.rawValue)",
+            "mustNotBypassApproval=\(snapshot.policy.mustNotBypassApproval)",
+            "availableToolsCount=\(snapshot.tools.available.count)",
+            "requiresApprovalCount=\(snapshot.tools.requiresApproval.count)",
+            "embeddingReadiness=\(snapshot.runtime.embeddingReadiness.rawValue)"
+        ]
+    }
+
+    private static func optionalLines(for snapshot: SelfModelSnapshot) -> [String] {
+        [
+            "availableTools=\(snapshot.tools.available.joined(separator: ","))",
+            "requiresApproval=\(snapshot.tools.requiresApproval.joined(separator: ","))",
             "selectedRuntimePathKind=\(snapshot.runtime.selectedRuntimePathKind)",
+            "toolAvailabilityScope=\(snapshot.tools.availabilityScope)",
+            "mustNotInventToolIDs=\(snapshot.policy.mustNotInventToolIDs)",
+            "mustCiteRuntimeSourceWhenClaimingRuntimeState=\(snapshot.policy.mustCiteRuntimeSourceWhenClaimingRuntimeState)",
+            "declaredSlots=\(snapshot.agent.declaredSlots.joined(separator: ","))",
+            "availableSlots=\(snapshot.agent.availableSlots.joined(separator: ","))",
+            "sourceRevision=\(snapshot.app.sourceRevision ?? "unknown")",
+            "manifestCommit=\(snapshot.agent.manifestCommit)",
+            "manifestFreshness=\(snapshot.evidence.manifestFreshness)",
+            "generatedAt=\(ISO8601DateFormatter().string(from: snapshot.generatedAt))",
+            "selectionReason=\(snapshot.runtime.selectionReason)",
+            "availableBackendKinds=\(snapshot.runtime.availableBackendKinds.joined(separator: ","))",
+            "thermalState=\(snapshot.runtime.thermalState)",
+            "powerState=\(snapshot.runtime.powerState)",
+            "networkState=\(snapshot.runtime.networkState)",
+            "backgroundSafe=\(snapshot.tools.backgroundSafe.joined(separator: ","))",
             "contextProfile=\(snapshot.contextBudget.profile)",
             "maxInputTokens=\(snapshot.contextBudget.maxInputTokens)",
-            "availableTools=\(snapshot.tools.available.prefix(24).joined(separator: ","))",
-            "requiresApproval=\(snapshot.tools.requiresApproval.prefix(24).joined(separator: ","))",
-            "backgroundSafe=\(snapshot.tools.backgroundSafe.prefix(24).joined(separator: ","))",
+            "fleetContractVersion=\(snapshot.agent.fleetContractVersion)",
             "sourceLayer=\(snapshot.evidence.exportPolicy.sourceLayer)",
             "ownsLiveE2EScenarios=\(snapshot.evidence.exportPolicy.ownsLiveE2EScenarios)",
-            "runtimeAuditPresent=\(snapshot.evidence.runtimeAuditPresent)",
-            "policy=mustNotInventToolIDs,mustNotBypassApproval,mustCiteRuntimeSourceWhenClaimingRuntimeState"
+            "includesDeterministicStaticScenarios=\(snapshot.evidence.exportPolicy.includesDeterministicStaticScenarios)",
+            "runtimeAuditPresent=\(snapshot.evidence.runtimeAuditPresent)"
         ]
     }
 }

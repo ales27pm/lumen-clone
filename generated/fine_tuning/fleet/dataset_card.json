@@ -1,7 +1,7 @@
 {
   "agent": "fleet",
   "availableSFTRecords": 743,
-  "candidateSFTRecords": 8149,
+  "candidateSFTRecords": 8659,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": {
@@ -557,7 +557,7 @@
     "fleetValidationLossSharePolicy": "observed_not_enforced",
     "fleetValidationSamplingPolicy": {
       "allSamplingInputStrataPreserved": true,
-      "candidateBeforePublicSelectionRecordCount": 1170,
+      "candidateBeforePublicSelectionRecordCount": 1247,
       "candidateStratumCount": 43,
       "deterministic": true,
       "explicitValidationAssignmentCount": 35,
@@ -567,11 +567,11 @@
       "optimizerLossShareCapsApplied": false,
       "publicCorpusSelectionAppliedBeforeSampling": true,
       "rejectedByPublicSelectionCount": 0,
-      "rejectedByValidationSamplingCount": 1042,
-      "samplingInputRecordCount": 1170,
+      "rejectedByValidationSamplingCount": 1119,
+      "samplingInputRecordCount": 1247,
       "samplingInputStratumCount": 43,
       "schemaVersion": "lumen.fleet-validation-sampling/1.0.0",
-      "selectedCohortSHA256": "0a3f219531956295cd87f00d1c7804254cfc42788daa8e893e523340c000d956",
+      "selectedCohortSHA256": "b67aec78435c04a94aa8cd81eec629987863b734b7bc4561eeb444c9ff95844d",
       "selectedRecordCount": 128,
       "selectedStratumCount": 43,
       "selectionStrategy": "least_represented_stratum_then_salted_stable_hash_v1",
@@ -678,18 +678,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "7524bd7cc05913bfa7f2dbb9c42d11902baa6ae8f6e745f85d4554b442f8ff99"
+      "reportSHA256": "a3e4b96370f142194454e6f8f64f889eef09afe39bb11d146c7981b3bd9f6c49"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "7fdfed0dab75c2d0e81e3a4e980d8b6a297351042399813af116a7bc31515984",
+    "frozenEvaluationSHA256": "ae23aafba5013bb4ba2036b7f21c6a8ae6ff5f168d763e39a6f4c55bcf45caa4",
     "recordCount": 15,
     "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "c325bbb3a42abeae2d2efa0b8b8bab71223922a118586a1937993f4395544e80",
-      "optimizedTrainingCorpusSHA256": "52cf84fb35e5b3449eee3bcc634a4fdcad801d9937e8899d8b8ae171627c8878",
+      "baselineTrainingCorpusSHA256": "1be85e46145ae539fd6e2cc965d80893e8031c76d6e1a960024d38ee6e177a89",
+      "optimizedTrainingCorpusSHA256": "f94863ab01d1a909990aaa02f61e694b76b1915c42de5b4e0edbaccf3ff3ccdd",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -718,7 +718,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "9ab7ab17f748d700299bb9fd3859c8440978dc3ef1d4c1b2a2a1ec2ed05681af",
+    "experimentManifestSHA256": "3fa9a2aa4c3a49fd630b3eafd5060a019a26b734c764bf8ff43f4ecd4c500a43",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -766,7 +766,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "bb165dacf35c5fad4a8f294758530333861686f0",
+  "manifestCommit": "be31e8f558ca0aea2ab332eb08a9bc99f8070eda",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 409,
@@ -949,22 +949,22 @@
         "total": 0.0
       },
       "train_sft": {
-        "target": 0.012374,
-        "total": 0.014864
+        "target": 0.012367,
+        "total": 0.014863
       },
       "val_dpo": {
         "target": 0.0,
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.084593,
-        "total": 0.168122
+        "target": 0.083283,
+        "total": 0.166791
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 329315,
-    "assistantTargetTokenProxyCount": 82594,
+    "assistantTargetCharCount": 330680,
+    "assistantTargetTokenProxyCount": 82938,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -997,10 +997,10 @@
       "status": "source_side_selection_proxy_not_exact_token_count",
       "strategy": "max_whitespace_terms_utf8_byte_ceiling"
     },
-    "supplementalAssistantTargetCharCount": 84365,
-    "supplementalAssistantTargetCharShare": 0.25618328955559266,
-    "supplementalAssistantTargetTokenProxyCount": 21122,
-    "supplementalAssistantTargetTokenProxyShare": 0.25573286195123135,
+    "supplementalAssistantTargetCharCount": 85730,
+    "supplementalAssistantTargetCharShare": 0.2592536591266481,
+    "supplementalAssistantTargetTokenProxyCount": 21466,
+    "supplementalAssistantTargetTokenProxyShare": 0.2588198413272565,
     "supplementalBalanceDroppedRecordCount": 0,
     "supplementalSFTRecordCount": 91,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
@@ -1014,7 +1014,7 @@
     "val_dpo": 24,
     "val_sft": 128
   },
-  "sourceDirty": false,
+  "sourceDirty": true,
   "sourceFamilies": [
     "adapter_ultra_specific",
     "codebase_home_chunk_sft",
@@ -1038,9 +1038,9 @@
     "self_model_sft": 4
   },
   "sourceIntegrity": {
-    "baseCommit": "bb165dacf35c5fad4a8f294758530333861686f0",
-    "dirtyState": false,
-    "workingTreeDigest": "76bf928b63b7f0d7cdf14c249c774e8ec38120b4ae467bd747a094f2e17253f6"
+    "baseCommit": "be31e8f558ca0aea2ab332eb08a9bc99f8070eda",
+    "dirtyState": true,
+    "workingTreeDigest": "449b02645d2074774889a8b7344fb4c19c923a2e1de1e65aecc108b8760fcf1c"
   },
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning.",
   "taskTypeCounts": {
@@ -1093,5 +1093,5 @@
     "ultra_specific_fleet_slot_directory",
     "ultra_specific_tool_boundary_awareness"
   ],
-  "worktreeFingerprint": "76bf928b63b7f0d7cdf14c249c774e8ec38120b4ae467bd747a094f2e17253f6"
+  "worktreeFingerprint": "449b02645d2074774889a8b7344fb4c19c923a2e1de1e65aecc108b8760fcf1c"
 }

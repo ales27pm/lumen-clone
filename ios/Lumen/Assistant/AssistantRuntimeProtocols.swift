@@ -19,6 +19,7 @@ struct TextGenerationRequest: Sendable {
     let maxTokens: Int
     let relevantMemories: [MemoryContextItem]
     let attachments: [ChatAttachment]
+    let hostSelfModel: HostSelfModelContext?
 
     init(
         prompt: String,
@@ -29,7 +30,8 @@ struct TextGenerationRequest: Sendable {
         repetitionPenalty: Double = 1.1,
         maxTokens: Int,
         relevantMemories: [MemoryContextItem] = [],
-        attachments: [ChatAttachment] = []
+        attachments: [ChatAttachment] = [],
+        hostSelfModel: HostSelfModelContext? = nil
     ) {
         self.prompt = prompt
         self.systemPrompt = systemPrompt
@@ -40,6 +42,7 @@ struct TextGenerationRequest: Sendable {
         self.maxTokens = max(1, maxTokens)
         self.relevantMemories = relevantMemories
         self.attachments = attachments
+        self.hostSelfModel = hostSelfModel
     }
 }
 

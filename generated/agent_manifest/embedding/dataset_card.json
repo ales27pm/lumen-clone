@@ -1,12 +1,12 @@
 {
   "counts": {
-    "corpus": 7553,
-    "evalRetrieval": 1114,
-    "hardNegatives": 6604,
-    "trainPairs": 5930,
-    "trainTriplets": 5930,
-    "valPairs": 674,
-    "valTriplets": 674
+    "corpus": 8061,
+    "evalRetrieval": 1152,
+    "hardNegatives": 7069,
+    "trainPairs": 6359,
+    "trainTriplets": 6359,
+    "valPairs": 710,
+    "valTriplets": 710
   },
   "evaluationIsolation": {
     "contentPolicy": "normalized_eval_user_segment_documents_are_evaluation_only",
@@ -30,7 +30,6 @@
     "peer_boundary_query",
     "permission_boundary_query",
     "routing_rule_query",
-    "runtime_audit_repairs_retrieval",
     "source_file_name_query",
     "tool_contract_query",
     "tool_id_to_tool_contract",

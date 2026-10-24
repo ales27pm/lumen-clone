@@ -252,14 +252,19 @@ nonisolated enum PromptAssembler {
         attachments: [ChatAttachment],
         budget: PromptBudget,
         attachmentNormalization: AttachmentNormalizationMode = .preserveRaw,
-        latencyClass: PromptLatencyClass = .normalInteractive
+        latencyClass: PromptLatencyClass = .normalInteractive,
+        hostSelfModel: HostSelfModelContext? = nil
     ) -> PromptAssembly {
         let userCap = budget.maxUserChars.map { min(userMessage.count, $0) }
             ?? min(userMessage.count, max(PromptBudgetConstants.minUserCharCap, budget.totalChars / 4))
         let boundedUser = truncateMiddle(userMessage, maxChars: userCap)
 
         let systemCap = budget.maxSystemPromptChars ?? systemPrompt.count
-        let boundedSystemPrompt = truncateSystemPrompt(systemPrompt, maxChars: systemCap, latencyClass: latencyClass)
+        let callerSystem = hostSelfModel?.removing(from: systemPrompt) ?? systemPrompt
+        let hostBlock = hostSelfModel.map {
+            !$0.block.isEmpty && systemPrompt.hasSuffix($0.block) && $0.block.count <= systemCap ? $0.block : ""
+        } ?? ""
+        let boundedSystemPrompt = truncateSystemPrompt(callerSystem, maxChars: max(0, systemCap - hostBlock.count), latencyClass: latencyClass) + hostBlock
 
         let memoriesBlock = buildMemoriesBlock(memories: memories, share: budget.memoriesShare, latencyClass: latencyClass)
         let (attachmentsBlock, states) = buildAttachmentsBlock(

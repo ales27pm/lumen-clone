@@ -13,6 +13,7 @@ struct LegacyPromptAssembled: Sendable {
     let ragSectionChars: Int
     let toolSectionChars: Int
     let runtimeSectionChars: Int
+    let selfModelSectionChars: Int
 }
 
 enum LegacyPromptAssembler {
@@ -37,7 +38,9 @@ enum LegacyPromptAssembler {
         let ragC = String(rag.prefix(caps.rag))
         let toolC = String(tool.prefix(caps.tools))
         let runC = String(runtime.prefix(caps.runtime))
-        let selfModelC = String(selfModel.prefix(max(0, caps.runtime - runC.count)))
+        // The provider emits complete facts/JSON. Never slice it into invalid JSON,
+        // a partial tool ID, or a policy claim with a missing value.
+        let selfModelC = selfModel.count <= max(0, caps.runtime - runC.count) ? selfModel : ""
         let roleC = roleMetadata.map { String($0.prefix(180)) } ?? ""
         var appendix = PromptGroundingIdempotencyGuard.marker + "\n"
         appendix += titled("LOCAL MEMORY", memC)
@@ -70,7 +73,8 @@ enum LegacyPromptAssembler {
             memorySectionChars: memC.count,
             ragSectionChars: ragC.count,
             toolSectionChars: toolC.count,
-            runtimeSectionChars: runC.count + selfModelC.count
+            runtimeSectionChars: runC.count + selfModelC.count,
+            selfModelSectionChars: selfModelC.count
         )
     }
 

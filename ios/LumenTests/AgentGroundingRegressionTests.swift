@@ -2553,23 +2553,12 @@ struct AgentGroundingRegressionTests {
     @Test func agentGroundingPackageExportsSelfModelDecisionSummary() throws {
         AgentBehaviorTraceRecorder.clear()
         defer { AgentBehaviorTraceRecorder.clear() }
-        let prompt = """
-        User request
-
-        __LUMEN_GROUNDING_V1__
-        [SELF MODEL]
-        schemaVersion=0.1.0
-        mode=foreground
-        activeSlot=executor
-        sourceLayer=agentGroundingRuntimeAudit
-        policy=mustNotInventToolIDs,mustNotBypassApproval,mustCiteRuntimeSourceWhenClaimingRuntimeState
-        """
-        let selfModel = try #require(AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
-            prompt,
-            selectedToolID: "calendar.create",
-            requiresApproval: true,
-            approvalMode: "userApproval"
-        ))
+        let selfModel = AgentBehaviorTrace.SelfModelDecisionSummary(
+            included: true, schemaVersion: "0.1.0", mode: "foreground", activeSlot: "executor",
+            sourceIDs: ["selfModelSnapshot/0.1.0", "slot/executor", "evidence/agentGroundingRuntimeAudit"],
+            runtimeEvidenceSourceLayer: "agentGroundingRuntimeAudit", selectedToolID: "calendar.create",
+            requiresApproval: true, approvalMode: "userApproval"
+        )
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
             id: UUID(),
             createdAt: Date(),
@@ -2659,12 +2648,14 @@ struct AgentGroundingRegressionTests {
         activeSlot=\(injectionCanary)-slot
         sourceLayer=\(injectionCanary)-source
         """
-        let injectedSummary = try #require(AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
-            injectedPrompt,
-            selectedToolID: "calendar.create",
-            requiresApproval: true,
-            approvalMode: "\(injectionCanary)-approval"
-        ))
+        // Synthetic diagnostic metadata exercises defense-in-depth redaction;
+        // production provenance is supplied by HostSelfModelContext, never parsed.
+        let injectedSummary = AgentBehaviorTrace.SelfModelDecisionSummary(
+            included: true, schemaVersion: "\(injectionCanary)-schema", mode: "\(injectionCanary)-mode",
+            activeSlot: "\(injectionCanary)-slot", sourceIDs: ["\(injectionCanary)-source"],
+            runtimeEvidenceSourceLayer: "\(injectionCanary)-source", selectedToolID: "calendar.create",
+            requiresApproval: true, approvalMode: "\(injectionCanary)-approval"
+        )
         AgentBehaviorTraceRecorder.record(AgentBehaviorTrace(
             id: UUID(),
             createdAt: Date(timeIntervalSince1970: 1_800_000_000),

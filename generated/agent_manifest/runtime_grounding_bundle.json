@@ -9,7 +9,7 @@
       "python": 190,
       "resolved": 1,
       "shell": 19,
-      "swift": 567,
+      "swift": 569,
       "text": 7,
       "toml": 1,
       "xcode_project": 1,
@@ -27,7 +27,7 @@
       "Assets.xcassets/LumenMark.imageset": 1,
       "Assets.xcassets/LumenVerticalLogo.imageset": 1,
       "Assets.xcassets/LumenWordmarkLockup.imageset": 1,
-      "Assistant": 32,
+      "Assistant": 33,
       "Background": 7,
       "Brand": 2,
       "CarPlay": 3,
@@ -69,7 +69,7 @@
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 196,
+      "ios/LumenTests": 197,
       "ios/LumenTests/Fixtures": 2,
       "ios/LumenTests/Support": 1,
       "ios/LumenUITests": 2,
@@ -90,7 +90,7 @@
       "tools/pipeline/tests": 18,
       "tools/security": 1
     },
-    "recordCount": 930,
+    "recordCount": 932,
     "selectedFiles": [
       {
         "imports": [],
@@ -153,7 +153,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentBehaviorTrace.swift` owns AgentBehaviorTrace behavior and defines: AgentBehaviorTrace, SelfModelDecisionSummary, Event, CodingKeys, AgentBehaviorTraceEmitter, AgentDiagnosticFileRedactor, AgentBehaviorAuditReport, AgentBehaviorViolation, Severity, AgentBehaviorRepairSample.",
-        "sha256": "fb02df546b25641ff22cf740ccca22b2a70794a933f0fd91eb806a5f548828b6",
+        "sha256": "83ebd4d06326d8793b3d9e6a2f9fcd587f9d2e9d33b000e261b6fd7fcaefba9b",
         "symbols": [
           "AgentBehaviorTrace",
           "SelfModelDecisionSummary",
@@ -167,10 +167,10 @@
           "AgentBehaviorRepairSample",
           "AgentBehaviorTraceMemoryCache",
           "AgentBehaviorTraceRecorder",
-          "fromPrompt",
+          "fromHost",
           "redactedForPersistentDiagnostics",
-          "selfModelBlock",
-          "value"
+          "withDecision",
+          "encode"
         ]
       },
       {
@@ -210,7 +210,7 @@
         "module": "Services/AgentGrounding",
         "path": "ios/Lumen/Services/AgentGrounding/AgentGroundingPromptComposer.swift",
         "responsibility": "`ios/Lumen/Services/AgentGrounding/AgentGroundingPromptComposer.swift` owns AgentGroundingPromptComposer behavior and defines: AgentGroundingPromptComposer, GenerateRequest, composeSystemPrompt, groundingSystemPrompt, fallback, store, bundledPrompt, loadedRuntimeGrounding, runtimeGrounding, groundedPrompt.",
-        "sha256": "2f3668433d7a4843d36fa6c6f9ed6a018703e8aed90abc32ff48f7684730ccb3",
+        "sha256": "0c030a34eda887769df13887a2bb6e91d86a19b9354eb8105127a0763fb0ad71",
         "symbols": [
           "AgentGroundingPromptComposer",
           "GenerateRequest",
@@ -221,7 +221,8 @@
           "bundledPrompt",
           "loadedRuntimeGrounding",
           "runtimeGrounding",
-          "groundedPrompt"
+          "groundedPrompt",
+          "callerPrompt"
         ]
       },
       {
@@ -597,7 +598,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantKernel.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, runAdaptedLegacyRequest, adaptLegacyRequest, streamStructuredLlama, takeCompletedStructuredLlamaTrace, prepareStructuredLlamaRuntime, preflightStructuredLlamaPrompt.",
-        "sha256": "c5c1b491618b574308d8943745935321240d58dad5fcc2adb0f4c948b2af1339",
+        "sha256": "6aa0cc073db01449235163d893ae2dabd0d20ee1046a27a0a2a75e6edd995883",
         "symbols": [
           "AssistantKernel",
           "KernelError",
@@ -613,8 +614,8 @@
           "preflightStructuredPrompt",
           "streamStructuredGeneration",
           "takeCompletedStructuredTrace",
-          "buildGroundingContext",
-          "runTextTurn"
+          "prepareHostSelfModel",
+          "prepareTextSelfModel"
         ]
       },
       {
@@ -626,7 +627,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeAdapters.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeAdapters.swift` owns AssistantRuntimeAdapters behavior and defines: LocalRuntimeError, LlamaRuntimeStreamingService, LlamaStructuredPromptPreflightSnapshot, AppLlamaService, CoreMLRuntimeError, AssistantRuntimeCapabilityRow, AssistantRuntimeCapabilityMatrix, DeterministicFallbackRuntime, LlamaRuntimeAdapter, LiveGenerationDefaults.",
-        "sha256": "a4026d06be2b2d3442c67f38746694c38881228e20d4f19fd92224e61ceae22c",
+        "sha256": "b16ce9ccf6e3a85fd83bf4a1410165825463b76c6b77c6e78f9b7ac905a43ec6",
         "symbols": [
           "LocalRuntimeError",
           "LlamaRuntimeStreamingService",
@@ -654,7 +655,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeProtocols.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeProtocols.swift` owns AssistantRuntimeProtocols behavior and defines: AssistantRuntimeKind, TextGenerationRequest, EmbeddingPurpose, EmbeddingRequest, EmbeddingRuntimeResult, RuntimeHealthReporting, RuntimeMemoryPressureHandling, LocalTextGenerationRuntime, LocalEmbeddingRuntime, handleMemoryPressure.",
-        "sha256": "df9a9a63bcd240ec99a87b006ad5806c478bee01d252a6ec45448134528d7df1",
+        "sha256": "0fc5e6722d94b3174b3a82b565e1aec1f0d9b3ff752e7ba7b5b586f143348b56",
         "symbols": [
           "AssistantRuntimeKind",
           "TextGenerationRequest",
@@ -823,7 +824,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/CoreAIGemmaRuntimeAdapter.swift",
         "responsibility": "Adapts the single Core AI owner to the existing kernel. The model only emits text; structured decisions still cross the kernel's schema and approval gates.",
-        "sha256": "baa91b5e8b443797f8261ee0a477b1658af09ddc4b7deb58671cbb57bfe2b063",
+        "sha256": "44ae3704fff626eab50c45223683d3da491f5e927ec8abd40aed6eb0c590f43a",
         "symbols": [
           "CoreAIGemmaRuntimeAdapter",
           "generate",
@@ -836,11 +837,11 @@
           "visibleOutput",
           "messages",
           "append",
+          "promptAssembly",
           "unifiedAssistantInstruction",
           "kind",
           "availabilityOverride",
-          "preferenceOverride",
-          "generateHandler"
+          "preferenceOverride"
         ]
       },
       {
@@ -905,6 +906,29 @@
         ],
         "language": "swift",
         "module": "Assistant",
+        "path": "ios/Lumen/Assistant/HostSelfModelContext.swift",
+        "responsibility": "Created only from host-owned runtime state. Prompt text is never decoded as this value or used to establish its provenance.",
+        "sha256": "152d8519d6d5cd7217a8da60d5a9227259332c47b73797fc870ac86721517c8e",
+        "symbols": [
+          "HostSelfModelContext",
+          "injecting",
+          "removing",
+          "summary",
+          "maximumBlockCharacters",
+          "begin",
+          "end",
+          "snapshot",
+          "block",
+          "contentBudget",
+          "content"
+        ]
+      },
+      {
+        "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift",
         "responsibility": "Explicit Agent Kernel compatibility boundary for legacy agent services.",
         "sha256": "47aa7826e215afcc3a72ad1b6469181815a6af366844ad38dc87657a1b69985d",
@@ -956,7 +980,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyGroundingBridge.swift",
         "responsibility": "Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and degraded behavior stay centralized.",
-        "sha256": "5e9aa5eac3f8ddaf375bf9c2a1dfb56e3559e1c6355c546c4fb0386a8f6e49e1",
+        "sha256": "cad71b72b1794df24edd7d7f0a8cee9f2e8cade819455a37b7fe0cafbba8b415",
         "symbols": [
           "LegacyGroundingBundle",
           "LegacyGroundingBridge",
@@ -1079,7 +1103,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyPromptAssembler.swift",
         "responsibility": "`ios/Lumen/Assistant/LegacyPromptAssembler.swift` owns LegacyPromptAssembler behavior and defines: LegacyPromptAssembled, LegacyPromptAssembler, assemble, titled, sectionCaps, isMemorySection, isSourceSection, isToolSection, isRuntimeSection, isSelfModelSection.",
-        "sha256": "6062a313b1374157479481432c1be9341de15e48e491f575d5ade551530995e7",
+        "sha256": "e16d21e361d158ef11a3c928c8b7bcfd8d3c251e28f10a77089bbc77798b294b",
         "symbols": [
           "LegacyPromptAssembled",
           "LegacyPromptAssembler",
@@ -1131,8 +1155,8 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift",
-        "responsibility": "`ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, budgetPlan, cancelledResult, grounding.",
-        "sha256": "d51968a678ec5b724958492c8e62cf0abef1d22c37b9665cd56d7168d03f602f",
+        "responsibility": "`ios/Lumen/Assistant/LegacyTurnGroundingCoordinator.swift` owns LegacyTurnGroundingCoordinator behavior and defines: LegacyTurnGroundingOutput, LegacyTurnGroundingCoordinator, memorySection, toolsSection, runtimeSection, build, prepareGroundedRequest, groundingAfterAssembly, budgetPlan, cancelledResult.",
+        "sha256": "56afeb9ea81bce0b9f3371e1f169751afe3a8edefaf10011cbb27caad833f3c8",
         "symbols": [
           "LegacyTurnGroundingOutput",
           "LegacyTurnGroundingCoordinator",
@@ -1141,6 +1165,7 @@
           "runtimeSection",
           "build",
           "prepareGroundedRequest",
+          "groundingAfterAssembly",
           "budgetPlan",
           "cancelledResult",
           "grounding",
@@ -1148,8 +1173,7 @@
           "legacyTools",
           "promptInjection",
           "metricsSummary",
-          "shared",
-          "bridge"
+          "shared"
         ]
       },
       {
@@ -1231,15 +1255,16 @@
         "language": "swift",
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/SelfModelContextProvider.swift",
-        "responsibility": "`ios/Lumen/Assistant/SelfModelContextProvider.swift` owns SelfModelContextProvider behavior and defines: SelfModelContextProvider, section, render, maxChars, sourceIDs, compactLines, sectionTitle, foregroundMaxChars, backgroundMaxChars, content.",
-        "sha256": "8d6c7fd8b3cff7dda7ecaca2d73c1438f6cd0a5103fb2352ae5fd0825a675334",
+        "responsibility": "Facts are atomic: dropping a whole field is safer than turning a truncated tool ID, policy, revision, or JSON value into an apparent complete claim.",
+        "sha256": "c43dd98efe4d7c578d595178c9e00892d4153faf536514bc6c5bb2d972e80448",
         "symbols": [
           "SelfModelContextProvider",
           "section",
           "render",
           "maxChars",
           "sourceIDs",
-          "compactLines",
+          "requiredLines",
+          "optionalLines",
           "sectionTitle",
           "foregroundMaxChars",
           "backgroundMaxChars",
@@ -1248,8 +1273,7 @@
           "encoder",
           "data",
           "json",
-          "compact",
-          "cap"
+          "required"
         ]
       },
       {
@@ -1289,7 +1313,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run, runLoop, availableTools.",
-        "sha256": "b2c5950d967da8782f15843e45f4a5c01de2aeea67ceb484e46a377f1833b8ac",
+        "sha256": "f58fda6288c9d032f1537b62bc639bcc49cf3bdaa7c896dddc503d67043247f6",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -1402,7 +1426,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer, StripResult, LeadingBlock.",
-        "sha256": "b90ef504b6a8e1dc2bb9425ee2c6a6188c1b59479cf320a2a407694d8c7a1ec3",
+        "sha256": "bb7aa77bf9e997f20db1c047bea66af4cdc025e03b48c74d7473faa403f7ff66",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -2191,27 +2215,6 @@
           "source",
           "createdAt"
         ]
-      },
-      {
-        "imports": [
-          "Foundation"
-        ],
-        "language": "swift",
-        "module": "Memory",
-        "path": "ios/Lumen/Memory/MemoryScorer.swift",
-        "responsibility": "`ios/Lumen/Memory/MemoryScorer.swift` owns MemoryScorer behavior and defines: MemorySaveDecision, MemoryScoreResult, MemoryScorer, score, decision, reasons, s, age, d.",
-        "sha256": "7329be69a3883fb46122cd470ffd8a67c24a0717972b21d86435f6c8ea64433b",
-        "symbols": [
-          "MemorySaveDecision",
-          "MemoryScoreResult",
-          "MemoryScorer",
-          "score",
-          "decision",
-          "reasons",
-          "s",
-          "age",
-          "d"
-        ]
       }
     ]
   },
@@ -2221,14 +2224,14 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "7fbea2fbc7823b14383a06674eba931326d644c1",
+  "manifestCommit": "be31e8f558ca0aea2ab332eb08a9bc99f8070eda",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "973937b1eb09e5c68d0ccc467daf2a6fbbd3e8fb27abf3ea638cb3df01284431",
-    "promptUTF8ByteCount": 25811,
+    "promptSHA256": "a4703186dc0e78a68b96a7ddf15ae0749487c406f8587574917f6197fdada5a1",
+    "promptUTF8ByteCount": 25666,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
   "schemaVersion": "1.0.0",
@@ -2239,8 +2242,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "7fbea2fbc7823b14383a06674eba931326d644c1",
-    "dirtyState": false,
-    "workingTreeDigest": "36707b5325fd9977286cffc6d4e03d757163dc499835ef79b1d6c3f4c6e37a67"
+    "baseCommit": "be31e8f558ca0aea2ab332eb08a9bc99f8070eda",
+    "dirtyState": true,
+    "workingTreeDigest": "449b02645d2074774889a8b7344fb4c19c923a2e1de1e65aecc108b8760fcf1c"
   }
 }

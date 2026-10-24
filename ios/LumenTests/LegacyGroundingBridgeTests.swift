@@ -16,6 +16,10 @@ final class LegacyGroundingBridgeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(out.grounding.estimatedTokens, 0)
         XCTAssertEqual(out.grounding.memoryTierCounts?["semantic"], 1)
         XCTAssertEqual(out.grounding.contextQueryExpanded, false)
+        let selfModel = out.sections.first { $0.title == SelfModelContextProvider.sectionTitle }
+        let included = selfModel.map { !$0.content.isEmpty && out.renderedPromptContext.contains("[\($0.title)]\n\($0.content)") } ?? false
+        XCTAssertEqual(out.grounding.selfModelIncluded, included)
+        XCTAssertEqual(out.grounding.selfModelEstimatedChars, included ? selfModel?.content.count : 0)
     }
 
     @MainActor func testBuildExpandsRetrievalQueryFromRecentHistory() async throws {

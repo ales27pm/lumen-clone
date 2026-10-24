@@ -555,3 +555,19 @@ Hard failures block generation when the manifest would train agents on impossibl
 - malformed DPO preference pair
 
 Warnings flag quality issues that should be cleaned up, such as missing descriptions or ambiguous intent routing.
+
+## Score self-model claims against evaluator state
+
+Self-model scoring is deterministic validation of typed claims, not a semantic judgment of unrestricted answer text. Export answer records keyed by the scenario ID with a `claims` object. Supply the reference snapshot separately; answer-authored runtime descriptions are never ground truth.
+
+```bash
+uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler \
+  lumen-manifest-crawler score-self-model-eval \
+  --eval-records generated/agent_manifest/dataset/self_model_eval.jsonl \
+  --answers /path/to/answers.jsonl \
+  --snapshot /path/to/evaluator-snapshot.json \
+  --output /path/to/self-model-score.json \
+  --fail-on-validation
+```
+
+Factual claims use snapshot paths such as `runtime.selectedRuntime` and `tools.available`. Scenario policy decisions use typed claims defined by the scorer; see `dataset/self_model_eval.py` and its regression tests for each expectation. Missing claims, missing required ground truth, unknown expectations and wrong value types fail closed. Reports retain `self_model_eval_score.v1`, record a separate scoring-policy version and explicitly state that free-text semantics were not evaluated. They remain non-live improvement-loop inputs, not device or TestFlight proof.

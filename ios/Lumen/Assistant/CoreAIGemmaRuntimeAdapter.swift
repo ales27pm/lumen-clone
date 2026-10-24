@@ -59,7 +59,8 @@ struct CoreAIGemmaRuntimeAdapter: LocalTextGenerationRuntime {
                     attachments: request.attachments,
                     maxTokens: request.maxTokens,
                     responseFormat: .plainText,
-                    contextSize: contextSize
+                    contextSize: contextSize,
+                    hostSelfModel: request.hostSelfModel
                 ),
                 temperature: request.temperature,
                 maxTokens: request.maxTokens
@@ -100,7 +101,12 @@ struct CoreAIGemmaRuntimeAdapter: LocalTextGenerationRuntime {
         return LlamaStructuredPromptPreflightSnapshot(
             contextSize: preflight.contextSize,
             finalPromptChars: preflight.promptChars,
-            estimatedPromptTokens: preflight.promptTokens
+            estimatedPromptTokens: preflight.promptTokens,
+            hostSelfModelIncluded: request.hostSelfModel?.summary(inRenderedPrompt: Self.promptAssembly(
+                systemPrompt: request.systemPrompt, history: request.history, userMessage: request.userMessage,
+                relevantMemories: request.relevantMemories, attachments: request.attachments,
+                maxTokens: request.maxTokens, contextSize: contextSize, hostSelfModel: request.hostSelfModel
+            ).systemPrompt).included
         )
     }
 
@@ -159,7 +165,8 @@ struct CoreAIGemmaRuntimeAdapter: LocalTextGenerationRuntime {
             attachments: request.attachments,
             maxTokens: request.maxTokens,
             responseFormat: request.responseFormat,
-            contextSize: contextSize
+            contextSize: contextSize,
+            hostSelfModel: request.hostSelfModel
         )
     }
 
@@ -171,22 +178,13 @@ struct CoreAIGemmaRuntimeAdapter: LocalTextGenerationRuntime {
         attachments: [ChatAttachment],
         maxTokens: Int,
         responseFormat: LLMResponseFormat,
-        contextSize: Int
+        contextSize: Int,
+        hostSelfModel: HostSelfModelContext? = nil
     ) -> [CoreAIGemmaMessage] {
-        let assembly = PromptAssembler.assemble(
-            systemPrompt: systemPrompt,
-            history: history,
-            userMessage: userMessage,
-            memories: relevantMemories,
-            attachments: attachments,
-            budget: .make(
-                contextSize: contextSize,
-                maxTokens: maxTokens,
-                systemPromptChars: systemPrompt.count,
-                userMessageChars: userMessage.count,
-                hasAttachments: !attachments.isEmpty,
-                hasMemories: !relevantMemories.isEmpty
-            )
+        let assembly = Self.promptAssembly(
+            systemPrompt: systemPrompt, history: history, userMessage: userMessage,
+            relevantMemories: relevantMemories, attachments: attachments,
+            maxTokens: maxTokens, contextSize: contextSize, hostSelfModel: hostSelfModel
         )
         var instructions = unifiedAssistantInstruction + "\n" + assembly.systemPrompt
         switch responseFormat {
@@ -227,4 +225,19 @@ struct CoreAIGemmaRuntimeAdapter: LocalTextGenerationRuntime {
         append(role: "user", content: assembly.userMessage)
         return turns.map { CoreAIGemmaMessage(role: $0.role, content: $0.content) }
     }
+    private static func promptAssembly(
+        systemPrompt: String, history: [(role: MessageRole, content: String)], userMessage: String,
+        relevantMemories: [MemoryContextItem], attachments: [ChatAttachment], maxTokens: Int,
+        contextSize: Int, hostSelfModel: HostSelfModelContext?
+    ) -> PromptAssembly {
+        PromptAssembler.assemble(
+            systemPrompt: systemPrompt, history: history, userMessage: userMessage,
+            memories: relevantMemories, attachments: attachments,
+            budget: .make(contextSize: contextSize, maxTokens: maxTokens,
+                          systemPromptChars: systemPrompt.count, userMessageChars: userMessage.count,
+                          hasAttachments: !attachments.isEmpty, hasMemories: !relevantMemories.isEmpty),
+            hostSelfModel: hostSelfModel
+        )
+    }
+
 }

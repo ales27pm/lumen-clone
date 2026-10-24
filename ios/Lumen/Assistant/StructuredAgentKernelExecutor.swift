@@ -616,8 +616,18 @@ struct StructuredAgentKernelExecutor {
             stepIndex: stepIndex,
             hasObservations: hasObservations
         )
+        let visibleToolIDs = Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        let visibleDefinitions = kernel.toolRegistry.definitions().filter {
+            visibleToolIDs.contains(ToolRouteGuard.canonicalToolID($0.id))
+        }
+        let hostSelfModel = kernel.prepareHostSelfModel(
+            turn: turnContext,
+            selection: selection,
+            tools: visibleDefinitions,
+            activeSlot: Self.structuredAgentModelSlot
+        )
         var genReq = GenerateRequest(
-            systemPrompt: activeSystemPrompt,
+            systemPrompt: hostSelfModel.injecting(into: activeSystemPrompt),
             history: [],
             userMessage: userTurn,
             temperature: Self.agentTemperature(from: request.options.temperature),
@@ -633,7 +643,8 @@ struct StructuredAgentKernelExecutor {
                 stepIndex: stepIndex,
                 hasObservations: hasObservations
             ),
-            allowsMemoryPressureContinuation: request.options.allowDegradedMode
+            allowsMemoryPressureContinuation: request.options.allowDegradedMode,
+            hostSelfModel: hostSelfModel
         )
         let runtimePreflight: ExecutorRuntimePreflightResult
         do {
@@ -773,7 +784,16 @@ struct StructuredAgentKernelExecutor {
                 firstChunkReceived: payload?.firstChunkReceived ?? (textChunkCount > 0),
                 textChunkCount: payload?.textChunkCount ?? textChunkCount,
                 finalChunkReceived: payload?.finalChunkReceived ?? finalChunkReceived,
-                streamTerminationReason: payload?.streamTerminationReason ?? (forcedParseError?.rawValue ?? (finalChunkReceived ? "stop" : nil))
+                streamTerminationReason: payload?.streamTerminationReason ?? (forcedParseError?.rawValue ?? (finalChunkReceived ? "stop" : nil)),
+                selfModel: genReq.hostSelfModel.map { host in
+                    AgentBehaviorTrace.SelfModelDecisionSummary.fromHost(
+                        snapshot: host.snapshot,
+                        included: preflight.hostSelfModelIncluded == true,
+                        selectedToolID: nil,
+                        requiresApproval: nil,
+                        approvalMode: nil
+                    )
+                }
             )
         )
     }
@@ -791,7 +811,8 @@ struct StructuredAgentKernelExecutor {
             contextSize: contextSize,
             finalPromptChars: promptBuild.finalPromptChars,
             estimatedPromptTokens: promptBuild.estimatedPromptTokens,
-            fits: fits
+            fits: fits,
+            hostSelfModelIncluded: promptBuild.hostSelfModelIncluded
         )
     }
 
@@ -870,8 +891,7 @@ struct StructuredAgentKernelExecutor {
             successfulObservationCount: observations.count,
             finalizerAccepted: finalizerOutcome?.accepted,
             finalizerRejectionReason: finalizerOutcome?.rejectionReason,
-            selfModel: AgentBehaviorTrace.SelfModelDecisionSummary.fromPrompt(
-                userTurn,
+            selfModel: diagnostics.selfModel?.withDecision(
                 selectedToolID: turn.action.map { ToolRouteGuard.canonicalToolID($0.tool) },
                 requiresApproval: turn.action.map { ToolRouteGuard.requiresUserApproval(ToolRouteGuard.canonicalToolID($0.tool)) },
                 approvalMode: nil
@@ -1019,6 +1039,7 @@ private extension StructuredAgentKernelExecutor {
         let textChunkCount: Int?
         let finalChunkReceived: Bool?
         let streamTerminationReason: String?
+        var selfModel: AgentBehaviorTrace.SelfModelDecisionSummary? = nil
     }
 
     struct StructuredGenerationResult {
@@ -1071,6 +1092,7 @@ private extension StructuredAgentKernelExecutor {
         let finalPromptChars: Int
         let estimatedPromptTokens: Int
         let fits: Bool
+        var hostSelfModelIncluded: Bool? = nil
     }
 
     static func buildSystemPrompt(request: AgentKernelRequest, availableTools: [ToolDefinition], unifiedAssistant: Bool = false) -> String {
@@ -1931,7 +1953,9 @@ private extension StructuredAgentKernelExecutor {
         GenerateRequest(
             id: request.id,
             sessionID: request.sessionID,
-            systemPrompt: truncateSystemPromptForAgentJSONPreflight(request.systemPrompt),
+            // Preserve the existing compact routing contract first. Host context
+            // may be omitted here; its typed metadata then reports included=false.
+            systemPrompt: truncateSystemPromptForAgentJSONPreflight(request.hostSelfModel?.removing(from: request.systemPrompt) ?? request.systemPrompt),
             history: [],
             userMessage: compactAgentJSONUserTurnForPreflight(request.userMessage),
             temperature: min(request.temperature, 0.05),
@@ -1946,7 +1970,8 @@ private extension StructuredAgentKernelExecutor {
             developerTraceModeEnabled: false,
             reasoningCaptureEnabled: false,
             reasoningTraceBudgetCharacters: request.reasoningTraceBudgetCharacters,
-            allowsMemoryPressureContinuation: request.allowsMemoryPressureContinuation
+            allowsMemoryPressureContinuation: request.allowsMemoryPressureContinuation,
+            hostSelfModel: request.hostSelfModel
         )
     }
 
