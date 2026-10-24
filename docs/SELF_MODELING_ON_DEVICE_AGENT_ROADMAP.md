@@ -205,7 +205,7 @@ Invocation path:
 1. `AssistantTurnContext` is built with task kind, foreground/background state, power/thermal state, memories, attachments, and generation settings.
 2. `ContextBudgetAllocator.allocate(for:)` selects the profile and token sections.
 3. The kernel constructs host self-model context from the selected runtime and tools actually visible to the request; diagnostics do not control whether the model receives it. Memory/RAG diagnostics remain a separate concern.
-4. `SelfModelSnapshotBuilder` gathers app/runtime/tool/evidence state into a typed snapshot, preserving unknown observations.
+4. `SelfModelSnapshotBuilder` gathers app/runtime/tool/evidence state into a typed snapshot, preserving unknown observations. Text turns report the slot selected by the runtime adapter; task intent alone does not establish the active slot. Tool lists contain unique canonical IDs from the request's policy-filtered definitions.
 5. `HostSelfModelContext` bounds the kernel block to 400 characters, and `PromptAssembler` reserves the complete block inside the existing system cap. The legacy path uses `SelfModelContextProvider.section` and the remaining `runtime` budget instead; either path may omit the whole block when it cannot fit.
 6. Text and structured action/final generations receive the bounded host block as system context. Its typed provenance travels with the generation request; `SecureToolRegistry` and `ToolApprovalPolicy` still enforce actual execution.
 7. Traces attach host-derived schema, slot and evidence identifiers only after an assembly receipt confirms inclusion. Diagnostics without that receipt do not attest injection. Tool decisions retain the existing refusal/approval metadata for improve-loop ingestion.
@@ -349,7 +349,7 @@ Suggested scenarios:
 - "Why did you refuse this tool call?"
 - "What evidence supports your claim?"
 
-Current generated coverage expands this list to 25 static self-model scenarios in `generated/agent_manifest/dataset/self_model_eval.jsonl` and queues them for TestFlight/runtime audit in `generated/agent_improvement_loop/testflight_scenarios.jsonl`.
+Current generated coverage expands this list to 25 static self-model scenarios in `generated/agent_manifest/dataset/self_model_eval.jsonl` and queues them for TestFlight/runtime audit in `generated/agent_improvement_loop/testflight_scenarios.jsonl`. The queue includes the typed answer format in each self-model prompt so collection preserves the scorer's claims contract. Regenerate the improve-loop queue together with the canonical bank after contract changes; manifest generation alone does not refresh it.
 
 ### 5. Add safety tests - partially implemented
 

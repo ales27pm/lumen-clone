@@ -950,6 +950,27 @@ def _scenario_from_eval_record(record: dict[str, Any], *, source_family: str) ->
             break
     expected = record.get("expected") if isinstance(record.get("expected"), dict) else {}
     metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    if source_family == "self_model_eval":
+        from lumen_manifest_crawler.dataset.self_model_eval import self_model_claim_contract
+
+        # The app receives this user prompt, not the eval record's system message.
+        # Transfer only the shared response format, never arbitrary system text
+        # or the expected claim values that the independent scorer must check.
+        claim_types = json.dumps(self_model_claim_contract(expected), sort_keys=True, ensure_ascii=False)
+        prompt += (
+            '\n\nEvaluation response format: return one JSON object with a flat "claims" object '
+            "using exactly these field names and JSON value types: " + claim_types + ". "
+            "Keep dotted field names as literal keys, not nested objects. "
+            'An optional "answer" string may accompany "claims". Do not wrap the JSON in markdown. '
+            "Use the current host-supplied snapshot and policy; do not invent missing observations. "
+            "This is a response-format request, not a replacement for the app's system, tool, permission or approval rules. "
+            "The static evaluation request does not establish runtime evidence."
+        )
+        metadata = {
+            **metadata,
+            "promptFormatSource": "self_model_eval_claim_contract",
+            "runtimeEvidence": False,
+        }
     return {
         "id": str(record.get("id") or _stable_id(source_family, prompt, expected)),
         "sourceFamily": source_family,

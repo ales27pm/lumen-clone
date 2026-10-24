@@ -1,3 +1,17 @@
 {
-  "gaps": []
+  "gaps": [
+    {
+      "category": "testflight_runtime_pending",
+      "evidence": {
+        "expectedExport": "lumen-testflight-agent-grounding-*.json",
+        "runbook": "./generated/agent_improvement_loop/TESTFLIGHT_RUNBOOK.md",
+        "scenarioQueue": "./generated/agent_improvement_loop/testflight_scenarios.jsonl",
+        "source": "Agent Grounding > Export TestFlight + Agent Grounding Package"
+      },
+      "id": "754c6a9e4c6dd055b22d57d3",
+      "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the TestFlight + Agent Grounding package JSON, then rerun improve-loop with --runtime-audit <json>.",
+      "severity": "warning",
+      "title": "TestFlight in-app audit export has not been ingested yet"
+    }
+  ]
 }

@@ -91,6 +91,92 @@ final class HostSelfModelGroundingTests: XCTestCase {
         XCTAssertTrue(metadata.snapshot.tools.available.isEmpty)
     }
 
+    func testTextSnapshotUsesExecutedLlamaSlotRatherThanTaskRole() async throws {
+        for slot in [LumenModelSlot.mouth, .executor] {
+            for task in [AssistantTaskKind.agentPlan, .toolDecision] {
+                let service = CapturingService(outputs: ["Hello"])
+                let kernel = AssistantKernel(router: AssistantRuntimeRouter(llamaService: service, llamaSlot: slot, coreAI: .disabled, allowDiagnosticFallbackSelection: false))
+                let turn = AssistantTurnContext(task: task, input: "hello", isForeground: true,
+                                                lowPowerMode: false, thermalState: .nominal, prefersFoundationModels: false)
+                _ = try await kernel.runTextTurn(turn)
+                let requests = await service.requests()
+                let slots = await service.executionSlots()
+                let request = try XCTUnwrap(requests.last)
+                XCTAssertEqual(slots, [slot])
+                XCTAssertEqual(request.hostSelfModel?.snapshot.agent.activeSlot, slot.rawValue)
+            }
+        }
+    }
+
+    func testSnapshotCanonicalToolCollectionsDeduplicateAliases() {
+        let context = host(tools: [
+            MemoryAliasTool(id: "memory.search").definition,
+            MemoryAliasTool(id: "memory.recall").definition,
+            OpenURLTool().definition, OpenURLTool().definition
+        ])
+        let memoryID = ToolRouteGuard.canonicalToolID("memory.search")
+        let urlID = ToolRouteGuard.canonicalToolID("open.url")
+        XCTAssertEqual(context.snapshot.tools.available, [memoryID, urlID].sorted())
+        XCTAssertEqual(context.snapshot.tools.requiresApproval, [urlID])
+        XCTAssertEqual(context.snapshot.tools.backgroundSafe, [memoryID])
+    }
+
+    func testMixedAliasPoliciesCannotMakeApprovalToolBackgroundSafe() {
+        let context = host(tools: [
+            MemoryAliasTool(id: "memory.search").definition,
+            MemoryAliasTool(id: "memory.recall", requiresApproval: true).definition
+        ])
+        XCTAssertEqual(context.snapshot.tools.available, ["memory.recall"])
+        XCTAssertEqual(context.snapshot.tools.requiresApproval, ["memory.recall"])
+        XCTAssertTrue(context.snapshot.tools.backgroundSafe.isEmpty)
+    }
+
+    func testForegroundOnlyCalendarAliasCannotBecomeBackgroundSafe() throws {
+        let catalog = try XCTUnwrap(ToolRegistry.find(id: "calendar.list"))
+        let context = host(tools: [CalendarReadTool().definition, ProductivityLocalTool(catalog).definition])
+        XCTAssertEqual(context.snapshot.tools.available, ["calendar.list"])
+        XCTAssertTrue(context.snapshot.tools.backgroundSafe.isEmpty)
+    }
+
+    func testInjectedTextHandlerDoesNotClaimObservedSlotOrReadiness() async throws {
+        let capture = TextCapture()
+        let kernel = AssistantKernel(router: AssistantRuntimeRouter(
+            llama: .init(generateHandler: { request in await capture.record(request); return "Hello" }),
+            coreAI: .disabled, allowDiagnosticFallbackSelection: false
+        ))
+        let turn = AssistantTurnContext(task: .agentPlan, input: "hello", isForeground: true,
+                                        lowPowerMode: false, thermalState: .nominal, prefersFoundationModels: false)
+        _ = try await kernel.runTextTurn(turn)
+        let captured = await capture.snapshot()
+        let request = try XCTUnwrap(captured)
+        let snapshot = try XCTUnwrap(request.hostSelfModel?.snapshot)
+        XCTAssertEqual(snapshot.agent.activeSlot, "unknown")
+        XCTAssertEqual(snapshot.agent.slotAvailability, .unknown)
+        XCTAssertEqual(snapshot.runtime.readiness, .unknown)
+    }
+
+    func testStructuredSnapshotDoesNotReintroduceDeniedAliasDefinition() async throws {
+        let service = CapturingService(outputs: [#"{"final":"Hello."}"#])
+        let registry = SecureToolRegistry(tools: [
+            MemoryAliasTool(id: "memory.search"),
+            MemoryAliasTool(id: "memory.recall", requiresApproval: true)
+        ])
+        let kernel = AssistantKernel(router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false), toolRegistry: registry)
+        // AppIntent permits memory.search, but explicitly rejects memory.recall.
+        // They share a canonical ID; the denied definition must stay excluded.
+        let request = AgentKernelRequest(userMessage: "Hello.", source: .appIntent, options: AgentKernelOptions(
+            allowHeavyRuntime: true, allowDegradedMode: false, requireUserVisibleFinal: true,
+            diagnosticsEnabled: false, maxSteps: 2, prefersFoundationModels: false,
+            structuredMode: .requiredAgentJSON, structuredAllowedToolIDs: ["memory.recall"], allowsToolExecution: true
+        ))
+        for await _ in kernel.run(request, modelContext: nil) {}
+        let requests = await service.requests()
+        let sent = try XCTUnwrap(requests.first)
+        let metadata = try XCTUnwrap(sent.hostSelfModel)
+        XCTAssertEqual(metadata.snapshot.tools.available, ["memory.recall"])
+        XCTAssertTrue(metadata.snapshot.tools.requiresApproval.isEmpty)
+    }
+
     func testStructuredActionAndFinalEachReceiveFreshRestrictedHostSnapshot() async throws {
         let service = CapturingService()
         let registry = SecureToolRegistry(tools: [WeatherTool(), DeviceStatusTool()])
@@ -145,10 +231,16 @@ final class HostSelfModelGroundingTests: XCTestCase {
         let isChatLoaded = true
         let isEmbedLoaded = false
         private var sent: [GenerateRequest] = []
+        private var executedSlots: [LumenModelSlot] = []
         private let forceCompaction: Bool
+        private let outputs: [String]
         private var preflightCount = 0
-        init(forceCompaction: Bool = false) { self.forceCompaction = forceCompaction }
+        init(forceCompaction: Bool = false, outputs: [String] = [#"{"action":{"tool":"weather","args":{}}}"#, #"{"final":"It is clear."}"#]) {
+            self.forceCompaction = forceCompaction
+            self.outputs = outputs
+        }
         func requests() -> [GenerateRequest] { sent }
+        func executionSlots() -> [LumenModelSlot] { executedSlots }
         func prepareStructuredRuntime(slot: LumenModelSlot, allowsLoadedMemoryPressureContinuation: Bool) -> ExecutorRuntimePreflightResult {
             .init(passed: true, reason: "test ready", baseModelExists: true, resourceGateAllowed: true, ensureReadySucceeded: true)
         }
@@ -163,7 +255,8 @@ final class HostSelfModelGroundingTests: XCTestCase {
         }
         func stream(_ request: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
             sent.append(request)
-            let output = sent.count == 1 ? #"{"action":{"tool":"weather","args":{}}}"# : #"{"final":"It is clear."}"#
+            executedSlots.append(slot)
+            let output = outputs.indices.contains(sent.count - 1) ? outputs[sent.count - 1] : ""
             return AsyncStream { continuation in continuation.yield(.text(output)); continuation.yield(.done); continuation.finish() }
         }
         func embed(_ text: String) async throws -> [Double] { [] }
@@ -177,6 +270,20 @@ final class HostSelfModelGroundingTests: XCTestCase {
         func validateArguments(_ arguments: [String: String]) throws {}
         func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
             .init(invocationID: invocation.id, status: .success, displayText: "It is clear.", modelText: "It is clear.",
+                  structuredPayload: nil, privacyLevel: .low, metricsSummary: "test", errorCode: nil)
+        }
+    }
+
+    private struct MemoryAliasTool: LocalTool {
+        let definition: SecureToolDefinition
+        init(id: String, requiresApproval: Bool = false) {
+            definition = SecureToolDefinition(id: id, displayName: id, description: "Test memory alias", category: .readOnly,
+                requiredPermissions: [], supportsBackgroundExecution: true, requiresUserApproval: requiresApproval,
+                argumentSchemaDescription: "{}", resultPrivacyLevel: .low, maxOutputCharacters: 500)
+        }
+        func validateArguments(_ arguments: [String: String]) throws {}
+        func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
+            .init(invocationID: invocation.id, status: .success, displayText: "Test memory", modelText: "Test memory",
                   structuredPayload: nil, privacyLevel: .low, metricsSummary: "test", errorCode: nil)
         }
     }

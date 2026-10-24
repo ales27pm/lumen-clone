@@ -4,20 +4,20 @@
 - Tools: `53`
 - Intents: `22`
 - Model slots: `6`
-- Dataset records: `61681`
-- Runtime audit reports: `2`
+- Dataset records: `65658`
+- Runtime audit reports: `0`
 - Runtime failures: `0`
 - Raw runtime failures: `0`
 - Skipped live model generation: `0`
-- Runtime evidence status: `historical-runtime-audit-ingested`
-- Assessment proof status: `historical-source-revision-mismatch`
+- Runtime evidence status: `awaiting-runtime-audit`
+- Assessment proof status: `not-provided`
 - Proof satisfied at assessment: `False`
 - Verified-at-assessment reports: `0`
-- Assessment proof valid until: `2026-08-10T04:20:26+00:00`
-- Historical runtime audit reports: `2`
+- Assessment proof valid until: `None`
+- Historical runtime audit reports: `0`
 - Build-rejected runtime audit reports: `0`
 - TestFlight scenarios: `120`
-- Gaps: `0`
+- Gaps: `1`
 - Next action prompts: `1`
 
 ## TestFlight handoff
@@ -26,4 +26,7 @@ Run `TESTFLIGHT_RUNBOOK.md` in the real TestFlight app, export the TestFlight + 
 
 ## Top gaps
 
-No blocking gaps detected. The next loop should expand TestFlight runtime coverage.
+### WARNING — TestFlight in-app audit export has not been ingested yet
+
+- Category: `testflight_runtime_pending`
+- Recommendation: Compile/distribute the TestFlight build, run Agent Grounding in the app, export the TestFlight + Agent Grounding package JSON, then rerun improve-loop with --runtime-audit <json>.

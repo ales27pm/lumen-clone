@@ -254,6 +254,10 @@ struct LlamaRuntimeAdapter: LocalTextGenerationRuntime {
     private let liveService: (any LlamaRuntimeStreamingService)?
     private let liveSlot: LumenModelSlot
 
+    /// The slot actually passed to the text streaming service, independent of
+    /// the caller's task label or planning role.
+    var textGenerationSlot: LumenModelSlot? { liveService == nil ? nil : liveSlot }
+
     var isAvailable: Bool {
         generateHandler != nil || liveService != nil
     }

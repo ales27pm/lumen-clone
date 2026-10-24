@@ -144,7 +144,7 @@ final class SelfModelSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.runtime.selectedRuntime, AssistantRuntimeKind.llama.rawValue)
         XCTAssertEqual(snapshot.runtime.selectedRuntimePathKind, LumenRuntimePathKind.llamaGGUF.rawValue)
         XCTAssertTrue(snapshot.tools.available.contains("device.status"))
-        XCTAssertTrue(snapshot.tools.requiresApproval.contains("open.url"))
+        XCTAssertTrue(snapshot.tools.requiresApproval.contains(ToolRouteGuard.canonicalToolID("open.url")))
         XCTAssertTrue(snapshot.tools.backgroundSafe.contains("device.status"))
         XCTAssertFalse(rendered.contains("secret raw user prompt"))
     }
@@ -179,7 +179,7 @@ final class SelfModelSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.agent.activeSlot, LumenModelSlot.mouth.rawValue)
         XCTAssertTrue(snapshot.tools.available.contains("device.status"))
         XCTAssertFalse(snapshot.tools.available.contains("open.url"))
-        XCTAssertFalse(snapshot.tools.requiresApproval.contains("open.url"))
+        XCTAssertFalse(snapshot.tools.requiresApproval.contains(ToolRouteGuard.canonicalToolID("open.url")))
         XCTAssertTrue(Set(snapshot.tools.backgroundSafe).isSubset(of: Set(snapshot.tools.available)))
     }
 

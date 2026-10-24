@@ -1,17 +1,54 @@
 {
   "generatedAt": "1970-01-01T00:00:00+00:00",
-  "groups": [],
+  "groups": [
+    {
+      "categories": {
+        "testflight_runtime_pending": 1
+      },
+      "count": 1,
+      "examples": [
+        {
+          "actual": null,
+          "category": "testflight_runtime_pending",
+          "prompt": null,
+          "rootCauseCategory": "stale_audit_evidence",
+          "severity": "warning",
+          "skippedLiveModelRun": null,
+          "title": "TestFlight in-app audit export has not been ingested yet"
+        }
+      ],
+      "freshRuntimeFailureCount": 0,
+      "group": "TestFlight in-app audit export has not been ingested yet",
+      "recommendedAction": "Compile/distribute the TestFlight build, run Agent Grounding in the app, export the TestFlight + Agent Grounding package JSON, then rerun improve-loop with --runtime-audit <json>.",
+      "rootCauseCategories": {
+        "stale_audit_evidence": 1
+      },
+      "severities": {
+        "warning": 1
+      },
+      "skippedLiveModelGenerationCount": 0,
+      "status": "needs_fresh_runtime_evidence"
+    }
+  ],
   "schemaVersion": "1.0.0",
   "summary": {
-    "categoryCounts": {},
+    "categoryCounts": {
+      "testflight_runtime_pending": 1
+    },
     "classificationRule": "skippedLiveModelRun=true remains a gap but is not counted as a fresh runtime failure.",
     "freshRuntimeFailureCount": 0,
-    "groupCounts": {},
+    "groupCounts": {
+      "TestFlight in-app audit export has not been ingested yet": 1
+    },
     "rawRuntimeFailureCount": 0,
-    "rootCauseCounts": {},
-    "runtimeAuditReports": 2,
-    "severityCounts": {},
+    "rootCauseCounts": {
+      "stale_audit_evidence": 1
+    },
+    "runtimeAuditReports": 0,
+    "severityCounts": {
+      "warning": 1
+    },
     "skippedLiveModelGenerationCount": 0,
-    "totalGaps": 0
+    "totalGaps": 1
   }
 }

@@ -174,13 +174,14 @@ final class AssistantKernel {
         return await takeCompletedStructuredLlamaTrace(requestID: requestID)
     }
 
-    func prepareHostSelfModel(turn: AssistantTurnContext, selection: AssistantRuntimeRouter.Selection, tools: [SecureToolDefinition], activeSlot: LumenModelSlot? = nil) -> HostSelfModelContext {
+    func prepareHostSelfModel(turn: AssistantTurnContext, selection: AssistantRuntimeRouter.Selection, tools: [SecureToolDefinition], activeSlot: LumenModelSlot? = nil, inferActiveSlotFromTask: Bool = true) -> HostSelfModelContext {
         HostSelfModelContext(snapshot: SelfModelSnapshotBuilder.build(
             turn: turn,
             budget: ContextBudgetAllocator.allocate(for: turn),
             selectedRuntime: selection,
             tools: tools,
-            activeSlot: activeSlot
+            activeSlot: activeSlot,
+            inferActiveSlotFromTask: inferActiveSlotFromTask
         ))
     }
 
@@ -190,7 +191,8 @@ final class AssistantKernel {
         let tools = await toolRegistry.availableDefinitions(context: toolContext, source: turn.isForeground ? .modelProposed : .backgroundTrigger)
             .filter { allowedIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
         let selection = router.selection(for: turn)
-        return (selection, prepareHostSelfModel(turn: turn, selection: selection, tools: tools))
+        let activeSlot = selection.runtime == .llama ? router.llama.textGenerationSlot : nil
+        return (selection, prepareHostSelfModel(turn: turn, selection: selection, tools: tools, activeSlot: activeSlot, inferActiveSlotFromTask: false))
     }
 
     func buildGroundingContext(turn: AssistantTurnContext, modelContext: ModelContext?, hostSelfModel: HostSelfModelContext? = nil) async -> AssistantGroundingContext {

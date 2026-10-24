@@ -113,6 +113,7 @@ struct StructuredAgentKernelExecutor {
             var generation = await generateStructuredTurn(
                 request: request,
                 availableTools: availableTools,
+                secureDefinitions: toolAvailability.secureDefinitions,
                 systemPrompt: systemPrompt,
                 userTurn: userTurn,
                 stepIndex: stepIndex,
@@ -141,6 +142,7 @@ struct StructuredAgentKernelExecutor {
                 generation = await generateStructuredTurn(
                     request: request,
                     availableTools: availableTools,
+                    secureDefinitions: toolAvailability.secureDefinitions,
                     systemPrompt: systemPrompt,
                     userTurn: Self.agentJSONMissingDecisionRetryUserTurn(
                         from: userTurn,
@@ -504,7 +506,7 @@ struct StructuredAgentKernelExecutor {
 
     private func availableTools(for request: AgentKernelRequest, routing: IntentRoutingDecision) async -> StructuredToolAvailability {
         guard request.options.allowsToolExecution else {
-            return StructuredToolAvailability(definitions: [], excludedReasons: [:])
+            return StructuredToolAvailability(definitions: [], secureDefinitions: [], excludedReasons: [:])
         }
         let context = ToolExecutionContext(
             isForeground: request.source.allowsPermissionPrompts,
@@ -545,12 +547,15 @@ struct StructuredAgentKernelExecutor {
                 excludedReasons[id] = "Tool unavailable"
             }
         }
-        return StructuredToolAvailability(definitions: tools, excludedReasons: excludedReasons)
+        let visibleIDs = Set(tools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        let visibleSecure = secure.filter { visibleIDs.contains(ToolRouteGuard.canonicalToolID($0.id)) }
+        return StructuredToolAvailability(definitions: tools, secureDefinitions: visibleSecure, excludedReasons: excludedReasons)
     }
 
     private func generateStructuredTurn(
         request: AgentKernelRequest,
         availableTools: [ToolDefinition],
+        secureDefinitions: [SecureToolDefinition],
         systemPrompt: String,
         userTurn: String,
         stepIndex: Int,
@@ -616,14 +621,10 @@ struct StructuredAgentKernelExecutor {
             stepIndex: stepIndex,
             hasObservations: hasObservations
         )
-        let visibleToolIDs = Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
-        let visibleDefinitions = kernel.toolRegistry.definitions().filter {
-            visibleToolIDs.contains(ToolRouteGuard.canonicalToolID($0.id))
-        }
         let hostSelfModel = kernel.prepareHostSelfModel(
             turn: turnContext,
             selection: selection,
-            tools: visibleDefinitions,
+            tools: secureDefinitions,
             activeSlot: Self.structuredAgentModelSlot
         )
         var genReq = GenerateRequest(
@@ -1014,6 +1015,7 @@ struct StructuredAgentKernelExecutor {
 private extension StructuredAgentKernelExecutor {
     struct StructuredToolAvailability {
         let definitions: [ToolDefinition]
+        let secureDefinitions: [SecureToolDefinition]
         let excludedReasons: [String: String]
     }
 

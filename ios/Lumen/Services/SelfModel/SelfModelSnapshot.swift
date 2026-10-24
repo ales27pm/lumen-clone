@@ -126,21 +126,28 @@ nonisolated enum SelfModelSnapshotBuilder {
         tools: [SecureToolDefinition],
         availableBackendKinds: [String] = [],
         activeSlot: LumenModelSlot? = nil,
+        inferActiveSlotFromTask: Bool = true,
         embeddingAvailable: Bool? = nil,
         manifestCommit: String = "unknown",
         runtimeAuditPresent: Bool = false,
         now: Date = Date(),
         bundle: Bundle = .main
     ) -> SelfModelSnapshot {
-        let slot = activeSlot ?? inferredSlot(for: turn.task)
+        let slot = activeSlot ?? (inferActiveSlotFromTask ? inferredSlot(for: turn.task) : nil)
         let sortedTools = tools.sorted { $0.id < $1.id }
-        let availableToolIDs = sortedTools.map { ToolRouteGuard.canonicalToolID($0.id) }
-        let approvalToolIDs = sortedTools
+        let availableToolIDs = Array(Set(sortedTools.map { ToolRouteGuard.canonicalToolID($0.id) })).sorted()
+        let approvalToolIDs = Array(Set(sortedTools
             .filter { requiresApprovalSummary($0) }
-            .flatMap { approvalSummaryIDs($0) }
-        let backgroundSafeToolIDs = sortedTools
+            .map { ToolRouteGuard.canonicalToolID($0.id) })).sorted()
+        let approvalIDs = Set(approvalToolIDs)
+        let backgroundCandidates = Set(sortedTools
             .filter { isBackgroundSafeSummary($0) }
-            .map { ToolRouteGuard.canonicalToolID($0.id) }
+            .map { ToolRouteGuard.canonicalToolID($0.id) })
+        // Aliases must not lend a canonical tool a stronger execution policy.
+        let backgroundBlockedIDs = Set(sortedTools
+            .filter { !isBackgroundSafeSummary($0) }
+            .map { ToolRouteGuard.canonicalToolID($0.id) })
+        let backgroundSafeToolIDs = backgroundCandidates.subtracting(backgroundBlockedIDs).subtracting(approvalIDs).sorted()
 
         return SelfModelSnapshot(
             schemaVersion: SelfModelSnapshot.schemaVersion,
@@ -155,7 +162,7 @@ nonisolated enum SelfModelSnapshotBuilder {
             ),
             agent: .init(
                 logicalIdentity: "lumen",
-                activeSlot: selectedRuntime.runtime == .coreAI ? "assistant" : slot.rawValue,
+                activeSlot: selectedRuntime.runtime == .coreAI ? "assistant" : (slot?.rawValue ?? "unknown"),
                 availableSlots: [],
                 declaredSlots: selectedRuntime.runtime == .coreAI
                     ? ["assistant"]
@@ -249,14 +256,6 @@ nonisolated enum SelfModelSnapshotBuilder {
 
     private static func requiresApprovalSummary(_ definition: SecureToolDefinition) -> Bool {
         definition.requiresUserApproval || definition.category == .sensitiveAction || definition.category == .destructiveAction
-    }
-
-    private static func approvalSummaryIDs(_ definition: SecureToolDefinition) -> [String] {
-        let canonical = ToolRouteGuard.canonicalToolID(definition.id)
-        if canonical == definition.id {
-            return [canonical]
-        }
-        return [definition.id, canonical]
     }
 
     private static func isBackgroundSafeSummary(_ definition: SecureToolDefinition) -> Bool {

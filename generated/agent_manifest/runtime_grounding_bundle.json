@@ -598,7 +598,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantKernel.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, runAdaptedLegacyRequest, adaptLegacyRequest, streamStructuredLlama, takeCompletedStructuredLlamaTrace, prepareStructuredLlamaRuntime, preflightStructuredLlamaPrompt.",
-        "sha256": "6aa0cc073db01449235163d893ae2dabd0d20ee1046a27a0a2a75e6edd995883",
+        "sha256": "2da7a7db2f417c32c91cbd08f39b60837ee6849e88e5c3ea1fa8b6a072b505c2",
         "symbols": [
           "AssistantKernel",
           "KernelError",
@@ -627,7 +627,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeAdapters.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeAdapters.swift` owns AssistantRuntimeAdapters behavior and defines: LocalRuntimeError, LlamaRuntimeStreamingService, LlamaStructuredPromptPreflightSnapshot, AppLlamaService, CoreMLRuntimeError, AssistantRuntimeCapabilityRow, AssistantRuntimeCapabilityMatrix, DeterministicFallbackRuntime, LlamaRuntimeAdapter, LiveGenerationDefaults.",
-        "sha256": "b16ce9ccf6e3a85fd83bf4a1410165825463b76c6b77c6e78f9b7ac905a43ec6",
+        "sha256": "8d7ab5e13d792b9254e36b768254fce5f5e92e1a65ba5e2cd3102114deba91fa",
         "symbols": [
           "LocalRuntimeError",
           "LlamaRuntimeStreamingService",
@@ -1313,7 +1313,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run, runLoop, availableTools.",
-        "sha256": "f58fda6288c9d032f1537b62bc639bcc49cf3bdaa7c896dddc503d67043247f6",
+        "sha256": "8bee6a50fed905fe62e63ed4227f080574f188b0991cdc77e5e23cd5ad395bcc",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -2224,13 +2224,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "be31e8f558ca0aea2ab332eb08a9bc99f8070eda",
+  "manifestCommit": "3fb4ad3a47e46e339d6ab20f1c6f9d7ece34f5f4",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "a4703186dc0e78a68b96a7ddf15ae0749487c406f8587574917f6197fdada5a1",
+    "promptSHA256": "9feb4984b97066a495e312c6671949b0236006330b8ccbf302e494a062a4a244",
     "promptUTF8ByteCount": 25666,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2242,8 +2242,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "be31e8f558ca0aea2ab332eb08a9bc99f8070eda",
+    "baseCommit": "3fb4ad3a47e46e339d6ab20f1c6f9d7ece34f5f4",
     "dirtyState": true,
-    "workingTreeDigest": "449b02645d2074774889a8b7344fb4c19c923a2e1de1e65aecc108b8760fcf1c"
+    "workingTreeDigest": "a404efc4f10f0545f8ff8480d437f7d738cbd325680acff281b330a434876bae"
   }
 }
