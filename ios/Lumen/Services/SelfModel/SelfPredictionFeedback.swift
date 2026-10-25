@@ -88,22 +88,30 @@ nonisolated enum SelfPredictionFeedback {
             byTool[record.toolID, default: []].append(outcome)
         }
 
-        let summaries = byTool.map { (toolID, outcomes) -> ToolSummary in
-            let window = outcomes.sorted { $0.seq < $1.seq }.suffix(maximumOutcomesPerTool)
+        var summaries: [ToolSummary] = []
+        for (toolID, outcomes) in byTool {
+            let ordered: [Outcome] = outcomes.sorted { $0.seq < $1.seq }
+            let window = ordered.suffix(maximumOutcomesPerTool)
             // Each group was created by an eligible outcome, so it is non-empty.
             let last = window[window.index(before: window.endIndex)]
-            let previous = window.count > 1 ? window[window.index(window.endIndex, offsetBy: -2)] : nil
-            let transition = previous.flatMap { previous in
-                previous.status == last.status ? nil : StatusTransition(from: previous.status, to: last.status)
+            var transition: StatusTransition? = nil
+            if window.count > 1 {
+                let previous = window[window.index(window.endIndex, offsetBy: -2)]
+                if previous.status != last.status {
+                    transition = StatusTransition(from: previous.status, to: last.status)
+                }
             }
-            return ToolSummary(
+            let successCount = window.filter { $0.status == .success }.count
+            summaries.append(ToolSummary(
                 toolID: toolID, completedCount: window.count,
-                successCount: window.filter { $0.status == .success }.count,
+                successCount: successCount,
                 lastStatus: last.status, lastObservedAt: last.timestamp,
                 lastSeq: last.seq, transition: transition
-            )
-        }.sorted {
-            $0.lastSeq == $1.lastSeq ? $0.toolID < $1.toolID : $0.lastSeq > $1.lastSeq
+            ))
+        }
+        summaries.sort {
+            if $0.lastSeq == $1.lastSeq { return $0.toolID < $1.toolID }
+            return $0.lastSeq > $1.lastSeq
         }
 
         return Snapshot(
