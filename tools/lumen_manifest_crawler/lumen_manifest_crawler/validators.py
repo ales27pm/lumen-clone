@@ -1254,11 +1254,16 @@ def _validate_executor_json_contract(
     path: str,
 ) -> None:
     try:
-        payload = json.loads(assistant, object_pairs_hook=_unique_json_object)
+        payload = json.loads(
+            assistant,
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_nonfinite_json_number,
+            parse_float=_parse_finite_json_float,
+        )
     except _DuplicateJSONKeyError:
         failures.append(ValidationFailure(code="executor_duplicate_json_key", message="Executor output must not repeat JSON keys", path=path))
         return
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError, _NonFiniteJSONNumberError):
         failures.append(ValidationFailure(code="executor_non_json_output", message="Executor SFT output must be a strict JSON object", path=path))
         return
     if not isinstance(payload, dict):
@@ -1367,7 +1372,10 @@ def _executor_argument_type_is_valid(value: Any, declared_type: str) -> bool:
     if type_name in {"int", "integer"}:
         return isinstance(value, int) and not isinstance(value, bool)
     if type_name in {"number", "float", "double"}:
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
+        return not isinstance(value, bool) and (
+            isinstance(value, int)
+            or (isinstance(value, float) and math.isfinite(value))
+        )
     if type_name in {"object", "dictionary"}:
         return isinstance(value, dict)
     if type_name in {"array", "list"}:

@@ -34,13 +34,25 @@ def test_historical_action_remains_valid_without_invented_probability():
 @pytest.mark.parametrize("prediction", [
     None, {}, {"successProbability": True}, {"successProbability": "0.8"},
     {"successProbability": -0.1}, {"successProbability": 1.1},
-    {"successProbability": float("nan")}, {"successProbability": float("inf")},
     {"successProbability": 0.9, "approved": True},
 ])
 def test_forecast_metadata_must_be_unambiguous(prediction):
     assert "executor_prediction_invalid" in validate({
         "action": {"tool": "calendar.today", "args": {}}, "prediction": prediction,
     })
+
+
+@pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity", "1e400", "-1e400"])
+def test_nonfinite_forecast_is_rejected_as_non_json(token):
+    failures = []
+    _validate_executor_json_contract(
+        assistant='{"action":{"tool":"calendar.today","args":{}},'
+        '"prediction":{"successProbability":' + token + '}}',
+        tools_by_id={"calendar.today": SimpleNamespace(arguments=[])},
+        failures=failures,
+        path="fixture",
+    )
+    assert {failure.code for failure in failures} == {"executor_non_json_output"}
 
 
 def test_prediction_never_licenses_unknown_arguments_or_final_metadata():
