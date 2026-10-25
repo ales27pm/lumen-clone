@@ -97,6 +97,10 @@ def generate(
     root = root.resolve()
     output = output.resolve()
     dry_run = dry_run or diff
+    if agent_filter is not None and not generate_agent_fine_tuning:
+        raise typer.BadParameter(
+            "Requires --generate-agent-fine-tuning", param_hint="--agent-filter",
+        )
 
     manifest = generate_manifest(root)
     manifest_fingerprint = _manifest_fingerprint(manifest)
@@ -105,6 +109,11 @@ def generate(
         incremental
         and not runtime_audit
         and not dry_run
+        and not generate_agent_fine_tuning
+        and not strict
+        and not fail_on_change
+        and not export_md
+        and _incremental_validation_passed(output)
         and _incremental_outputs_are_current(
             output,
             manifest_fingerprint,
@@ -141,9 +150,6 @@ def generate(
             fleet_artifacts=fleet_artifacts,
             runtime_audit_reports=runtime_audit_reports,
         )
-        if agent_filter:
-            allowed = {agent.strip() for agent in agent_filter.split(",") if agent.strip()}
-            fine_tuning_datasets = {key: value for key, value in fine_tuning_datasets.items() if key in allowed}
         ft_failures = validate_agent_fine_tuning_datasets(
             manifest,
             fine_tuning_datasets,
@@ -151,6 +157,16 @@ def generate(
         )
         for failure in ft_failures:
             report.failures.append(failure)
+        report.passed = not report.failures
+        if agent_filter is not None:
+            allowed = {agent.strip() for agent in agent_filter.split(",") if agent.strip()}
+            if not allowed or not allowed <= set(fine_tuning_datasets):
+                raise typer.BadParameter(
+                    "Select one or more available agents: "
+                    + ", ".join(sorted(fine_tuning_datasets)),
+                    param_hint="--agent-filter",
+                )
+            fine_tuning_datasets = {key: value for key, value in fine_tuning_datasets.items() if key in allowed}
 
     target_output = output
     target_cross_dir = cross_model_train_dir.resolve() if cross_model_train_dir else None
@@ -206,6 +222,8 @@ def generate(
             )
         console.print(json.dumps(diff_report, ensure_ascii=False, indent=2, sort_keys=True))
         if fail_on_change and diff_report.get("changed"):
+            raise typer.Exit(code=1)
+        if fail_on_validation and report.failures:
             raise typer.Exit(code=1)
         return
 
@@ -645,6 +663,31 @@ def _is_incremental_hit(output: Path, manifest_fingerprint: str) -> bool:
         return False
     existing = existing_hash_path.read_text(encoding="utf-8").strip()
     return existing == manifest_fingerprint
+
+
+def _incremental_validation_passed(output: Path) -> bool:
+    """Only reuse a successful validation receipt under the original policy."""
+    def unique_pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in items:
+            if key in result:
+                raise ValueError("duplicate_validation_key")
+            result[key] = value
+        return result
+
+    try:
+        report = json.loads(
+            (output / "manifest_validation_report.json").read_text(encoding="utf-8"),
+            object_pairs_hook=unique_pairs,
+        )
+    except (OSError, ValueError, RecursionError):
+        return False
+    return (
+        isinstance(report, dict)
+        and report.get("passed") is True
+        and report.get("failures") == []
+        and isinstance(report.get("warnings"), list)
+    )
 
 
 def _incremental_outputs_are_current(

@@ -614,12 +614,167 @@ def _looks_like_intentionally_invalid_tool(tool_id: str) -> bool:
     return "invalid" in tokens
 
 
+def _validate_training_unicode(value: Any, *, failures: list[ValidationFailure], path: str) -> bool:
+    """Reject unsafe JSON serialization without exposing input in diagnostics."""
+    pending = [value]
+    seen_containers: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if isinstance(current, str):
+            try:
+                current.encode("utf-8")
+            except UnicodeEncodeError:
+                failures.append(ValidationFailure(code="invalid_training_unicode", message="Training data must contain valid Unicode scalar values", path=path))
+                return False
+        elif isinstance(current, dict):
+            if id(current) in seen_containers:
+                continue
+            seen_containers.add(id(current))
+            pending.extend(current.keys())
+            pending.extend(current.values())
+        elif isinstance(current, (list, tuple)):
+            if id(current) in seen_containers:
+                continue
+            seen_containers.add(id(current))
+            pending.extend(current)
+        elif isinstance(current, float) and not math.isfinite(current):
+            failures.append(ValidationFailure(code="invalid_training_json_number", message="Training data must contain finite JSON numbers", path=path))
+            return False
+    try:
+        json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False).encode("utf-8")
+    except UnicodeEncodeError:
+        failures.append(ValidationFailure(code="invalid_training_unicode", message="Training data must contain valid Unicode scalar values", path=path))
+        return False
+    except (TypeError, ValueError, RecursionError):
+        failures.append(ValidationFailure(code="invalid_training_json", message="Training data must be serializable as JSON", path=path))
+        return False
+    return True
+
+
+def _training_messages_valid(messages: Any, *, failures: list[ValidationFailure], path: str, dpo_prompt: bool = False) -> bool:
+    if not isinstance(messages, list) or not messages:
+        failures.append(ValidationFailure(code="invalid_dpo_pair" if dpo_prompt else "invalid_chat_format", message="Training messages must be a non-empty array", path=path))
+        return False
+    valid = True
+    allowed = {"system", "user", "assistant"} if dpo_prompt else {"system", "user", "assistant", "tool"}
+    for index, message in enumerate(messages):
+        message_path = f"{path}.{index}"
+        if not isinstance(message, dict):
+            failures.append(ValidationFailure(code="invalid_dpo_pair" if dpo_prompt else "invalid_chat_format", message="Training message must be an object", path=message_path))
+            valid = False
+            continue
+        role = message.get("role")
+        if not isinstance(role, str) or role not in allowed:
+            failures.append(ValidationFailure(code="invalid_dpo_pair" if dpo_prompt else "invalid_chat_format", message="Training message has an unsupported role", path=f"{message_path}.role"))
+            valid = False
+        if dpo_prompt and (set(message) != {"role", "content"} or not isinstance(message.get("content"), str) or not message["content"].strip()):
+            failures.append(ValidationFailure(code="invalid_dpo_pair", message="Preference messages require only role and non-empty text content", path=message_path))
+            valid = False
+    if dpo_prompt and valid:
+        conversation = messages[1:] if messages[0]["role"] == "system" else messages
+        expected = "user"
+        for message in conversation:
+            if message["role"] != expected:
+                valid = False
+                break
+            expected = "assistant" if expected == "user" else "user"
+        if not conversation or messages[-1]["role"] != "user":
+            valid = False
+        if not valid:
+            failures.append(ValidationFailure(code="invalid_dpo_pair", message="Preference prompt must alternate user and assistant after an optional initial system and end with user", path=path))
+    return valid
+
+
+def _training_metadata_valid(value: Any, *, agent: str, failures: list[ValidationFailure], path: str, required: bool = False) -> bool:
+    if value is None and not required:
+        return True
+    if not isinstance(value, dict):
+        failures.append(ValidationFailure(code="missing_sft_metadata" if required else "invalid_training_metadata", message="Training metadata must be an object", path=path))
+        return False
+    valid = True
+    for key in ("sourceFamily", "taskType", "evalType", "risk", "requiredSplit"):
+        if value.get(key) is not None and not isinstance(value[key], str):
+            failures.append(ValidationFailure(code="invalid_training_metadata", message="Training metadata field must be text", path=f"{path}.{key}"))
+            valid = False
+    if value.get("toolIDs") is not None and (not isinstance(value["toolIDs"], list) or any(not isinstance(item, str) for item in value["toolIDs"])):
+        failures.append(ValidationFailure(code="invalid_training_metadata", message="Training toolIDs must be an array of text IDs", path=f"{path}.toolIDs"))
+        valid = False
+    if "agent" in value and value["agent"] != agent:
+        failures.append(ValidationFailure(code="unknown_agent_role", message="Training metadata agent does not match the dataset", path=f"{path}.agent"))
+        valid = False
+    return valid
+
+
+def _training_sft_structure_safe(records: list[dict[str, Any]]) -> bool:
+    """Safety predicate only; record validators emit every corresponding failure."""
+    return all(
+        isinstance(record, dict)
+        and isinstance(record.get("messages"), list)
+        and len(record["messages"]) >= 3
+        and all(isinstance(message, dict) and isinstance(message.get("role"), str) and message["role"] in {"system", "user", "assistant", "tool"} for message in record["messages"])
+        and isinstance(record.get("metadata"), dict)
+        and (record["metadata"].get("toolIDs") is None or (isinstance(record["metadata"]["toolIDs"], list) and all(isinstance(item, str) for item in record["metadata"]["toolIDs"])))
+        for record in records
+    )
+
+
+def _safe_variant_name(name: Any) -> bool:
+    return isinstance(name, str) and name not in {"", ".", ".."} and not any(char in name for char in ("/", "\\", "\x00"))
+
+
+def _validate_training_variants(*, agent: str, variants: Any, known_tools: set[str], tools_by_id: dict[str, Any], tool_arg_map: dict[str, set[str]], forbidden: set[str], failures: list[ValidationFailure]) -> bool:
+    root = f"fine_tuning.{agent}.experiments"
+    if not isinstance(variants, dict):
+        failures.append(ValidationFailure(code="invalid_training_variants", message="Experiment variants must be an object", path=root))
+        return False
+    valid = True
+    for name, payload in variants.items():
+        if not _safe_variant_name(name):
+            failures.append(ValidationFailure(code="invalid_training_variant_name", message="Variant name must be a single safe path component", path=root))
+            valid = False
+            continue
+        path = f"{root}.{name}"
+        if not isinstance(payload, dict):
+            failures.append(ValidationFailure(code="invalid_training_variant", message="Variant payload must be an object", path=path))
+            valid = False
+            continue
+        for key in ("variant_manifest", "contamination_report"):
+            if not isinstance(payload.get(key), dict):
+                failures.append(ValidationFailure(code="invalid_training_variant", message="Variant metadata must be an object", path=f"{path}.{key}"))
+                valid = False
+        for lane in ("train_sft", "val_sft", "train_dpo", "val_dpo"):
+            records = payload.get(lane)
+            lane_path = f"{path}.{lane}"
+            if not isinstance(records, list):
+                failures.append(ValidationFailure(code="invalid_training_variant_lane", message="Variant lane must be an array", path=lane_path))
+                valid = False
+                continue
+            if lane.endswith("sft"):
+                _validate_agent_sft_records(agent=agent, records=records, known_tools=known_tools, tools_by_id=tools_by_id, tool_arg_map=tool_arg_map, forbidden=forbidden, failures=failures, record_path_prefix=lane_path)
+                valid = _training_sft_structure_safe(records) and valid
+            else:
+                if agent == "executor":
+                    _validate_executor_dpo_records(records=records, tools_by_id=tools_by_id, failures=failures, record_path_prefix=lane_path)
+                _validate_agent_dpo_records(agent=agent, records=records, forbidden=forbidden, failures=failures, record_path_prefix=lane_path)
+                valid = all(isinstance(record, dict) for record in records) and valid
+        train_sft = payload.get("train_sft")
+        val_sft = payload.get("val_sft")
+        if (isinstance(train_sft, list) and isinstance(val_sft, list)
+            and _training_sft_structure_safe(train_sft + val_sft)):
+            _validate_sft_lane_integrity(agent=agent, train_records=train_sft, val_records=val_sft, failures=failures, path=path)
+    return valid
+
+
 def validate_agent_fine_tuning_datasets(  # NOSONAR
     manifest: AgentBehaviorManifest,
     datasets: dict[str, Any],
     runtime_audit_reports: list[dict[str, Any]] | None = None,
 ) -> list[ValidationFailure]:
     failures: list[ValidationFailure] = []
+    if not isinstance(datasets, dict):
+        return [ValidationFailure(code="invalid_training_datasets", message="Agent datasets must be an object", path="fine_tuning")]
+    if not _validate_training_unicode(list(datasets), failures=failures, path="fine_tuning"):
+        return failures
     runtime_audit_reports = runtime_audit_reports or []
 
     known_agents = {"cortex", "executor", "mouth", "mimicry", "rem", "fleet"}
@@ -635,27 +790,27 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
         if agent not in datasets:
             failures.append(ValidationFailure(code="missing_agent_dataset", message=f"Missing dataset for agent {agent}", path=f"fine_tuning.{agent}"))
     for agent, ds in datasets.items():
-        if agent not in known_agents:
-            failures.append(ValidationFailure(code="unknown_agent_role", message=f"Unknown agent role {agent}", path=f"fine_tuning.{agent}"))
+        if not isinstance(agent, str) or agent not in known_agents:
+            failures.append(ValidationFailure(code="unknown_agent_role", message="Unknown agent role", path="fine_tuning"))
             continue
 
-        if not isinstance(ds.train_sft, list):
-            failures.append(ValidationFailure(code="missing_train_sft", message=f"{agent} train_sft missing", path=f"fine_tuning.{agent}.train_sft"))
+        collections_valid = True
+        for lane in ("train_sft", "val_sft", "train_dpo", "val_dpo", "eval"):
+            if not isinstance(getattr(ds, lane, None), list):
+                failures.append(ValidationFailure(code=f"missing_{lane}", message="Training lane must be an array", path=f"fine_tuning.{agent}.{lane}"))
+                collections_valid = False
+        for field in ("dataset_card", "unsloth_config"):
+            if not isinstance(getattr(ds, field, None), dict):
+                failures.append(ValidationFailure(code=f"missing_{field}", message="Training configuration must be an object", path=f"fine_tuning.{agent}.{field}"))
+                collections_valid = False
+        if not collections_valid:
             continue
-        if not isinstance(ds.val_sft, list):
-            failures.append(ValidationFailure(code="missing_val_sft", message=f"{agent} val_sft missing", path=f"fine_tuning.{agent}.val_sft"))
-            continue
-        if not isinstance(ds.eval, list):
-            failures.append(ValidationFailure(code="missing_eval", message=f"{agent} eval missing", path=f"fine_tuning.{agent}.eval"))
-            continue
-        if not isinstance(ds.dataset_card, dict):
-            failures.append(ValidationFailure(code="missing_dataset_card", message=f"{agent} dataset_card missing", path=f"fine_tuning.{agent}.dataset_card"))
-            continue
-        if not isinstance(ds.unsloth_config, dict):
-            failures.append(ValidationFailure(code="missing_unsloth_config", message=f"{agent} unsloth_config missing", path=f"fine_tuning.{agent}.unsloth_config"))
+        unicode_valid = True
+        for field in ("train_sft", "val_sft", "train_dpo", "val_dpo", "eval", "dataset_card", "unsloth_config", "experiment_variants", "experiment_manifest", "contamination_report"):
+            unicode_valid = _validate_training_unicode(getattr(ds, field, None), failures=failures, path=f"fine_tuning.{agent}.{field}") and unicode_valid
+        if not unicode_valid:
             continue
 
-        _validate_sft_collection_integrity(agent=agent, ds=ds, failures=failures)
         _validate_agent_sft_records(
             agent=agent,
             records=ds.train_sft + ds.val_sft,
@@ -671,8 +826,12 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
                 tools_by_id=tools_by_id,
                 failures=failures,
             )
-        _validate_agent_dpo_records(agent=agent, records=ds.train_dpo + ds.val_dpo, failures=failures)
-        _validate_agent_eval_records(agent=agent, records=ds.eval, failures=failures, known_tools=known_tools)
+        _validate_agent_dpo_records(agent=agent, records=ds.train_dpo + ds.val_dpo, forbidden=forbidden, failures=failures)
+        eval_safe = _validate_agent_eval_records(agent=agent, records=ds.eval, failures=failures, known_tools=known_tools)
+        variants_safe = _validate_training_variants(agent=agent, variants=ds.experiment_variants, known_tools=known_tools, tools_by_id=tools_by_id, tool_arg_map=tool_arg_map, forbidden=forbidden, failures=failures)
+        sft_safe = _training_sft_structure_safe(ds.train_sft + ds.val_sft)
+        if sft_safe and (agent != "fleet" or variants_safe):
+            _validate_sft_collection_integrity(agent=agent, ds=ds, failures=failures)
         _validate_unsloth_config(agent=agent, config=ds.unsloth_config, failures=failures)
 
         if agent == "cortex":
@@ -680,13 +839,13 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
             trained = len(ds.train_sft) + len(ds.val_sft)
             if available >= 100 and trained < 100:
                 failures.append(ValidationFailure(code="cortex_min_records_not_met", message=f"Cortex has {trained} records but at least 100 are available", path="fine_tuning.cortex"))
-        if agent == "executor":
+        if agent == "executor" and sft_safe:
             _validate_executor_tool_coverage(ds, known_tools, failures)
             _validate_executor_required_args(ds, tool_arg_map, failures)
-        if agent == "mouth":
+        if agent == "mouth" and eval_safe:
             if not any((record.get("metadata") or {}).get("evalType") == "sentinel_suppression" for record in ds.eval):
                 failures.append(ValidationFailure(code="mouth_missing_sentinel_eval", message="Mouth eval is missing sentinel suppression coverage", path="fine_tuning.mouth.eval"))
-        if agent == "fleet":
+        if agent == "fleet" and sft_safe and eval_safe:
             _validate_fleet_slot_coverage(ds, slot_ids, failures)
             _validate_fleet_orchestration_eval_coverage(
                 manifest=manifest,
@@ -694,8 +853,10 @@ def validate_agent_fine_tuning_datasets(  # NOSONAR
                 failures=failures,
             )
 
-        _validate_natural_intent_tool_leaks(agent=agent, ds=ds, failures=failures, known_tools=known_tools)
-        _validate_boundary_coverage(agent=agent, ds=ds, approval_tools=approval_tools, permission_tools=permission_tools, failures=failures)
+        if eval_safe:
+            _validate_natural_intent_tool_leaks(agent=agent, ds=ds, failures=failures, known_tools=known_tools)
+        if sft_safe:
+            _validate_boundary_coverage(agent=agent, ds=ds, approval_tools=approval_tools, permission_tools=permission_tools, failures=failures)
 
     return failures
 
@@ -705,39 +866,32 @@ def _dataset_card_int(card: dict[str, Any], key: str) -> int:
     return value if isinstance(value, int) else 0
 
 
-def _validate_sft_collection_integrity(
+def _validate_sft_lane_integrity(
     *,
     agent: str,
-    ds: Any,
+    train_records: list[dict[str, Any]],
+    val_records: list[dict[str, Any]],
     failures: list[ValidationFailure],
+    path: str,
 ) -> None:
-    train_keys = [_canonical_sft_messages_key(record) for record in ds.train_sft]
-    val_keys = [_canonical_sft_messages_key(record) for record in ds.val_sft]
+    train_keys = [_canonical_sft_messages_key(record) for record in train_records]
+    val_keys = [_canonical_sft_messages_key(record) for record in val_records]
     all_keys = train_keys + val_keys
     duplicate_count = len(all_keys) - len(set(all_keys))
     if duplicate_count:
-        failures.append(ValidationFailure(code="duplicate_sft_messages", message=f"{agent} contains {duplicate_count} message-identical SFT records", path=f"fine_tuning.{agent}"))
+        failures.append(ValidationFailure(code="duplicate_sft_messages", message=f"{agent} contains {duplicate_count} message-identical SFT records", path=path))
     if set(train_keys).intersection(val_keys):
-        failures.append(ValidationFailure(code="sft_split_overlap", message=f"{agent} train and validation SFT splits overlap", path=f"fine_tuning.{agent}"))
+        failures.append(ValidationFailure(code="sft_split_overlap", message=f"{agent} train and validation SFT splits overlap", path=path))
 
     outputs_by_prompt: dict[str, set[str]] = {}
-    for record in ds.train_sft + ds.val_sft:
-        prompt_key = _canonical_sft_prompt_key(record)
-        outputs_by_prompt.setdefault(prompt_key, set()).add(_canonical_sft_output_key(record))
+    for record in train_records + val_records:
+        for prompt_key, output_key in _sft_target_pairs(record):
+            outputs_by_prompt.setdefault(prompt_key, set()).add(output_key)
     conflict_count = sum(1 for outputs in outputs_by_prompt.values() if len(outputs) > 1)
     if conflict_count:
-        failures.append(ValidationFailure(code="conflicting_sft_prompt_labels", message=f"{agent} contains {conflict_count} prompts with conflicting assistant labels", path=f"fine_tuning.{agent}"))
+        failures.append(ValidationFailure(code="conflicting_sft_prompt_labels", message=f"{agent} contains {conflict_count} prompts with conflicting assistant labels", path=path))
 
-    records = ds.train_sft + ds.val_sft
-    source_counts = _sft_metadata_counts(records, "sourceFamily")
-    task_counts = _sft_metadata_counts(records, "taskType")
-    card_source_counts = ds.dataset_card.get("sourceFamilyCounts")
-    card_task_counts = ds.dataset_card.get("taskTypeCounts")
-    if card_source_counts != source_counts:
-        failures.append(ValidationFailure(code="dataset_card_source_counts_mismatch", message=f"{agent} dataset card source counts do not match materialized SFT records", path=f"fine_tuning.{agent}.dataset_card.sourceFamilyCounts"))
-    if card_task_counts != task_counts:
-        failures.append(ValidationFailure(code="dataset_card_task_counts_mismatch", message=f"{agent} dataset card task counts do not match materialized SFT records", path=f"fine_tuning.{agent}.dataset_card.taskTypeCounts"))
-
+    source_counts = _sft_metadata_counts(train_records + val_records, "sourceFamily")
     allowed_sources = ADAPTER_ROLE_SOURCE_FAMILIES.get(agent)
     if allowed_sources is not None:
         invalid_sources = sorted(
@@ -748,7 +902,26 @@ def _validate_sft_collection_integrity(
             and not source.startswith(PUBLIC_ADAPTER_CORPUS_PREFIX)
         )
         if invalid_sources:
-            failures.append(ValidationFailure(code="off_role_sft_source", message=f"{agent} contains off-role sources: {', '.join(invalid_sources)}", path=f"fine_tuning.{agent}"))
+            failures.append(ValidationFailure(code="off_role_sft_source", message=f"{agent} contains off-role sources: {', '.join(invalid_sources)}", path=path))
+
+
+def _validate_sft_collection_integrity(
+    *,
+    agent: str,
+    ds: Any,
+    failures: list[ValidationFailure],
+) -> None:
+    _validate_sft_lane_integrity(agent=agent, train_records=ds.train_sft, val_records=ds.val_sft, failures=failures, path=f"fine_tuning.{agent}")
+
+    records = ds.train_sft + ds.val_sft
+    source_counts = _sft_metadata_counts(records, "sourceFamily")
+    task_counts = _sft_metadata_counts(records, "taskType")
+    card_source_counts = ds.dataset_card.get("sourceFamilyCounts")
+    card_task_counts = ds.dataset_card.get("taskTypeCounts")
+    if card_source_counts != source_counts:
+        failures.append(ValidationFailure(code="dataset_card_source_counts_mismatch", message=f"{agent} dataset card source counts do not match materialized SFT records", path=f"fine_tuning.{agent}.dataset_card.sourceFamilyCounts"))
+    if card_task_counts != task_counts:
+        failures.append(ValidationFailure(code="dataset_card_task_counts_mismatch", message=f"{agent} dataset card task counts do not match materialized SFT records", path=f"fine_tuning.{agent}.dataset_card.taskTypeCounts"))
 
     constraints = (
         ds.dataset_card.get("constraints")
@@ -998,40 +1171,46 @@ def _validate_sft_collection_integrity(
             failures.append(ValidationFailure(code="sft_source_split_missing", message=f"{agent} source {source} is not represented in both train and validation", path=f"fine_tuning.{agent}"))
 
 
+def _training_message_content(value: Any) -> str:
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _normalized_sft_messages(record: dict[str, Any]) -> list[dict[str, str]]:
+    return [{"role": message["role"], "content": _training_message_content(message.get("content", ""))} for message in record["messages"]]
+
+
 def _canonical_sft_messages_key(record: dict[str, Any]) -> str:
-    messages = record.get("messages")
-    if not isinstance(messages, list):
-        return json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    canonical = [
-        {
-            "role": str(message.get("role") or ""),
-            "content": _canonical_model_output(str(message.get("content") or ""))
-            if message.get("role") == "assistant"
-            else str(message.get("content") or ""),
-        }
-        if isinstance(message, dict)
-        else {"role": "unknown", "content": str(message)}
-        for message in messages
-    ]
-    return json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    messages = _normalized_sft_messages(record)
+    if messages and messages[-1]["role"] == "assistant":
+        messages[-1]["content"] = _canonical_model_output(messages[-1]["content"])
+    return json.dumps(messages, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _canonical_sft_prompt_key(record: dict[str, Any]) -> str:
-    messages = record.get("messages")
-    prompt = messages[:-1] if isinstance(messages, list) else messages
+    messages = _normalized_sft_messages(record)
+    prompt = messages[:-1] if messages and messages[-1]["role"] == "assistant" else messages
     return json.dumps(prompt, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _canonical_sft_output_key(record: dict[str, Any]) -> str:
-    messages = record.get("messages")
-    if not isinstance(messages, list) or not messages or not isinstance(messages[-1], dict):
-        return ""
-    return _canonical_model_output(str(messages[-1].get("content") or ""))
+    messages = _normalized_sft_messages(record)
+    return _canonical_model_output(messages[-1]["content"]) if messages and messages[-1]["role"] == "assistant" else ""
+
+
+def _sft_target_pairs(record: dict[str, Any]) -> Iterable[tuple[str, str]]:
+    messages = _normalized_sft_messages(record)
+    for index, message in enumerate(messages):
+        if message["role"] == "assistant":
+            prompt = json.dumps(messages[:index], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            yield prompt, _canonical_model_output(message["content"])
+
 
 
 def _canonical_model_output(content: str) -> str:
     try:
-        return json.dumps(json.loads(content), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        canonical = json.dumps(json.loads(content), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        canonical.encode("utf-8")
+        return canonical
     except (ValueError, RecursionError):
         return " ".join(content.split())
 
@@ -1044,6 +1223,29 @@ def _sft_metadata_counts(records: list[dict[str, Any]], key: str) -> dict[str, i
     return {value: counts[value] for value in sorted(counts)}
 
 
+def _training_output_contains_sentinel(content: str, *, agent: str, forbidden: set[str]) -> bool:
+    """Inspect raw text and one JSON decoding for structured-output agents."""
+    if any(sentinel in content for sentinel in forbidden):
+        return True
+    if agent not in {"executor", "cortex"} or not forbidden:
+        return False
+    try:
+        pending = [json.loads(content)]
+    except (ValueError, TypeError, RecursionError):
+        # The structured contract validator reports malformed JSON separately.
+        return False
+    while pending:
+        value = pending.pop()
+        if isinstance(value, str) and any(sentinel in value for sentinel in forbidden):
+            return True
+        if isinstance(value, dict):
+            pending.extend(value.keys())
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+    return False
+
+
 def _validate_agent_sft_records(  # NOSONAR
     *,
     agent: str,
@@ -1053,13 +1255,20 @@ def _validate_agent_sft_records(  # NOSONAR
     tool_arg_map: dict[str, set[str]],
     forbidden: set[str],
     failures: list[ValidationFailure],
+    record_path_prefix: str | None = None,
 ) -> None:
     for index, rec in enumerate(records):
+        record_path = f"{record_path_prefix or f'fine_tuning.{agent}.sft'}.{index}"
+        if not isinstance(rec, dict):
+            failures.append(ValidationFailure(code="invalid_sft_record", message="SFT record must be an object", path=record_path))
+            continue
         messages = rec.get("messages")
         if not isinstance(messages, list) or len(messages) < 3:
-            failures.append(ValidationFailure(code="invalid_chat_format", message=f"{agent} SFT record must use system/user/assistant chat format", path=f"fine_tuning.{agent}.sft.{index}"))
+            failures.append(ValidationFailure(code="invalid_chat_format", message=f"{agent} SFT record must use system/user/assistant chat format", path=record_path))
             continue
 
+        if not _training_messages_valid(messages, failures=failures, path=f"{record_path}.messages"):
+            continue
         assistant_outputs = [
             (message_index, message.get("content", ""))
             for message_index, message in enumerate(messages)
@@ -1068,7 +1277,7 @@ def _validate_agent_sft_records(  # NOSONAR
         assistant = assistant_outputs[0][1] if assistant_outputs else ""
         system = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "system"), "")
         for ordinal, (message_index, content) in enumerate(assistant_outputs or [(None, "")]):
-            path = f"fine_tuning.{agent}.sft.{index}"
+            path = record_path
             if ordinal:
                 path += f".messages.{message_index}"
             if not isinstance(content, str) or not content.strip():
@@ -1101,22 +1310,19 @@ def _validate_agent_sft_records(  # NOSONAR
                         path=path,
                     )
                 )
-            if isinstance(content, str):
-                for sentinel in forbidden:
-                    if sentinel in content:
-                        failures.append(ValidationFailure(code="sentinel_leak", message=f"{agent} leaked sentinel `{sentinel}`", path=path))
+            if isinstance(content, str) and _training_output_contains_sentinel(content, agent=agent, forbidden=forbidden):
+                failures.append(ValidationFailure(code="sentinel_leak", message="Assistant output contains a forbidden sentinel", path=path))
 
         metadata = rec.get("metadata")
-        if not isinstance(metadata, dict):
-            failures.append(ValidationFailure(code="missing_sft_metadata", message=f"{agent} SFT metadata missing", path=f"fine_tuning.{agent}.sft.{index}.metadata"))
+        if not _training_metadata_valid(metadata, agent=agent, failures=failures, path=f"{record_path}.metadata", required=True):
             continue
         if metadata.get("agent") != agent:
-            failures.append(ValidationFailure(code="unknown_agent_role", message=f"SFT record metadata.agent mismatch for {agent}", path=f"fine_tuning.{agent}.sft.{index}.metadata.agent"))
+            failures.append(ValidationFailure(code="unknown_agent_role", message=f"SFT record metadata.agent mismatch for {agent}", path=f"{record_path}.metadata.agent"))
 
         _validate_public_corpus_metadata(
             metadata.get("publicCorpus"),
             agent=agent,
-            path=f"fine_tuning.{agent}.sft.{index}.metadata.publicCorpus",
+            path=f"{record_path}.metadata.publicCorpus",
             failures=failures,
         )
 
@@ -1126,7 +1332,7 @@ def _validate_agent_sft_records(  # NOSONAR
                 if not isinstance(tool_id, str):
                     continue
                 if tool_id not in known_tools:
-                    failures.append(ValidationFailure(code="unknown_tool_id", message=f"{agent} references unknown tool {tool_id}", path=f"fine_tuning.{agent}.sft.{index}.metadata.toolIDs"))
+                    failures.append(ValidationFailure(code="unknown_tool_id", message=f"{agent} references unknown tool {tool_id}", path=f"{record_path}.metadata.toolIDs"))
         if agent == "executor" and isinstance(tool_ids, list):
             task_type = str(metadata.get("taskType") or "")
             source_family = str(metadata.get("sourceFamily") or "")
@@ -1139,7 +1345,7 @@ def _validate_agent_sft_records(  # NOSONAR
                 if not required_args:
                     continue
                 if not _assistant_mentions_required_args(assistant, required_args):
-                    failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor sample for {tool_id} missing required args in assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
+                    failures.append(ValidationFailure(code="executor_missing_required_args", message=f"Executor sample for {tool_id} missing required args in assistant output", path=record_path))
 
 
 def _validate_cortex_json_object_contract(
@@ -1163,7 +1369,7 @@ def _validate_cortex_json_object_contract(
         failures.append(
             ValidationFailure(
                 code=f"{prefix}_duplicate_json_key",
-                message=f"{label} repeats JSON key `{exc.args[0]}`",
+                message=f"{label} must not repeat JSON keys",
                 path=path,
             )
         )
@@ -1176,6 +1382,8 @@ def _validate_cortex_json_object_contract(
                 path=path,
             )
         )
+        return
+    if not _validate_training_unicode(payload, failures=failures, path=path):
         return
     if not isinstance(payload, dict):
         failures.append(
@@ -1281,6 +1489,8 @@ def _validate_executor_json_contract(
     except (ValueError, TypeError, RecursionError):
         failures.append(ValidationFailure(code="executor_non_json_output", message="Executor SFT output must be a strict JSON object", path=path))
         return
+    if not _validate_training_unicode(payload, failures=failures, path=path):
+        return
     if not isinstance(payload, dict):
         failures.append(ValidationFailure(code="executor_non_object_output", message="Executor SFT output must be a JSON object", path=path))
         return
@@ -1352,6 +1562,7 @@ def _validate_executor_dpo_records(
     records: list[dict[str, Any]],
     tools_by_id: dict[str, Any],
     failures: list[ValidationFailure],
+    record_path_prefix: str | None = None,
 ) -> None:
     """Require the preferred Executor response to obey the production tool contract.
 
@@ -1359,6 +1570,10 @@ def _validate_executor_dpo_records(
     only the chosen side is eligible to teach the adapter its output contract.
     """
     for index, record in enumerate(records):
+        record_path = f"{record_path_prefix or 'fine_tuning.executor.dpo'}.{index}"
+        if not isinstance(record, dict):
+            failures.append(ValidationFailure(code="invalid_dpo_pair", message="DPO record must be an object", path=record_path))
+            continue
         chosen = record.get("chosen")
         assistant = chosen.get("content") if isinstance(chosen, dict) else None
         if not isinstance(assistant, str):
@@ -1366,7 +1581,7 @@ def _validate_executor_dpo_records(
                 ValidationFailure(
                     code="executor_dpo_missing_chosen_output",
                     message="Executor DPO record must contain a chosen assistant response",
-                    path=f"fine_tuning.executor.dpo.{index}",
+                    path=record_path,
                 )
             )
             continue
@@ -1374,7 +1589,7 @@ def _validate_executor_dpo_records(
             assistant=assistant,
             tools_by_id=tools_by_id,
             failures=failures,
-            path=f"fine_tuning.executor.dpo.{index}.chosen",
+            path=f"{record_path}.chosen",
         )
 
 
@@ -1427,56 +1642,45 @@ def _should_enforce_required_args(assistant: str) -> bool:
     return isinstance(payload.get("action"), dict)
 
 
-def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], failures: list[ValidationFailure]) -> None:
+def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], forbidden: set[str], failures: list[ValidationFailure], record_path_prefix: str | None = None) -> None:
     for index, rec in enumerate(records):
-        metadata = rec.get("metadata") if isinstance(rec.get("metadata"), dict) else {}
+        path = f"{record_path_prefix or f'fine_tuning.{agent}.dpo'}.{index}"
+        if not isinstance(rec, dict):
+            failures.append(ValidationFailure(code="invalid_dpo_pair", message="DPO record must be an object", path=path))
+            continue
+        metadata = rec.get("metadata")
+        _training_metadata_valid(metadata, agent=agent, failures=failures, path=f"{path}.metadata")
         _validate_public_corpus_metadata(
-            metadata.get("publicCorpus"),
-            agent=agent,
-            path=f"fine_tuning.{agent}.dpo.{index}.metadata.publicCorpus",
-            failures=failures,
+            metadata.get("publicCorpus") if isinstance(metadata, dict) else None,
+            agent=agent, path=f"{path}.metadata.publicCorpus", failures=failures,
         )
         prompt = rec.get("prompt")
-        chosen = rec.get("chosen")
-        rejected = rec.get("rejected")
-        if not isinstance(prompt, list) or not isinstance(chosen, dict) or not isinstance(rejected, dict):
-            failures.append(ValidationFailure(code="invalid_dpo_pair", message=f"{agent} DPO record missing prompt/chosen/rejected", path=f"fine_tuning.{agent}.dpo.{index}"))
+        prompt_valid = _training_messages_valid(prompt, failures=failures, path=f"{path}.prompt", dpo_prompt=True)
+        completions_valid = True
+        for field in ("chosen", "rejected"):
+            message = rec.get(field)
+            if (not isinstance(message, dict) or set(message) != {"role", "content"}
+                or message.get("role") != "assistant"
+                or not isinstance(message.get("content"), str) or not message["content"].strip()):
+                failures.append(ValidationFailure(code="invalid_dpo_pair", message="Preference completion must be one assistant message with non-empty text", path=f"{path}.{field}"))
+                completions_valid = False
+        if not prompt_valid or not completions_valid:
             continue
-        chosen_text = chosen.get("content")
-        rejected_text = rejected.get("content")
-        if not isinstance(chosen_text, str) or not isinstance(rejected_text, str):
-            failures.append(ValidationFailure(code="invalid_dpo_pair", message=f"{agent} DPO chosen/rejected content missing", path=f"fine_tuning.{agent}.dpo.{index}"))
-            continue
+        chosen_text = rec["chosen"]["content"]
+        rejected_text = rec["rejected"]["content"]
+        if _training_output_contains_sentinel(chosen_text, agent=agent, forbidden=forbidden):
+            failures.append(ValidationFailure(code="sentinel_leak", message="Preferred assistant output contains a forbidden sentinel", path=f"{path}.chosen"))
         if agent == "cortex":
-            system = next(
-                (
-                    message.get("content", "")
-                    for message in prompt
-                    if isinstance(message, dict)
-                    and message.get("role") == "system"
-                ),
-                "",
-            )
+            system = next((message["content"] for message in prompt if message["role"] == "system"), "")
             _validate_cortex_json_object_contract(
-                assistant=chosen_text,
-                failures=failures,
-                path=f"fine_tuning.{agent}.dpo.{index}.chosen",
-                preference_chosen=True,
-                route_contract=(
-                    isinstance(system, str)
-                    and CORTEX_ROUTE_SYSTEM_MARKER in system
-                ),
+                assistant=chosen_text, failures=failures, path=f"{path}.chosen",
+                preference_chosen=True, route_contract=CORTEX_ROUTE_SYSTEM_MARKER in system,
             )
         if agent == "mouth" and not mouth_final_text_is_complete(chosen_text):
-            failures.append(
-                ValidationFailure(
-                    code="mouth_incomplete_dpo_chosen_output",
-                    message="Mouth DPO chosen output must be complete user-facing text",
-                    path=f"fine_tuning.{agent}.dpo.{index}.chosen",
-                )
-            )
-        if chosen_text == rejected_text:
-            failures.append(ValidationFailure(code="dpo_chosen_equals_rejected", message=f"{agent} DPO chosen == rejected", path=f"fine_tuning.{agent}.dpo.{index}"))
+            failures.append(ValidationFailure(code="mouth_incomplete_dpo_chosen_output", message="Mouth DPO chosen output must be complete user-facing text", path=f"{path}.chosen"))
+        if " ".join(chosen_text.split()) == " ".join(rejected_text.split()):
+            failures.append(ValidationFailure(code="dpo_chosen_equals_rejected", message="DPO chosen and rejected completions must differ", path=path))
+
 
 
 def _validate_public_corpus_metadata(
@@ -1554,15 +1758,29 @@ def _validate_agent_eval_records(
     records: list[dict[str, Any]],
     failures: list[ValidationFailure],
     known_tools: set[str],
-) -> None:
+) -> bool:
+    valid = True
     for index, rec in enumerate(records):
+        path = f"fine_tuning.{agent}.eval.{index}"
+        if not isinstance(rec, dict):
+            failures.append(ValidationFailure(code="invalid_eval_record", message="Evaluation record must be an object", path=path))
+            valid = False
+            continue
+        valid = _training_metadata_valid(rec.get("metadata"), agent=agent, failures=failures, path=f"{path}.metadata") and valid
+        if rec.get("metadata") is None:
+            # Coverage consumers accept omitted metadata as empty, but not explicit null.
+            if "metadata" in rec:
+                failures.append(ValidationFailure(code="invalid_training_metadata", message="Evaluation metadata must be an object when present", path=f"{path}.metadata"))
+                valid = False
         expected = rec.get("expected")
         if not isinstance(expected, dict):
             failures.append(ValidationFailure(code="eval_missing_expected", message=f"{agent} eval has no expected field", path=f"fine_tuning.{agent}.eval.{index}"))
+            valid = False
             continue
         messages = rec.get("messages")
         if not isinstance(messages, list) or len(messages) < 2:
             failures.append(ValidationFailure(code="invalid_chat_format", message=f"{agent} eval must contain messages", path=f"fine_tuning.{agent}.eval.{index}"))
+        valid = _training_messages_valid(messages, failures=failures, path=f"{path}.messages") and valid
         for key in ("selectedToolID", "tool"):
             value = expected.get(key)
             if isinstance(value, str) and value not in known_tools:
@@ -1581,6 +1799,8 @@ def _validate_agent_eval_records(
                         path=f"fine_tuning.{agent}.eval.{index}.metrics",
                     )
                 )
+
+    return valid
 
 
 def _validate_unsloth_config(*, agent: str, config: dict[str, Any], failures: list[ValidationFailure]) -> None:

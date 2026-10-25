@@ -233,8 +233,23 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
         fine_tuning_output_dir=config.fine_tuning_output,
     )
 
-    command_results.append(_run_optional_command("build_for_testflight", config.build_command, root, config))
-    command_results.append(_run_optional_command("train", config.train_command, root, config))
+    qualification_failed = (
+        not validation_report.passed
+        or bool(validation_report.failures)
+        or any(not result.passed for result in command_results)
+    )
+    blocked_reason = (
+        "not executed: prerequisite validation or tests failed"
+        if qualification_failed else None
+    )
+    command_results.append(_run_optional_command(
+        "build_for_testflight", config.build_command, root, config,
+        blocked_reason=blocked_reason,
+    ))
+    command_results.append(_run_optional_command(
+        "train", config.train_command, root, config,
+        blocked_reason=blocked_reason,
+    ))
 
     testflight_scenarios = _build_testflight_scenario_queue(
         manifest=manifest,
@@ -366,9 +381,17 @@ def run_agent_improvement_loop(config: AgentImprovementLoopConfig) -> AgentImpro
     return result
 
 
-def _run_optional_command(name: str, command: tuple[str, ...], cwd: Path, config: AgentImprovementLoopConfig) -> LoopCommandResult:
+def _run_optional_command(
+    name: str, command: tuple[str, ...], cwd: Path,
+    config: AgentImprovementLoopConfig, *, blocked_reason: str | None = None,
+) -> LoopCommandResult:
     if not command:
         return LoopCommandResult(name=name, command=[], cwd=str(cwd), returncode=0, stdout_tail="", stderr_tail="")
+    if blocked_reason:
+        return LoopCommandResult(
+            name=name, command=list(command), cwd=str(cwd), returncode=125,
+            stdout_tail="", stderr_tail=blocked_reason,
+        )
     if config.dry_run_commands:
         return LoopCommandResult(
             name=name,

@@ -77,6 +77,39 @@ class ConcurrentGenerationError(RuntimeError):
     """Raised when another process is already writing the same output tree."""
 
 
+def _validate_output_component(name: object) -> None:
+    if (
+        not isinstance(name, str)
+        or not name
+        or name in {".", ".."}
+        or any(character in name for character in ("/", "\\", "\0"))
+    ):
+        # Names can originate in caller-supplied datasets. Do not disclose them
+        # or resolve them into paths before enforcing the lexical boundary.
+        raise ValueError("Output names must be nonempty path components")
+    try:
+        name.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("Output names must be nonempty path components") from None
+
+
+def _validate_fine_tuning_output_names(datasets: dict[str, AgentFineTuningDataset]) -> None:
+    for agent, dataset in datasets.items():
+        _validate_output_component(agent)
+        for variant in dataset.experiment_variants:
+            _validate_output_component(variant)
+
+
+def _validate_output_names(
+    datasets: dict[str, list[dict[str, Any]]],
+    fine_tuning_datasets: dict[str, AgentFineTuningDataset] | None,
+) -> None:
+    for family in datasets:
+        _validate_output_component(family)
+    if fine_tuning_datasets is not None:
+        _validate_fine_tuning_output_names(fine_tuning_datasets)
+
+
 def _generation_lock_path(output_dir: Path) -> Path:
     canonical_output = output_dir.resolve()
     digest = hashlib.sha256(os.fsencode(canonical_output)).hexdigest()
@@ -231,6 +264,7 @@ def write_outputs(
     fine_tuning_datasets: dict[str, AgentFineTuningDataset] | None = None,
     fine_tuning_output_dir: Path | None = None,
 ) -> None:
+    _validate_output_names(datasets, fine_tuning_datasets)
     owned_output_dirs = [output_dir]
     if cross_model_train_dir is not None:
         owned_output_dirs.append(cross_model_train_dir)
@@ -271,6 +305,7 @@ def _write_outputs_unlocked(
     fine_tuning_datasets: dict[str, AgentFineTuningDataset] | None = None,
     fine_tuning_output_dir: Path | None = None,
 ) -> None:
+    _validate_output_names(datasets, fine_tuning_datasets)
     output_dir.mkdir(parents=True, exist_ok=True)
     # AgentBehaviorManifest.json is intentionally source-derived and deterministic.
     # Its artifactStatus field declares runtimeEvidence=false so synced app bundles
@@ -670,6 +705,7 @@ def _runtime_grounding_prompt(bundle: dict[str, Any]) -> str:
 
 
 def _write_fine_tuning_outputs(root: Path, datasets: dict[str, AgentFineTuningDataset]) -> None:
+    _validate_fine_tuning_output_names(datasets)
     root.mkdir(parents=True, exist_ok=True)
     (root / "adapter_runtime_manifest.json").write_text(
         json.dumps(adapter_runtime_manifest(datasets), ensure_ascii=False, indent=2, sort_keys=True) + "\n",

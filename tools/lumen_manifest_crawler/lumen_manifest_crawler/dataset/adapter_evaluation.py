@@ -1994,7 +1994,7 @@ def upgrade_evaluation_record(record: Mapping[str, Any]) -> dict[str, Any]:
         "evalID": str(payload.get("evalID") or f"eval-{canonical_sha256(identity)[:20]}"),
         "metrics": metrics,
         "outputMode": output_mode,
-        "weight": _positive_number(payload.get("weight"), default=1.0),
+        "weight": _evaluation_weight(payload.get("weight", 1.0)),
         "metadata": {
             **metadata,
             "mustPass": metadata.get("mustPass") is not False,
@@ -2016,27 +2016,30 @@ def score_evaluation_suite(
     variant_manifest: Mapping[str, Any] | None = None,
     artifact_sha256: str | None = None,
 ) -> dict[str, Any]:
+    try:
+        candidate_outputs_sha256 = canonical_sha256(dict(candidate_outputs))
+    except (TypeError, ValueError, UnicodeError, RecursionError):
+        raise ValueError("Candidate outputs cannot be canonically serialized") from None
+    allowed_slot_set = set(allowed_slots)
     upgraded = [upgrade_evaluation_record(record) for record in records]
     frozen_upgraded = (
         [upgrade_evaluation_record(record) for record in frozen_evaluation_records]
         if frozen_evaluation_records is not None
         else upgraded
     )
-    if frozen_evaluation_records is not None:
-        frozen_by_id: dict[str, Mapping[str, Any]] = {}
-        for record in frozen_upgraded:
-            eval_id = record["evalID"]
-            if eval_id in frozen_by_id:
-                raise ValueError(
-                    "Frozen evaluation records contain duplicate evalID values"
-                )
-            frozen_by_id[eval_id] = record
-        scored_ids: set[str] = set()
-        for record in upgraded:
-            eval_id = record["evalID"]
-            if eval_id in scored_ids:
-                raise ValueError("Scored evaluation records contain duplicate evalID values")
-            scored_ids.add(eval_id)
+    frozen_by_id: dict[str, Mapping[str, Any]] = {}
+    for record in frozen_upgraded:
+        eval_id = record["evalID"]
+        if eval_id in frozen_by_id:
+            raise ValueError("Frozen evaluation records contain duplicate evalID values")
+        frozen_by_id[eval_id] = record
+    scored_ids: set[str] = set()
+    for record in upgraded:
+        eval_id = record["evalID"]
+        if eval_id in scored_ids:
+            raise ValueError("Scored evaluation records contain duplicate evalID values")
+        scored_ids.add(eval_id)
+        if frozen_evaluation_records is not None:
             frozen_record = frozen_by_id.get(eval_id)
             if (
                 frozen_record is None
@@ -2059,8 +2062,6 @@ def score_evaluation_suite(
         else requested_agent or (next(iter(record_agents)) if len(record_agents) == 1 else None)
     )
     case_results: list[dict[str, Any]] = []
-    weighted_passed = 0.0
-    total_weight = 0.0
     critical_failures = 0
     categories: dict[str, list[bool]] = {}
     missing_outputs = 0
@@ -2068,7 +2069,6 @@ def score_evaluation_suite(
     for record in upgraded:
         eval_id = record["evalID"]
         weight = float(record["weight"])
-        total_weight += weight
         has_output = eval_id in candidate_outputs
         candidate = candidate_outputs.get(eval_id)
         if not has_output:
@@ -2089,14 +2089,12 @@ def score_evaluation_suite(
                     metric,
                     candidate,
                     tool_contracts=tool_contracts or {},
-                    allowed_slots=set(allowed_slots),
+                    allowed_slots=allowed_slot_set,
                     has_output=has_output,
                 )
             result["category"] = str(metric.get("category") or metric.get("type") or "unknown")
             metric_results.append(result)
         passed = has_output and bool(metric_results) and all(result["passed"] for result in metric_results)
-        if passed:
-            weighted_passed += weight
         critical = bool((record.get("metadata") or {}).get("critical", True))
         if critical and not passed:
             critical_failures += 1
@@ -2138,7 +2136,7 @@ def score_evaluation_suite(
         "variant": variant,
         "controlledLineageSHA256": canonical_sha256(dict(controlled_lineage or {})),
         "evaluationSHA256": evaluation_sha256,
-        "candidateOutputsSHA256": canonical_sha256(dict(candidate_outputs)),
+        "candidateOutputsSHA256": candidate_outputs_sha256,
         "variantManifestSHA256": (
             variant_manifest.get("variantManifestSHA256")
             if isinstance(variant_manifest, Mapping)
@@ -2222,7 +2220,7 @@ def score_evaluation_suite(
             and resolved_agent is not None
             and not agent_mismatch
         ),
-        "weightedScore": round(weighted_passed / total_weight, 6) if total_weight else 0.0,
+        "weightedScore": _weighted_case_score(case_results),
         "categoryScores": {
             category: round(sum(values) / len(values), 6)
             for category, values in sorted(categories.items())
@@ -3233,6 +3231,8 @@ def _score_metric(
         return _metric_result("invalid", False, "metric_type_missing")
 
     parsed, json_error = _parse_candidate_json(candidate)
+    if isinstance(candidate, (dict, list)) and json_error is not None:
+        return _metric_result(metric_type, False, json_error)
     text = _candidate_text(candidate)
     if candidate is None or not text.strip():
         return _metric_result(metric_type, False, "empty_candidate_output")
@@ -4275,6 +4275,8 @@ def _score_manifest_tool_call(
     if not found_args or not isinstance(arguments, dict):
         return _metric_result("manifest_tool_call", False, "arguments_missing")
     contract_args = _tool_arguments(contract)
+    if not _tool_arguments_contract_valid(contract, contract_args):
+        return _metric_result("manifest_tool_call", False, "tool_arguments_contract_invalid")
     known_names = {item["name"] for item in contract_args}
     if set(arguments) - known_names:
         return _metric_result("manifest_tool_call", False, "extra_arguments")
@@ -4362,6 +4364,8 @@ def _score_executor_response_contract(
         if contract is None:
             return _metric_result(metric_type, False, "action_tool_not_in_manifest")
         contract_arguments = _tool_arguments(contract)
+        if not _tool_arguments_contract_valid(contract, contract_arguments):
+            return _metric_result(metric_type, False, "action_tool_arguments_contract_invalid")
         known_names = {item["name"] for item in contract_arguments}
         if set(arguments) - known_names:
             return _metric_result(metric_type, False, "action_extra_arguments")
@@ -4693,7 +4697,7 @@ def _score_cortex_route_contract(
         return _metric_result(metric_type, False, "intent_contract_mismatch")
 
     mode = metric.get("mode")
-    if mode not in {
+    if not isinstance(mode, str) or mode not in {
         "actionable",
         "clarification",
         "selection",
@@ -6534,13 +6538,17 @@ def _evaluation_report_aggregates_valid(report: Mapping[str, Any]) -> bool:
         or frozen_case_count < case_count
         or type(complete_evaluation) is not bool
         or complete_evaluation is not (case_count == frozen_case_count)
+        or any(
+            type(report.get(field)) is not int
+            for field in ("passedCaseCount", "missingOutputCount", "criticalFailureCount")
+        )
+        or not isinstance(report.get("categoryScores"), Mapping)
+        or any(_bounded_score(value) is None for value in report["categoryScores"].values())
         or type(variant_lineage_bound) is not bool
         or report.get("promotionEvidenceBound")
         is not (variant_lineage_bound and complete_evaluation)
     ):
         return False
-    total_weight = 0.0
-    passed_weight = 0.0
     passed_count = 0
     missing_count = 0
     critical_failures = 0
@@ -6548,8 +6556,11 @@ def _evaluation_report_aggregates_valid(report: Mapping[str, Any]) -> bool:
     for case in cases:
         if not isinstance(case, Mapping):
             return False
-        weight = _positive_number(case.get("weight"), default=0.0)
-        if weight <= 0 or type(case.get("passed")) is not bool or type(case.get("critical")) is not bool:
+        try:
+            _evaluation_weight(case.get("weight"))
+        except ValueError:
+            return False
+        if type(case.get("passed")) is not bool or type(case.get("critical")) is not bool:
             return False
         if type(case.get("outputPresent")) is not bool:
             return False
@@ -6557,15 +6568,13 @@ def _evaluation_report_aggregates_valid(report: Mapping[str, Any]) -> bool:
         if not isinstance(metric_results, list) or not metric_results:
             return False
         passed = case["passed"]
-        if passed != all(
+        if passed != (case["outputPresent"] and all(
             isinstance(result, Mapping) and result.get("passed") is True
             for result in metric_results
-        ):
+        )):
             return False
-        total_weight += weight
         if passed:
             passed_count += 1
-            passed_weight += weight
         if not case["outputPresent"]:
             missing_count += 1
         if case["critical"] and not passed:
@@ -6584,7 +6593,7 @@ def _evaluation_report_aggregates_valid(report: Mapping[str, Any]) -> bool:
         and report.get("missingOutputCount") == missing_count
         and report.get("criticalFailureCount") == critical_failures
         and _bounded_score(report.get("weightedScore"))
-        == round(passed_weight / total_weight, 6)
+        == _weighted_case_score(cases)
         and report.get("categoryScores") == expected_categories
         and report.get("evidenceComplete") is (missing_count == 0)
     )
@@ -7735,24 +7744,75 @@ def _tool_arguments(contract: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _tool_arguments_contract_valid(
+    contract: Any,
+    normalized_arguments: list[dict[str, Any]],
+) -> bool:
+    raw_arguments = (
+        contract.get("arguments")
+        if isinstance(contract, Mapping)
+        else getattr(contract, "arguments", None)
+    )
+    if not isinstance(raw_arguments, list) or len(raw_arguments) != len(normalized_arguments):
+        return False
+    names: set[str] = set()
+    for raw, normalized in zip(raw_arguments, normalized_arguments, strict=True):
+        required = raw.get("required", True) if isinstance(raw, Mapping) else getattr(raw, "required", True)
+        allowed_values = raw.get("allowedValues") if isinstance(raw, Mapping) else getattr(raw, "allowedValues", None)
+        name = normalized["name"]
+        if (
+            not name.strip()
+            or name in names
+            or not normalized["type"].strip()
+            or not _argument_type_kinds(normalized["type"])
+            or type(required) is not bool
+            or (
+                allowed_values is not None
+                and (
+                    not isinstance(allowed_values, list)
+                    or not all(isinstance(value, str) for value in allowed_values)
+                )
+            )
+        ):
+            return False
+        names.add(name)
+    return True
+
+
+_ARGUMENT_TYPE_KINDS = {
+    "string": "string", "str": "string", "enum": "string",
+    "bool": "bool", "boolean": "bool",
+    "int": "int", "integer": "int",
+    "double": "number", "float": "number", "number": "number",
+    "array": "array", "list": "array",
+    "object": "object", "dictionary": "object", "dict": "object",
+    "null": "null", "none": "null", "nil": "null",
+}
+
+
+def _argument_type_kinds(declared_type: str) -> tuple[str, ...]:
+    kinds: list[str] = []
+    for branch in declared_type.strip().lower().replace("?", "").split("|"):
+        normalized = branch.strip()
+        kind = "array" if normalized.startswith("[") else _ARGUMENT_TYPE_KINDS.get(normalized)
+        if kind is None:
+            return ()
+        kinds.append(kind)
+    return tuple(kinds)
+
+
 def _argument_has_type(value: Any, declared_type: str) -> bool:
-    normalized = declared_type.strip().lower().replace("?", "")
-    if "|" in normalized:
-        return any(_argument_has_type(value, part) for part in normalized.split("|"))
-    if normalized in {"string", "str", "enum"}:
-        return isinstance(value, str)
-    if normalized in {"bool", "boolean"}:
-        return type(value) is bool
-    if normalized in {"int", "integer"}:
-        return type(value) is int
-    if normalized in {"double", "float", "number"}:
-        return type(value) in {int, float}
-    if normalized in {"array", "list"} or normalized.startswith("["):
-        return isinstance(value, list)
-    if normalized in {"object", "dictionary", "dict"}:
-        return isinstance(value, dict)
-    if normalized in {"null", "none", "nil"}:
-        return value is None
+    for kind in _argument_type_kinds(declared_type):
+        if (
+            (kind == "string" and isinstance(value, str))
+            or (kind == "bool" and type(value) is bool)
+            or (kind == "int" and type(value) is int)
+            or (kind == "number" and type(value) in {int, float})
+            or (kind == "array" and isinstance(value, list))
+            or (kind == "object" and isinstance(value, dict))
+            or (kind == "null" and value is None)
+        ):
+            return True
     return False
 
 
@@ -7760,16 +7820,34 @@ def _json_equal(left: Any, right: Any) -> bool:
     return type(left) is type(right) and left == right
 
 
-def _positive_number(value: Any, *, default: float) -> float:
-    if type(value) in {int, float} and value > 0:
-        return float(value)
-    return default
+def _evaluation_weight(value: Any) -> float:
+    if type(value) not in {int, float} or value <= 0:
+        raise ValueError("Evaluation weight must be a finite positive number")
+    try:
+        weight = float(value)
+    except OverflowError:
+        raise ValueError("Evaluation weight must be a finite positive number") from None
+    if not math.isfinite(weight):
+        raise ValueError("Evaluation weight must be a finite positive number")
+    return weight
+
+
+def _weighted_case_score(cases: Sequence[Mapping[str, Any]]) -> float:
+    scale = max((case["weight"] for case in cases), default=0.0)
+    if not scale:
+        return 0.0
+    total = math.fsum(case["weight"] / scale for case in cases)
+    passed = math.fsum(case["weight"] / scale for case in cases if case["passed"])
+    return round(passed / total, 6)
 
 
 def _bounded_score(value: Any) -> float | None:
     if type(value) not in {int, float}:
         return None
-    parsed = float(value)
+    try:
+        parsed = float(value)
+    except OverflowError:
+        return None
     return parsed if 0 <= parsed <= 1 else None
 
 
