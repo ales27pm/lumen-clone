@@ -295,16 +295,16 @@ actor SelfPredictionLedger {
             guard directoryValues.isDirectory == true, directoryValues.isSymbolicLink != true else {
                 throw Failure.storageFailure
             }
-            try FileManager.default.setAttributes([.posixPermissions: 0o700], atPath: directoryURL.path)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directoryURL.path)
             if !FileManager.default.fileExists(atPath: fileURL.path) {
                 guard storedBytes == 0 else { throw Failure.corruptFile }
                 try Data().write(to: fileURL, options: .withoutOverwriting)
             }
             try validateRegularFile(fileURL)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], atPath: fileURL.path)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             #if os(iOS)
-            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], atPath: directoryURL.path)
-            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], atPath: fileURL.path)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: directoryURL.path)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: fileURL.path)
             #endif
             let opened = try FileHandle(forWritingTo: fileURL)
             handle = opened
