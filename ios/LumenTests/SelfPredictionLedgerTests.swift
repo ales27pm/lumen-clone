@@ -180,6 +180,8 @@ final class SelfPredictionLedgerTests: XCTestCase {
         let url = try directory()
         // One bounded prediction plus its 512-byte outcome reservation fits; two cannot.
         let ledger = SelfPredictionLedger(directoryURL: url, maxBytes: 1000)
+        let emptySummary = try await ledger.summary()
+        XCTAssertFalse(emptySummary.isAtCapacity)
         let id = UUID()
         try await ledger.begin(context: context(), id: id)
         await assertFailure(.capacityExceeded) { try await ledger.begin(context: self.context(), id: UUID()) }

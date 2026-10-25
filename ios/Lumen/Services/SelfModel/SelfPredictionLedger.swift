@@ -194,7 +194,7 @@ actor SelfPredictionLedger {
         return Summary(eventCount: events.count, predictionCount: predictions.count,
                        outcomeCount: completed.count, pendingCount: pending,
                        isAtCapacity: events.count > maxEvents - 2 || pending > maxEvents - events.count - 2
-                           || byteRoom / Self.outcomeReservationBytes <= pending + 1)
+                           || byteRoom / Self.outcomeReservationBytes <= pending)
     }
 
     private func loadIfNeeded() throws {
