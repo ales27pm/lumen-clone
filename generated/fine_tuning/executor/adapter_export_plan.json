@@ -66,15 +66,15 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "89613ae137e636fa407e4a3e9bf81e48be1b3f96f72d892bcd3a2e8b001e0a42"
+        "reportSHA256": "e5097364aeca7939689ace32a05eeca5a7afef2aca24ea80d6652c2c6b1f27b4"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
-      "frozenEvaluationSHA256": "db0067f48fdb696068f89d85f96ee3b55e22a77226e70287042262418a4dc138",
+      "frozenEvaluationSHA256": "fd4953b1eae697581463c03b169b0e7b6ec35b613e6cf7b84c0c93d71d3b0c50",
       "recordCount": 63,
       "schemaVersion": "lumen.adapter-eval/1.1.0"
     },
-    "manifestCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+    "manifestCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 36,
@@ -98,9 +98,9 @@
       "tool_schema_cards"
     ],
     "sourceIntegrity": {
-      "baseCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+      "baseCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
       "dirtyState": false,
-      "workingTreeDigest": "0839e218cce4b83db081003f5a64ad297d1a65c0cd8c2e2641e997e975afba01"
+      "workingTreeDigest": "452076d958f06bd019375511c3d4ffe76675303502f61003eaa255e00b51d2f6"
     },
     "taskTypes": [
       "approval_granted",
@@ -156,7 +156,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "066d28c34fa4e6eea2f9570c920b0dca5d6ebf54ed07e2f3ad1da83d92c50637",
+    "experimentManifestSHA256": "b738fe1d803ad705ad3e9b6db79dc25bd5f21cde54b4caec37aa90001b4d16bc",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -232,13 +232,13 @@
   "schemaVersion": "1.6.0",
   "sharedBaseFileName": "lumen-qwen3-fast-shared-q4_k_m.gguf",
   "sharedBaseRepoID": "ales27pm/lumen-qwen3-bootstrap-gguf",
-  "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus an optional string thought under 12 words. On an action turn, also estimate the probability that the tool registry will return status success, including availability, permission and approval policy, using optional top-level \"prediction\":{\"successProbability\":0.0}. Use a finite number from 0 to 1; this predicts the returned tool status, not task completion. Final turns must not include prediction. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.",
-  "trainingCodeBundleSHA256": "57683c6752d8bf83a4791f7e7492d09351f1065eae367224831b56adf5be4171",
-  "trainingCodeSHA256": "e280a59d3212874e9e2a23be720492b833a10df247efb5abd5bac3e26369f0c3",
+  "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Use final when no tool is needed, even if tools are available (e.g. arithmetic, translation, explanation), or trusted observations answer the user. Use action for required current/private data, device state, or operations. Answer in the user's language and requested format; clarify only missing necessary information. Follow the active runtime schema: emit {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus optional string thought under 12 words. Action has exactly tool and args: exact available IDs, argument names/types, all required args, no extras, {} if empty. Optionally predict returned tool status success, including availability, permissions and approvals, with top-level \"prediction\":{\"successProbability\":0.0}, a finite number from 0 to 1, not task completion. Final turns must not include prediction. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases.",
+  "trainingCodeBundleSHA256": "4cd859e245041abfb69f462688012b90d67d200096f33d80d7355a6b2d7c1b31",
+  "trainingCodeSHA256": "5eafc16ca04eebafcfb7abf90238e8947db1b2ea9d8962a0311ede7a00a6161e",
   "trainingCodeSHA256ByPhase": {
-    "dpo": "4c6ce7e82140f71ce908b868eb993d0d996135fe5ab57fb9dfa29f4b0f785554",
-    "orpo": "e3a95e1a362e483dcd8b6ef4fa20ebe906760c5cfe32dafd97b05441b30d81cc",
-    "sft": "e280a59d3212874e9e2a23be720492b833a10df247efb5abd5bac3e26369f0c3"
+    "dpo": "2052798d2d5c55aa05818e6a432e12a4c1bd4814816c6ece4535f317d6c99f72",
+    "orpo": "9dc94f5924cd59646b9b3633aec5e627cd80f24c7bdcad679620a2e2ecb3425f",
+    "sft": "5eafc16ca04eebafcfb7abf90238e8947db1b2ea9d8962a0311ede7a00a6161e"
   },
   "trainingDependencyLockSHA256": "3cec9517a41852ec642ad4bbaf9735e8ebf39041b19ed26954e6ceb755cbdeae"
 }

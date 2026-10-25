@@ -98,18 +98,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "89613ae137e636fa407e4a3e9bf81e48be1b3f96f72d892bcd3a2e8b001e0a42"
+      "reportSHA256": "e5097364aeca7939689ace32a05eeca5a7afef2aca24ea80d6652c2c6b1f27b4"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "db0067f48fdb696068f89d85f96ee3b55e22a77226e70287042262418a4dc138",
+    "frozenEvaluationSHA256": "fd4953b1eae697581463c03b169b0e7b6ec35b613e6cf7b84c0c93d71d3b0c50",
     "recordCount": 63,
     "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "6e0f6add5fd5f0d5bf75c9faffa2b5ec4966138dd0d9bf30c81ddbbe15cc0bc4",
-      "optimizedTrainingCorpusSHA256": "15562bbb27afaea5955ead8c89d5a6e3889be60d048d065d3fd4fc0dff6d4866",
+      "baselineTrainingCorpusSHA256": "7160b42cbeb91f9f5e0c31da241ed88803a49d11397111acb933a07e69d27190",
+      "optimizedTrainingCorpusSHA256": "4f2390b69835497762a5668562d0c8a8c2ffd3c1af846ee9c6b79c2131bbe7ec",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 462,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "066d28c34fa4e6eea2f9570c920b0dca5d6ebf54ed07e2f3ad1da83d92c50637",
+    "experimentManifestSHA256": "b738fe1d803ad705ad3e9b6db79dc25bd5f21cde54b4caec37aa90001b4d16bc",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+  "manifestCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 36,
@@ -387,7 +387,7 @@
       },
       "train_sft": {
         "target": 0.298323,
-        "total": 0.238101
+        "total": 0.2382
       },
       "val_dpo": {
         "target": 0.0,
@@ -395,7 +395,7 @@
       },
       "val_sft": {
         "target": 0.298033,
-        "total": 0.224153
+        "total": 0.224322
       }
     }
   },
@@ -463,11 +463,11 @@
     "tool_schema_cards": 38
   },
   "sourceIntegrity": {
-    "baseCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+    "baseCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
     "dirtyState": false,
-    "workingTreeDigest": "0839e218cce4b83db081003f5a64ad297d1a65c0cd8c2e2641e997e975afba01"
+    "workingTreeDigest": "452076d958f06bd019375511c3d4ffe76675303502f61003eaa255e00b51d2f6"
   },
-  "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus an optional string thought under 12 words. On an action turn, also estimate the probability that the tool registry will return status success, including availability, permission and approval policy, using optional top-level \"prediction\":{\"successProbability\":0.0}. Use a finite number from 0 to 1; this predicts the returned tool status, not task completion. Final turns must not include prediction. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.",
+  "systemPrompt": "You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Use final when no tool is needed, even if tools are available (e.g. arithmetic, translation, explanation), or trusted observations answer the user. Use action for required current/private data, device state, or operations. Answer in the user's language and requested format; clarify only missing necessary information. Follow the active runtime schema: emit {\"action\":{\"tool\":\"<exact manifest tool id>\",\"args\":{...}}} or {\"final\":\"<concise user-facing answer>\"}, plus optional string thought under 12 words. Action has exactly tool and args: exact available IDs, argument names/types, all required args, no extras, {} if empty. Optionally predict returned tool status success, including availability, permissions and approvals, with top-level \"prediction\":{\"successProbability\":0.0}, a finite number from 0 to 1, not task completion. Final turns must not include prediction. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases.",
   "taskTypeCounts": {
     "approval_granted": 28,
     "approval_required_tool": 28,
@@ -492,5 +492,5 @@
     "ultra_specific_post_observation_final",
     "ultra_specific_tool_call_generation"
   ],
-  "worktreeFingerprint": "0839e218cce4b83db081003f5a64ad297d1a65c0cd8c2e2641e997e975afba01"
+  "worktreeFingerprint": "452076d958f06bd019375511c3d4ffe76675303502f61003eaa255e00b51d2f6"
 }

@@ -1,7 +1,7 @@
 {
   "agent": "fleet",
   "availableSFTRecords": 743,
-  "candidateSFTRecords": 8853,
+  "candidateSFTRecords": 8861,
   "constraints": {
     "agentSpecific": true,
     "fleetLossShareContract": {
@@ -557,7 +557,7 @@
     "fleetValidationLossSharePolicy": "observed_not_enforced",
     "fleetValidationSamplingPolicy": {
       "allSamplingInputStrataPreserved": true,
-      "candidateBeforePublicSelectionRecordCount": 1276,
+      "candidateBeforePublicSelectionRecordCount": 1277,
       "candidateStratumCount": 43,
       "deterministic": true,
       "explicitValidationAssignmentCount": 35,
@@ -567,11 +567,11 @@
       "optimizerLossShareCapsApplied": false,
       "publicCorpusSelectionAppliedBeforeSampling": true,
       "rejectedByPublicSelectionCount": 0,
-      "rejectedByValidationSamplingCount": 1148,
-      "samplingInputRecordCount": 1276,
+      "rejectedByValidationSamplingCount": 1149,
+      "samplingInputRecordCount": 1277,
       "samplingInputStratumCount": 43,
       "schemaVersion": "lumen.fleet-validation-sampling/1.0.0",
-      "selectedCohortSHA256": "883cffa5c330c02137d7460a90ce89bfcbfc4735da6e7f6677f4f41ff95fd425",
+      "selectedCohortSHA256": "e55951dd62d8d14319ac7bbe67c728a7f52ba08f92c0f53e965659a8ea3bf213",
       "selectedRecordCount": 128,
       "selectedStratumCount": 43,
       "selectionStrategy": "least_represented_stratum_then_salted_stable_hash_v1",
@@ -678,18 +678,18 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "96106ff9ff19cda09eb2ae4c4f0506962203aa43d5aaa30692a57b7b2b80e98a"
+      "reportSHA256": "2146328f5c2e5a2827be6b8875eb34b39348f305187e7191d11ae416a439ce70"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
-    "frozenEvaluationSHA256": "cbdcf2149f02819d74acc42e51e45be4ae7d5b1cd74b0dfb87ea876a6af9e21b",
+    "frozenEvaluationSHA256": "19d49b9e32f49310fdd47b98a41c4449a9ed6d3177ca03e3f50fa8a14c97e389",
     "recordCount": 15,
     "schemaVersion": "lumen.adapter-eval/1.1.0"
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "90ef5c4158eb7cbed544214ad78c9a4910ca335fd81e59865cc4491538b241ea",
-      "optimizedTrainingCorpusSHA256": "890f3ac1b9a72ac3b3ec99cec98a19aae10462e871dae4edca94fbc15851083a",
+      "baselineTrainingCorpusSHA256": "71bca835ae8af3aa997856c3adb077ed1675c23ca45afc084bf6c73103075def",
+      "optimizedTrainingCorpusSHA256": "57728a9b9f905118e6163eebd13bb8aa3357ba5b49210f0c587d904844176480",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 500,
@@ -718,7 +718,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "d4e7dead1048d124af9b3a9d2bcf652dd4fc00d9ea3fd61611859ab588bbec4d",
+    "experimentManifestSHA256": "6353b892fd090536e47c6e159935da4b7a9da07a95c248c7041995d42f879ac2",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -766,7 +766,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+  "manifestCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 409,
@@ -957,14 +957,14 @@
         "total": 0.0
       },
       "val_sft": {
-        "target": 0.083529,
-        "total": 0.167031
+        "target": 0.083471,
+        "total": 0.166936
       }
     }
   },
   "quality": {
-    "assistantTargetCharCount": 330756,
-    "assistantTargetTokenProxyCount": 82957,
+    "assistantTargetCharCount": 330813,
+    "assistantTargetTokenProxyCount": 82971,
     "cortexCodebaseChunkRecordCount": 0,
     "cortexCodebaseFileRecordCount": 0,
     "cortexCodebaseSelfAwarenessCandidateRecordCount": 0,
@@ -997,10 +997,10 @@
       "status": "source_side_selection_proxy_not_exact_token_count",
       "strategy": "max_whitespace_terms_utf8_byte_ceiling"
     },
-    "supplementalAssistantTargetCharCount": 85918,
-    "supplementalAssistantTargetCharShare": 0.25976248352259673,
-    "supplementalAssistantTargetTokenProxyCount": 21513,
-    "supplementalAssistantTargetTokenProxyShare": 0.25932712127969915,
+    "supplementalAssistantTargetCharCount": 85975,
+    "supplementalAssistantTargetCharShare": 0.25989002850553033,
+    "supplementalAssistantTargetTokenProxyCount": 21527,
+    "supplementalAssistantTargetTokenProxyShare": 0.25945209772089045,
     "supplementalBalanceDroppedRecordCount": 0,
     "supplementalSFTRecordCount": 92,
     "ultraSpecificContract": "role-native Lumen examples with concrete tool ids, arguments, approvals, permissions, observations, repair lessons, and slot boundaries",
@@ -1038,9 +1038,9 @@
     "self_model_sft": 4
   },
   "sourceIntegrity": {
-    "baseCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+    "baseCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
     "dirtyState": false,
-    "workingTreeDigest": "0839e218cce4b83db081003f5a64ad297d1a65c0cd8c2e2641e997e975afba01"
+    "workingTreeDigest": "452076d958f06bd019375511c3d4ffe76675303502f61003eaa255e00b51d2f6"
   },
   "systemPrompt": "You are part of the Lumen model fleet. Know every slot, delegation rule, memory scope, and boundary. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning.",
   "taskTypeCounts": {
@@ -1093,5 +1093,5 @@
     "ultra_specific_fleet_slot_directory",
     "ultra_specific_tool_boundary_awareness"
   ],
-  "worktreeFingerprint": "0839e218cce4b83db081003f5a64ad297d1a65c0cd8c2e2641e997e975afba01"
+  "worktreeFingerprint": "452076d958f06bd019375511c3d4ffe76675303502f61003eaa255e00b51d2f6"
 }

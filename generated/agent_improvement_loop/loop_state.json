@@ -48,7 +48,7 @@
       }
     },
     "embedding": {
-      "corpusCount": 8254,
+      "corpusCount": 8262,
       "datasetCard": {
         "families": [
           "agent_role_question_to_fleet_slot",
@@ -84,10 +84,10 @@
         "schemaVersion": "1.0.0",
         "task": "retrieval_similarity_ranking"
       },
-      "evalCount": 1160,
+      "evalCount": 1170,
       "fallbackModel": "current-baseline-embedding-model",
       "generated": true,
-      "hardNegativeCount": 7249,
+      "hardNegativeCount": 7247,
       "metrics": {
         "hardNegativeAccuracy": 0.0,
         "mrr": 0.0,
@@ -99,31 +99,31 @@
         "toolRetrievalAccuracy": 0.0
       },
       "model": "Qwen/Qwen3-Embedding-0.6B",
-      "pairCount": 7249,
+      "pairCount": 7247,
       "teacherModel": "Qwen/Qwen3-Embedding-4B",
-      "trainPairCount": 6508,
-      "trainTripletCount": 6508,
-      "tripletCount": 7249,
+      "trainPairCount": 6505,
+      "trainTripletCount": 6505,
+      "tripletCount": 7247,
       "usedFallback": false,
-      "valPairCount": 741,
-      "valTripletCount": 741
+      "valPairCount": 742,
+      "valTripletCount": 742
     },
     "families": {
       "approval_boundary_samples": 121,
-      "codebase_home_chunk_sft": 6679,
-      "codebase_home_chunks": 6764,
-      "codebase_home_corpus": 963,
-      "codebase_home_sft": 959,
+      "codebase_home_chunk_sft": 6686,
+      "codebase_home_chunks": 6771,
+      "codebase_home_corpus": 964,
+      "codebase_home_sft": 960,
       "cortex_routing": 162,
       "dpo_preference_pairs": 53,
-      "embedding_corpus": 8254,
+      "embedding_corpus": 8262,
       "embedding_dataset_card": 1,
-      "embedding_eval_retrieval": 1160,
-      "embedding_hard_negatives": 7249,
-      "embedding_train_pairs": 6508,
-      "embedding_train_triplets": 6508,
-      "embedding_val_pairs": 741,
-      "embedding_val_triplets": 741,
+      "embedding_eval_retrieval": 1170,
+      "embedding_hard_negatives": 7247,
+      "embedding_train_pairs": 6505,
+      "embedding_train_triplets": 6505,
+      "embedding_val_pairs": 742,
+      "embedding_val_triplets": 742,
       "eval_scenarios": 552,
       "executor_tool_calls": 54,
       "manifest_grounding_cards": 4,
@@ -138,10 +138,10 @@
       "public_adapter_corpus_rem": 505,
       "rem_reflection": 5,
       "reranker_dataset_card": 1,
-      "reranker_eval_reranking": 1160,
-      "reranker_hard_negative_pairs": 7249,
-      "reranker_train_pairs": 6508,
-      "reranker_val_pairs": 741,
+      "reranker_eval_reranking": 1170,
+      "reranker_hard_negative_pairs": 7247,
+      "reranker_train_pairs": 6505,
+      "reranker_val_pairs": 742,
       "runtime_audit_repairs": 0,
       "self_model_cards": 8,
       "self_model_eval": 25,
@@ -151,7 +151,7 @@
       "validation_sft": 68
     },
     "familyCount": 40,
-    "recordCount": 67105,
+    "recordCount": 67139,
     "reranker": {
       "datasetCard": {
         "families": [
@@ -185,10 +185,10 @@
         "task": "candidate_reranking"
       },
       "enabledByDefault": false,
-      "evalCount": 1160,
+      "evalCount": 1170,
       "fallbackMode": "embedding-only",
       "generated": true,
-      "hardNegativePairCount": 7249,
+      "hardNegativePairCount": 7247,
       "metrics": {
         "hardNegativePairAccuracy": 0.0,
         "p95RerankLatencyRegression": 0.0,
@@ -197,23 +197,23 @@
         "top5ReorderWinRate": 0.0
       },
       "model": "Qwen/Qwen3-Reranker-0.6B",
-      "pairCount": 7249,
+      "pairCount": 7247,
       "teacherModel": "Qwen/Qwen3-Reranker-4B",
-      "trainPairCount": 6508,
-      "valPairCount": 741
+      "trainPairCount": 6505,
+      "valPairCount": 742
     }
   },
   "errorGapCount": 0,
   "gapCount": 1,
   "manifest": {
-    "baseCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+    "baseCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
     "dirtyState": false,
-    "fingerprint": "8d314495b949b64af0d3461ea9e8d070f5017a6575c73ac228fa9123b40d8799",
+    "fingerprint": "07dd9fac4721a2ca075bc9a5672d52ecbe2f9b85d2dd97dbe933d8c4068f11de",
     "intentCount": 22,
     "modelSlotCount": 6,
     "routingEntryCount": 22,
     "toolCount": 53,
-    "workingTreeDigest": "0839e218cce4b83db081003f5a64ad297d1a65c0cd8c2e2641e997e975afba01"
+    "workingTreeDigest": "452076d958f06bd019375511c3d4ffe76675303502f61003eaa255e00b51d2f6"
   },
   "nextActionPromptCount": 1,
   "output": "generated/agent_manifest",
@@ -253,7 +253,7 @@
     "freshnessUnverifiedRuntimeAuditReportCount": 0,
     "historicalRuntimeAuditReportCount": 0,
     "ingestedRuntimeAuditReportCount": 0,
-    "manifestFingerprint": "8d314495b949b64af0d3461ea9e8d070f5017a6575c73ac228fa9123b40d8799",
+    "manifestFingerprint": "07dd9fac4721a2ca075bc9a5672d52ecbe2f9b85d2dd97dbe933d8c4068f11de",
     "mode": "testflight",
     "nextIngestCommand": "python -m lumen_manifest_crawler improve-loop --root . --output generated/agent_manifest --loop-output generated/agent_improvement_loop --runtime-audit '<exported-testflight-json>'",
     "packageSha256": null,
@@ -261,7 +261,7 @@
       "buildSelectionStatus": "unverified",
       "currentProofTrusted": false,
       "expectedBuildNumber": null,
-      "expectedSourceRevision": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+      "expectedSourceRevision": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
       "maxAgeSeconds": 3600,
       "maxAgeStatus": "valid",
       "proofSatisfiedAtAssessment": false,

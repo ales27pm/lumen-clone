@@ -9,7 +9,7 @@
       "python": 206,
       "resolved": 1,
       "shell": 20,
-      "swift": 581,
+      "swift": 582,
       "text": 7,
       "toml": 1,
       "xcode_project": 1,
@@ -69,7 +69,7 @@
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 204,
+      "ios/LumenTests": 205,
       "ios/LumenTests/Fixtures": 2,
       "ios/LumenTests/Support": 2,
       "ios/LumenUITests": 2,
@@ -90,7 +90,7 @@
       "tools/pipeline/tests": 18,
       "tools/security": 1
     },
-    "recordCount": 963,
+    "recordCount": 964,
     "selectedFiles": [
       {
         "imports": [],
@@ -1318,7 +1318,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run, runLoop, availableTools.",
-        "sha256": "2c36b7f6928ee2a50f2e9300a6a6b0893032a36bbfb52de377f00e0ce8a9e9a9",
+        "sha256": "7fe4a8425aa8942db2845125e1203a7050299db1bf2f89a181059505cda1352d",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -2237,13 +2237,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+  "manifestCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "28122152c2f8cc8e09bdaef91e560ad95a591f4e4eeb8a3d76b6d2bf40dbf20c",
+    "promptSHA256": "a05fc75b1122bb0efee962ef2242d700a6ee73480083f164b29100e6d5bc5296",
     "promptUTF8ByteCount": 25612,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2255,8 +2255,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "b44ae0bd6355c3c92ebe170c207c67d26ad46b41",
+    "baseCommit": "bd538dd3e25c054ab9dd987c248759d81811ae3e",
     "dirtyState": false,
-    "workingTreeDigest": "0839e218cce4b83db081003f5a64ad297d1a65c0cd8c2e2641e997e975afba01"
+    "workingTreeDigest": "452076d958f06bd019375511c3d4ffe76675303502f61003eaa255e00b51d2f6"
   }
 }
