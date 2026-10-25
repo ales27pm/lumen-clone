@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from lumen_manifest_crawler.dataset.adapter_evaluation import mouth_final_text_is_complete
+from lumen_manifest_crawler.dataset.chat_template_contract import structured_output_instruction_status
 from lumen_manifest_crawler.fleet_artifacts import generate_orchestration_evals
 from lumen_manifest_crawler.manifest import AgentBehaviorManifest, ValidationFailure, ValidationReport, ValidationWarning
 
@@ -1223,11 +1224,16 @@ def _sft_metadata_counts(records: list[dict[str, Any]], key: str) -> dict[str, i
     return {value: counts[value] for value in sorted(counts)}
 
 
-def _training_output_contains_sentinel(content: str, *, agent: str, forbidden: set[str]) -> bool:
+def _training_output_contains_sentinel(content: str, *, agent: str, forbidden: set[str], system_content: Any = "") -> bool:
     """Inspect raw text and one JSON decoding for structured-output agents."""
     if any(sentinel in content for sentinel in forbidden):
         return True
-    if agent not in {"executor", "cortex"} or not forbidden:
+    structured_output = agent in {"executor", "cortex", "fleet", "rem"} or (
+        agent == "mimicry"
+        and isinstance(system_content, str)
+        and structured_output_instruction_status(system_content) == "exact_once"
+    )
+    if not structured_output or not forbidden:
         return False
     try:
         pending = [json.loads(content)]
@@ -1310,7 +1316,7 @@ def _validate_agent_sft_records(  # NOSONAR
                         path=path,
                     )
                 )
-            if isinstance(content, str) and _training_output_contains_sentinel(content, agent=agent, forbidden=forbidden):
+            if isinstance(content, str) and _training_output_contains_sentinel(content, agent=agent, forbidden=forbidden, system_content=system):
                 failures.append(ValidationFailure(code="sentinel_leak", message="Assistant output contains a forbidden sentinel", path=path))
 
         metadata = rec.get("metadata")
@@ -1668,10 +1674,10 @@ def _validate_agent_dpo_records(*, agent: str, records: list[dict[str, Any]], fo
             continue
         chosen_text = rec["chosen"]["content"]
         rejected_text = rec["rejected"]["content"]
-        if _training_output_contains_sentinel(chosen_text, agent=agent, forbidden=forbidden):
+        system = next((message["content"] for message in prompt if message["role"] == "system"), "")
+        if _training_output_contains_sentinel(chosen_text, agent=agent, forbidden=forbidden, system_content=system):
             failures.append(ValidationFailure(code="sentinel_leak", message="Preferred assistant output contains a forbidden sentinel", path=f"{path}.chosen"))
         if agent == "cortex":
-            system = next((message["content"] for message in prompt if message["role"] == "system"), "")
             _validate_cortex_json_object_contract(
                 assistant=chosen_text, failures=failures, path=f"{path}.chosen",
                 preference_chosen=True, route_contract=CORTEX_ROUTE_SYSTEM_MARKER in system,

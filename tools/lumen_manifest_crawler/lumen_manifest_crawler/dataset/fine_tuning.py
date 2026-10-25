@@ -4406,11 +4406,54 @@ def _canonical_cortex_action_step(tool_id: str) -> dict[str, Any]:
 
 
 def _scrub_forbidden_sentinels(text: str, sentinels: list[str]) -> str:
-    cleaned = text
-    for sentinel in sentinels:
-        if sentinel:
-            cleaned = cleaned.replace(sentinel, "[REDACTED_SENTINEL]")
-    return cleaned
+    active_sentinels = [sentinel for sentinel in sentinels if sentinel]
+    if not active_sentinels:
+        return text
+
+    def scrub_string(value: str) -> str:
+        for sentinel in active_sentinels:
+            value = value.replace(sentinel, "[REDACTED_SENTINEL]")
+        return value
+
+    try:
+        payload = _strict_json_loads(text)
+    except (ValueError, TypeError, RecursionError):
+        # Do not repair malformed structured targets or erase duplicate keys.
+        if text.lstrip().startswith(("{", "[", '"')):
+            return text
+        return scrub_string(text)
+
+    holder = [payload]
+    pending = [(holder, 0, payload)]
+    changed = False
+    while pending:
+        parent, key, value = pending.pop()
+        if isinstance(value, str):
+            cleaned = scrub_string(value)
+            changed = changed or cleaned != value
+            parent[key] = cleaned
+        elif isinstance(value, list):
+            pending.extend((value, index, child) for index, child in enumerate(value))
+        elif isinstance(value, dict):
+            cleaned_object = {}
+            for original_key, child in value.items():
+                cleaned_key = scrub_string(original_key)
+                if cleaned_key in cleaned_object:
+                    raise ValueError("Sentinel redaction would create duplicate JSON keys")
+                changed = changed or cleaned_key != original_key
+                cleaned_object[cleaned_key] = child
+            parent[key] = cleaned_object
+            pending.extend((cleaned_object, child_key, child) for child_key, child in cleaned_object.items())
+    if not changed:
+        return text
+    try:
+        cleaned_text = json.dumps(holder[0], ensure_ascii=False, separators=(",", ":"))
+        cleaned_text.encode("utf-8")
+    except (ValueError, TypeError, RecursionError):
+        # Retain invalid targets for the validation gate instead of publishing
+        # unencodable Unicode or hiding an unserializable decoded value.
+        return text
+    return cleaned_text
 
 
 def _route_record_agents(
