@@ -2,22 +2,22 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `3fb4ad3a47e46e339d6ab20f1c6f9d7ece34f5f4`
-- Working-tree digest: `a404efc4f10f0545f8ff8480d437f7d738cbd325680acff281b330a434876bae`
+- Base commit: `8884aac5382a6fdbe05efe6bc3de35977d41481a`
+- Working-tree digest: `880af92eb8bba9d42c70c639dde83f360541b77ba4e383a56b2d7bb266c99dc5`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `932`
+- Codebase-home records: `945`
 
 ## Top Modules
-- `ios/LumenTests`: 197 files
-- `Services`: 72 files
-- `docs`: 64 files
+- `ios/LumenTests`: 201 files
+- `Services`: 73 files
+- `docs`: 65 files
 - `tools/fine_tuning/unsloth`: 54 files
-- `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 48 files
-- `tools/lumen_manifest_crawler/tests`: 40 files
-- `Views`: 37 files
+- `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 49 files
+- `tools/lumen_manifest_crawler/tests`: 42 files
+- `Views`: 38 files
 - `Assistant`: 33 files
-- `scripts`: 28 files
+- `scripts`: 29 files
 - `Services/LLM`: 26 files
 - `Diagnostics`: 21 files
 - `System`: 18 files
@@ -85,8 +85,9 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/AgentEventContinuationYield.swift` (Services): `ios/Lumen/Services/AgentEventContinuationYield.swift` is static Lumen source for the `Services` module.
 - `ios/Lumen/Services/AgentGroundingInstrumentation.swift` (Services): `ios/Lumen/Services/AgentGroundingInstrumentation.swift` owns AgentGroundingInstrumentation behavior and defines: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancel Symbols: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancellation, mark, elapsedMs, sceneText.
 - `ios/Lumen/Services/AgentIntentRouter.swift` (Services): Compatibility facade for older agent-routing tests/call sites. Symbols: AgentIntentRouter, Decision, decide, decideSemantic, decision, filteredTools, routingSystemNote, allowedToolIDs.
+- `ios/Lumen/Services/AgentJSONKeyIntegrity.swift` (Services): JSONSerialization collapses duplicate keys. Check the selected, already parsed JSON before treating its forecast as unambiguous model-authored evidence. Symbols: AgentJSONKeyIntegrity, hasAmbiguousKeys, bytes, objects, index, start, next, keys.
 - `ios/Lumen/Services/AgentRunner.swift` (Services): Compatibility wrapper kept for older callers during the Agent Kernel migration. New entrypoints should call `AssistantKernel.run(...)` or a narrow kernel bridge directly. Symbols: AgentRunner, runHeadless.
-- `ios/Lumen/Services/AgentService.swift` (Services): `ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer, StripRe Symbols: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer.
+- `ios/Lumen/Services/AgentService.swift` (Services): `ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurnPrediction, Validity, AgentTurn, AgentTurnParseError, Ag Symbols: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurnPrediction, Validity, AgentTurn.
 - `ios/Lumen/Services/Tools/AlarmTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: LumenAlarmMetadata, AlarmScheduleArguments, AlarmScheduleArgumentError, AlarmCountdownArgumentError, AlarmTools, isRuntimeUnavailableText, Symbols: LumenAlarmMetadata, AlarmScheduleArguments, AlarmScheduleArgumentError, AlarmCountdownArgumentError, AlarmTools, isRuntimeUnavailableText, authorizationStatus, requestAuthorization.
 - `ios/Lumen/Services/Tools/CalendarTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/CalendarTools.swift` owns CalendarTools behavior and defines: CalendarTools, CalendarOperation, CalendarEventRecord, CalendarListQuery, CalendarToolResponse, EventProvider, EventKitProvider, Cal Symbols: CalendarTools, CalendarOperation, CalendarEventRecord, CalendarListQuery, CalendarToolResponse, EventProvider, EventKitProvider, CalendarProviderError.
 - `ios/Lumen/Services/Tools/ContactsTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/ContactsTools.swift` owns ContactsTools behavior and defines: ContactsTools, searchContacts, searchFailureMessage, call, composeMessage, composeMail, store, granted, predicate, keys. Symbols: ContactsTools, searchContacts, searchFailureMessage, call, composeMessage, composeMail, store, granted.
@@ -94,4 +95,3 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/Tools/HealthTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/HealthTools.swift` owns HealthTools behavior and defines: HealthTools, healthSummary, sumQuantity, averageQuantity, sleepHours, authorizationFailureMessage, healthStore, stepType, hrType, sleepT Symbols: HealthTools, healthSummary, sumQuantity, averageQuantity, sleepHours, authorizationFailureMessage, healthStore, stepType.
 - `ios/Lumen/Services/Tools/LocationProbe.swift` (Services/Tools): One-shot location fetch with a per-call delegate — no shared singleton state. Symbols: LocationProbe, LocationCoordinateFailure, LocationCoordinateProbeResult, LocationAuthorizationAction, SingleShotLocationDelegate, SingleShotDescriptionDelegate, currentCoordinate, currentCoordinateResult.
 - `ios/Lumen/Services/Tools/LocationTools.swift` (Services/Tools): Retrieves a textual description of the current location. - Returns: A string describing the current location. Symbols: LocationTools, currentLocation, openDirections, directionsURL, searchNearby, localSearchFailureMessage, trimmed, url.
-- `ios/Lumen/Services/Tools/MemoryTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/MemoryTools.swift` owns MemoryTools behavior and defines: MemoryTools, RAGIndexExecution, save, recall, ragSearch, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos, ragIndexPhotosExecution, Symbols: MemoryTools, RAGIndexExecution, save, recall, ragSearch, ragIndexFiles, ragIndexFilesExecution, ragIndexPhotos.

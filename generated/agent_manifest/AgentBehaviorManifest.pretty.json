@@ -7,9 +7,9 @@
     "generatedAt": "1970-01-01T00:00:00+00:00"
   },
   "sourceIntegrity": {
-    "baseCommit": "3fb4ad3a47e46e339d6ab20f1c6f9d7ece34f5f4",
-    "workingTreeDigest": "a404efc4f10f0545f8ff8480d437f7d738cbd325680acff281b330a434876bae",
-    "dirtyState": true,
+    "baseCommit": "8884aac5382a6fdbe05efe6bc3de35977d41481a",
+    "workingTreeDigest": "880af92eb8bba9d42c70c639dde83f360541b77ba4e383a56b2d7bb266c99dc5",
+    "dirtyState": false,
     "files": [
       {
         "path": "ios/Lumen/Models/AgentJSONValue.swift",
@@ -33,7 +33,7 @@
       },
       {
         "path": "ios/Lumen/Services/AgentService.swift",
-        "sha256": "bb7aa77bf9e997f20db1c047bea66af4cdc025e03b48c74d7473faa403f7ff66"
+        "sha256": "bcdde0a8155cb37d7ac3492856ec9361f342c08338f2a270e8d6ccc2f051323e"
       },
       {
         "path": "ios/Lumen/Services/IntentRouter.swift",

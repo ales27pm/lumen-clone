@@ -3,13 +3,13 @@
   "codebaseHome": {
     "languageCounts": {
       "json": 31,
-      "markdown": 105,
+      "markdown": 106,
       "mixed": 1,
       "plist": 3,
-      "python": 190,
+      "python": 193,
       "resolved": 1,
-      "shell": 19,
-      "swift": 569,
+      "shell": 20,
+      "swift": 577,
       "text": 7,
       "toml": 1,
       "xcode_project": 1,
@@ -41,7 +41,7 @@
       "Resources": 1,
       "Resources/AlgorithmicPhilosophies/latent_liturgy": 1,
       "Scripts": 2,
-      "Services": 72,
+      "Services": 73,
       "Services/AgentGrounding": 14,
       "Services/Diagnostics": 2,
       "Services/IntentClassification": 5,
@@ -52,30 +52,30 @@
       "Services/LLM/Models": 9,
       "Services/LLM/Policy": 9,
       "Services/MicrosoftGraph": 7,
-      "Services/SelfModel": 2,
+      "Services/SelfModel": 3,
       "Services/Tools": 14,
       "State": 3,
       "System": 18,
       "Tools": 15,
       "Tools/Builtin": 12,
-      "Views": 37,
+      "Views": 38,
       "Voice": 8,
       "app": 6,
       "datasets": 1,
-      "docs": 64,
+      "docs": 65,
       "docs/stabilization": 1,
       "evals": 1,
       "ios": 2,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 197,
+      "ios/LumenTests": 201,
       "ios/LumenTests/Fixtures": 2,
-      "ios/LumenTests/Support": 1,
+      "ios/LumenTests/Support": 2,
       "ios/LumenUITests": 2,
       "lumen_manifest_crawler": 2,
       "repo": 14,
-      "scripts": 28,
+      "scripts": 29,
       "tools": 18,
       "tools/fine_tuning/unsloth": 54,
       "tools/hf_artifacts": 2,
@@ -83,14 +83,14 @@
       "tools/hf_zerogpu/space_template": 3,
       "tools/intent_classifier": 4,
       "tools/lumen_manifest_crawler": 4,
-      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 48,
+      "tools/lumen_manifest_crawler/lumen_manifest_crawler": 49,
       "tools/lumen_manifest_crawler/scripts": 1,
-      "tools/lumen_manifest_crawler/tests": 40,
+      "tools/lumen_manifest_crawler/tests": 42,
       "tools/pipeline": 8,
       "tools/pipeline/tests": 18,
       "tools/security": 1
     },
-    "recordCount": 932,
+    "recordCount": 945,
     "selectedFiles": [
       {
         "imports": [],
@@ -1313,7 +1313,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run, runLoop, availableTools.",
-        "sha256": "8bee6a50fed905fe62e63ed4227f080574f188b0991cdc77e5e23cd5ad395bcc",
+        "sha256": "8a2888a1296c65467090fc4c06df113ddde24f2515a60342a5a9aec4a8bd753f",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -1404,6 +1404,27 @@
       },
       {
         "imports": [
+          "Foundation"
+        ],
+        "language": "swift",
+        "module": "Services",
+        "path": "ios/Lumen/Services/AgentJSONKeyIntegrity.swift",
+        "responsibility": "JSONSerialization collapses duplicate keys. Check the selected, already parsed JSON before treating its forecast as unambiguous model-authored evidence.",
+        "sha256": "598362aa314d0e2064163af7d7ea205f0c778e991a3e66499cc643dc5f83ad47",
+        "symbols": [
+          "AgentJSONKeyIntegrity",
+          "hasAmbiguousKeys",
+          "bytes",
+          "objects",
+          "index",
+          "start",
+          "next",
+          "keys",
+          "key"
+        ]
+      },
+      {
+        "imports": [
           "Foundation",
           "SwiftData"
         ],
@@ -1420,19 +1441,22 @@
       {
         "imports": [
           "Foundation",
+          "CoreFoundation",
           "SwiftData"
         ],
         "language": "swift",
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
-        "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer, StripResult, LeadingBlock.",
-        "sha256": "bb7aa77bf9e997f20db1c047bea66af4cdc025e03b48c74d7473faa403f7ff66",
+        "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurnPrediction, Validity, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer.",
+        "sha256": "bcdde0a8155cb37d7ac3492856ec9361f342c08338f2a270e8d6ccc2f051323e",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
           "AgentAction",
           "StructuredOutput",
           "StructuredAction",
+          "AgentTurnPrediction",
+          "Validity",
           "AgentTurn",
           "AgentTurnParseError",
           "AgentThinkBlockSanitizer",
@@ -1441,9 +1465,7 @@
           "AgentJSONCandidateSelector",
           "Selection",
           "AgentTurnParser",
-          "ExtractedJSONObject",
-          "StreamingJSONScanner",
-          "Event"
+          "ExtractedJSONObject"
         ]
       },
       {
@@ -2197,24 +2219,6 @@
           "MemoryExtractionPolicy",
           "shouldExtract"
         ]
-      },
-      {
-        "imports": [
-          "Foundation"
-        ],
-        "language": "swift",
-        "module": "Memory",
-        "path": "ios/Lumen/Memory/MemoryProvenance.swift",
-        "responsibility": "`ios/Lumen/Memory/MemoryProvenance.swift` owns MemoryProvenance behavior and defines: MemoryProvenance, memoryID, conversationID, messageID, source, createdAt.",
-        "sha256": "6d395139212cc5034e338ae70fc12d08b6a188dd8e27bb4b7058d927ba3b1bf1",
-        "symbols": [
-          "MemoryProvenance",
-          "memoryID",
-          "conversationID",
-          "messageID",
-          "source",
-          "createdAt"
-        ]
       }
     ]
   },
@@ -2224,14 +2228,14 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "3fb4ad3a47e46e339d6ab20f1c6f9d7ece34f5f4",
+  "manifestCommit": "8884aac5382a6fdbe05efe6bc3de35977d41481a",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "9feb4984b97066a495e312c6671949b0236006330b8ccbf302e494a062a4a244",
-    "promptUTF8ByteCount": 25666,
+    "promptSHA256": "ca81e3065265fdd10f35d4abe610935b9956833249650870f5516428e860a7d4",
+    "promptUTF8ByteCount": 25551,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
   "schemaVersion": "1.0.0",
@@ -2242,8 +2246,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "3fb4ad3a47e46e339d6ab20f1c6f9d7ece34f5f4",
-    "dirtyState": true,
-    "workingTreeDigest": "a404efc4f10f0545f8ff8480d437f7d738cbd325680acff281b330a434876bae"
+    "baseCommit": "8884aac5382a6fdbe05efe6bc3de35977d41481a",
+    "dirtyState": false,
+    "workingTreeDigest": "880af92eb8bba9d42c70c639dde83f360541b77ba4e383a56b2d7bb266c99dc5"
   }
 }

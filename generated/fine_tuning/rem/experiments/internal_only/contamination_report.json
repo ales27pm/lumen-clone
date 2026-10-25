@@ -7,7 +7,7 @@
   "matches": [],
   "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
   "publicEvaluationRowCount": 1040,
-  "reportSHA256": "8cbb03a245381d46ab54864cfe40e02a145f6c581b35159f734fc04593ac7683",
+  "reportSHA256": "77e0e8aaead83b815c51dd340d38bbf930347fb932d90bddb47c1562e2cdd246",
   "schemaVersion": "lumen.adapter-contamination/1.4.0",
   "scoringTargetFingerprintPolicy": "natural_language_expected_and_metric_values",
   "scoringTargetMinimumTokens": 4,
@@ -18,5 +18,5 @@
   "shortWindowShingleSize": 4,
   "threshold": 0.8,
   "trainingRecordCount": 90,
-  "trainingRecordsSHA256": "83f7fe2f07c40f6e673204944904ac2c1d7328310eb6c576d22850e04c277fcf"
+  "trainingRecordsSHA256": "8b0fbecadd8e3e0b0148c34561ce2fe51755f1b2e9b279178eef9d2037940854"
 }
