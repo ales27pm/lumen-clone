@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import XCTest
 @testable import Lumen
 
@@ -23,9 +24,21 @@ final class SelfPredictionLedgerTests: XCTestCase {
     }
 
     private func canonicalLines(_ events: [[String: Any]]) throws -> Data {
+        // Match the writer's JSONEncoder number formatting. JSONSerialization on
+        // macOS expands 0.8 to 0.80000000000000004, which is intentionally noncanonical.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         var bytes = Data()
         for event in events {
-            bytes.append(try JSONSerialization.data(withJSONObject: event, options: [.sortedKeys, .withoutEscapingSlashes]))
+            let values = try event.mapValues { value -> AgentJSONValue in
+                if let number = value as? NSNumber {
+                    return CFGetTypeID(number) == CFBooleanGetTypeID()
+                        ? .bool(number.boolValue) : .number(number.doubleValue)
+                }
+                if let string = value as? String { return .string(string) }
+                throw CocoaError(.coderInvalidValue)
+            }
+            bytes.append(try encoder.encode(values))
             bytes.append(0x0A)
         }
         return bytes
@@ -240,6 +253,10 @@ final class SelfPredictionLedgerTests: XCTestCase {
         try await ledger.complete(id: id, status: .success, toolBodyStarted: true, cancelled: false)
         let root = try await exported(ledger)
         let events = try XCTUnwrap(root["events"] as? [[String: Any]])
+        let controlURL = try directory()
+        try canonicalLines(events).write(to: controlURL.appendingPathComponent(SelfPredictionLedger.fileName))
+        let control = try await SelfPredictionLedger(directoryURL: controlURL).summary()
+        XCTAssertEqual(control.eventCount, 2, "The unmodified fixture must be canonical before corruption tests")
         var duplicatePrediction = events[0]
         duplicatePrediction["seq"] = 2
         var orphanOutcome = events[1]
