@@ -6,7 +6,7 @@
       "markdown": 106,
       "mixed": 1,
       "plist": 3,
-      "python": 197,
+      "python": 206,
       "resolved": 1,
       "shell": 20,
       "swift": 577,
@@ -85,12 +85,12 @@
       "tools/lumen_manifest_crawler": 4,
       "tools/lumen_manifest_crawler/lumen_manifest_crawler": 49,
       "tools/lumen_manifest_crawler/scripts": 1,
-      "tools/lumen_manifest_crawler/tests": 46,
+      "tools/lumen_manifest_crawler/tests": 55,
       "tools/pipeline": 8,
       "tools/pipeline/tests": 18,
       "tools/security": 1
     },
-    "recordCount": 949,
+    "recordCount": 958,
     "selectedFiles": [
       {
         "imports": [],
@@ -2232,13 +2232,13 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "c62348adb17ad6a05d00e5485b25b0fb59881682",
+  "manifestCommit": "7c5afc4a09a82358602e7fab905499366521545a",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "bf7e8b488a43561e90203fdd89531055da51dd7c1888a361e825732e35982be7",
+    "promptSHA256": "120e1273393066e5537910b2c7cbd30e0f393d2693ae3c4a99d971d86dc48658",
     "promptUTF8ByteCount": 25574,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
@@ -2250,8 +2250,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "c62348adb17ad6a05d00e5485b25b0fb59881682",
+    "baseCommit": "7c5afc4a09a82358602e7fab905499366521545a",
     "dirtyState": false,
-    "workingTreeDigest": "b9676759f5e5e3caa2b5f1cb3bc8bb66a683d110079ed205ae975f1c837f65c3"
+    "workingTreeDigest": "4cf13ea16b03bed959c7d96ebc9e50119095641e2528cb67f6345ad8958e301f"
   }
 }

@@ -98,7 +98,7 @@
       "contaminated": false,
       "matchCount": 0,
       "promotionRequiresZeroMatches": true,
-      "reportSHA256": "98ef09b1c124bc0920f52e77c4ab1919c012d0bc421fea343a4b18f7e1404a99"
+      "reportSHA256": "e02f4d450b85506ec112860ce7b5922c236e5a7d0f38deec5fe533441efa6b75"
     },
     "executableDeclarativeMetrics": true,
     "failClosedOnUnknownMetric": true,
@@ -108,8 +108,8 @@
   },
   "experimentPolicy": {
     "comparisonEligibility": {
-      "baselineTrainingCorpusSHA256": "e825567c41c8448863447c11caf7daab8e0b197779976dcf0dc0aed1f4cc04ef",
-      "optimizedTrainingCorpusSHA256": "042677db9f7262f17b1e7ce57d571cd809643f994f6b69fbe48b6b7c0a4e97cd",
+      "baselineTrainingCorpusSHA256": "eb6c0f12a484b9a95faa8d54fe3e4648cde8746be6408f7c407640778862d6cb",
+      "optimizedTrainingCorpusSHA256": "cd59464c2cca31cb7c79fb97ea10c5db42a084d2431b3b781d411540be142940",
       "promotionEligible": true,
       "promotionProhibited": false,
       "publicRecordCount": 600,
@@ -138,7 +138,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "fc14dc067ef7a8e9cf930dea557708f4c1a3cb718731afb0bd04387bed7e8a02",
+    "experimentManifestSHA256": "4d4062d78b4096819545dd9ee847d03844d1aecd0e720b759aac252894c08018",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,
@@ -186,7 +186,7 @@
       "internal_plus_public_optimized"
     ]
   },
-  "manifestCommit": "c62348adb17ad6a05d00e5485b25b0fb59881682",
+  "manifestCommit": "7c5afc4a09a82358602e7fab905499366521545a",
   "preferenceTraining": {
     "includedInCheckpoint": false,
     "recordCount": 61,
@@ -438,9 +438,9 @@
     "public_adapter_corpus_coedit_train": 14
   },
   "sourceIntegrity": {
-    "baseCommit": "c62348adb17ad6a05d00e5485b25b0fb59881682",
+    "baseCommit": "7c5afc4a09a82358602e7fab905499366521545a",
     "dirtyState": false,
-    "workingTreeDigest": "b9676759f5e5e3caa2b5f1cb3bc8bb66a683d110079ed205ae975f1c837f65c3"
+    "workingTreeDigest": "4cf13ea16b03bed959c7d96ebc9e50119095641e2528cb67f6345ad8958e301f"
   },
   "systemPrompt": "You are Mimicry, Lumen's style adaptation agent. Adapt tone within safety and privacy boundaries.",
   "taskTypeCounts": {
@@ -463,5 +463,5 @@
     "style_profile_detection",
     "ultra_specific_style_profile_detection"
   ],
-  "worktreeFingerprint": "b9676759f5e5e3caa2b5f1cb3bc8bb66a683d110079ed205ae975f1c837f65c3"
+  "worktreeFingerprint": "4cf13ea16b03bed959c7d96ebc9e50119095641e2528cb67f6345ad8958e301f"
 }

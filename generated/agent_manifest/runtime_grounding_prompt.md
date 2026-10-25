@@ -2,19 +2,19 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `c62348adb17ad6a05d00e5485b25b0fb59881682`
-- Working-tree digest: `b9676759f5e5e3caa2b5f1cb3bc8bb66a683d110079ed205ae975f1c837f65c3`
+- Base commit: `7c5afc4a09a82358602e7fab905499366521545a`
+- Working-tree digest: `4cf13ea16b03bed959c7d96ebc9e50119095641e2528cb67f6345ad8958e301f`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `949`
+- Codebase-home records: `958`
 
 ## Top Modules
 - `ios/LumenTests`: 201 files
 - `Services`: 73 files
 - `docs`: 65 files
+- `tools/lumen_manifest_crawler/tests`: 55 files
 - `tools/fine_tuning/unsloth`: 54 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 49 files
-- `tools/lumen_manifest_crawler/tests`: 46 files
 - `Views`: 38 files
 - `Assistant`: 33 files
 - `scripts`: 29 files
