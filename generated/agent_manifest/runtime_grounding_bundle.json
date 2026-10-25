@@ -1313,7 +1313,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run, runLoop, availableTools.",
-        "sha256": "8a2888a1296c65467090fc4c06df113ddde24f2515a60342a5a9aec4a8bd753f",
+        "sha256": "c7f28e2febdf6d70d9fa92ab997993086b62fb485f115fed984b0ee6633a2c1a",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -1410,10 +1410,14 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentJSONKeyIntegrity.swift",
         "responsibility": "JSONSerialization collapses duplicate keys. Check the selected, already parsed JSON before treating its forecast as unambiguous model-authored evidence.",
-        "sha256": "598362aa314d0e2064163af7d7ea205f0c778e991a3e66499cc643dc5f83ad47",
+        "sha256": "2fe549011b7d172568df024ebd5135842c50be717c661c33beb4880eb1420606",
         "symbols": [
           "AgentJSONKeyIntegrity",
+          "hasAmbiguousEmbeddedInput",
           "hasAmbiguousKeys",
+          "input",
+          "data",
+          "decoded",
           "bytes",
           "objects",
           "index",
@@ -1448,7 +1452,7 @@
         "module": "Services",
         "path": "ios/Lumen/Services/AgentService.swift",
         "responsibility": "`ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurnPrediction, Validity, AgentTurn, AgentTurnParseError, AgentThinkBlockSanitizer.",
-        "sha256": "bcdde0a8155cb37d7ac3492856ec9361f342c08338f2a270e8d6ccc2f051323e",
+        "sha256": "9a5146f37ce032bc41814dafc1a2e9b6245f2bdfb61fa5aaa511f1e68c98af6b",
         "symbols": [
           "AgentRequest",
           "AgentEvent",
@@ -2228,14 +2232,14 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "8884aac5382a6fdbe05efe6bc3de35977d41481a",
+  "manifestCommit": "09a2b7cdedb64ef7cde0c2e017504c859db34f72",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "ca81e3065265fdd10f35d4abe610935b9956833249650870f5516428e860a7d4",
-    "promptUTF8ByteCount": 25551,
+    "promptSHA256": "495b8538fc5c47b9143c682a2957f16e530a2ee29fa2506970c29bc6d305688f",
+    "promptUTF8ByteCount": 25574,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
   "schemaVersion": "1.0.0",
@@ -2246,8 +2250,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "8884aac5382a6fdbe05efe6bc3de35977d41481a",
+    "baseCommit": "09a2b7cdedb64ef7cde0c2e017504c859db34f72",
     "dirtyState": false,
-    "workingTreeDigest": "880af92eb8bba9d42c70c639dde83f360541b77ba4e383a56b2d7bb266c99dc5"
+    "workingTreeDigest": "de87b1f483b5ecb49e345286efce2a153ef7fb03ced0e9626ca9689d4480017a"
   }
 }

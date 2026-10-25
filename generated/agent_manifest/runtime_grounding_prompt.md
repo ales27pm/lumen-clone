@@ -2,8 +2,8 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `8884aac5382a6fdbe05efe6bc3de35977d41481a`
-- Working-tree digest: `880af92eb8bba9d42c70c639dde83f360541b77ba4e383a56b2d7bb266c99dc5`
+- Base commit: `09a2b7cdedb64ef7cde0c2e017504c859db34f72`
+- Working-tree digest: `de87b1f483b5ecb49e345286efce2a153ef7fb03ced0e9626ca9689d4480017a`
 - Tools: `53`
 - Intents: `22`
 - Codebase-home records: `945`
@@ -85,7 +85,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Services/AgentEventContinuationYield.swift` (Services): `ios/Lumen/Services/AgentEventContinuationYield.swift` is static Lumen source for the `Services` module.
 - `ios/Lumen/Services/AgentGroundingInstrumentation.swift` (Services): `ios/Lumen/Services/AgentGroundingInstrumentation.swift` owns AgentGroundingInstrumentation behavior and defines: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancel Symbols: AgentGroundingCancellationToken, AgentGroundingMetrics, AgentGroundingInstrumentation, cancel, checkCancellation, mark, elapsedMs, sceneText.
 - `ios/Lumen/Services/AgentIntentRouter.swift` (Services): Compatibility facade for older agent-routing tests/call sites. Symbols: AgentIntentRouter, Decision, decide, decideSemantic, decision, filteredTools, routingSystemNote, allowedToolIDs.
-- `ios/Lumen/Services/AgentJSONKeyIntegrity.swift` (Services): JSONSerialization collapses duplicate keys. Check the selected, already parsed JSON before treating its forecast as unambiguous model-authored evidence. Symbols: AgentJSONKeyIntegrity, hasAmbiguousKeys, bytes, objects, index, start, next, keys.
+- `ios/Lumen/Services/AgentJSONKeyIntegrity.swift` (Services): JSONSerialization collapses duplicate keys. Check the selected, already parsed JSON before treating its forecast as unambiguous model-authored evidence. Symbols: AgentJSONKeyIntegrity, hasAmbiguousEmbeddedInput, hasAmbiguousKeys, input, data, decoded, bytes, objects.
 - `ios/Lumen/Services/AgentRunner.swift` (Services): Compatibility wrapper kept for older callers during the Agent Kernel migration. New entrypoints should call `AssistantKernel.run(...)` or a narrow kernel bridge directly. Symbols: AgentRunner, runHeadless.
 - `ios/Lumen/Services/AgentService.swift` (Services): `ios/Lumen/Services/AgentService.swift` owns AgentService behavior and defines: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurnPrediction, Validity, AgentTurn, AgentTurnParseError, Ag Symbols: AgentRequest, AgentEvent, AgentAction, StructuredOutput, StructuredAction, AgentTurnPrediction, Validity, AgentTurn.
 - `ios/Lumen/Services/Tools/AlarmTools.swift` (Services/Tools): `ios/Lumen/Services/Tools/AlarmTools.swift` owns AlarmTools behavior and defines: LumenAlarmMetadata, AlarmScheduleArguments, AlarmScheduleArgumentError, AlarmCountdownArgumentError, AlarmTools, isRuntimeUnavailableText, Symbols: LumenAlarmMetadata, AlarmScheduleArguments, AlarmScheduleArgumentError, AlarmCountdownArgumentError, AlarmTools, isRuntimeUnavailableText, authorizationStatus, requestAuthorization.
