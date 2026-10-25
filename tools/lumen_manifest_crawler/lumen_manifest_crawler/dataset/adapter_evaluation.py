@@ -4337,8 +4337,18 @@ def _score_executor_response_contract(
             return _metric_result(metric_type, False, thought_failure)
 
     if "action" in parsed:
-        if top_level_keys not in ({"action"}, {"action", "thought"}):
+        if not top_level_keys <= {"action", "thought", "prediction"}:
             return _metric_result(metric_type, False, "action_top_level_shape_invalid")
+        if "prediction" in parsed:
+            prediction = parsed["prediction"]
+            probability = prediction.get("successProbability") if isinstance(prediction, dict) else None
+            if (
+                not isinstance(prediction, dict)
+                or set(prediction) != {"successProbability"}
+                or type(probability) not in (int, float)
+                or not 0 <= probability <= 1
+            ):
+                return _metric_result(metric_type, False, "action_prediction_invalid")
         action = parsed.get("action")
         if not isinstance(action, Mapping) or set(action) != {"tool", "args"}:
             return _metric_result(metric_type, False, "action_shape_invalid")

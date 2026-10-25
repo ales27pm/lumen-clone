@@ -1032,7 +1032,7 @@ def _canonical_sft_output_key(record: dict[str, Any]) -> str:
 def _canonical_model_output(content: str) -> str:
     try:
         return json.dumps(json.loads(content), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):
         return " ".join(content.split())
 
 
@@ -1060,32 +1060,51 @@ def _validate_agent_sft_records(  # NOSONAR
             failures.append(ValidationFailure(code="invalid_chat_format", message=f"{agent} SFT record must use system/user/assistant chat format", path=f"fine_tuning.{agent}.sft.{index}"))
             continue
 
-        assistant = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "assistant"), "")
+        assistant_outputs = [
+            (message_index, message.get("content", ""))
+            for message_index, message in enumerate(messages)
+            if isinstance(message, dict) and message.get("role") == "assistant"
+        ]
+        assistant = assistant_outputs[0][1] if assistant_outputs else ""
         system = next((m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "system"), "")
-        if not isinstance(assistant, str) or not assistant.strip():
-            failures.append(ValidationFailure(code="empty_assistant_output", message=f"{agent} has empty assistant output", path=f"fine_tuning.{agent}.sft.{index}"))
-        if agent == "cortex":
-            _validate_cortex_json_object_contract(
-                assistant=assistant,
-                failures=failures,
-                path=f"fine_tuning.{agent}.sft.{index}",
-                preference_chosen=False,
-                route_contract=(
-                    isinstance(system, str)
-                    and CORTEX_ROUTE_SYSTEM_MARKER in system
-                ),
-            )
-        if agent == "mouth" and not mouth_final_text_is_complete(assistant):
-            failures.append(
-                ValidationFailure(
-                    code="mouth_incomplete_sft_output",
-                    message="Mouth SFT output must be complete user-facing text",
-                    path=f"fine_tuning.{agent}.sft.{index}",
+        for ordinal, (message_index, content) in enumerate(assistant_outputs or [(None, "")]):
+            path = f"fine_tuning.{agent}.sft.{index}"
+            if ordinal:
+                path += f".messages.{message_index}"
+            if not isinstance(content, str) or not content.strip():
+                failures.append(ValidationFailure(code="empty_assistant_output", message=f"{agent} has empty assistant output", path=path))
+            if agent == "cortex":
+                _validate_cortex_json_object_contract(
+                    assistant=content,
+                    failures=failures,
+                    path=path,
+                    preference_chosen=False,
+                    route_contract=(
+                        isinstance(system, str)
+                        and CORTEX_ROUTE_SYSTEM_MARKER in system
+                    ),
                 )
-            )
-        for sentinel in forbidden:
-            if sentinel in assistant:
-                failures.append(ValidationFailure(code="sentinel_leak", message=f"{agent} leaked sentinel `{sentinel}`", path=f"fine_tuning.{agent}.sft.{index}"))
+            if agent == "executor":
+                _validate_executor_json_contract(
+                    assistant=content,
+                    tools_by_id=tools_by_id,
+                    failures=failures,
+                    path=path,
+                )
+            if agent == "mouth" and (
+                not isinstance(content, str) or not mouth_final_text_is_complete(content)
+            ):
+                failures.append(
+                    ValidationFailure(
+                        code="mouth_incomplete_sft_output",
+                        message="Mouth SFT output must be complete user-facing text",
+                        path=path,
+                    )
+                )
+            if isinstance(content, str):
+                for sentinel in forbidden:
+                    if sentinel in content:
+                        failures.append(ValidationFailure(code="sentinel_leak", message=f"{agent} leaked sentinel `{sentinel}`", path=path))
 
         metadata = rec.get("metadata")
         if not isinstance(metadata, dict):
@@ -1109,12 +1128,6 @@ def _validate_agent_sft_records(  # NOSONAR
                 if tool_id not in known_tools:
                     failures.append(ValidationFailure(code="unknown_tool_id", message=f"{agent} references unknown tool {tool_id}", path=f"fine_tuning.{agent}.sft.{index}.metadata.toolIDs"))
         if agent == "executor" and isinstance(tool_ids, list):
-            _validate_executor_json_contract(
-                assistant=assistant,
-                tools_by_id=tools_by_id,
-                failures=failures,
-                path=f"fine_tuning.{agent}.sft.{index}",
-            )
             task_type = str(metadata.get("taskType") or "")
             source_family = str(metadata.get("sourceFamily") or "")
             if task_type not in {"tool_call_generation", "argument_completion", "required_args"} and source_family not in {"executor_tool_calls", "approval_boundary_samples"}:
@@ -1155,7 +1168,7 @@ def _validate_cortex_json_object_contract(
             )
         )
         return
-    except (json.JSONDecodeError, TypeError, _NonFiniteJSONNumberError):
+    except (ValueError, TypeError, RecursionError):
         failures.append(
             ValidationFailure(
                 code=f"{prefix}_non_json_output",
@@ -1198,6 +1211,8 @@ def _valid_cortex_route_payload(payload: dict[str, Any]) -> bool:
 
     selected_tool_id = payload.get("selectedToolID")
     status = payload.get("status")
+    if "status" in payload and not isinstance(status, str):
+        return False
     if status in {"no_tool_route", "invalid_tool"}:
         return (
             set(payload) == CORTEX_ROUTE_BASE_FIELDS | {"status"}
@@ -1263,7 +1278,7 @@ def _validate_executor_json_contract(
     except _DuplicateJSONKeyError:
         failures.append(ValidationFailure(code="executor_duplicate_json_key", message="Executor output must not repeat JSON keys", path=path))
         return
-    except (json.JSONDecodeError, TypeError, _NonFiniteJSONNumberError):
+    except (ValueError, TypeError, RecursionError):
         failures.append(ValidationFailure(code="executor_non_json_output", message="Executor SFT output must be a strict JSON object", path=path))
         return
     if not isinstance(payload, dict):
@@ -1388,7 +1403,9 @@ def _executor_argument_type_is_valid(value: Any, declared_type: str) -> bool:
 def _assistant_mentions_required_args(assistant: str, required_args: set[str]) -> bool:
     try:
         parsed = json.loads(assistant)
-    except json.JSONDecodeError:
+    except (ValueError, TypeError, RecursionError):
+        if not isinstance(assistant, str):
+            return False
         lowered = assistant.lower()
         return all(arg.lower() in lowered for arg in required_args)
 
@@ -1403,7 +1420,7 @@ def _assistant_mentions_required_args(assistant: str, required_args: set[str]) -
 def _should_enforce_required_args(assistant: str) -> bool:
     try:
         payload = json.loads(assistant)
-    except json.JSONDecodeError:
+    except (ValueError, TypeError, RecursionError):
         return True
     if not isinstance(payload, dict):
         return True
