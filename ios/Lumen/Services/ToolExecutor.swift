@@ -170,8 +170,27 @@ nonisolated enum ToolRouteGuard {
     }
 
     static func normalizedArguments(for canonicalToolID: String, rawToolID: String, arguments: [String: String]) -> [String: String] {
+        var out = argumentsByNormalizingAliases(for: canonicalToolID, arguments: arguments)
+        if canonicalToolID == "maps.search" {
+            let query = (out["query"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if query.isEmpty || query == "current location" || query == "current" || query == "here" || query == "near me" {
+                out["query"] = "nearest place near me"
+            }
+            if query.contains("airport") && !query.contains("near") {
+                out["query"] = "nearest airport near me"
+            }
+            let location = arguments["location"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if location == "current location", out["query"]?.lowercased().contains("airport") != true {
+                out["query"] = "nearest airport near me"
+            }
+        }
+        return out
+    }
+
+    /// Alias expansion preserves supplied values. Semantic defaults/rewrites belong
+    /// in normalizedArguments so forecast provenance can detect a changed action.
+    static func argumentsByNormalizingAliases(for canonicalToolID: String, arguments: [String: String]) -> [String: String] {
         var out = arguments
-        let loweredValues = arguments.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
 
         switch canonicalToolID {
         case "messages.draft":
@@ -194,13 +213,6 @@ nonisolated enum ToolRouteGuard {
         case "maps.search":
             if out["query"] == nil {
                 out["query"] = arguments["location"] ?? arguments["destination"] ?? arguments["place"] ?? arguments["nearby"]
-            }
-            let q = (out["query"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if q.isEmpty || q == "current location" || q == "current" || q == "here" || q == "near me" {
-                out["query"] = "nearest place near me"
-            }
-            if q.contains("airport") && !q.contains("near") {
-                out["query"] = "nearest airport near me"
             }
         case "maps.directions":
             if out["destination"] == nil {
@@ -243,9 +255,6 @@ nonisolated enum ToolRouteGuard {
             break
         }
 
-        if canonicalToolID == "maps.search", loweredValues["location"] == "current location", out["query"]?.lowercased().contains("airport") != true {
-            out["query"] = "nearest airport near me"
-        }
         return out
     }
 

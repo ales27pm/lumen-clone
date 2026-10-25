@@ -46,13 +46,19 @@ ledger and best-effort trace recorder. It receives only typed metadata:
 
 Structural action equality is checked before argument coercion. A deduplication
 key is insufficient to prove model authorship. Host-forced continuations do not
-inherit the preceding forecast. Stored IDs and sequence numbers come from the host.
+inherit the preceding forecast. The validated arguments are also compared with
+value-preserving alias expansion: a semantic query rewrite is a host repair,
+while an equivalent alias or ordinary number-to-string transport retains its
+origin. Ambiguous duplicate JSON keys invalidate forecast metadata, including
+arguments decoded from a legacy JSON string. Stored IDs and sequence numbers come from the host.
 The ledger contains no messages, documents, argument values, outputs, or hashes of
 those private values. Tool IDs and runtime labels are bounded metadata.
 
 The JSONL file is limited to 2 MiB and 4096 events, with capacity reserved for
 pending outcomes. There is no silent pruning, rotation, repair, or automatic retry
-of a tool. Loading rejects corrupt or inconsistent existing storage. An append is
+of a tool. Loading rejects corrupt or inconsistent existing storage. Only an
+explicit missing-path result means an absent ledger; inaccessible storage and
+dangling symlinks never produce a healthy empty export. An append is
 acknowledged only after synchronization. If writing fails, the original tool flow
 can continue: the registry records a bounded diagnostic and does not pretend the
 forecast was saved. Exports may therefore have coverage gaps even when valid.
@@ -84,7 +90,10 @@ uv run --python 3.12 --with-editable ./tools/lumen_manifest_crawler \
 
 The scorer validates the whole bounded export before measuring anything. Duplicate
 keys, malformed types, NaN, out-of-range probabilities, duplicate/orphan outcomes,
-and events reordered ahead of their prediction fail explicitly.
+and events reordered ahead of their prediction fail explicitly. Input and output
+must be regular files: pipes and devices are rejected without waiting for a peer
+or writing data. Symlinks to regular files remain supported, but a report cannot
+overwrite its source ledger through either a symbolic link or a hard link.
 
 For the `registry_status_success` target, a matched, noncancelled model forecast is
 scored as `1` for success and `0` for failed, denied, requiresApproval or unavailable.

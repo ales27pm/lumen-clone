@@ -8,6 +8,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -49,10 +53,26 @@ def _strict_json(text: str) -> Any:
         raise LedgerValidationError("invalid_ledger_json") from error
 
 
+@contextmanager
+def _regular_file_descriptor(path: Path, flags: int, failure: str) -> Iterator[tuple[int, os.stat_result]]:
+    # Open first, without blocking on pipes, then validate the actual descriptor.
+    # A pathname check alone races with replacement by a FIFO/device/symlink.
+    # Normal symlinks to regular files keep their existing supported behavior.
+    descriptor = os.open(path, flags | os.O_NONBLOCK, 0o600)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise LedgerValidationError(failure)
+        yield descriptor, metadata
+    finally:
+        os.close(descriptor)
+
+
 def load_self_prediction_ledger(path: Path) -> tuple[dict[str, Any], str]:
-    """Read at most the documented byte limit, including for nonregular inputs."""
-    with path.open("rb") as stream:
-        data = stream.read(MAX_INPUT_BYTES + 1)
+    """Read a regular file within the byte limit; reject pipes/devices before IO."""
+    with _regular_file_descriptor(path, os.O_RDONLY, "ledger_input_not_regular_file") as (descriptor, _):
+        with os.fdopen(descriptor, "rb", closefd=False) as stream:
+            data = stream.read(MAX_INPUT_BYTES + 1)
     if len(data) > MAX_INPUT_BYTES:
         raise LedgerValidationError("ledger_input_too_large")
     try:
@@ -63,6 +83,19 @@ def load_self_prediction_ledger(path: Path) -> tuple[dict[str, Any], str]:
     if not isinstance(value, dict):
         raise LedgerValidationError("ledger_must_be_object")
     return value, hashlib.sha256(data).hexdigest()
+
+
+def write_self_prediction_report(path: Path, payload: str, *, source_path: Path) -> None:
+    """Write only a regular report file, never a pipe/device or the source ledger."""
+    # Do not truncate until the opened descriptor has passed both checks. This
+    # also protects a source alias substituted after the CLI's early path check.
+    with _regular_file_descriptor(path, os.O_WRONLY | os.O_CREAT, "report_output_not_regular_file") as (descriptor, metadata):
+        source = source_path.stat()
+        if (metadata.st_dev, metadata.st_ino) == (source.st_dev, source.st_ino):
+            raise LedgerValidationError("report_must_not_overwrite_ledger")
+        os.ftruncate(descriptor, 0)
+        with os.fdopen(descriptor, "w", encoding="utf-8", closefd=False) as stream:
+            stream.write(payload)
 
 
 def _fields(value: Any, required: set[str], optional: set[str], context: str) -> dict[str, Any]:

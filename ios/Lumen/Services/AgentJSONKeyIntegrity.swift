@@ -3,6 +3,17 @@ import Foundation
 /// JSONSerialization collapses duplicate keys. Check the selected, already parsed
 /// JSON before treating its forecast as unambiguous model-authored evidence.
 nonisolated enum AgentJSONKeyIntegrity {
+    /// The compatibility input form decodes a second JSON document. Inspect the
+    /// exact string chosen by parseArgs, not escaped key-like text in ordinary values.
+    static func hasAmbiguousEmbeddedInput(in object: [String: Any]) -> Bool {
+        guard object["input"] != nil,
+              let input = (object["args"] ?? object["arguments"] ?? object["input"]) as? String,
+              let data = input.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
+              let decoded = try? JSONSerialization.jsonObject(with: data),
+              decoded is [String: Any] else { return false }
+        return hasAmbiguousKeys(in: input)
+    }
+
     static func hasAmbiguousKeys(in json: String) -> Bool {
         let bytes = Array(json.utf8)
         var objects: [Set<String>?] = [] // nil denotes an array, not an object.

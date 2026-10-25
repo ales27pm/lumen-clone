@@ -86,7 +86,11 @@ final class AgentTurnPredictionTests: XCTestCase {
         let repaired = AgentAction(tool: "rag.search", args: ["query": .string("swift"), "limit": .string("3")])
         XCTAssertEqual(original.dedupeKey, repaired.dedupeKey)
         XCTAssertNotEqual(original, repaired)
-        let context = StructuredAgentKernelExecutor.predictionContext(for: turn, executing: repaired, runID: UUID(), runtime: "coreAI")
+        let context = StructuredAgentKernelExecutor.predictionContext(
+            for: turn, executing: repaired,
+            validatedCall: .init(canonicalToolID: "rag.search", arguments: repaired.args.stringCoerced),
+            runID: UUID(), runtime: "coreAI"
+        )
         XCTAssertEqual(context.probabilityOrigin, .hostRepair)
         XCTAssertNil(context.probability)
     }
@@ -97,9 +101,50 @@ final class AgentTurnPredictionTests: XCTestCase {
                                            (#","prediction":{"successProbability":0.7}"#, .model)] {
             let turn = AgentTurnParser.parse("{\"action\":{\"tool\":\"weather\",\"args\":{}}\(metadata)}")
             let action = try XCTUnwrap(turn.action)
-            let context = StructuredAgentKernelExecutor.predictionContext(for: turn, executing: action, runID: UUID(), runtime: "coreAI")
+            let context = StructuredAgentKernelExecutor.predictionContext(
+                for: turn, executing: action,
+                validatedCall: .init(canonicalToolID: "weather", arguments: [:]),
+                runID: UUID(), runtime: "coreAI"
+            )
             XCTAssertEqual(context.probabilityOrigin, expectedOrigin)
             XCTAssertEqual(context.probability, expectedOrigin == .model ? 0.7 : nil)
+        }
+    }
+
+    func testSemanticQueryNormalizationCannotInheritForecastForOriginalQuery() throws {
+        for args in [#"{"query":"airport in Berlin"}"#,
+                     #"{"place":"airport in Berlin","nearby":"nearest airport near me"}"#,
+                     #"{"query":"cafes in Berlin","location":"current location"}"#] {
+            let turn = AgentTurnParser.parse("{\"action\":{\"tool\":\"maps.search\",\"args\":\(args)},\"prediction\":{\"successProbability\":0.9}}")
+            let action = try XCTUnwrap(turn.action)
+            let call = try validated(action)
+            let context = StructuredAgentKernelExecutor.predictionContext(
+                for: turn, executing: action, validatedCall: call, runID: UUID(), runtime: "coreAI"
+            )
+            XCTAssertEqual(context.probabilityOrigin, .hostRepair)
+            XCTAssertNil(context.probability)
+        }
+    }
+
+    func testEquivalentToolAndArgumentAliasesRetainModelForecast() throws {
+        for (tool, args) in [("websearch", #"{"q":"swift concurrency"}"#),
+                             ("maps.search", #"{"place":"cafes in Berlin"}"#),
+                             ("rag.search", #"{"query":"swift","limit":3}"#)] {
+            let turn = AgentTurnParser.parse("{\"action\":{\"tool\":\"\(tool)\",\"args\":\(args)},\"prediction\":{\"successProbability\":0.7}}")
+            let action = try XCTUnwrap(turn.action)
+            let call = try validated(action)
+            let context = StructuredAgentKernelExecutor.predictionContext(
+                for: turn, executing: action, validatedCall: call, runID: UUID(), runtime: "coreAI"
+            )
+            XCTAssertEqual(context.probabilityOrigin, .model)
+            XCTAssertEqual(context.probability, 0.7)
+        }
+    }
+
+    private func validated(_ action: AgentAction) throws -> ValidatedStructuredToolCall {
+        switch StructuredToolCallValidator.validate(action: action, availableTools: ToolRegistry.all) {
+        case .success(let call): return call
+        case .failure: throw NSError(domain: "SelfPredictionTests", code: 1)
         }
     }
 }

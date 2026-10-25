@@ -567,6 +567,9 @@ nonisolated enum AgentTurnParser {
         let hasAction = action != nil
         if hasAction && hasFinal { return invalid(.mixedTurn) }
         if !hasAction && !hasFinal { return invalid(.missingActionOrFinal) }
+        let ambiguousPrediction = hasAmbiguousKeys || AgentJSONKeyIntegrity.hasAmbiguousEmbeddedInput(
+            in: (obj["action"] as? [String: Any]) ?? obj
+        )
 
         return AgentTurn(
             thought: cleanThought,
@@ -575,7 +578,7 @@ nonisolated enum AgentTurnParser {
             parseError: nil,
             hadNoise: hadNoise,
             prediction: hasAction
-                ? (hasAmbiguousKeys ? .invalid : AgentTurnPrediction.parse(obj["prediction"]))
+                ? (ambiguousPrediction ? .invalid : AgentTurnPrediction.parse(obj["prediction"]))
                 : .missing
         )
     }

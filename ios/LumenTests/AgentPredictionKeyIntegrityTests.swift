@@ -22,4 +22,32 @@ final class AgentPredictionKeyIntegrityTests: XCTestCase {
         XCTAssertFalse(AgentJSONKeyIntegrity.hasAmbiguousKeys(in: raw))
         XCTAssertEqual(AgentTurnParser.parse(raw).prediction.successProbability, 0.7)
     }
+
+    func testDuplicateKeysInDecodedCompatibilityInputInvalidateOnlyForecast() {
+        for raw in [
+            #"{"action":{"tool":"web.search","input":"{\"query\":\"first\",\"query\":\"second\"}"},"prediction":{"successProbability":0.9}}"#,
+            #"{"tool":"web.search","input":"{\"query\":\"first\",\"qu\\u0065ry\":\"second\"}","prediction":{"successProbability":0.9}}"#,
+            #"{"action":{"tool":"web.search","args":"{\"query\":\"first\",\"query\":\"second\"}","input":"unused"},"prediction":{"successProbability":0.9}}"#
+        ] {
+            XCTAssertFalse(AgentJSONKeyIntegrity.hasAmbiguousKeys(in: raw))
+            let turn = AgentTurnParser.parse(raw)
+            XCTAssertNil(turn.parseError)
+            XCTAssertEqual(turn.action?.tool, "web.search")
+            XCTAssertNotNil(turn.action?.args["query"])
+            XCTAssertEqual(turn.prediction, .invalid)
+        }
+    }
+
+    func testUnambiguousCompatibilityInputAndUnusedInputTextKeepForecast() {
+        for raw in [
+            #"{"action":{"tool":"web.search","input":"{\"query\":\"swift\"}"},"prediction":{"successProbability":0.7}}"#,
+            #"{"action":{"tool":"web.search","input":"a literal query"},"prediction":{"successProbability":0.7}}"#,
+            #"{"action":{"tool":"web.search","args":{"query":"swift"},"input":"{\"query\":\"first\",\"query\":\"second\"}"},"prediction":{"successProbability":0.7}}"#
+        ] {
+            let turn = AgentTurnParser.parse(raw)
+            XCTAssertNil(turn.parseError)
+            XCTAssertEqual(turn.prediction.validity, .valid)
+            XCTAssertEqual(turn.prediction.successProbability, 0.7)
+        }
+    }
 }

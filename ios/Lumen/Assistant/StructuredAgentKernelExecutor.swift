@@ -345,6 +345,7 @@ struct StructuredAgentKernelExecutor {
                     invocation, context: context,
                     predictionContext: Self.predictionContext(
                         for: turn, executing: actionForValidation,
+                        validatedCall: validatedCall,
                         runID: request.traceCorrelation?.agentRunID ?? request.turnID ?? request.id,
                         runtime: generation.diagnostics.selectedRuntime ?? "unknown"
                     )
@@ -1115,11 +1116,19 @@ private extension StructuredAgentKernelExecutor {
     /// Compare the typed original action, before argument string coercion or dedupe.
     /// Host repairs cannot inherit a model forecast for a different action.
     internal nonisolated static func predictionContext(
-        for turn: AgentTurn, executing action: AgentAction, runID: UUID, runtime: String
+        for turn: AgentTurn, executing action: AgentAction,
+        validatedCall: ValidatedStructuredToolCall, runID: UUID, runtime: String
     ) -> SelfPredictionLedger.Context {
         let origin: SelfPredictionLedger.ProbabilityOrigin
         let probability: Double?
-        if turn.action != action {
+        let canonicalToolID = ToolRouteGuard.canonicalToolID(action.tool)
+        let aliasNormalized = ToolRouteGuard.argumentsByNormalizingAliases(
+            for: canonicalToolID, arguments: action.args.stringCoerced
+        )
+        let argumentNames = Set(ToolRegistry.find(id: canonicalToolID)?.capabilityContract.arguments.map(\.name) ?? [])
+        let expectedArguments = aliasNormalized.filter { argumentNames.contains($0.key) }
+        if turn.action != action || validatedCall.canonicalToolID != canonicalToolID
+            || validatedCall.arguments != expectedArguments {
             origin = .hostRepair
             probability = nil
         } else {
@@ -1130,7 +1139,7 @@ private extension StructuredAgentKernelExecutor {
             }
             probability = turn.prediction.validity == .valid ? turn.prediction.successProbability : nil
         }
-        return .init(runID: runID, toolID: ToolRouteGuard.canonicalToolID(action.tool), runtime: runtime,
+        return .init(runID: runID, toolID: validatedCall.canonicalToolID, runtime: runtime,
                      probabilityOrigin: origin, probability: probability)
     }
 

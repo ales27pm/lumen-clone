@@ -1,6 +1,9 @@
 import copy
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from uuid import UUID
 
 import pytest
@@ -15,6 +18,7 @@ from lumen_manifest_crawler.dataset.self_prediction_ledger import (
     LedgerValidationError,
     load_self_prediction_ledger,
     score_self_prediction_ledger,
+    write_self_prediction_report,
 )
 
 
@@ -277,3 +281,81 @@ def test_cli_refuses_to_overwrite_the_source_ledger(tmp_path):
     assert result.exit_code != 0
     assert "report_must_not_overwrite_ledger" in result.output
     assert path.read_text() == original
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX named-pipe regression")
+@pytest.mark.parametrize("fifo_target", ["input", "output"])
+def test_cli_rejects_unpaired_fifo_without_blocking_or_disclosing_paths(tmp_path, fifo_target):
+    source, output = tmp_path / "ledger.json", tmp_path / "report.json"
+    original = json.dumps(_pair())
+    source.write_text(original)
+    fifo = source if fifo_target == "input" else output
+    if fifo.exists():
+        fifo.unlink()
+    os.mkfifo(fifo)
+    command = ["score-self-prediction-ledger", "--ledger", str(source), "--output", str(output)]
+    # A subprocess timeout bounds a regression in the blocking open itself.
+    # No writer/reader is opened: the old implementation hangs indefinitely.
+    child = (
+        "from typer.testing import CliRunner\n"
+        "from lumen_manifest_crawler.cli import app\n"
+        f"result = CliRunner().invoke(app, {command!r})\n"
+        "assert result.exit_code != 0, result.output\n"
+        f"assert {str(tmp_path)!r} not in result.output, result.output\n"
+        "print('nonregular_path_rejected')\n"
+    )
+    completed = subprocess.run([sys.executable, "-c", child], timeout=5, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "nonregular_path_rejected"
+    if fifo_target == "input":
+        assert not output.exists()
+    else:
+        assert source.read_text() == original
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX named-pipe regression")
+def test_output_descriptor_type_is_checked_even_when_fifo_has_a_reader(tmp_path):
+    source, output = tmp_path / "ledger.json", tmp_path / "report.json"
+    source.write_text(json.dumps(_pair()))
+    os.mkfifo(output)
+    reader = os.open(output, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        with pytest.raises(LedgerValidationError, match="report_output_not_regular_file"):
+            write_self_prediction_report(output, "report", source_path=source)
+        assert os.read(reader, 32) == b"", "No report bytes may be written to a rejected descriptor"
+    finally:
+        os.close(reader)
+
+
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink"])
+def test_report_descriptor_alias_is_rejected_before_source_truncation(tmp_path, alias_kind):
+    source, alias = tmp_path / "ledger.json", tmp_path / "alias.json"
+    original = json.dumps(_pair())
+    source.write_text(original)
+    if alias_kind == "symlink":
+        alias.symlink_to(source)
+    else:
+        os.link(source, alias)
+    with pytest.raises(LedgerValidationError, match="report_must_not_overwrite_ledger"):
+        write_self_prediction_report(alias, "must not truncate", source_path=source)
+    assert source.read_text() == original
+
+
+def test_regular_symlinks_remain_supported_for_input_and_output(tmp_path):
+    source, source_link = tmp_path / "ledger.json", tmp_path / "input-link.json"
+    report, report_link = tmp_path / "report.json", tmp_path / "output-link.json"
+    original = json.dumps(_pair())
+    source.write_text(original)
+    source_link.symlink_to(source)
+    report.write_text("old report" * 5000)
+    report_link.symlink_to(report)
+    export, digest = load_self_prediction_ledger(source_link)
+    assert export == _pair()
+    assert digest == hashlib.sha256(source.read_bytes()).hexdigest()
+    result = CliRunner().invoke(app, [
+        "score-self-prediction-ledger", "--ledger", str(source_link), "--output", str(report_link),
+    ])
+    assert result.exit_code == 0, result.output
+    assert source.read_text() == original
+    assert report_link.is_symlink()
+    assert json.loads(report.read_text()) == json.loads(result.output)

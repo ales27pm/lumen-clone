@@ -21,6 +21,7 @@ from lumen_manifest_crawler.dataset.self_prediction_ledger import (
     LedgerValidationError,
     load_self_prediction_ledger,
     score_self_prediction_ledger,
+    write_self_prediction_report,
 )
 from lumen_manifest_crawler.developer_framework import (
     FrameworkEnvironment,
@@ -357,7 +358,9 @@ def score_self_prediction_ledger_command(
     if output:
         try:
             output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(payload + "\n", encoding="utf-8")
+            write_self_prediction_report(output, payload + "\n", source_path=ledger)
+        except LedgerValidationError as error:
+            raise typer.BadParameter(str(error), param_hint="--output") from error
         except OSError as error:
             raise typer.BadParameter("report_could_not_be_written", param_hint="--output") from error
     typer.echo(payload)

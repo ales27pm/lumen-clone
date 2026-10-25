@@ -342,6 +342,74 @@ final class SelfPredictionLedgerTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: target), bytes)
     }
 
+    func testInaccessibleExistingDirectoryNeverExportsAnEmptyLedger() async throws {
+        let url = try directory()
+        let ledger = SelfPredictionLedger(directoryURL: url)
+        try await ledger.begin(context: context(), id: UUID())
+        let path = url.appendingPathComponent(SelfPredictionLedger.fileName)
+        let before = try Data(contentsOf: path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path) }
+        XCTAssertThrowsError(try Data(contentsOf: path), "Fixture must actually deny access")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path), "This ambiguous false must not mean an empty ledger")
+        let reopened = SelfPredictionLedger(directoryURL: url)
+        await assertFailure(.storageFailure) { _ = try await reopened.exportSnapshot() }
+        await assertFailure(.storageFailure) { _ = try await reopened.exportJSON() }
+        await assertFailure(.storageFailure) { _ = try await reopened.summary() }
+        await assertFailure(.storageFailure) { try await reopened.begin(context: self.context(), id: UUID()) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        XCTAssertEqual(try Data(contentsOf: path), before)
+        let recovered = try await reopened.summary()
+        XCTAssertEqual(recovered.predictionCount, 1)
+    }
+
+    func testUnreadableExistingFileIsNotMissingAndIsPreserved() async throws {
+        let url = try directory()
+        let ledger = SelfPredictionLedger(directoryURL: url)
+        try await ledger.begin(context: context(), id: UUID())
+        let path = url.appendingPathComponent(SelfPredictionLedger.fileName)
+        let before = try Data(contentsOf: path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: path.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path.path))
+        XCTAssertThrowsError(try Data(contentsOf: path), "Fixture must actually deny access")
+        let reopened = SelfPredictionLedger(directoryURL: url)
+        await assertFailure(.storageFailure) { _ = try await reopened.exportSnapshot() }
+        await assertFailure(.storageFailure) { _ = try await reopened.summary() }
+        await assertFailure(.storageFailure) { try await reopened.begin(context: self.context(), id: UUID()) }
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+        XCTAssertEqual(try Data(contentsOf: path), before)
+        let recovered = try await reopened.summary()
+        XCTAssertEqual(recovered.predictionCount, 1)
+    }
+
+    func testDanglingLedgerSymlinkIsNotAnEmptyOrWritableLedger() async throws {
+        let url = try directory()
+        let target = url.appendingPathComponent("missing-target")
+        let path = url.appendingPathComponent(SelfPredictionLedger.fileName)
+        try FileManager.default.createSymbolicLink(at: path, withDestinationURL: target)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
+        let ledger = SelfPredictionLedger(directoryURL: url)
+        await assertFailure(.corruptFile) { _ = try await ledger.exportSnapshot() }
+        await assertFailure(.corruptFile) { _ = try await ledger.summary() }
+        await assertFailure(.corruptFile) { try await ledger.begin(context: self.context(), id: UUID()) }
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: path.path), target.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
+    func testDanglingDirectorySymlinkIsRejectedWithoutCreatingItsTarget() async throws {
+        let parent = try directory()
+        let target = parent.appendingPathComponent("missing-directory", isDirectory: true)
+        let path = parent.appendingPathComponent("ledger-directory", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: path, withDestinationURL: target)
+        let ledger = SelfPredictionLedger(directoryURL: path)
+        await assertFailure(.storageFailure) { _ = try await ledger.exportSnapshot() }
+        await assertFailure(.storageFailure) { _ = try await ledger.summary() }
+        await assertFailure(.storageFailure) { try await ledger.begin(context: self.context(), id: UUID()) }
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: path.path), target.path)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
     func testHostClockRollbackDoesNotInvalidateSequenceOrderedEvidence() async throws {
         let url = try directory()
         let ledger = SelfPredictionLedger(directoryURL: url)

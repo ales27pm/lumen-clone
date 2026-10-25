@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Host-authored, content-free evidence for structured tool invocations only.
 /// A successful begin is a durable acknowledgement, not a claim that the tool ran.
@@ -204,11 +205,10 @@ actor SelfPredictionLedger {
         guard let directoryURL else { throw Failure.storageFailure }
         let fileURL = directoryURL.appendingPathComponent(Self.fileName)
         do {
-            if FileManager.default.fileExists(atPath: directoryURL.path) {
-                let values = try directoryURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                guard values.isDirectory == true, values.isSymbolicLink != true else { throw Failure.storageFailure }
+            if let kind = try itemKind(at: directoryURL) {
+                guard kind == UInt32(S_IFDIR) else { throw Failure.storageFailure }
             }
-            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            guard try itemKind(at: fileURL) != nil else {
                 loaded = true
                 return
             }
@@ -291,12 +291,11 @@ actor SelfPredictionLedger {
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
-            let directoryValues = try directoryURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            guard directoryValues.isDirectory == true, directoryValues.isSymbolicLink != true else {
+            guard try itemKind(at: directoryURL) == UInt32(S_IFDIR) else {
                 throw Failure.storageFailure
             }
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directoryURL.path)
-            if !FileManager.default.fileExists(atPath: fileURL.path) {
+            if try itemKind(at: fileURL) == nil {
                 guard storedBytes == 0 else { throw Failure.corruptFile }
                 try Data().write(to: fileURL, options: .withoutOverwriting)
             }
@@ -325,8 +324,21 @@ actor SelfPredictionLedger {
     }
 
     private func validateRegularFile(_ url: URL) throws {
-        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-        guard values.isRegularFile == true, values.isSymbolicLink != true else { throw Failure.corruptFile }
+        guard try itemKind(at: url) == UInt32(S_IFREG) else { throw Failure.corruptFile }
+    }
+
+    /// `fileExists` also returns false for inaccessible paths. Only ENOENT is
+    /// absence; lstat additionally keeps dangling symlinks visible for rejection.
+    private func itemKind(at url: URL) throws -> UInt32? {
+        var attributes = stat()
+        let result = try url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { throw Failure.storageFailure }
+            return lstat(path, &attributes)
+        }
+        if result == 0 { return UInt32(attributes.st_mode) & UInt32(S_IFMT) }
+        let failure = errno
+        guard failure == ENOENT else { throw Failure.storageFailure }
+        return nil
     }
 
     private nonisolated static func valid(_ context: Context) -> Bool {
