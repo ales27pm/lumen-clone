@@ -4,8 +4,8 @@ This is the live-runtime phase of the Lumen improvement loop. Do not replace thi
 
 ## Build identity
 
-- Manifest fingerprint: `2be37544a32d60f803f3d03680b0c2f747c31fc443bcf43fe2d404a3c1db8f42`
-- Manifest base commit: `67c60fa3f292e9d739b124e2fa3a5df98f4dbe3e`
+- Manifest fingerprint: `8d314495b949b64af0d3461ea9e8d070f5017a6575c73ac228fa9123b40d8799`
+- Manifest base commit: `b44ae0bd6355c3c92ebe170c207c67d26ad46b41`
 - Build label: `None`
 - Expected export: `lumen-testflight-agent-grounding-*.json from Agent Grounding > Export TestFlight + Agent Grounding Package`
 
