@@ -2,16 +2,16 @@
 
 Use this compact codebase-home map as bundled source grounding. It is generated at build time from static repo files and should be treated as navigational context, not private user data.
 
-- Base commit: `7c5afc4a09a82358602e7fab905499366521545a`
-- Working-tree digest: `4cf13ea16b03bed959c7d96ebc9e50119095641e2528cb67f6345ad8958e301f`
+- Base commit: `67c60fa3f292e9d739b124e2fa3a5df98f4dbe3e`
+- Working-tree digest: `c5b7a602fc89cab9783cfd8db0070c35d3b752478f8248b16fc74acec9155c41`
 - Tools: `53`
 - Intents: `22`
-- Codebase-home records: `958`
+- Codebase-home records: `963`
 
 ## Top Modules
-- `ios/LumenTests`: 201 files
+- `ios/LumenTests`: 204 files
 - `Services`: 73 files
-- `docs`: 65 files
+- `docs`: 66 files
 - `tools/lumen_manifest_crawler/tests`: 55 files
 - `tools/fine_tuning/unsloth`: 54 files
 - `tools/lumen_manifest_crawler/lumen_manifest_crawler`: 49 files
@@ -65,7 +65,7 @@ Use this compact codebase-home map as bundled source grounding. It is generated 
 - `ios/Lumen/Assistant/CoreAIGemmaRuntimeAdapter.swift` (Assistant): Adapts the single Core AI owner to the existing kernel. The model only emits text; structured decisions still cross the kernel's schema and approval gates. Symbols: CoreAIGemmaRuntimeAdapter, generate, prepareStructuredRuntime, structuredPromptPreflight, streamStructured, handleMemoryPressure, requireAvailable, liveContextCapacity.
 - `ios/Lumen/Assistant/CoreAITextEmbeddingRuntimeAdapter.swift` (Assistant): A separate sentence-vector runtime; never a second generative assistant. Symbols: CoreAITextEmbeddingRuntimeAdapter, embed, embedWithIdentity, handleMemoryPressure, kind, availabilityOverride, preferenceOverride, embedHandler.
 - `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` (Assistant): `ios/Lumen/Assistant/HeadlessAgentKernelRunner.swift` owns HeadlessAgentKernelRunner behavior and defines: HeadlessAgentRunResult, Status, IssueCategory, HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, complet Symbols: HeadlessAgentRunResult, Status, IssueCategory, HeadlessAgentKernelRunner, HeadlessAgentCancellationToken, completed, deferred, blocked.
-- `ios/Lumen/Assistant/HostSelfModelContext.swift` (Assistant): Created only from host-owned runtime state. Prompt text is never decoded as this value or used to establish its provenance. Symbols: HostSelfModelContext, injecting, removing, summary, maximumBlockCharacters, begin, end, snapshot.
+- `ios/Lumen/Assistant/HostSelfModelContext.swift` (Assistant): Created only from host-owned runtime state. Prompt text is never decoded as this value or used to establish its provenance. Symbols: HostSelfModelContext, injecting, removing, reservedBlock, feedbackIncluded, summary, maximumBlockCharacters, maximumFeedbackCharacters.
 - `ios/Lumen/Assistant/LegacyAgentCompatibilityBridge.swift` (Assistant): Explicit Agent Kernel compatibility boundary for legacy agent services. Symbols: LegacyAgentCompatibilityBridge, AgentEvent, runLegacyAgentService, runSlotAgentKernelCompatibility, runSlotAgentCompatibility, task, agentKernelEvent.
 - `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` (Assistant): `ios/Lumen/Assistant/LegacyAgentRunOptions.swift` owns LegacyAgentRunOptions behavior and defines: LegacyAgentRunOptions, GroundingMode, forceLegacyRuntimeForTesting, usesUnifiedAssistant, modelContext, conversationID, t Symbols: LegacyAgentRunOptions, GroundingMode, forceLegacyRuntimeForTesting, usesUnifiedAssistant, modelContext, conversationID, turnID, scenarioID.
 - `ios/Lumen/Assistant/LegacyGroundingBridge.swift` (Assistant): Implementation detail used by `LegacyTurnGroundingCoordinator` to build legacy grounding bundles. Legacy callers should use the coordinator as the single entrypoint so cache keys, role metadata, idempotency policy, and d Symbols: LegacyGroundingBundle, LegacyGroundingBridge, build, tierSummary, grounding, budgetPlan, sections, renderedPromptContext.

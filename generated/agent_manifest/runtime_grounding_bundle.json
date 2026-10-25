@@ -3,13 +3,13 @@
   "codebaseHome": {
     "languageCounts": {
       "json": 31,
-      "markdown": 106,
+      "markdown": 107,
       "mixed": 1,
       "plist": 3,
       "python": 206,
       "resolved": 1,
       "shell": 20,
-      "swift": 577,
+      "swift": 581,
       "text": 7,
       "toml": 1,
       "xcode_project": 1,
@@ -52,7 +52,7 @@
       "Services/LLM/Models": 9,
       "Services/LLM/Policy": 9,
       "Services/MicrosoftGraph": 7,
-      "Services/SelfModel": 3,
+      "Services/SelfModel": 4,
       "Services/Tools": 14,
       "State": 3,
       "System": 18,
@@ -62,14 +62,14 @@
       "Voice": 8,
       "app": 6,
       "datasets": 1,
-      "docs": 65,
+      "docs": 66,
       "docs/stabilization": 1,
       "evals": 1,
       "ios": 2,
       "ios/Lumen.xcodeproj": 1,
       "ios/Lumen.xcodeproj/project.xcworkspace/xcshareddata/swiftpm": 1,
       "ios/Lumen.xcodeproj/xcshareddata/xcschemes": 1,
-      "ios/LumenTests": 201,
+      "ios/LumenTests": 204,
       "ios/LumenTests/Fixtures": 2,
       "ios/LumenTests/Support": 2,
       "ios/LumenUITests": 2,
@@ -90,7 +90,7 @@
       "tools/pipeline/tests": 18,
       "tools/security": 1
     },
-    "recordCount": 958,
+    "recordCount": 963,
     "selectedFiles": [
       {
         "imports": [],
@@ -598,7 +598,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantKernel.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantKernel.swift` owns AssistantKernel behavior and defines: AssistantKernel, KernelError, selectRuntime, selectRuntimeSelection, runAdaptedLegacyRequest, adaptLegacyRequest, streamStructuredLlama, takeCompletedStructuredLlamaTrace, prepareStructuredLlamaRuntime, preflightStructuredLlamaPrompt.",
-        "sha256": "2da7a7db2f417c32c91cbd08f39b60837ee6849e88e5c3ea1fa8b6a072b505c2",
+        "sha256": "670a6bbe5ca972ca6fe76b2baa650c8d08ebf73ed1668ffb19a4b61b08a82b93",
         "symbols": [
           "AssistantKernel",
           "KernelError",
@@ -627,7 +627,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/AssistantRuntimeAdapters.swift",
         "responsibility": "`ios/Lumen/Assistant/AssistantRuntimeAdapters.swift` owns AssistantRuntimeAdapters behavior and defines: LocalRuntimeError, LlamaRuntimeStreamingService, LlamaStructuredPromptPreflightSnapshot, AppLlamaService, CoreMLRuntimeError, AssistantRuntimeCapabilityRow, AssistantRuntimeCapabilityMatrix, DeterministicFallbackRuntime, LlamaRuntimeAdapter, LiveGenerationDefaults.",
-        "sha256": "8d7ab5e13d792b9254e36b768254fce5f5e92e1a65ba5e2cd3102114deba91fa",
+        "sha256": "f21e8b4a1a60d3904d0ed77751177851dd5c38895f383f1e8b80e8916428e684",
         "symbols": [
           "LocalRuntimeError",
           "LlamaRuntimeStreamingService",
@@ -824,7 +824,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/CoreAIGemmaRuntimeAdapter.swift",
         "responsibility": "Adapts the single Core AI owner to the existing kernel. The model only emits text; structured decisions still cross the kernel's schema and approval gates.",
-        "sha256": "44ae3704fff626eab50c45223683d3da491f5e927ec8abd40aed6eb0c590f43a",
+        "sha256": "55ff1450aa13bee8184bc4842df39abdf8603a7cfb9443fbab19d3d79ee91f67",
         "symbols": [
           "CoreAIGemmaRuntimeAdapter",
           "generate",
@@ -908,19 +908,24 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/HostSelfModelContext.swift",
         "responsibility": "Created only from host-owned runtime state. Prompt text is never decoded as this value or used to establish its provenance.",
-        "sha256": "152d8519d6d5cd7217a8da60d5a9227259332c47b73797fc870ac86721517c8e",
+        "sha256": "4b3c7f47be287aa706a397f3a4f501cbea75a7c696fa7b6e26f3c537d1b88761",
         "symbols": [
           "HostSelfModelContext",
           "injecting",
           "removing",
+          "reservedBlock",
+          "feedbackIncluded",
           "summary",
           "maximumBlockCharacters",
+          "maximumFeedbackCharacters",
           "begin",
           "end",
+          "feedbackBegin",
+          "feedbackEnd",
           "snapshot",
-          "block",
-          "contentBudget",
-          "content"
+          "predictionFeedback",
+          "snapshotBlock",
+          "feedbackBlock"
         ]
       },
       {
@@ -1313,7 +1318,7 @@
         "module": "Assistant",
         "path": "ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift",
         "responsibility": "`ios/Lumen/Assistant/StructuredAgentKernelExecutor.swift` owns StructuredAgentKernelExecutor behavior and defines: StructuredAgentKernelExecutor, StructuredToolAvailability, StructuredTurnGenerationDiagnostics, StructuredGenerationResult, StructuredPromptPreflight, repaired, AgentKernelRequest, run, runLoop, availableTools.",
-        "sha256": "c7f28e2febdf6d70d9fa92ab997993086b62fb485f115fed984b0ee6633a2c1a",
+        "sha256": "2c36b7f6928ee2a50f2e9300a6a6b0893032a36bbfb52de377f00e0ce8a9e9a9",
         "symbols": [
           "StructuredAgentKernelExecutor",
           "StructuredToolAvailability",
@@ -2232,14 +2237,14 @@
     "purpose": "Give every bundled fleet prompt a compact map of Lumen's actual app home: modules, files, responsibilities, and source hashes.",
     "target": "AgentGroundingPromptComposer"
   },
-  "manifestCommit": "7c5afc4a09a82358602e7fab905499366521545a",
+  "manifestCommit": "67c60fa3f292e9d739b124e2fa3a5df98f4dbe3e",
   "manifestIntentCount": 22,
   "manifestToolCount": 53,
   "promptContract": {
     "composerPolicyID": "lumen.runtime-prompt-composer/1.1.0",
     "composerPolicySHA256": "ef2ad84aa40487da2cc2f9432f333e880f979f79fd5de2ac9abfe0b6212b6540",
-    "promptSHA256": "120e1273393066e5537910b2c7cbd30e0f393d2693ae3c4a99d971d86dc48658",
-    "promptUTF8ByteCount": 25574,
+    "promptSHA256": "b90bee72024ea2aa3844cc53a8bdb59051277c3db0273479cdfd9213ba776320",
+    "promptUTF8ByteCount": 25612,
     "schemaVersion": "lumen.runtime-grounding-prompt-contract/1.0.0"
   },
   "schemaVersion": "1.0.0",
@@ -2250,8 +2255,8 @@
     "codebase_home_chunk_sft"
   ],
   "sourceIntegrity": {
-    "baseCommit": "7c5afc4a09a82358602e7fab905499366521545a",
+    "baseCommit": "67c60fa3f292e9d739b124e2fa3a5df98f4dbe3e",
     "dirtyState": false,
-    "workingTreeDigest": "4cf13ea16b03bed959c7d96ebc9e50119095641e2528cb67f6345ad8958e301f"
+    "workingTreeDigest": "c5b7a602fc89cab9783cfd8db0070c35d3b752478f8248b16fc74acec9155c41"
   }
 }

@@ -66,7 +66,7 @@
         "contaminated": false,
         "matchCount": 0,
         "promotionRequiresZeroMatches": true,
-        "reportSHA256": "7ce9cbd400604768a1d094cad40281229fbc78a7ec0cd38d56c6af75b864805a"
+        "reportSHA256": "e9d3213272797fef1f8299b88425335f615187e70217e5be23d13f92d8a0d972"
       },
       "executableDeclarativeMetrics": true,
       "failClosedOnUnknownMetric": true,
@@ -74,7 +74,7 @@
       "recordCount": 63,
       "schemaVersion": "lumen.adapter-eval/1.1.0"
     },
-    "manifestCommit": "7c5afc4a09a82358602e7fab905499366521545a",
+    "manifestCommit": "67c60fa3f292e9d739b124e2fa3a5df98f4dbe3e",
     "preferenceTraining": {
       "includedInCheckpoint": false,
       "recordCount": 36,
@@ -98,9 +98,9 @@
       "tool_schema_cards"
     ],
     "sourceIntegrity": {
-      "baseCommit": "7c5afc4a09a82358602e7fab905499366521545a",
+      "baseCommit": "67c60fa3f292e9d739b124e2fa3a5df98f4dbe3e",
       "dirtyState": false,
-      "workingTreeDigest": "4cf13ea16b03bed959c7d96ebc9e50119095641e2528cb67f6345ad8958e301f"
+      "workingTreeDigest": "c5b7a602fc89cab9783cfd8db0070c35d3b752478f8248b16fc74acec9155c41"
     },
     "taskTypes": [
       "approval_granted",
@@ -156,7 +156,7 @@
       "frozenEvaluationSHA256",
       "publicEvaluationBundleSHA256"
     ],
-    "experimentManifestSHA256": "70225c0ba17c185eb2ce39337b6c7cc2b04ad6630b18a16637c96759d9bc0845",
+    "experimentManifestSHA256": "7980c48506a7c83e33112f5070fecbe809387b891683fb758a66b65def687cc2",
     "promotionContract": {
       "comparison": "internal_plus_public_optimized_vs_internal_plus_public_baseline",
       "maximumContaminationMatches": 0,

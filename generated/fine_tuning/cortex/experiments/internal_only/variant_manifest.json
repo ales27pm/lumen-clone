@@ -66,8 +66,8 @@
     "matchCount": 0,
     "publicEvaluationBundleSHA256": "8d7b187edee4038cbd59aee60619757d6d83ce465eccf1d870d57b5731a2a58e",
     "publicEvaluationRowCount": 1040,
-    "reportSHA256": "7943e31d451b7452a152f88d38147667c349608bb944e90a28b5f505dcf4e74f",
-    "trainingRecordsSHA256": "d68044dacce3362c96da5d469e5e987a0ef1dd034c8d7e3520b7cea62d0f2f02"
+    "reportSHA256": "30c00c564a5e34f743fca775dbbaf55508a3d63eb800ae7084645c2aad4d074a",
+    "trainingRecordsSHA256": "52ba433938c0a65fbc7c93b6f9a683faaf870e84311e4325675e8429c781dec1"
   },
   "controlledTrainingConfig": {
     "agent": "cortex",
@@ -1665,7 +1665,7 @@
     },
     "trainSFT": {
       "count": 1107,
-      "sha256": "ef6f962d8dfa46c4ce2b6d1143a29ff944541a5faeb3cad23594f5e1db02da0c"
+      "sha256": "004db31faf7edf594807a3ad2dd86134182feecb589709e991a2378c90f23213"
     },
     "validationDPO": {
       "count": 58,
@@ -1673,7 +1673,7 @@
     },
     "validationSFT": {
       "count": 69,
-      "sha256": "720995c007ecf089da810aa5ee3f9b7343f6d06feb4e1202faa98f8a2a35fa8d"
+      "sha256": "1b9b733c37e24be07b1f1c0c65aebe5f854bf6fe7164953a0cff52d8ae79e561"
     }
   },
   "dpoTraining": {
@@ -3026,7 +3026,7 @@
   },
   "trainingConfigInvariantSHA256": "71ed2e8d566884927ad74b7cbda90cf449064fc7320f5edf97aa2bbfad09ee1e",
   "trainingConfigSHA256": "0de37cee6aae218fd4c9a902cfabe32217873fb3bd9efdb32bda4665c9bf6372",
-  "trainingCorpusSHA256": "d68044dacce3362c96da5d469e5e987a0ef1dd034c8d7e3520b7cea62d0f2f02",
+  "trainingCorpusSHA256": "52ba433938c0a65fbc7c93b6f9a683faaf870e84311e4325675e8429c781dec1",
   "trainingDependencyLock": {
     "cudaVersion": "12.8",
     "llamaCppRevision": "34558825a27f4d74dcfd7a91bfde4464baa2a30a",
@@ -3098,7 +3098,7 @@
   "trainingEnvironmentLockSHA256": "bcd33c9d6e9ddb0b098e19d90c93d8c59e10110eab602e8a8ce6897360e7de44",
   "trainingEnvironmentSHA256": null,
   "variant": "internal_only",
-  "variantManifestSHA256": "c71746dbe8a9b856cac0222d2cbc6da6511f3025db3f818c7371a496042298e0",
+  "variantManifestSHA256": "32308c53703c82721d7c100d82590362b8d974cde7027881ce99cbf8f8cb6876",
   "zeroGPUDurationSeconds": null,
   "zeroGPUSize": null
 }
