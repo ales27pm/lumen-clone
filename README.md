@@ -1,5 +1,7 @@
 # Lumen Clone
 
+The second self-model slice is a source candidate: optional pre-action forecasts, a bounded durable ledger, Settings export and offline calibration against typed tool statuses. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the prediction ledger contract](docs/SELF_PREDICTION_LEDGER.md).
+
 Lumen is an iOS app with on-device assistant runtime, tool routing, diagnostics,
 runtime-audit exports, and local pipeline tooling for manifest, dataset, and
 validation workflows.

@@ -1,5 +1,7 @@
 # Feature Complete Validation
 
+The second self-model slice is a source candidate: optional pre-action forecasts, a bounded durable ledger, Settings export and offline calibration against typed tool statuses. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the prediction ledger contract](docs/SELF_PREDICTION_LEDGER.md).
+
 ## 2026-08-09/10 production-readiness hardening checkpoint
 
 This pass closes several source/configuration-level release risks without converting them into broader runtime claims. Release/minimal AgentGrounding packaging now fails closed on missing required resources, generated/iOS manifest drift, invalid or non-passing validation reports, warnings, failures, manifest SHA-256 mismatches, and any missing, unsafe, or hash-mismatched source file declared by `sourceIntegrity`; only an explicit Debug diagnostic build may use an empty fallback bundle. The Microsoft authentication package is pinned exactly to MSAL `1.9.0`, and both the package linker and release-configuration validator enforce that requirement.

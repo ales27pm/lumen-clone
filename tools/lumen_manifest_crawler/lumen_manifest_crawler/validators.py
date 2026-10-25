@@ -1254,7 +1254,10 @@ def _validate_executor_json_contract(
     path: str,
 ) -> None:
     try:
-        payload = json.loads(assistant)
+        payload = json.loads(assistant, object_pairs_hook=_unique_json_object)
+    except _DuplicateJSONKeyError:
+        failures.append(ValidationFailure(code="executor_duplicate_json_key", message="Executor output must not repeat JSON keys", path=path))
+        return
     except (json.JSONDecodeError, TypeError):
         failures.append(ValidationFailure(code="executor_non_json_output", message="Executor SFT output must be a strict JSON object", path=path))
         return
@@ -1274,9 +1277,20 @@ def _validate_executor_json_contract(
         if not isinstance(final, str) or not final.strip():
             failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor final output must contain non-empty final text", path=path))
         return
-    if top_level_keys not in ({"action"}, {"action", "thought"}):
+    if "action" not in top_level_keys or not top_level_keys <= {"action", "thought", "prediction"}:
         failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor output must use the native action or final envelope without legacy metadata", path=path))
         return
+    if "prediction" in payload:
+        prediction = payload["prediction"]
+        probability = prediction.get("successProbability") if isinstance(prediction, dict) else None
+        if (
+            not isinstance(prediction, dict)
+            or set(prediction) != {"successProbability"}
+            or type(probability) not in (int, float)
+            or not 0 <= probability <= 1
+        ):
+            failures.append(ValidationFailure(code="executor_prediction_invalid", message="Executor prediction must contain only a finite successProbability from 0 to 1", path=path))
+            return
     action = payload.get("action")
     if not isinstance(action, dict) or set(action) != {"tool", "args"}:
         failures.append(ValidationFailure(code="executor_response_shape_invalid", message="Executor action must contain exactly tool and args", path=path))

@@ -15,11 +15,11 @@ struct StructuredAgentKernelExecutor {
     private static let structuredAgentModelSlot: LumenModelSlot = .executor
     private static let contextWindowExceededRawOutputPrefix = "Prompt exceeded context window before generation"
 
-    nonisolated static let structuredAgentResponseSchema = #"{"type":"object","oneOf":[{"required":["action"],"properties":{"thought":{"type":"string"},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}},"additionalProperties":false},{"required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}]}"#
-    nonisolated static let structuredAgentActionResponseSchema = #"{"type":"object","required":["action"],"properties":{"thought":{"type":"string"},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}}},"additionalProperties":false}"#
+    nonisolated static let structuredAgentResponseSchema = #"{"type":"object","oneOf":[{"required":["action"],"properties":{"thought":{"type":"string"},"prediction":{"type":"object","required":["successProbability"],"properties":{"successProbability":{"type":"number","minimum":0,"maximum":1}},"additionalProperties":false},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}}},"additionalProperties":false},{"required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}]}"#
+    nonisolated static let structuredAgentActionResponseSchema = #"{"type":"object","required":["action"],"properties":{"thought":{"type":"string"},"prediction":{"type":"object","required":["successProbability"],"properties":{"successProbability":{"type":"number","minimum":0,"maximum":1}},"additionalProperties":false},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}}},"additionalProperties":false}"#
     nonisolated static let structuredAgentFinalResponseSchema = #"{"type":"object","required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}"#
     nonisolated static let executorRuntimeSystemPromptContract = """
-    You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {"action":{"tool":"<exact manifest tool id>","args":{...}}} or {"final":"<concise user-facing answer>"}, plus only an optional string thought under 12 words. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.
+    You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {"action":{"tool":"<exact manifest tool id>","args":{...}}} or {"final":"<concise user-facing answer>"}, plus an optional string thought under 12 words. On an action turn, also estimate the probability that the tool registry will return status success, including availability, permission and approval policy, using optional top-level "prediction":{"successProbability":0.0}. Use a finite number from 0 to 1; this predicts the returned tool status, not task completion. Final turns must not include prediction. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.
     """
     nonisolated static let executorRuntimeOutputBoundary = "Runtime output boundary: start with { and stop immediately after the matching }. Choose exactly one of action or final. For a matching available tool, emit its exact listed ID. Action is a JSON object, never a string; never invent tool results."
 
@@ -341,7 +341,14 @@ struct StructuredAgentKernelExecutor {
                     permissionRegistry: .shared,
                     metricsStore: kernel.metricsStore
                 )
-                let result = await kernel.toolRegistry.execute(invocation, context: context)
+                let result = await kernel.toolRegistry.execute(
+                    invocation, context: context,
+                    predictionContext: Self.predictionContext(
+                        for: turn, executing: actionForValidation,
+                        runID: request.traceCorrelation?.agentRunID ?? request.turnID ?? request.id,
+                        runtime: generation.diagnostics.selectedRuntime ?? "unknown"
+                    )
+                )
                 continuation.yield(.toolResult(result))
                 let observationText = Self.userVisibleToolObservation(toolID: validatedCall.canonicalToolID, result: result)
                 let ragIndexMode = Self.ragIndexMode(from: result)
@@ -385,7 +392,15 @@ struct StructuredAgentKernelExecutor {
                         createdAt: Date()
                     )
                     continuation.yield(.toolInvocation(mapsInvocation))
-                    let mapsResult = await kernel.toolRegistry.execute(mapsInvocation, context: context)
+                    let mapsResult = await kernel.toolRegistry.execute(
+                        mapsInvocation, context: context,
+                        predictionContext: .init(
+                            runID: request.traceCorrelation?.agentRunID ?? request.turnID ?? request.id,
+                            toolID: mapsCall.canonicalToolID,
+                            runtime: generation.diagnostics.selectedRuntime ?? "unknown",
+                            probabilityOrigin: .hostRepair, probability: nil
+                        )
+                    )
                     continuation.yield(.toolResult(mapsResult))
                     let mapsObservation = Self.userVisibleToolObservation(toolID: mapsCall.canonicalToolID, result: mapsResult)
                     let mapsObservationStep = AgentStep(kind: .observation, content: mapsObservation, toolID: mapsCall.canonicalToolID)
@@ -1095,6 +1110,28 @@ private extension StructuredAgentKernelExecutor {
         let estimatedPromptTokens: Int
         let fits: Bool
         var hostSelfModelIncluded: Bool? = nil
+    }
+
+    /// Compare the typed original action, before argument string coercion or dedupe.
+    /// Host repairs cannot inherit a model forecast for a different action.
+    internal nonisolated static func predictionContext(
+        for turn: AgentTurn, executing action: AgentAction, runID: UUID, runtime: String
+    ) -> SelfPredictionLedger.Context {
+        let origin: SelfPredictionLedger.ProbabilityOrigin
+        let probability: Double?
+        if turn.action != action {
+            origin = .hostRepair
+            probability = nil
+        } else {
+            switch turn.prediction.validity {
+            case .missing: origin = .missing
+            case .invalid: origin = .invalid
+            case .valid: origin = .model
+            }
+            probability = turn.prediction.validity == .valid ? turn.prediction.successProbability : nil
+        }
+        return .init(runID: runID, toolID: ToolRouteGuard.canonicalToolID(action.tool), runtime: runtime,
+                     probabilityOrigin: origin, probability: probability)
     }
 
     static func buildSystemPrompt(request: AgentKernelRequest, availableTools: [ToolDefinition], unifiedAssistant: Bool = false) -> String {

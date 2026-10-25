@@ -420,8 +420,13 @@ EXECUTOR_RUNTIME_SYSTEM_PROMPT = (
     + STRUCTURED_OUTPUT_INSTRUCTION
     + " Follow the active runtime schema exactly. Emit either "
     '{"action":{"tool":"<exact manifest tool id>","args":{...}}} or '
-    '{"final":"<concise user-facing answer>"}, plus only an optional string thought '
-    "under 12 words. Action contains exactly tool and args. Use an available exact "
+    '{"final":"<concise user-facing answer>"}, plus an optional string thought '
+    "under 12 words. On an action turn, also estimate the probability that the tool "
+    "registry will return status success, including availability, permission and "
+    'approval policy, using optional top-level "prediction":{"successProbability":0.0}. '
+    "Use a finite number from 0 to 1; this predicts the returned tool status, not task "
+    "completion. Final turns must not include prediction. Action contains exactly "
+    "tool and args. Use an available exact "
     "manifest tool ID, exact argument names and JSON types, all required args, no "
     "extras, and {} when empty. The host, not the model, owns approvals, permissions, "
     "and missing-argument clarification. Never emit top-level tool, arguments, status, "

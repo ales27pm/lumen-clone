@@ -17,6 +17,11 @@ from lumen_manifest_crawler.dataset import generate_all_datasets
 from lumen_manifest_crawler.dataset.fine_tuning import compile_agent_fine_tuning_datasets
 from lumen_manifest_crawler.dataset.runtime_ingest import load_runtime_audit_reports
 from lumen_manifest_crawler.dataset.self_model_eval import load_jsonl, load_snapshot, score_self_model_eval_answers
+from lumen_manifest_crawler.dataset.self_prediction_ledger import (
+    LedgerValidationError,
+    load_self_prediction_ledger,
+    score_self_prediction_ledger,
+)
 from lumen_manifest_crawler.developer_framework import (
     FrameworkEnvironment,
     UBUNTU_TRAINING_JOB_IDS,
@@ -331,6 +336,31 @@ def score_self_model_eval(
     console.print(payload)
     if fail_on_validation and not report["allPassed"]:
         raise typer.Exit(code=1)
+
+
+@app.command("score-self-prediction-ledger")
+def score_self_prediction_ledger_command(
+    ledger: Path = typer.Option(..., "--ledger", exists=True, dir_okay=False, help="Host self_prediction_ledger.v1 JSON export; at most 4 MiB and 4096 events."),
+    output: Optional[Path] = typer.Option(None, "--output", help="Optional aggregate calibration JSON report path; no event payloads are copied."),
+) -> None:
+    """Validate stored prediction/outcome pairs and report registry-status calibration."""
+    if output and (output.resolve() == ledger.resolve() or (output.exists() and output.samefile(ledger))):
+        raise typer.BadParameter("report_must_not_overwrite_ledger", param_hint="--output")
+    try:
+        export, digest = load_self_prediction_ledger(ledger)
+        report = score_self_prediction_ledger(export, input_sha256=digest)
+    except LedgerValidationError as error:
+        raise typer.BadParameter(str(error), param_hint="--ledger") from error
+    except OSError as error:
+        raise typer.BadParameter("ledger_could_not_be_read", param_hint="--ledger") from error
+    payload = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False)
+    if output:
+        try:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(payload + "\n", encoding="utf-8")
+        except OSError as error:
+            raise typer.BadParameter("report_could_not_be_written", param_hint="--output") from error
+    typer.echo(payload)
 
 
 @app.command("developer-cycle")

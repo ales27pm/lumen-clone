@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import SwiftData
 
 nonisolated struct AgentRequest: Sendable {
@@ -144,12 +145,47 @@ nonisolated struct AgentAction: Sendable, Hashable {
     }
 }
 
+/// Model-authored metadata only. It predicts the registry's returned success status,
+/// including admission policy, and is never an assessment of task completion.
+nonisolated struct AgentTurnPrediction: Sendable, Equatable {
+    enum Validity: String, Sendable { case missing, invalid, valid }
+    let successProbability: Double?
+    let validity: Validity
+
+    static let missing = Self(successProbability: nil, validity: .missing)
+    static let invalid = Self(successProbability: nil, validity: .invalid)
+
+    static func parse(_ value: Any?) -> Self {
+        guard let value else { return .missing }
+        guard let object = value as? [String: Any], Set(object.keys) == ["successProbability"],
+              let number = object["successProbability"] as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return .invalid }
+        let probability = number.doubleValue
+        guard probability.isFinite, (0...1).contains(probability) else { return .invalid }
+        return Self(successProbability: probability, validity: .valid)
+    }
+}
+
 nonisolated struct AgentTurn: Sendable {
     let thought: String?
     let action: AgentAction?
     let final: String?
     let parseError: AgentTurnParseError?
     let hadNoise: Bool
+    let prediction: AgentTurnPrediction
+
+    init(
+        thought: String?, action: AgentAction?, final: String?,
+        parseError: AgentTurnParseError?, hadNoise: Bool,
+        prediction: AgentTurnPrediction = .missing
+    ) {
+        self.thought = thought
+        self.action = action
+        self.final = final
+        self.parseError = parseError
+        self.hadNoise = hadNoise
+        self.prediction = prediction
+    }
 
     var isStructured: Bool { action != nil || (final?.isEmpty == false) }
 }
@@ -469,6 +505,7 @@ nonisolated enum AgentTurnParser {
     private struct ExtractedJSONObject {
         let object: [String: Any]
         let hadNoise: Bool
+        let hasAmbiguousKeys: Bool
     }
 
     static func parse(_ raw: String) -> AgentTurn {
@@ -479,13 +516,14 @@ nonisolated enum AgentTurnParser {
 
         switch extractSingleJSONObject(from: trimmed) {
         case .success(let extracted):
-            return buildTurn(from: extracted.object, hadNoise: extracted.hadNoise)
+            return buildTurn(from: extracted.object, hadNoise: extracted.hadNoise,
+                             hasAmbiguousKeys: extracted.hasAmbiguousKeys)
         case .failure(let error):
             return AgentTurn(thought: nil, action: nil, final: nil, parseError: error, hadNoise: false)
         }
     }
 
-    private static func buildTurn(from obj: [String: Any], hadNoise: Bool) -> AgentTurn {
+    private static func buildTurn(from obj: [String: Any], hadNoise: Bool, hasAmbiguousKeys: Bool) -> AgentTurn {
         if let value = obj["thought"], !(value is String) { return invalid(.invalidThoughtType) }
         if let value = obj["reasoning"], !(value is String) { return invalid(.invalidThoughtType) }
         if let value = obj["final"], !(value is String) { return invalid(.invalidFinalType) }
@@ -535,7 +573,10 @@ nonisolated enum AgentTurnParser {
             action: action,
             final: hasFinal ? finalTrimmed : nil,
             parseError: nil,
-            hadNoise: hadNoise
+            hadNoise: hadNoise,
+            prediction: hasAction
+                ? (hasAmbiguousKeys ? .invalid : AgentTurnPrediction.parse(obj["prediction"]))
+                : .missing
         )
     }
 
@@ -589,7 +630,8 @@ nonisolated enum AgentTurnParser {
             return .success(
                 ExtractedJSONObject(
                     object: selection.object,
-                    hadNoise: selection.hadUnsupportedNoise
+                    hadNoise: selection.hadUnsupportedNoise,
+                    hasAmbiguousKeys: AgentJSONKeyIntegrity.hasAmbiguousKeys(in: selection.selectedJSON)
                 )
             )
         case .failure(let error):

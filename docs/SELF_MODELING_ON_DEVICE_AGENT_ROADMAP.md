@@ -55,6 +55,7 @@ Current static/source-verified progress:
 | Runtime self-improvement maintenance loop | Implemented in source | `SelfImprovementLoop` runs app-launch/background local maintenance with actor-isolated coordination, cooldown/circuit-breaker state, bounded `SelfModelSnapshot` generation under explicit actor ownership, redacted metrics, zero-token background policy, and no opportunistic model loading. |
 | Self-model eval answer scoring | Implemented as static harness | `lumen_manifest_crawler score-self-model-eval --answers <answers.jsonl> --snapshot <snapshot.json>` checks typed claims against evaluator-supplied state and scenario expectations. Its policy version explicitly excludes free-text semantic validation. |
 | Self-model score-report ingestion | Implemented in crawler tests | `self_model_eval_score.v1` reports are ingested as non-live runtime audit input and failed/missing scenarios become `runtime_audit_repairs` for REM/improve-loop training. |
+| Pre-action prediction ledger and calibration | Source candidate; full iOS/device execution outstanding | Optional model forecasts are durably recorded before registry execution, paired with host outcomes, exported from Settings and scored offline. Missing/invalid/repaired forecasts remain distinct. See [the second-slice contract](SELF_PREDICTION_LEDGER.md); capability revision, hidden perturbations and ablations remain future work. |
 
 Still open before calling the feature useful:
 

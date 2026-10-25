@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import SwiftData
 
 struct SecureToolDefinitionAvailability: Sendable, Equatable {
@@ -11,6 +12,16 @@ final class SecureToolRegistry {
     static let shared = SecureToolRegistry()
     private let tools: [ToolID: any LocalTool]
     private let duplicateToolIDs: [ToolID]
+    private let predictionLedger: SelfPredictionLedger
+    private let predictionLogger = Logger(subsystem: "com.lumen.runtime", category: "self-prediction")
+
+    struct PredictionRecordingFailure: Sendable, Equatable {
+        enum Stage: String, Sendable { case prediction, outcome }
+        let invocationID: UUID
+        let stage: Stage
+    }
+
+    private(set) var lastPredictionRecordingFailure: PredictionRecordingFailure?
 
     private static var defaultTools: [any LocalTool] {
         [
@@ -28,7 +39,7 @@ final class SecureToolRegistry {
           + KnowledgeLocalTool.all
     }
 
-    init(tools: [any LocalTool]? = nil) {
+    init(tools: [any LocalTool]? = nil, predictionLedger: SelfPredictionLedger = .shared) {
         var map: [ToolID: any LocalTool] = [:]
         var duplicates: [ToolID] = []
         for tool in tools ?? Self.defaultTools {
@@ -40,6 +51,7 @@ final class SecureToolRegistry {
         }
         self.tools = map
         self.duplicateToolIDs = duplicates.sorted()
+        self.predictionLedger = predictionLedger
     }
 
     func definitions() -> [SecureToolDefinition] { tools.values.map(\.definition).sorted { $0.id < $1.id } }
@@ -62,7 +74,50 @@ final class SecureToolRegistry {
         }
     }
 
-    func execute(_ invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
+    func execute(
+        _ invocation: ToolInvocation,
+        context: ToolExecutionContext,
+        predictionContext: SelfPredictionLedger.Context? = nil
+    ) async -> ToolResult {
+        var predictionRecorded = false
+        if let predictionContext {
+            let boundContext = SelfPredictionLedger.Context(
+                runID: predictionContext.runID,
+                toolID: ToolRouteGuard.canonicalToolID(invocation.toolID),
+                runtime: predictionContext.runtime,
+                probabilityOrigin: predictionContext.probabilityOrigin,
+                probability: predictionContext.probability
+            )
+            do {
+                try await predictionLedger.begin(context: boundContext, id: invocation.id)
+                predictionRecorded = true
+            } catch {
+                recordPredictionFailure(invocationID: invocation.id, stage: .prediction)
+            }
+        }
+        var toolBodyStarted = false
+        let result = await executeRecordedInvocation(invocation, context: context, toolBodyStarted: &toolBodyStarted)
+        if predictionRecorded {
+            do {
+                try await predictionLedger.complete(
+                    id: invocation.id,
+                    status: Self.predictionOutcomeStatus(result.status),
+                    toolBodyStarted: toolBodyStarted,
+                    cancelled: Task.isCancelled || result.errorCode == "cancelled"
+                )
+            } catch {
+                recordPredictionFailure(invocationID: invocation.id, stage: .outcome)
+            }
+        }
+        return result
+    }
+
+    private func executeRecordedInvocation(
+        _ invocation: ToolInvocation,
+        context: ToolExecutionContext,
+        toolBodyStarted: inout Bool
+    ) async -> ToolResult {
+        guard !Task.isCancelled else { return Self.cancelledResult(invocation.id) }
         let executionToolID = Self.preferredExecutionToolID(for: invocation.toolID)
         guard let tool = tools[executionToolID] ?? tools[invocation.toolID] else {
             let result = ToolResult(invocationID: invocation.id, status: .unavailable, displayText: "Tool unavailable.", modelText: "Tool unavailable.", structuredPayload: nil, privacyLevel: .low, metricsSummary: "missing_tool", errorCode: "missing_tool")
@@ -70,6 +125,7 @@ final class SecureToolRegistry {
             return result
         }
         let states = await context.permissionRegistry.diagnostics()
+        guard !Task.isCancelled else { return Self.cancelledResult(invocation.id) }
         let policy = ToolApprovalPolicy.decide(definition: tool.definition, invocation: invocation, isForeground: context.isForeground, permissionStates: states, settings: .init(networkAccessEnabled: states[.networkAccess] == .granted, userAllowlist: []))
         switch policy {
         case .deny(let reason):
@@ -81,10 +137,41 @@ final class SecureToolRegistry {
             _ = await ToolMetricsRecorder(store: context.metricsStore).record(toolID: invocation.toolID, status: result.status, success: false, memoryWarningCount: MemoryPressureMonitor.shared.warningCount)
             return result
         case .allow:
+            guard !Task.isCancelled else { return Self.cancelledResult(invocation.id) }
+            toolBodyStarted = true
             let raw = await tool.execute(invocation: invocation, context: context)
+            guard raw.invocationID == invocation.id else {
+                let result = ToolResult(invocationID: invocation.id, status: .failed,
+                    displayText: "The tool returned an invalid result.", modelText: "The tool returned an invalid result.",
+                    structuredPayload: nil, privacyLevel: tool.definition.resultPrivacyLevel,
+                    metricsSummary: "result_invocation_mismatch", errorCode: "result_invocation_mismatch")
+                _ = await ToolMetricsRecorder(store: context.metricsStore).record(toolID: invocation.toolID, status: result.status, success: false, errorCode: result.errorCode, memoryWarningCount: MemoryPressureMonitor.shared.warningCount)
+                return result
+            }
             let bounded = SafeToolOutputLimiter.limit(result: raw, maxOutput: tool.definition.maxOutputCharacters)
             _ = await ToolMetricsRecorder(store: context.metricsStore).record(toolID: invocation.toolID, status: bounded.status, success: bounded.status == .success, errorCode: bounded.errorCode, memoryWarningCount: MemoryPressureMonitor.shared.warningCount)
             return bounded
+        }
+    }
+
+    private func recordPredictionFailure(invocationID: UUID, stage: PredictionRecordingFailure.Stage) {
+        lastPredictionRecordingFailure = .init(invocationID: invocationID, stage: stage)
+        predictionLogger.error("event=self_prediction_recording_failed stage=\(stage.rawValue, privacy: .public) invocation=\(invocationID.uuidString, privacy: .public)")
+    }
+
+    private nonisolated static func cancelledResult(_ id: UUID) -> ToolResult {
+        ToolResult(invocationID: id, status: .failed, displayText: "Tool execution cancelled.",
+                   modelText: "Tool execution cancelled.", structuredPayload: nil, privacyLevel: .low,
+                   metricsSummary: "cancelled", errorCode: "cancelled")
+    }
+
+    private nonisolated static func predictionOutcomeStatus(_ status: ToolResultStatus) -> SelfPredictionLedger.OutcomeStatus {
+        switch status {
+        case .success: return .success
+        case .failed: return .failed
+        case .denied: return .denied
+        case .requiresApproval: return .requiresApproval
+        case .unavailable: return .unavailable
         }
     }
 

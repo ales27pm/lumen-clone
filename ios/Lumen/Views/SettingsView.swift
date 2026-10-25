@@ -68,6 +68,8 @@ struct SettingsView: View {
                     .disabled(!state.agentModeEnabled)
                 }
 
+                SelfPredictionSettingsSection()
+
                 #if DEBUG
                 if LumenLaunchArguments.isUITesting {
                     developerSection

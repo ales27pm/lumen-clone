@@ -1,5 +1,7 @@
 # Agent Kernel Migration Status
 
+The second self-model slice is a source candidate: optional pre-action forecasts, a bounded durable ledger, Settings export and offline calibration against typed tool statuses. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the prediction ledger contract](SELF_PREDICTION_LEDGER.md).
+
 This is the current Release-facing status for Agent Kernel ownership. Historical PR documents remain as implementation history; this file describes what ships now.
 
 The offline Cortex five-field route and `actionStep` qualification payload is not the shipped response wire. Release Agent Kernel turns retain the current constrained `action` or `final` JSON contract, and native runtime code remains responsible for routing, clarification, canonical manifest validation, approval, and persistence; offline adapter scores do not prove new artifacts are wired into iOS.

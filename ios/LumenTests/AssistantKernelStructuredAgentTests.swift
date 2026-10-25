@@ -570,6 +570,55 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         #endif
     }
 
+    func testStructuredKernelRecordsModelForecastAndDropsItForHostMemoryRepair() async throws {
+        #if DEBUG
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ledger = SelfPredictionLedger(directoryURL: directory)
+        let weather = ScriptedLlamaService(isChatLoaded: true, scripts: [
+            [.text(#"{"action":{"tool":"weather","args":{}},"prediction":{"successProbability":0.8}}"#), .done],
+            [.text(#"{"final":"It is 21°C and clear."}"#), .done]
+        ])
+        let weatherKernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: weather, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [StubWeatherTool()], predictionLedger: ledger)
+        )
+        for await _ in weatherKernel.run(structuredRequest("What's the weather?", allowedToolIDs: ["weather"])) {}
+
+        let memory = ScriptedLlamaService(isChatLoaded: true, scripts: [
+            // The requested plan must save before recall; this first action is repaired.
+            [.text(#"{"action":{"tool":"memory.recall","args":{"query":"concise bullet points"}},"prediction":{"successProbability":0.99}}"#), .done],
+            [.text(#"{"action":{"tool":"memory.recall","args":{"query":"concise bullet points"}},"prediction":{"successProbability":0.7}}"#), .done],
+            [.text(#"{"final":"I remember that you prefer concise bullet points."}"#), .done]
+        ])
+        let memoryKernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: memory, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [
+                StubMemoryTool(id: "memory.save", observation: "Memory saved."),
+                StubMemoryTool(id: "memory.recall", observation: "I prefer concise bullet points.")
+            ], predictionLedger: ledger)
+        )
+        for await _ in memoryKernel.run(structuredRequest(
+            "Remember that I prefer concise bullet points, then tell me what you remembered.",
+            allowedToolIDs: ["memory.save", "memory.recall"]
+        )) {}
+
+        let data = try await ledger.exportJSON()
+        let export = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let events = try XCTUnwrap(export["events"] as? [[String: Any]])
+        let forecasts = events.filter { $0["kind"] as? String == "prediction" }
+        XCTAssertEqual(forecasts.count, 3)
+        let model = try XCTUnwrap(forecasts.first { $0["toolID"] as? String == "weather" })
+        XCTAssertEqual(model["probabilityOrigin"] as? String, "model")
+        XCTAssertEqual(model["probability"] as? Double, 0.8)
+        let repaired = try XCTUnwrap(forecasts.first { $0["toolID"] as? String == "memory.save" })
+        XCTAssertEqual(repaired["probabilityOrigin"] as? String, "host_repair")
+        XCTAssertNil(repaired["probability"])
+        XCTAssertEqual(events.filter { $0["kind"] as? String == "outcome" }.count, 3)
+        #endif
+    }
+
     func testMalformedMemoryTurnsRepairedIntoRequiredActionsRecordParseFailures() async throws {
         #if DEBUG
         let diagnosticsDirectory = try AgentParseFailureRecorder.diagnosticsDirectory()
