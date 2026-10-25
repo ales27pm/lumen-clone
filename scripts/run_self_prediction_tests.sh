@@ -51,6 +51,7 @@ for source in \
 done
 for test in SelfPredictionLedgerTests.swift SelfPredictionFeedbackTests.swift \
   SelfPredictionPerturbationTests.swift SelfPredictionFeedbackContextTests.swift \
+  ExecutorDirectAnswerPromptTests.swift \
   AgentTurnPredictionTests.swift \
   AgentPredictionKeyIntegrityTests.swift ToolPredictionIntegrationTests.swift; do
   cp "$ROOT_DIR/ios/LumenTests/$test" "$PACKAGE_DIR/Tests/LumenTests/"
@@ -92,8 +93,9 @@ assert len(schemas) == 3, "Expected exactly three runtime schemas"
 for _, schema in schemas:
     json.loads(schema)
 schema_declarations = "\n".join(f'    nonisolated static let {name} = #"{schema}"#' for name, schema in schemas)
+runtime_prompts = between(executor, "    nonisolated static let executorRuntimeSystemPromptContract =", "    private let kernel:")
 provenance = between(executor, "    /// Compare the typed original action, before argument string coercion or dedupe.", "    static func buildSystemPrompt(")
-write("StructuredPredictionContract.swift", "@MainActor struct StructuredAgentKernelExecutor {\n" + schema_declarations + "\n" + provenance + "}\n")
+write("StructuredPredictionContract.swift", "@MainActor struct StructuredAgentKernelExecutor {\n" + schema_declarations + "\n" + runtime_prompts + "\n" + provenance + "}\n")
 
 routes = source("ios/Lumen/Services/ToolExecutor.swift")
 approval = between(routes, "nonisolated enum ToolExecutionApproval", "nonisolated enum ToolRouteGuard")
@@ -151,4 +153,4 @@ SWIFT
 swift test --package-path "$PACKAGE_DIR" -c release \
   -Xswiftc -DSELF_PREDICTION_PORTABLE_TESTS \
   -Xswiftc -enable-upcoming-feature -Xswiftc MemberImportVisibility \
-  --filter '(SelfPredictionLedger|SelfPredictionFeedback|SelfPredictionPerturbation|SelfPredictionFeedbackContext|AgentTurnPrediction|AgentPredictionKeyIntegrity|ToolPredictionIntegration)Tests'
+  --filter '(SelfPredictionLedger|SelfPredictionFeedback|SelfPredictionPerturbation|SelfPredictionFeedbackContext|ExecutorDirectAnswerPrompt|AgentTurnPrediction|AgentPredictionKeyIntegrity|ToolPredictionIntegration)Tests'

@@ -19,9 +19,9 @@ struct StructuredAgentKernelExecutor {
     nonisolated static let structuredAgentActionResponseSchema = #"{"type":"object","required":["action"],"properties":{"thought":{"type":"string"},"prediction":{"type":"object","required":["successProbability"],"properties":{"successProbability":{"type":"number","minimum":0,"maximum":1}},"additionalProperties":false},"action":{"type":"object","required":["tool","args"],"properties":{"tool":{"type":"string"},"args":{"type":"object"}}}},"additionalProperties":false}"#
     nonisolated static let structuredAgentFinalResponseSchema = #"{"type":"object","required":["final"],"properties":{"thought":{"type":"string"},"final":{"type":"string"}},"additionalProperties":false}"#
     nonisolated static let executorRuntimeSystemPromptContract = """
-    You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Follow the active runtime schema exactly. Emit either {"action":{"tool":"<exact manifest tool id>","args":{...}}} or {"final":"<concise user-facing answer>"}, plus an optional string thought under 12 words. On an action turn, also estimate the probability that the tool registry will return status success, including availability, permission and approval policy, using optional top-level "prediction":{"successProbability":0.0}. Use a finite number from 0 to 1; this predicts the returned tool status, not task completion. Final turns must not include prediction. Action contains exactly tool and args. Use an available exact manifest tool ID, exact argument names and JSON types, all required args, no extras, and {} when empty. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases. Use final only after trusted observations answer the user or when no tool is available.
+    You are Executor, Lumen's structured routing executor. Response format contract: output exactly one valid JSON object. Do not include prose, markdown, code fences, or hidden reasoning. Use final when no tool is needed, even if tools are available (e.g. arithmetic, translation, explanation), or trusted observations answer the user. Use action for required current/private data, device state, or operations. Answer in the user's language and requested format; clarify only missing necessary information. Follow the active runtime schema: emit {"action":{"tool":"<exact manifest tool id>","args":{...}}} or {"final":"<concise user-facing answer>"}, plus optional string thought under 12 words. Action has exactly tool and args: exact available IDs, argument names/types, all required args, no extras, {} if empty. Optionally predict returned tool status success, including availability, permissions and approvals, with top-level "prediction":{"successProbability":0.0}, a finite number from 0 to 1, not task completion. Final turns must not include prediction. The host, not the model, owns approvals, permissions, and missing-argument clarification. Never emit top-level tool, arguments, status, requiresApproval, approvalPrompt, permission or schema metadata, or aliases.
     """
-    nonisolated static let executorRuntimeOutputBoundary = "Runtime output boundary: start with { and stop immediately after the matching }. Choose exactly one of action or final. For a matching available tool, emit its exact listed ID. Action is a JSON object, never a string; never invent tool results."
+    nonisolated static let executorRuntimeOutputBoundary = "Runtime output boundary: start with { and stop immediately after the matching }. Choose exactly one of action or final. When an action is needed, emit an exact available tool ID. Action is a JSON object, never a string; never invent tool results."
 
     nonisolated static let unifiedAssistantSystemPromptContract = executorRuntimeSystemPromptContract.replacingOccurrences(
         of: "You are Executor, Lumen's structured routing executor.",
@@ -1209,7 +1209,7 @@ private extension StructuredAgentKernelExecutor {
         } else if availableTools.isEmpty {
             out += "\n\nEmit the first JSON object now. No tools are available, so emit final only."
         } else {
-            out += "\n\nEmit the first JSON object now. Choose either action or final."
+            out += "\n\nEmit the first JSON object now. Use final if no tool is needed; otherwise choose an action."
         }
         return out
     }
@@ -1229,7 +1229,7 @@ private extension StructuredAgentKernelExecutor {
         }
         return systemPrompt + """
 
-        Active turn constraint: a trusted successful observation has completed the only available no-argument tool. This turn is final-only. Emit exactly one JSON object with a final string. Do not emit action, tool, or args, and do not repeat the tool.
+        Active turn constraint: trusted observation complete. This turn is final-only. Do not emit action, tool, or args.
         """
     }
 

@@ -446,16 +446,70 @@ nonisolated enum PromptAssembler {
 
     private static func truncateSystemPrompt(_ systemPrompt: String, maxChars: Int, latencyClass: PromptLatencyClass) -> String {
         guard systemPrompt.count > maxChars else { return systemPrompt }
-        guard latencyClass == .fastInteractive else { return truncateMiddle(systemPrompt, maxChars: maxChars) }
         let fastDirective = """
 
         Fast interactive mode: keep the answer concise for this simple turn, but continue to obey all preserved system, tool, privacy, and safety instructions above.
         """
+        if let structured = boundedStructuredRuntimePrompt(
+            systemPrompt, maxChars: maxChars,
+            optionalDirective: latencyClass == .fastInteractive ? fastDirective : ""
+        ) {
+            return structured
+        }
+        guard latencyClass == .fastInteractive else { return truncateMiddle(systemPrompt, maxChars: maxChars) }
         guard maxChars > fastDirective.count + 128 else {
             return truncateMiddle(systemPrompt, maxChars: maxChars)
         }
         let preservedOriginal = truncateMiddle(systemPrompt, maxChars: maxChars - fastDirective.count)
         return preservedOriginal + fastDirective
+    }
+
+    /// The runtime contract is one host-authored first line. Keep it and the
+    /// output boundary (including any active-turn suffix) whole, then spend only
+    /// the remaining allocation on complete catalogue/context lines. No runtime
+    /// or routing dependency belongs in the prompt-budget layer.
+    private static func boundedStructuredRuntimePrompt(
+        _ systemPrompt: String, maxChars: Int, optionalDirective: String
+    ) -> String? {
+        let lines = systemPrompt.components(separatedBy: "\n")
+        guard let core = lines.first,
+              core.contains("Response format contract: output exactly one valid JSON object."),
+              let boundaryIndex = lines.lastIndex(where: { $0.hasPrefix("Runtime output boundary:") }),
+              boundaryIndex > 0 else { return nil }
+        let boundary = lines[boundaryIndex...].joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let required = core + "\n" + boundary
+        // Smaller contexts retain the existing bounded fallback when even the
+        // complete contract cannot fit. This does not enlarge any allocation.
+        guard required.count <= maxChars else { return nil }
+        let middle = lines[1..<boundaryIndex].joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let middleLines = middle.isEmpty ? [] : middle.components(separatedBy: "\n")
+        let minimumCatalogue: String
+        if let header = middleLines.firstIndex(of: "Available tools:"),
+           header + 1 < middleLines.count, middleLines[header + 1].hasPrefix("- ") {
+            minimumCatalogue = middleLines[...(header + 1)].joined(separator: "\n")
+        } else {
+            minimumCatalogue = ""
+        }
+        let minimumMiddleCost = minimumCatalogue.isEmpty ? 0 : minimumCatalogue.count + 1
+        let keepDirective = !optionalDirective.isEmpty
+            && required.count + minimumMiddleCost + optionalDirective.count <= maxChars
+        let directive = keepDirective ? optionalDirective : ""
+        let middleBudget = maxChars - required.count - directive.count - 1
+        var retained: [String] = []
+        var used = 0
+        if minimumCatalogue.isEmpty || minimumCatalogue.count <= middleBudget {
+            for line in middleLines {
+                let cost = line.count + (retained.isEmpty ? 0 : 1)
+                guard used + cost <= middleBudget else { break }
+                retained.append(line)
+                used += cost
+            }
+        }
+        let context = retained.joined(separator: "\n")
+        let result = context.isEmpty ? required : core + "\n" + context + "\n" + boundary
+        return result + directive
     }
 
     static func truncateHead(_ s: String, maxChars: Int) -> String {

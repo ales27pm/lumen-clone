@@ -15,6 +15,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         private(set) var preflightCallCount = 0
         private(set) var streamCallCount = 0
         private(set) var callOrder: [String] = []
+        private(set) var requests: [GenerateRequest] = []
 
         init(
             isChatLoaded: Bool,
@@ -54,6 +55,7 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         }
 
         func stream(_ req: GenerateRequest, slot: LumenModelSlot) -> AsyncStream<GenerationToken> {
+            requests.append(req)
             let index = streamCallCount
             streamCallCount += 1
             callOrder.append("stream")
@@ -106,6 +108,23 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
                 metricsSummary: "weather_success",
                 errorCode: nil
             )
+        }
+    }
+
+    private actor InvocationCounter {
+        private(set) var count = 0
+        func record() { count += 1 }
+    }
+
+    private struct CountingWeatherTool: LocalTool {
+        let counter: InvocationCounter
+        var definition: SecureToolDefinition { StubWeatherTool().definition }
+        func validateArguments(_ arguments: [String: String]) throws {
+            try StubWeatherTool().validateArguments(arguments)
+        }
+        func execute(invocation: ToolInvocation, context: ToolExecutionContext) async -> ToolResult {
+            await counter.record()
+            return await StubWeatherTool().execute(invocation: invocation, context: context)
         }
     }
 
@@ -233,6 +252,75 @@ final class AssistantKernelStructuredAgentTests: XCTestCase {
         XCTAssertEqual(schema, StructuredAgentKernelExecutor.structuredAgentActionResponseSchema)
         XCTAssertTrue(schema.contains(#""required":["action"]"#))
         XCTAssertFalse(schema.contains(#""required":["final"]"#))
+        #endif
+    }
+
+    func testArithmeticWithAvailableToolsAllowsFinalWithoutRequiredAction() throws {
+        #if DEBUG
+        let tools = [try tool("weather")]
+        for prompt in ["Réponds uniquement avec le résultat de 6 × 7.", "Combien font 6 × 7 ?", "What is 6 * 7?"] {
+            let request = structuredRequest(prompt, allowedToolIDs: ["weather"])
+            XCTAssertEqual(StructuredAgentKernelExecutor.structuredAgentResponseSchemaForTests(
+                request: request, availableTools: tools, stepIndex: 0, hasObservations: false
+            ), StructuredAgentKernelExecutor.structuredAgentResponseSchema)
+            XCTAssertFalse(StructuredAgentKernelExecutor.toolRequiredFinalNeedsActionForTests(
+                "42", request: request, availableTools: tools, observations: []
+            ))
+            let prompts = StructuredAgentKernelExecutor.structuredAgentPromptsForTests(
+                request: request, availableTools: tools, stepIndex: 0,
+                scratchpad: "", hasObservations: false
+            )
+            XCTAssertTrue(prompts.system.contains("Use final when no tool is needed"))
+            XCTAssertTrue(prompts.system.contains("even if tools are available"))
+            XCTAssertFalse(prompts.user.contains("requires an action before any final answer"))
+        }
+        #endif
+    }
+
+    /// A scripted final verifies host acceptance and zero side effects. It does
+    /// not establish that a real Gemma model chooses or computes this answer.
+    func testScriptedArithmeticFinalWithNonemptyCatalogueDoesNotExecuteOrRecordTool() async throws {
+        #if DEBUG
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ledger = SelfPredictionLedger(directoryURL: directory)
+        let counter = InvocationCounter()
+        let service = ScriptedLlamaService(isChatLoaded: true, scripts: [[.text(#"{"final":"42"}"#), .done]])
+        let registry = SecureToolRegistry(tools: [CountingWeatherTool(counter: counter)], predictionLedger: ledger)
+        XCTAssertFalse(registry.definitions().isEmpty)
+        let kernel = AssistantKernel(
+            router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled, allowDiagnosticFallbackSelection: false),
+            toolRegistry: registry
+        )
+        var final = ""
+        var toolInvocations = 0
+        var toolResults = 0
+        var errors = 0
+        for await event in kernel.run(structuredRequest("Réponds uniquement avec le résultat de 6 × 7.", allowedToolIDs: ["weather"])) {
+            switch event {
+            case .final(let text): final = text
+            case .toolInvocation: toolInvocations += 1
+            case .toolResult: toolResults += 1
+            case .error: errors += 1
+            default: break
+            }
+        }
+        XCTAssertEqual(final, "42")
+        XCTAssertEqual(toolInvocations, 0)
+        XCTAssertEqual(toolResults, 0)
+        XCTAssertEqual(errors, 0)
+        let bodyCount = await counter.count
+        XCTAssertEqual(bodyCount, 0)
+        let summary = try await ledger.summary()
+        XCTAssertEqual(summary.eventCount, 0)
+        XCTAssertNil(registry.lastPredictionRecordingFailure)
+        let requests = await service.requests
+        XCTAssertEqual(requests.count, 1)
+        let first = try XCTUnwrap(requests.first)
+        XCTAssertTrue(first.systemPrompt.contains("Available tools:"))
+        XCTAssertTrue(first.systemPrompt.contains("- weather:"))
+        XCTAssertTrue(first.systemPrompt.contains("Use final when no tool is needed"))
         #endif
     }
 
