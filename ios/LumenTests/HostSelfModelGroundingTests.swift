@@ -4,13 +4,79 @@ import XCTest
 
 @MainActor
 final class HostSelfModelGroundingTests: XCTestCase {
-    private func host(tools: [SecureToolDefinition] = []) -> HostSelfModelContext {
+    private func host(tools: [SecureToolDefinition] = [], predictionFeedback: SelfPredictionFeedback.State? = nil) -> HostSelfModelContext {
         let turn = AssistantTurnContext(task: .chat, input: "hello", isForeground: true, lowPowerMode: false, thermalState: .nominal)
         return HostSelfModelContext(snapshot: SelfModelSnapshotBuilder.build(
             turn: turn, budget: ContextBudgetAllocator.allocate(for: turn),
             selectedRuntime: .init(runtime: .llama, reason: "test selection"), tools: tools,
             activeSlot: .executor, now: Date(timeIntervalSince1970: 0)
-        ))
+        ), predictionFeedback: predictionFeedback)
+    }
+
+    func testFeedbackHasItsOwnAtomicBudgetAndPreservesCurrentSnapshot() {
+        let context = host(predictionFeedback: .unavailable)
+        XCTAssertFalse(context.feedbackBlock.isEmpty)
+        XCTAssertLessThanOrEqual(context.snapshotBlock.count, HostSelfModelContext.maximumBlockCharacters)
+        XCTAssertLessThanOrEqual(context.feedbackBlock.count, HostSelfModelContext.maximumFeedbackCharacters)
+        let input = context.injecting(into: "Tool and approval policy.\n")
+        let budget = PromptBudget(totalChars: 2000, attachmentsShare: 0, memoriesShare: 0,
+                                  historyShare: 0, maxSystemPromptChars: context.snapshotBlock.count + 32)
+        let assembly = PromptAssembler.assemble(systemPrompt: input, history: [], userMessage: "hello",
+            memories: [], attachments: [], budget: budget, hostSelfModel: context)
+        XCTAssertTrue(context.summary(inRenderedPrompt: assembly.systemPrompt).included)
+        XCTAssertFalse(context.feedbackIncluded(inRenderedPrompt: assembly.systemPrompt))
+        XCTAssertFalse(assembly.systemPrompt.contains("[HOST TOOL HISTORY"))
+        XCTAssertTrue(assembly.systemPrompt.hasPrefix("Tool and approval policy."))
+        XCTAssertLessThanOrEqual(assembly.systemPrompt.count, context.snapshotBlock.count + 32)
+    }
+
+    func testFeedbackSurvivesNormalAssemblyAndDoesNotReturnAfterCompaction() {
+        let context = host(predictionFeedback: .unavailable)
+        let policy = "Tool and approval policy.\n"
+        let input = context.injecting(into: policy)
+        let assembly = PromptAssembler.assemble(systemPrompt: input, history: [], userMessage: "hello",
+            memories: [], attachments: [],
+            budget: .init(totalChars: 4000, attachmentsShare: 0, memoriesShare: 0, historyShare: 0,
+                          maxSystemPromptChars: 2000), hostSelfModel: context)
+        XCTAssertTrue(context.feedbackIncluded(inRenderedPrompt: assembly.systemPrompt))
+        XCTAssertTrue(context.summary(inRenderedPrompt: assembly.systemPrompt).included)
+        XCTAssertEqual(context.removing(from: input), policy)
+        let compacted = PromptAssembler.assemble(systemPrompt: context.removing(from: input), history: [],
+            userMessage: context.block, memories: [], attachments: [], budget: .fastInteractive(),
+            hostSelfModel: context)
+        XCTAssertFalse(context.feedbackIncluded(inRenderedPrompt: compacted.systemPrompt))
+        XCTAssertFalse(context.summary(inRenderedPrompt: compacted.systemPrompt).included)
+        XCTAssertEqual(context.removing(from: policy + context.snapshotBlock), policy)
+    }
+
+    func testFeedbackNeverDisplacesExistingCallerInstructions() {
+        let withHistory = host(predictionFeedback: .unavailable)
+        let baseline = HostSelfModelContext(snapshot: withHistory.snapshot)
+        let policy = String(repeating: "Preserve policy and tool schemas. ", count: 100)
+        let budget = PromptBudget(totalChars: 3800, attachmentsShare: 0, memoriesShare: 0,
+                                  historyShare: 0, maxSystemPromptChars: 2200)
+        func assembled(_ context: HostSelfModelContext) -> String {
+            PromptAssembler.assemble(systemPrompt: context.injecting(into: policy), history: [], userMessage: "hello",
+                memories: [], attachments: [], budget: budget, hostSelfModel: context).systemPrompt
+        }
+        XCTAssertEqual(assembled(withHistory), assembled(baseline))
+        XCTAssertFalse(withHistory.feedbackIncluded(inRenderedPrompt: assembled(withHistory)))
+    }
+
+    func testGemmaMessagesPreserveHostFeedbackWithoutPromotingAssistantHistory() {
+        let context = host(predictionFeedback: .unavailable)
+        let request = GenerateRequest(
+            systemPrompt: context.injecting(into: "Tool and approval policy."),
+            history: [(.user, "Earlier question"), (.assistant, "Untrusted historical answer")],
+            userMessage: "Current question", temperature: 0, topP: 1, repetitionPenalty: 1,
+            maxTokens: 128, modelName: "agent-json", relevantMemories: [], hostSelfModel: context
+        )
+        let messages = CoreAIGemmaRuntimeAdapter.messages(for: request, contextSize: 8192)
+        XCTAssertEqual(messages.first?.role, "user")
+        XCTAssertTrue(context.feedbackIncluded(inRenderedPrompt: messages.first?.content ?? ""))
+        XCTAssertTrue(context.summary(inRenderedPrompt: messages.first?.content ?? "").included)
+        XCTAssertFalse(messages.first?.content.contains("Untrusted historical answer") == true)
+        XCTAssertEqual(messages.first(where: { $0.role == "assistant" })?.content, "Untrusted historical answer")
     }
 
     func testFastAssemblyReservesWholeHostBlockInsideExistingSystemBudget() {
@@ -198,6 +264,40 @@ final class HostSelfModelGroundingTests: XCTestCase {
         let first = try XCTUnwrap(sent.first?.hostSelfModel?.snapshot.generatedAt)
         let last = try XCTUnwrap(sent.last?.hostSelfModel?.snapshot.generatedAt)
         XCTAssertLessThanOrEqual(first, last)
+    }
+
+    func testStructuredNextTurnReceivesObservedOutcomeFromItsOwnRegistryLedger() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let ledger = SelfPredictionLedger(directoryURL: directory)
+        let service = CapturingService()
+        let kernel = AssistantKernel(router: AssistantRuntimeRouter(llamaService: service, coreAI: .disabled,
+            allowDiagnosticFallbackSelection: false),
+            toolRegistry: SecureToolRegistry(tools: [WeatherTool()], predictionLedger: ledger))
+        let request = AgentKernelRequest(userMessage: "What's the weather?", options: AgentKernelOptions(
+            allowHeavyRuntime: true, allowDegradedMode: false, requireUserVisibleFinal: true,
+            diagnosticsEnabled: false, maxSteps: 3, prefersFoundationModels: false,
+            structuredMode: .requiredAgentJSON, structuredAllowedToolIDs: ["weather"], allowsToolExecution: true
+        ))
+        for await _ in kernel.run(request, modelContext: nil) {}
+        let requests = await service.requests()
+        XCTAssertEqual(requests.count, 2)
+        let before = try XCTUnwrap(requests.first?.hostSelfModel)
+        let after = try XCTUnwrap(requests.last?.hostSelfModel)
+        guard case .available(let first)? = before.predictionFeedback,
+              case .available(let next)? = after.predictionFeedback else {
+            return XCTFail("The injected private ledger must provide the feedback for both turns")
+        }
+        XCTAssertTrue(first.entries.isEmpty)
+        XCTAssertEqual(next.entries.map(\.toolID), ["weather"])
+        XCTAssertEqual(next.entries.first?.completedCount, 1)
+        XCTAssertEqual(next.entries.first?.successCount, 1)
+        XCTAssertEqual(next.entries.first?.lastStatus, .success)
+        XCTAssertTrue(after.feedbackIncluded(inRenderedPrompt: try XCTUnwrap(requests.last).systemPrompt))
+        let summary = try await ledger.summary()
+        XCTAssertEqual(summary.predictionCount, 1)
+        XCTAssertEqual(summary.outcomeCount, 1)
     }
 
     func testStructuredCompactionPreservesMetadataButReportsEvictedBlock() async throws {

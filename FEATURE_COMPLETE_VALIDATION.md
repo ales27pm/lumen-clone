@@ -1,6 +1,6 @@
 # Feature Complete Validation
 
-The second self-model slice is a source candidate: optional pre-action forecasts, a bounded durable ledger, Settings export and offline calibration against typed tool statuses. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the prediction ledger contract](docs/SELF_PREDICTION_LEDGER.md).
+The self-model source candidate records pre-action forecasts and feeds bounded, observed tool history into later structured turns. Controlled perturbation/ablation tests cover that evidence path; they do not establish learned capability or improved model calibration. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the feedback contract](docs/SELF_PREDICTION_FEEDBACK.md) and [the prediction ledger](docs/SELF_PREDICTION_LEDGER.md).
 
 ## 2026-08-09/10 production-readiness hardening checkpoint
 

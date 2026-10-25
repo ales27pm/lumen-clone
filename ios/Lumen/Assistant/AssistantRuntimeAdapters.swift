@@ -39,6 +39,7 @@ nonisolated struct LlamaStructuredPromptPreflightSnapshot: Sendable, Equatable {
     let finalPromptChars: Int
     let estimatedPromptTokens: Int
     var hostSelfModelIncluded: Bool? = nil
+    var predictionFeedbackIncluded: Bool? = nil
 }
 
 extension AppLlamaService: LlamaRuntimeStreamingService {
@@ -75,7 +76,8 @@ extension AppLlamaService: LlamaRuntimeStreamingService {
             contextSize: contextSize,
             finalPromptChars: prompt.finalPromptChars,
             estimatedPromptTokens: prompt.estimatedPromptTokens,
-            hostSelfModelIncluded: request.hostSelfModel?.summary(inRenderedPrompt: prompt.assembly.systemPrompt).included
+            hostSelfModelIncluded: request.hostSelfModel?.summary(inRenderedPrompt: prompt.assembly.systemPrompt).included,
+            predictionFeedbackIncluded: request.hostSelfModel?.feedbackIncluded(inRenderedPrompt: prompt.assembly.systemPrompt)
         )
     }
 }

@@ -58,6 +58,26 @@ final class SecureToolRegistry {
 
     func duplicateDefinitionIDs() -> [ToolID] { duplicateToolIDs }
 
+    /// Read from the same ledger used by execute, including when a test or an
+    /// isolated caller supplies its own registry. Missing recording evidence is
+    /// never replaced with a healthy-looking historical capability estimate.
+    func predictionFeedback(
+        runtime: String, toolIDs: Set<String>, now: Date = Date()
+    ) async -> SelfPredictionFeedback.State {
+        guard lastPredictionRecordingFailure == nil else { return .unavailable }
+        do {
+            let snapshot = try await predictionLedger.feedbackSnapshot(
+                runtime: runtime, toolIDs: toolIDs, now: now
+            )
+            // Main-actor reentrancy permits a recording failure while awaiting
+            // the ledger. Check again before exposing a partial window.
+            guard lastPredictionRecordingFailure == nil else { return .unavailable }
+            return .available(snapshot)
+        } catch {
+            return .unavailable
+        }
+    }
+
     func availableDefinitions(context: ToolExecutionContext, source: ToolInvocationSource) async -> [SecureToolDefinition] {
         await definitionAvailability(context: context, source: source).compactMap { assessment in
             if case .deny = assessment.decision { return nil }

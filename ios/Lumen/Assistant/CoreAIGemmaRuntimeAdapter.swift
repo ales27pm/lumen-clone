@@ -98,15 +98,17 @@ struct CoreAIGemmaRuntimeAdapter: LocalTextGenerationRuntime {
             messages: Self.messages(for: request, contextSize: contextSize),
             maxTokens: request.maxTokens
         )
+        let assembly = Self.promptAssembly(
+            systemPrompt: request.systemPrompt, history: request.history, userMessage: request.userMessage,
+            relevantMemories: request.relevantMemories, attachments: request.attachments,
+            maxTokens: request.maxTokens, contextSize: contextSize, hostSelfModel: request.hostSelfModel
+        )
         return LlamaStructuredPromptPreflightSnapshot(
             contextSize: preflight.contextSize,
             finalPromptChars: preflight.promptChars,
             estimatedPromptTokens: preflight.promptTokens,
-            hostSelfModelIncluded: request.hostSelfModel?.summary(inRenderedPrompt: Self.promptAssembly(
-                systemPrompt: request.systemPrompt, history: request.history, userMessage: request.userMessage,
-                relevantMemories: request.relevantMemories, attachments: request.attachments,
-                maxTokens: request.maxTokens, contextSize: contextSize, hostSelfModel: request.hostSelfModel
-            ).systemPrompt).included
+            hostSelfModelIncluded: request.hostSelfModel?.summary(inRenderedPrompt: assembly.systemPrompt).included,
+            predictionFeedbackIncluded: request.hostSelfModel?.feedbackIncluded(inRenderedPrompt: assembly.systemPrompt)
         )
     }
 

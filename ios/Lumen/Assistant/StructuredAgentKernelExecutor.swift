@@ -637,11 +637,23 @@ struct StructuredAgentKernelExecutor {
             stepIndex: stepIndex,
             hasObservations: hasObservations
         )
+        let predictionFeedback = await kernel.toolRegistry.predictionFeedback(
+            runtime: selection.runtime.rawValue,
+            toolIDs: Set(availableTools.map { ToolRouteGuard.canonicalToolID($0.id) })
+        )
+        guard !Task.isCancelled else {
+            return Self.preStreamFailureResult(
+                startedAt: startedAt, request: request, userTurn: userTurn,
+                selectedRuntime: selection.runtime.rawValue,
+                reason: "cancelled", streamTerminationReason: "cancelled"
+            )
+        }
         let hostSelfModel = kernel.prepareHostSelfModel(
             turn: turnContext,
             selection: selection,
             tools: secureDefinitions,
-            activeSlot: Self.structuredAgentModelSlot
+            activeSlot: Self.structuredAgentModelSlot,
+            predictionFeedback: predictionFeedback
         )
         var genReq = GenerateRequest(
             systemPrompt: hostSelfModel.injecting(into: activeSystemPrompt),
@@ -810,7 +822,8 @@ struct StructuredAgentKernelExecutor {
                         requiresApproval: nil,
                         approvalMode: nil
                     )
-                }
+                },
+                predictionFeedbackIncluded: preflight.predictionFeedbackIncluded
             )
         )
     }
@@ -829,7 +842,8 @@ struct StructuredAgentKernelExecutor {
             finalPromptChars: promptBuild.finalPromptChars,
             estimatedPromptTokens: promptBuild.estimatedPromptTokens,
             fits: fits,
-            hostSelfModelIncluded: promptBuild.hostSelfModelIncluded
+            hostSelfModelIncluded: promptBuild.hostSelfModelIncluded,
+            predictionFeedbackIncluded: promptBuild.predictionFeedbackIncluded
         )
     }
 
@@ -963,6 +977,9 @@ struct StructuredAgentKernelExecutor {
         if let streamStarted = diagnostics.streamStarted {
             metadata["streamStarted"] = String(streamStarted)
         }
+        if let included = diagnostics.predictionFeedbackIncluded {
+            metadata["predictionFeedbackIncluded"] = String(included)
+        }
         if let firstChunkReceived = diagnostics.firstChunkReceived {
             metadata["firstChunkReceived"] = String(firstChunkReceived)
         }
@@ -1058,6 +1075,7 @@ private extension StructuredAgentKernelExecutor {
         let finalChunkReceived: Bool?
         let streamTerminationReason: String?
         var selfModel: AgentBehaviorTrace.SelfModelDecisionSummary? = nil
+        var predictionFeedbackIncluded: Bool? = nil
     }
 
     struct StructuredGenerationResult {
@@ -1111,6 +1129,7 @@ private extension StructuredAgentKernelExecutor {
         let estimatedPromptTokens: Int
         let fits: Bool
         var hostSelfModelIncluded: Bool? = nil
+        var predictionFeedbackIncluded: Bool? = nil
     }
 
     /// Compare the typed original action, before argument string coercion or dedupe.

@@ -3,8 +3,10 @@
 Status: source implementation and component validation candidate. This is not a
 claim of signed release, iPhone execution, calibrated model confidence, or a causal
 self-model. The first slice grounds host facts; this slice records forecasts and
-their observed tool statuses. Hidden perturbations, ablations, capability updates,
-and feedback-driven training remain separate work.
+their observed tool statuses. The next slice now projects recent results into
+structured requests and adds controlled component perturbations/ablations; see
+[the feedback contract](SELF_PREDICTION_FEEDBACK.md). Model-backed adaptation,
+capability learning and feedback-driven training are not established by either slice.
 
 ## Forecast target and coverage
 
@@ -107,7 +109,8 @@ These metrics describe the retained sample, with its policy filtering and missin
 data. Brier measures probabilistic accuracy as well as calibration; ECE depends on
 the binning and sample size. Neither is by itself a release acceptance threshold.
 The report does not set `allPassed`, authenticate a device, promote data to live E2E
-evidence, update capability estimates, or prove subjective experience.
+evidence, update capability estimates, or prove subjective experience. The runtime
+feedback projection reads the same ledger without changing this export contract.
 
 ## Validation boundaries
 

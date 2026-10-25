@@ -261,9 +261,9 @@ nonisolated enum PromptAssembler {
 
         let systemCap = budget.maxSystemPromptChars ?? systemPrompt.count
         let callerSystem = hostSelfModel?.removing(from: systemPrompt) ?? systemPrompt
-        let hostBlock = hostSelfModel.map {
-            !$0.block.isEmpty && systemPrompt.hasSuffix($0.block) && $0.block.count <= systemCap ? $0.block : ""
-        } ?? ""
+        let preservedCallerCount = min(callerSystem.count, max(0, systemCap - (hostSelfModel?.snapshotBlock.count ?? 0)))
+        let hostBlock = hostSelfModel?.reservedBlock(in: systemPrompt, maxCharacters: systemCap,
+                                                   preservingCallerCharacters: preservedCallerCount) ?? ""
         let boundedSystemPrompt = truncateSystemPrompt(callerSystem, maxChars: max(0, systemCap - hostBlock.count), latencyClass: latencyClass) + hostBlock
 
         let memoriesBlock = buildMemoriesBlock(memories: memories, share: budget.memoriesShare, latencyClass: latencyClass)

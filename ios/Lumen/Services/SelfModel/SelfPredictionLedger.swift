@@ -14,7 +14,7 @@ actor SelfPredictionLedger {
         case hostRepair = "host_repair"
     }
 
-    nonisolated enum OutcomeStatus: String, Codable, Sendable {
+    nonisolated enum OutcomeStatus: String, Codable, Sendable, Equatable {
         case success, failed, denied, requiresApproval, unavailable
     }
 
@@ -180,6 +180,23 @@ actor SelfPredictionLedger {
     func summary() async throws -> Summary {
         try loadIfNeeded()
         return currentSummary()
+    }
+
+    /// Reads one actor-serialized point in the existing ledger. No new event or
+    /// probability is synthesized, and storage errors remain distinct from empty.
+    func feedbackSnapshot(runtime: String, toolIDs: Set<String>, now: Date = Date()) async throws -> SelfPredictionFeedback.Snapshot {
+        try loadIfNeeded()
+        var outcomes: [UUID: SelfPredictionFeedback.Outcome] = [:]
+        for event in events where event.kind == .outcome {
+            guard let status = event.status, let cancelled = event.cancelled else { throw Failure.corruptFile }
+            outcomes[event.id] = .init(seq: event.seq, timestamp: event.timestamp, status: status, cancelled: cancelled)
+        }
+        let records = try predictions.values.map { prediction -> SelfPredictionFeedback.Record in
+            guard let runtime = prediction.runtime, let toolID = prediction.toolID else { throw Failure.corruptFile }
+            return .init(runtime: runtime, toolID: toolID, predictionDate: prediction.timestamp,
+                         outcome: outcomes[prediction.id])
+        }
+        return SelfPredictionFeedback.project(records: records, runtime: runtime, toolIDs: toolIDs, now: now)
     }
 
     private func exportData() throws -> Data {

@@ -1,6 +1,6 @@
 # Lumen Validation
 
-The second self-model slice is a source candidate: optional pre-action forecasts, a bounded durable ledger, Settings export and offline calibration against typed tool statuses. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the prediction ledger contract](SELF_PREDICTION_LEDGER.md).
+The self-model source candidate records pre-action forecasts and feeds bounded, observed tool history into later structured turns. Controlled perturbation/ablation tests cover that evidence path; they do not establish learned capability or improved model calibration. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the feedback contract](SELF_PREDICTION_FEEDBACK.md) and [the prediction ledger](SELF_PREDICTION_LEDGER.md).
 
 Core AI Gemma now requires the iOS 27.1 deployment target. The Linux integration host cannot compile Apple frameworks or execute XCTest. See `COREAI_GEMMA.md` for the focused regression suites, local bundle requirements, and separate physical-device/ANE validation boundaries.
 

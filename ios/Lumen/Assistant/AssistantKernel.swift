@@ -174,7 +174,7 @@ final class AssistantKernel {
         return await takeCompletedStructuredLlamaTrace(requestID: requestID)
     }
 
-    func prepareHostSelfModel(turn: AssistantTurnContext, selection: AssistantRuntimeRouter.Selection, tools: [SecureToolDefinition], activeSlot: LumenModelSlot? = nil, inferActiveSlotFromTask: Bool = true) -> HostSelfModelContext {
+    func prepareHostSelfModel(turn: AssistantTurnContext, selection: AssistantRuntimeRouter.Selection, tools: [SecureToolDefinition], activeSlot: LumenModelSlot? = nil, inferActiveSlotFromTask: Bool = true, predictionFeedback: SelfPredictionFeedback.State? = nil) -> HostSelfModelContext {
         HostSelfModelContext(snapshot: SelfModelSnapshotBuilder.build(
             turn: turn,
             budget: ContextBudgetAllocator.allocate(for: turn),
@@ -182,7 +182,7 @@ final class AssistantKernel {
             tools: tools,
             activeSlot: activeSlot,
             inferActiveSlotFromTask: inferActiveSlotFromTask
-        ))
+        ), predictionFeedback: predictionFeedback)
     }
 
     func prepareTextSelfModel(turn: AssistantTurnContext) async -> (selection: AssistantRuntimeRouter.Selection, context: HostSelfModelContext) {

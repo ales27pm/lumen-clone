@@ -1,6 +1,6 @@
 # Agent Kernel Migration Status
 
-The second self-model slice is a source candidate: optional pre-action forecasts, a bounded durable ledger, Settings export and offline calibration against typed tool statuses. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the prediction ledger contract](SELF_PREDICTION_LEDGER.md).
+The self-model source candidate records pre-action forecasts and feeds bounded, observed tool history into later structured turns. Controlled perturbation/ablation tests cover that evidence path; they do not establish learned capability or improved model calibration. Complete iOS compilation, real-model/device execution and release qualification remain separate gates; see [the feedback contract](SELF_PREDICTION_FEEDBACK.md) and [the prediction ledger](SELF_PREDICTION_LEDGER.md).
 
 This is the current Release-facing status for Agent Kernel ownership. Historical PR documents remain as implementation history; this file describes what ships now.
 

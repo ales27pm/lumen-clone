@@ -56,4 +56,27 @@ enum ProductivityLocalTool { static let all: [any LocalTool] = [] }
 enum CommunicationLocalTool { static let all: [any LocalTool] = [] }
 enum LocationMediaHealthLocalTool { static let all: [any LocalTool] = [] }
 enum KnowledgeLocalTool { static let all: [any LocalTool] = [] }
+
+// The portable context tests use real HostSelfModelContext, snapshot shapes,
+// context rendering and PromptAssembler, with empty attachments and memories.
+// These unrelated adapters must never turn accidental IO/trace use into success.
+nonisolated enum AttachmentResolver {
+    struct AttachmentExtractionResult {
+        let text: String?
+        let mode: String
+        let diagnostic: String?
+    }
+    static func extractTextWithDiagnostics(_ attachment: ChatAttachment) -> AttachmentExtractionResult {
+        preconditionFailure("Attachment IO is outside the portable self-prediction suite")
+    }
+}
+
+nonisolated enum AgentBehaviorTrace {
+    struct SelfModelDecisionSummary {
+        static func fromHost(snapshot: SelfModelSnapshot, included: Bool,
+                             selectedToolID: String?, requiresApproval: Bool?, approvalMode: String?) -> SelfModelDecisionSummary {
+            preconditionFailure("Trace production is outside the portable self-prediction suite")
+        }
+    }
+}
 #endif

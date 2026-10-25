@@ -22,6 +22,13 @@ export TMPDIR="$(cd "$PACKAGE_DIR/fixtures" && pwd -P)/"
 
 for source in \
   ios/Lumen/Services/SelfModel/SelfPredictionLedger.swift \
+  ios/Lumen/Services/SelfModel/SelfPredictionFeedback.swift \
+  ios/Lumen/Assistant/HostSelfModelContext.swift \
+  ios/Lumen/Assistant/SelfModelContextProvider.swift \
+  ios/Lumen/Assistant/PromptGroundingSection.swift \
+  ios/Lumen/Services/PromptBudget.swift \
+  ios/Lumen/Services/PromptContextBuilder.swift \
+  ios/Lumen/Models/MemoryContextItem.swift \
   ios/Lumen/Services/AgentJSONKeyIntegrity.swift \
   ios/Lumen/Models/AgentJSONValue.swift \
   ios/Lumen/Models/ToolDefinition.swift \
@@ -42,7 +49,9 @@ for source in \
   ios/LumenTests/Support/SelfPredictionHarnessSupport.swift; do
   cp "$ROOT_DIR/$source" "$PACKAGE_DIR/Sources/Lumen/"
 done
-for test in SelfPredictionLedgerTests.swift AgentTurnPredictionTests.swift \
+for test in SelfPredictionLedgerTests.swift SelfPredictionFeedbackTests.swift \
+  SelfPredictionPerturbationTests.swift SelfPredictionFeedbackContextTests.swift \
+  AgentTurnPredictionTests.swift \
   AgentPredictionKeyIntegrityTests.swift ToolPredictionIntegrationTests.swift; do
   cp "$ROOT_DIR/ios/LumenTests/$test" "$PACKAGE_DIR/Tests/LumenTests/"
 done
@@ -102,6 +111,24 @@ assert manifest.count(argument_start) == 1
 argument = manifest[manifest.index(argument_start):]
 assert argument.rstrip().endswith("}"), "Incomplete runtime argument declaration"
 write("RuntimeToolArgument.swift", argument)
+
+# Compile the real host/context/assembler logic without the application kernel,
+# SwiftData snapshot builder, or attachment IO. Shape/decoder declarations and
+# the revision validator below are exact source; unused adapters fail closed in
+# SelfPredictionHarnessSupport rather than manufacturing successful IO/trace.
+snapshot = source("ios/Lumen/Services/SelfModel/SelfModelSnapshot.swift")
+shape = between(snapshot, "nonisolated struct SelfModelSnapshot:", "nonisolated enum SelfModelSnapshotBuilder")
+revision = between(snapshot, "    static func validatedSourceRevision(", "    private static func inferredSlot(")
+decoder_anchor = "extension SelfModelSnapshot.AppInfo {"
+assert snapshot.count(decoder_anchor) == 1
+decoders = snapshot[snapshot.index(decoder_anchor):]
+write("SelfModelSnapshotShape.swift", shape + "\nnonisolated enum SelfModelSnapshotBuilder {\n" + revision + "}\n" + decoders)
+budget = source("ios/Lumen/Assistant/ContextBudgetAllocator.swift")
+write("ContextBudgetShapes.swift", between(budget, "struct ContextBudgetTokenSections:", "enum ContextBudgetAllocator"))
+chat = source("ios/Lumen/Models/ChatMessage.swift")
+write("MessageRole.swift", between(chat, "enum MessageRole:", "enum ToolStatus:"))
+attachments = source("ios/Lumen/Models/ChatAttachment.swift")
+write("ChatAttachmentShape.swift", between(attachments, "nonisolated struct ChatAttachment:", "nonisolated enum AttachmentResolver"))
 print("Exact source declarations and three JSON schemas extracted; Swift execution follows.")
 PYTHON
 
@@ -124,4 +151,4 @@ SWIFT
 swift test --package-path "$PACKAGE_DIR" -c release \
   -Xswiftc -DSELF_PREDICTION_PORTABLE_TESTS \
   -Xswiftc -enable-upcoming-feature -Xswiftc MemberImportVisibility \
-  --filter '(SelfPredictionLedger|AgentTurnPrediction|AgentPredictionKeyIntegrity|ToolPredictionIntegration)Tests'
+  --filter '(SelfPredictionLedger|SelfPredictionFeedback|SelfPredictionPerturbation|SelfPredictionFeedbackContext|AgentTurnPrediction|AgentPredictionKeyIntegrity|ToolPredictionIntegration)Tests'
